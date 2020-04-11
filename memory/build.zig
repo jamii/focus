@@ -10,7 +10,7 @@ pub fn build(b: *Builder) !void {
 
     const mode = b.standardReleaseOptions();
 
-    const local = b.addExecutable("focus-local", "./src/main.zig");
+    const local = b.addExecutable("focus", "./src/main.zig");
     include_common(local);
     local.setBuildMode(mode);
     local.install();
@@ -22,18 +22,20 @@ pub fn build(b: *Builder) !void {
         std.zig.CrossTarget{
             .cpu_arch = .aarch64,
             .os_tag = .linux,
-            .abi = .musl,
+            .abi = .gnu,
         }
     );
-    cross.setOutputDir("zig-cache");
     cross.install();
 
-    const local_run = local.run();
-    const local_step = b.step("local", "Run locally");
-    local_step.dependOn(&local_run.step);
+    const local_step = b.step("local", "Build for local");
+    local_step.dependOn(&local.step);
 
     const cross_step = b.step("cross", "Build for focus");
     cross_step.dependOn(&cross.step);
+
+    const run = local.run();
+    const run_step = b.step("run", "Run locally");
+    run_step.dependOn(&run.step);
 }
 
 fn include_common(exe: *std.build.LibExeObjStep) void {
@@ -48,6 +50,7 @@ fn include_common(exe: *std.build.LibExeObjStep) void {
         // https://github.com/ziglang/zig/wiki/FAQ#why-do-i-get-illegal-instruction-when-using-with-zig-cc-to-build-c-code
         "-fno-sanitize=undefined",
     });
+    exe.setOutputDir("zig-cache");
 }
 
 fn include_nix(exe: *std.build.LibExeObjStep, env_var: str) !void {
