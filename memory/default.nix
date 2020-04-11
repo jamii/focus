@@ -1,3 +1,5 @@
+{ cross ? false }:
+
 let
 
   pkgs = import <nixpkgs> {};
@@ -35,6 +37,5 @@ pkgs.stdenv.mkDerivation rec {
     [
       pkgs.pkg-config
     ] ++
-    # (inputs pkgs) ++
-    (inputs crossPkgs);
+    (inputs (if cross then crossPkgs else pkgs));
 }
