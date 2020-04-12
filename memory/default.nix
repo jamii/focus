@@ -16,7 +16,7 @@ let
         mesa
         libGL
         libGLU
-        # glfw3
+        SDL2
       ;
     })];
     crossSystem = pkgs.lib.systems.examples.aarch64-multiplatform;
@@ -30,7 +30,7 @@ pkgs.stdenv.mkDerivation rec {
     inputs = pkgs: [
       pkgs.libGL.all
       pkgs.libGLU.all
-      pkgs.glfw3.all
+      pkgs.SDL2.all
       # zig # tracking master instead
     ];
   in

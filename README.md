@@ -4,7 +4,7 @@ Status:
 * local build is broken (X BadWindow) but worker earlier
 * cross build seems to work but need to copy over .so
 * focus build works
-  * cpu usage is way higher than previous attempt with c + pmos
+  * cpu usage is way higher than previous attempt with c + pmos (debug mode?)
 
 # Installing mobile-nixos:
 

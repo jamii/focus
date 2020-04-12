@@ -42,7 +42,7 @@ fn include_common(exe: *std.build.LibExeObjStep) void {
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("GL");
     exe.linkSystemLibrary("GLU");
-    exe.linkSystemLibrary("glfw3");
+    exe.linkSystemLibrary("SDL2");
     exe.addIncludeDir("./include");
     exe.addCSourceFile("./src/nk_main.c", &[_]str{
         "-std=c99",
