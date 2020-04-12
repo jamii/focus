@@ -1,1 +1,1 @@
-extern int nk_main(void);
+extern void MainLoop(void* loopArg);

@@ -56,7 +56,7 @@
 SDL_Window *win;
 int running = nk_true;
 
-static void
+extern void
 MainLoop(void* loopArg){
     struct nk_context *ctx = (struct nk_context *)loopArg;
 
@@ -130,60 +130,4 @@ MainLoop(void* loopArg){
      * rendering the UI. */
     nk_sdl_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_MEMORY, MAX_ELEMENT_MEMORY);
     SDL_GL_SwapWindow(win);}
-}
-
-int nk_main()
-{
-    /* GUI */
-    struct nk_context *ctx;
-    SDL_GLContext glContext;
-    /* SDL setup */
-    SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
-    /*SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_EVENTS); // - do NOT init SDL on GL ES 2 */
-    SDL_GL_SetAttribute (SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-    SDL_GL_SetAttribute (SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    win = SDL_CreateWindow("Demo",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_OPENGL|SDL_WINDOW_SHOWN|SDL_WINDOW_ALLOW_HIGHDPI);
-    glContext = SDL_GL_CreateContext(win);
-
-    /* OpenGL setup */
-    glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-
-    ctx = nk_sdl_init(win);
-    /* Load Fonts: if none of these are loaded a default font will be used  */
-    /* Load Cursor: if you uncomment cursor loading please hide the cursor */
-    {struct nk_font_atlas *atlas;
-    nk_sdl_font_stash_begin(&atlas);
-    /*struct nk_font *droid = nk_font_atlas_add_from_file(atlas, "../../../extra_font/DroidSans.ttf", 14, 0);*/
-    /*struct nk_font *roboto = nk_font_atlas_add_from_file(atlas, "../../../extra_font/Roboto-Regular.ttf", 16, 0);*/
-    /*struct nk_font *future = nk_font_atlas_add_from_file(atlas, "../../../extra_font/kenvector_future_thin.ttf", 13, 0);*/
-    /*struct nk_font *clean = nk_font_atlas_add_from_file(atlas, "../../../extra_font/ProggyClean.ttf", 12, 0);*/
-    /*struct nk_font *tiny = nk_font_atlas_add_from_file(atlas, "../../../extra_font/ProggyTiny.ttf", 10, 0);*/
-    /*struct nk_font *cousine = nk_font_atlas_add_from_file(atlas, "../../../extra_font/Cousine-Regular.ttf", 13, 0);*/
-    nk_sdl_font_stash_end();
-    /*nk_style_load_all_cursors(ctx, atlas->cursors);*/
-    /*nk_style_set_font(ctx, &roboto->handle)*/;}
-
-    /* style.c */
-    /*set_style(ctx, THEME_WHITE);*/
-    /*set_style(ctx, THEME_RED);*/
-    /*set_style(ctx, THEME_BLUE);*/
-    /*set_style(ctx, THEME_DARK);*/
-
-#if defined(__EMSCRIPTEN__)
-    #include <emscripten.h>
-    emscripten_set_main_loop_arg(MainLoop, (void*)ctx, 0, nk_true);
-#else
-    while (running) MainLoop((void*)ctx);
-#endif
-
-    nk_sdl_shutdown();
-    SDL_GL_DeleteContext(glContext);
-    SDL_DestroyWindow(win);
-    SDL_Quit();
-    return 0;
 }
