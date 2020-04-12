@@ -454,12 +454,12 @@ struct nk_style_window_header;
 struct nk_style_window;
 
 enum {nk_false, nk_true};
-struct nk_color {nk_byte r,g,b,a;};
-struct nk_colorf {float r,g,b,a;};
-struct nk_vec2 {float x,y;};
-struct nk_vec2i {short x, y;};
-struct nk_rect {float x,y,w,h;};
-struct nk_recti {short x,y,w,h;};
+  struct nk_color {nk_byte r,g,b,a; nk_byte dummy[16];};
+struct nk_colorf {float r,g,b,a; nk_byte dummy[16];};
+struct nk_vec2 {float x,y; nk_byte dummy[16];};
+struct nk_vec2i {short x, y; nk_byte dummy[16];};
+struct nk_rect {float x,y,w,h; nk_byte dummy[16];};
+struct nk_recti {short x,y,w,h; nk_byte dummy[16];};
 typedef char nk_glyph[NK_UTF_SIZE];
 typedef union {void *ptr; int id;} nk_handle;
 struct nk_image {nk_handle handle;unsigned short w,h;unsigned short region[4];};
@@ -5688,7 +5688,7 @@ template<typename T> struct nk_alignof{struct Big {T x; char c;}; enum {
 #ifndef STBTT_malloc
 static nk_handle fictional_handle = {0};
 
-#define STBTT_malloc(x,u)  nk_malloc( fictional_handle, 0, x ) 
+#define STBTT_malloc(x,u)  nk_malloc( fictional_handle, 0, x )
 #define STBTT_free(x,u)    nk_mfree( fictional_handle , x)
 #endif
 
@@ -29405,4 +29405,3 @@ nk_tooltipfv(struct nk_context *ctx, const char *fmt, va_list args)
 /// in libraries and brought me to create some of my own. Finally Apoorva Joshi
 /// for his single header file packer.
 */
-
