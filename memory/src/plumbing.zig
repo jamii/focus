@@ -509,14 +509,13 @@ export fn clipboard_paste(usr: nk_handle, edit: [*c]nk_text_edit) void {
 }
 
 export fn clipboard_copy(usr: nk_handle, text: [*c]const u8, len: c_int) void {
-    var str: [*c]u8 = undefined;
     if (len == 0) return;
-    str = @ptrCast([*c]u8, malloc(@intCast(usize, len+1)));
+    var str: [*c]u8 = @ptrCast([*c]u8, malloc(@intCast(usize, len+1)));
     if (str == null) return;
+    defer free(str);
     _ = memcpy(str, text, @intCast(usize, len));
     str[@intCast(usize, len)] = 0;
     _ = SDL_SetClipboardText(str);
-    free(str);
 }
 
 const SdlVertex = extern struct {
