@@ -44,7 +44,7 @@ fn include_common(exe: *std.build.LibExeObjStep) void {
     exe.linkSystemLibrary("GLU");
     exe.linkSystemLibrary("SDL2");
     exe.addIncludeDir("./include");
-    exe.addCSourceFile("./src/nk_main.c", &[_]str{
+    exe.addCSourceFile("./src/nuklear.c", &[_]str{
         "-std=c99",
         // nuklear causes undefined behaviour
         // https://github.com/ziglang/zig/wiki/FAQ#why-do-i-get-illegal-instruction-when-using-with-zig-cc-to-build-c-code
