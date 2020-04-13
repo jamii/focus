@@ -1,11 +1,11 @@
 usingnamespace @import("common.zig");
 const Plumbing = @import("plumbing.zig").Plumbing;
 
-// enum {EASY, HARD};
-var op: u8 = 0;
-var property: c_int = 20;
-
 pub fn main() anyerror!void {
+    const Op = enum {Easy, Hard};
+    var op: Op = .Easy;
+    var property: c_int = 20;
+
     var plumbing = Plumbing.init();
     defer plumbing.deinit();
 
@@ -40,8 +40,8 @@ pub fn main() anyerror!void {
                 if (nk_true == nk_button_label(ctx, "button"))
                     _ = fprintf(stdout, "button pressed\n");
                 nk_layout_row_dynamic(ctx, 30, 2);
-                if (nk_true == nk_option_label(ctx, "easy", nk_bool(op == 0))) op = 0;
-                if (nk_true == nk_option_label(ctx, "hard", nk_bool(op == 1))) op = 1;
+                if (nk_true == nk_option_label(ctx, "easy", nk_bool(op == .Easy))) op = .Easy;
+                if (nk_true == nk_option_label(ctx, "hard", nk_bool(op == .Hard))) op = .Hard;
                 nk_layout_row_dynamic(ctx, 25, 1);
                 nk_property_int(ctx, "Compression:", 0, &property, 100, 10, 1);
         }

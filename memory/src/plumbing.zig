@@ -51,7 +51,7 @@ const GlPlumbing = struct {
     fn init() GlPlumbing {
         var prog = glCreateProgram();
 
-        var status: GLint = undefined;
+        var status: GLint = 0;
         const vertex_shader: [*c]const GLchar =
             \\ #version 100
             \\ uniform mat4 ProjMtx;
@@ -176,7 +176,7 @@ const NkPlumbing = struct {
             glBindTexture(GL_TEXTURE_2D, gl.font_tex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, @intCast(GLsizei, width), @intCast(GLsizei, height), 0,
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, @as(GLsizei, width), @as(GLsizei, height), 0,
                          GL_RGBA, GL_UNSIGNED_BYTE, image);
             nk_font_atlas_end(&atlas, nk_handle_id(@intCast(c_int, gl.font_tex)), &null_texture);
             if (atlas.default_font != null) {
@@ -292,19 +292,19 @@ pub const Plumbing = struct {
                 } else if (sym == SDLK_PAGEUP) {
                     nk_input_key(ctx, .NK_KEY_SCROLL_UP, down);
                 } else if (sym == SDLK_z) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_UNDO, down & @intCast(c_int, state[SDL_SCANCODE_LCTRL]));
+                    nk_input_key(ctx, .NK_KEY_TEXT_UNDO, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
                 } else if (sym == SDLK_r) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_REDO, down & @intCast(c_int, state[SDL_SCANCODE_LCTRL]));
+                    nk_input_key(ctx, .NK_KEY_TEXT_REDO, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
                 } else if (sym == SDLK_c) {
-                    nk_input_key(ctx, .NK_KEY_COPY, down & @intCast(c_int, state[SDL_SCANCODE_LCTRL]));
+                    nk_input_key(ctx, .NK_KEY_COPY, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
                 } else if (sym == SDLK_v) {
-                    nk_input_key(ctx, .NK_KEY_PASTE, down & @intCast(c_int, state[SDL_SCANCODE_LCTRL]));
+                    nk_input_key(ctx, .NK_KEY_PASTE, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
                 } else if (sym == SDLK_x) {
-                    nk_input_key(ctx, .NK_KEY_CUT, down & @intCast(c_int, state[SDL_SCANCODE_LCTRL]));
+                    nk_input_key(ctx, .NK_KEY_CUT, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
                 } else if (sym == SDLK_b) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_LINE_START, down & @intCast(c_int, state[SDL_SCANCODE_LCTRL]));
+                    nk_input_key(ctx, .NK_KEY_TEXT_LINE_START, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
                 } else if (sym == SDLK_e) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_LINE_END, down & @intCast(c_int, state[SDL_SCANCODE_LCTRL]));
+                    nk_input_key(ctx, .NK_KEY_TEXT_LINE_END, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
                 } else if (sym == SDLK_UP) {
                     nk_input_key(ctx, .NK_KEY_UP, down);
                 } else if (sym == SDLK_DOWN) {
@@ -325,8 +325,8 @@ pub const Plumbing = struct {
             } else if (evt.@"type" == SDL_MOUSEBUTTONDOWN or evt.@"type" == SDL_MOUSEBUTTONUP) {
                 // mouse button
                 const down: c_int = if (evt.@"type" == SDL_MOUSEBUTTONDOWN) 1 else 0;
-                const x: c_int = @intCast(c_int, evt.button.x);
-                const y: c_int = @intCast(c_int, evt.button.y);
+                const x: c_int = @as(c_int, evt.button.x);
+                const y: c_int = @as(c_int, evt.button.y);
                 if (evt.button.button == SDL_BUTTON_LEFT) {
                     if (evt.button.clicks > 1) {
                         nk_input_button(ctx, .NK_BUTTON_DOUBLE, x, y, down);
@@ -389,7 +389,7 @@ pub const Plumbing = struct {
         var scale: struct_nk_vec2 = .{
             .x = @intToFloat(f32, display_width) / @intToFloat(f32, width),
             .y = @intToFloat(f32, display_height) / @intToFloat(f32, height),
-            .dummy = @splat(16, @intCast(u8, 0)),
+            .dummy = @splat(16, @as(u8, 0)),
         };
 
         // setup global state
@@ -424,8 +424,8 @@ pub const Plumbing = struct {
         // load vertices/elements directly into vertex/element buffer
         var vertices: *c_void = undefined;
         var elements: *c_void = undefined;
-        vertices = malloc(@intCast(usize, max_vertex_memory));
-        elements = malloc(@intCast(usize, max_element_memory));
+        vertices = malloc(@as(usize, max_vertex_memory));
+        elements = malloc(@as(usize, max_element_memory));
 
         // fill convert configuration
         var config: nk_convert_config = undefined;
@@ -467,12 +467,12 @@ pub const Plumbing = struct {
         // setup buffers to load vertices and elements
         var vbuf: nk_buffer = undefined;
         var ebuf: nk_buffer = undefined;
-        nk_buffer_init_fixed(&vbuf, vertices, @intCast(nk_size, max_vertex_memory));
-        nk_buffer_init_fixed(&ebuf, elements, @intCast(nk_size, max_element_memory));
+        nk_buffer_init_fixed(&vbuf, vertices, @as(nk_size, max_vertex_memory));
+        nk_buffer_init_fixed(&ebuf, elements, @as(nk_size, max_element_memory));
         _ = nk_convert(&self.nk.ctx, &self.nk.cmds, &vbuf, &ebuf, &config);
 
-        glBufferSubData(GL_ARRAY_BUFFER, 0, @intCast(c_long, max_vertex_memory), vertices);
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, @intCast(c_long, max_element_memory), elements);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, @as(c_long, max_vertex_memory), vertices);
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, @as(c_long, max_element_memory), elements);
         free(vertices);
         free(elements);
 
