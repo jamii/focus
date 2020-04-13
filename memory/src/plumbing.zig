@@ -264,96 +264,93 @@ pub const Plumbing = struct {
         nk_input_begin(ctx);
         var evt: SDL_Event = undefined;
         while (nk_true == SDL_PollEvent(&evt)) {
-            if (evt.type == SDL_QUIT) {
-                is_running.* = false;
-            } else if (evt.@"type" == SDL_KEYUP or evt.@"type" == SDL_KEYDOWN) {
-                // key events
-                const down: c_int = if (evt.@"type" == SDL_KEYDOWN) 1 else 0;
-                const state: [*c]const u8 = SDL_GetKeyboardState(0);
-                const sym: SDL_Keycode = evt.key.keysym.sym;
-                if (sym == SDLK_RSHIFT or sym == SDLK_LSHIFT) {
-                    nk_input_key(ctx, .NK_KEY_SHIFT, down);
-                } else if (sym == SDLK_DELETE) {
-                    nk_input_key(ctx, .NK_KEY_DEL, down);
-                } else if (sym == SDLK_RETURN) {
-                    nk_input_key(ctx, .NK_KEY_ENTER, down);
-                } else if (sym == SDLK_TAB) {
-                    nk_input_key(ctx, .NK_KEY_TAB, down);
-                } else if (sym == SDLK_BACKSPACE) {
-                    nk_input_key(ctx, .NK_KEY_BACKSPACE, down);
-                } else if (sym == SDLK_HOME) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_START, down);
-                    nk_input_key(ctx, .NK_KEY_SCROLL_START, down);
-                } else if (sym == SDLK_END) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_END, down);
-                    nk_input_key(ctx, .NK_KEY_SCROLL_END, down);
-                } else if (sym == SDLK_PAGEDOWN) {
-                    nk_input_key(ctx, .NK_KEY_SCROLL_DOWN, down);
-                } else if (sym == SDLK_PAGEUP) {
-                    nk_input_key(ctx, .NK_KEY_SCROLL_UP, down);
-                } else if (sym == SDLK_z) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_UNDO, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
-                } else if (sym == SDLK_r) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_REDO, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
-                } else if (sym == SDLK_c) {
-                    nk_input_key(ctx, .NK_KEY_COPY, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
-                } else if (sym == SDLK_v) {
-                    nk_input_key(ctx, .NK_KEY_PASTE, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
-                } else if (sym == SDLK_x) {
-                    nk_input_key(ctx, .NK_KEY_CUT, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
-                } else if (sym == SDLK_b) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_LINE_START, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
-                } else if (sym == SDLK_e) {
-                    nk_input_key(ctx, .NK_KEY_TEXT_LINE_END, down & @as(c_int, state[SDL_SCANCODE_LCTRL]));
-                } else if (sym == SDLK_UP) {
-                    nk_input_key(ctx, .NK_KEY_UP, down);
-                } else if (sym == SDLK_DOWN) {
-                    nk_input_key(ctx, .NK_KEY_DOWN, down);
-                } else if (sym == SDLK_LEFT) {
-                    if (state[SDL_SCANCODE_LCTRL] != 0) {
-                        nk_input_key(ctx, .NK_KEY_TEXT_WORD_LEFT, down);
+            switch (evt.type) {
+                SDL_QUIT => {
+                    is_running.* = false;
+                },
+                SDL_KEYUP, SDL_KEYDOWN => {
+                    const down: c_int = if (evt.@"type" == SDL_KEYDOWN) 1 else 0;
+                    const state: [*c]const u8 = SDL_GetKeyboardState(0);
+                    switch (evt.key.keysym.sym) {
+                        SDLK_RSHIFT, SDLK_LSHIFT => nk_input_key(ctx, .NK_KEY_SHIFT, down),
+                        SDLK_DELETE => nk_input_key(ctx, .NK_KEY_DEL, down),
+                        SDLK_RETURN => nk_input_key(ctx, .NK_KEY_ENTER, down),
+                        SDLK_TAB => nk_input_key(ctx, .NK_KEY_TAB, down),
+                        SDLK_BACKSPACE => nk_input_key(ctx, .NK_KEY_BACKSPACE, down),
+                        SDLK_HOME => {
+                            nk_input_key(ctx, .NK_KEY_TEXT_START, down);
+                            nk_input_key(ctx, .NK_KEY_SCROLL_START, down);
+                        },
+                        SDLK_END => {
+                            nk_input_key(ctx, .NK_KEY_TEXT_END, down);
+                            nk_input_key(ctx, .NK_KEY_SCROLL_END, down);
+                        },
+                        SDLK_PAGEDOWN => nk_input_key(ctx, .NK_KEY_SCROLL_DOWN, down),
+                        SDLK_PAGEUP => nk_input_key(ctx, .NK_KEY_SCROLL_UP, down),
+                        SDLK_z => nk_input_key(ctx, .NK_KEY_TEXT_UNDO, down & @as(c_int, state[SDL_SCANCODE_LCTRL])),
+                        SDLK_r => nk_input_key(ctx, .NK_KEY_TEXT_REDO, down & @as(c_int, state[SDL_SCANCODE_LCTRL])),
+                        SDLK_c => nk_input_key(ctx, .NK_KEY_COPY, down & @as(c_int, state[SDL_SCANCODE_LCTRL])),
+                        SDLK_v => nk_input_key(ctx, .NK_KEY_PASTE, down & @as(c_int, state[SDL_SCANCODE_LCTRL])),
+                        SDLK_x => nk_input_key(ctx, .NK_KEY_CUT, down & @as(c_int, state[SDL_SCANCODE_LCTRL])),
+                        SDLK_b => nk_input_key(ctx, .NK_KEY_TEXT_LINE_START, down & @as(c_int, state[SDL_SCANCODE_LCTRL])),
+                        SDLK_e => nk_input_key(ctx, .NK_KEY_TEXT_LINE_END, down & @as(c_int, state[SDL_SCANCODE_LCTRL])),
+                        SDLK_UP => nk_input_key(ctx, .NK_KEY_UP, down),
+                        SDLK_DOWN => nk_input_key(ctx, .NK_KEY_DOWN, down),
+                        SDLK_LEFT => {
+                            if (state[SDL_SCANCODE_LCTRL] != 0) {
+                                nk_input_key(ctx, .NK_KEY_TEXT_WORD_LEFT, down);
+                            } else {
+                                nk_input_key(ctx, .NK_KEY_LEFT, down);
+                            }
+                        },
+                        SDLK_RIGHT => {
+                            if (state[SDL_SCANCODE_LCTRL] != 0) {
+                                nk_input_key(ctx, .NK_KEY_TEXT_WORD_RIGHT, down);
+                            } else {
+                                nk_input_key(ctx, .NK_KEY_RIGHT, down);
+                            }
+                        },
+                        else => {}
+                    }
+                },
+                SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP => {
+                    const down: c_int = if (evt.@"type" == SDL_MOUSEBUTTONDOWN) 1 else 0;
+                    const x: c_int = @as(c_int, evt.button.x);
+                    const y: c_int = @as(c_int, evt.button.y);
+                    switch (evt.button.button) {
+                        SDL_BUTTON_LEFT => {
+                            if (evt.button.clicks > 1) {
+                                nk_input_button(ctx, .NK_BUTTON_DOUBLE, x, y, down);
+                            }
+                            nk_input_button(ctx, .NK_BUTTON_LEFT, x, y, down);
+                        },
+                        SDL_BUTTON_MIDDLE => {
+                            nk_input_button(ctx, .NK_BUTTON_MIDDLE, x, y, down);
+                        },
+                        SDL_BUTTON_RIGHT => {
+                            nk_input_button(ctx, .NK_BUTTON_RIGHT, x, y, down);
+                        },
+                        else => {}
+                    }
+                },
+                SDL_MOUSEMOTION => {
+                    if (ctx.input.mouse.grabbed != 0) {
+                        const x: c_int = @floatToInt(c_int, ctx.input.mouse.prev.x);
+                        const y: c_int = @floatToInt(c_int, ctx.input.mouse.prev.y);
+                        nk_input_motion(ctx, x + evt.motion.xrel, y + evt.motion.yrel);
                     } else {
-                        nk_input_key(ctx, .NK_KEY_LEFT, down);
+                        nk_input_motion(ctx, evt.motion.x, evt.motion.y);
                     }
-                } else if (sym == SDLK_RIGHT) {
-                    if (state[SDL_SCANCODE_LCTRL] != 0) {
-                        nk_input_key(ctx, .NK_KEY_TEXT_WORD_RIGHT, down);
-                    } else {
-                        nk_input_key(ctx, .NK_KEY_RIGHT, down);
-                    }
-                }
-            } else if (evt.@"type" == SDL_MOUSEBUTTONDOWN or evt.@"type" == SDL_MOUSEBUTTONUP) {
-                // mouse button
-                const down: c_int = if (evt.@"type" == SDL_MOUSEBUTTONDOWN) 1 else 0;
-                const x: c_int = @as(c_int, evt.button.x);
-                const y: c_int = @as(c_int, evt.button.y);
-                if (evt.button.button == SDL_BUTTON_LEFT) {
-                    if (evt.button.clicks > 1) {
-                        nk_input_button(ctx, .NK_BUTTON_DOUBLE, x, y, down);
-                    }
-                    nk_input_button(ctx, .NK_BUTTON_LEFT, x, y, down);
-                } else if (evt.button.button == SDL_BUTTON_MIDDLE) {
-                    nk_input_button(ctx, .NK_BUTTON_MIDDLE, x, y, down);
-                } else if (evt.button.button == SDL_BUTTON_RIGHT) {
-                    nk_input_button(ctx, .NK_BUTTON_RIGHT, x, y, down);
-                }
-            } else if (evt.@"type" == SDL_MOUSEMOTION) {
-                // mouse motion
-                if (ctx.input.mouse.grabbed != 0) {
-                    const x: c_int = @floatToInt(c_int, ctx.input.mouse.prev.x);
-                    const y: c_int = @floatToInt(c_int, ctx.input.mouse.prev.y);
-                    nk_input_motion(ctx, x + evt.motion.xrel, y + evt.motion.yrel);
-                } else {
-                    nk_input_motion(ctx, evt.motion.x, evt.motion.y);
-                }
-            } else if (evt.@"type" == SDL_TEXTINPUT) {
-                // text input
-                var glyph: nk_glyph = undefined;
-                _ = memcpy(&glyph, &evt.text.text, NK_UTF_SIZE);
-                nk_input_glyph(ctx, &glyph);
-            } else if (evt.@"type" == SDL_MOUSEWHEEL) {
-                // mouse wheel
-                nk_input_scroll(ctx, nk_vec2(@intToFloat(f32, evt.wheel.x), @intToFloat(f32, evt.wheel.y)));
+                },
+                SDL_TEXTINPUT => {
+                    var glyph: nk_glyph = undefined;
+                    _ = memcpy(&glyph, &evt.text.text, NK_UTF_SIZE);
+                    nk_input_glyph(ctx, &glyph);
+                },
+                SDL_MOUSEWHEEL => {
+                    nk_input_scroll(ctx, nk_vec2(@intToFloat(f32, evt.wheel.x), @intToFloat(f32, evt.wheel.y)));
+                },
+                else => {},
             }
         }
         nk_input_end(ctx);
