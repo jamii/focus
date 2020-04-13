@@ -19,10 +19,8 @@ pub usingnamespace @cImport({
     @cDefine("NK_INCLUDE_FONT_BAKING", {});
     @cDefine("NK_INCLUDE_DEFAULT_FONT", {});
     @cInclude("nuklear.h");
-    // @cDefine("NK_SDL_GLES2_IMPLEMENTATION", {});
-    // @cInclude("nuklear_sdl_gles2.h");
 });
-usingnamespace @import("nk_sdl_gles2.zig");
+// usingnamespace @import("nk_sdl_gles2.zig");
 
 
 const window_width = 800;
