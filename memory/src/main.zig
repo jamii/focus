@@ -85,9 +85,7 @@ fn main_loop(win: *SDL_Window, ctx: *nk_context) void {
     nk_input_end(ctx);
 
     // gui
-    if (nk_true == nk_begin(ctx, "Demo", nk_rect(50, 50, 200, 200),
-                 NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
-                     NK_WINDOW_CLOSABLE|NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE))
+    if (nk_true == nk_begin(ctx, "Demo", nk_rect(0, 0, window_width, window_height), 0))
         {
             nk_menubar_begin(ctx);
             nk_layout_row_begin(ctx, .NK_STATIC, 25, 2);
