@@ -9,19 +9,15 @@ const SdlPlumbing = struct {
 
     fn init() SdlPlumbing {
         _ = SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
-        _ = SDL_GL_SetAttribute (.SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-        _ = SDL_GL_SetAttribute (.SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        _ = SDL_GL_SetAttribute(.SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+        _ = SDL_GL_SetAttribute(.SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
         _ = SDL_GL_SetAttribute(.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
         _ = SDL_GL_SetAttribute(.SDL_GL_CONTEXT_MINOR_VERSION, 3);
         _ = SDL_GL_SetAttribute(.SDL_GL_DOUBLEBUFFER, 1);
-        const win = SDL_CreateWindow(
-            "Demo",
-            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-            window_width, window_height, SDL_WINDOW_OPENGL|SDL_WINDOW_SHOWN|SDL_WINDOW_ALLOW_HIGHDPI
-        ).?;
+        const win = SDL_CreateWindow("Demo", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, window_width, window_height, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI).?;
         const ctx = SDL_GL_CreateContext(win);
         glViewport(0, 0, window_width, window_height);
-        return SdlPlumbing{.win = win, .ctx = ctx};
+        return SdlPlumbing{ .win = win, .ctx = ctx };
     }
 
     fn deinit(self: *SdlPlumbing) void {
@@ -113,7 +109,7 @@ const GlPlumbing = struct {
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
-        return GlPlumbing {
+        return GlPlumbing{
             .vbo = vbo,
             .ebo = ebo,
             .prog = prog,
@@ -176,8 +172,7 @@ const NkPlumbing = struct {
             glBindTexture(GL_TEXTURE_2D, gl.font_tex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, @as(GLsizei, width), @as(GLsizei, height), 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, image);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, @as(GLsizei, width), @as(GLsizei, height), 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
             nk_font_atlas_end(&atlas, nk_handle_id(@intCast(c_int, gl.font_tex)), &null_texture);
             if (atlas.default_font != null) {
                 nk_style_set_font(&ctx, &atlas.default_font.*.handle);
@@ -189,7 +184,7 @@ const NkPlumbing = struct {
             var table: [NK_COLOR_COUNT]nk_color = undefined;
             var i: usize = 0;
             while (i < NK_COLOR_COUNT) : (i += 1) {
-                table[i] = nk_rgba(0,0,0,0);
+                table[i] = nk_rgba(0, 0, 0, 0);
             }
             table[NK_COLOR_TEXT] = nk_rgba(190, 190, 190, 255);
             table[NK_COLOR_WINDOW] = nk_rgba(30, 33, 40, 215);
@@ -213,7 +208,7 @@ const NkPlumbing = struct {
             table[NK_COLOR_COMBO] = nk_rgba(51, 55, 67, 255);
             table[NK_COLOR_CHART] = nk_rgba(51, 55, 67, 255);
             table[NK_COLOR_CHART_COLOR] = nk_rgba(170, 40, 60, 255);
-            table[NK_COLOR_CHART_COLOR_HIGHLIGHT] = nk_rgba( 255, 0, 0, 255);
+            table[NK_COLOR_CHART_COLOR_HIGHLIGHT] = nk_rgba(255, 0, 0, 255);
             table[NK_COLOR_SCROLLBAR] = nk_rgba(30, 33, 40, 255);
             table[NK_COLOR_SCROLLBAR_CURSOR] = nk_rgba(64, 84, 95, 255);
             table[NK_COLOR_SCROLLBAR_CURSOR_HOVER] = nk_rgba(70, 90, 100, 255);
@@ -246,7 +241,7 @@ pub const Plumbing = struct {
         const sdl = SdlPlumbing.init();
         const gl = GlPlumbing.init();
         const nk = NkPlumbing.init(&gl, &sdl);
-        return Plumbing {
+        return Plumbing{
             .sdl = sdl,
             .gl = gl,
             .nk = nk,
@@ -310,7 +305,7 @@ pub const Plumbing = struct {
                                 nk_input_key(ctx, .NK_KEY_RIGHT, down);
                             }
                         },
-                        else => {}
+                        else => {},
                     }
                 },
                 SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP => {
@@ -330,7 +325,7 @@ pub const Plumbing = struct {
                         SDL_BUTTON_RIGHT => {
                             nk_input_button(ctx, .NK_BUTTON_RIGHT, x, y, down);
                         },
-                        else => {}
+                        else => {},
                     }
                 },
                 SDL_MOUSEMOTION => {
@@ -359,8 +354,8 @@ pub const Plumbing = struct {
     pub fn draw(self: *Plumbing) void {
 
         // background
-        var bg: [4]f32 = .{0, 0, 0, 0};
-        nk_color_fv(&bg, nk_rgb(28,48,62));
+        var bg: [4]f32 = .{ 0, 0, 0, 0 };
+        nk_color_fv(&bg, nk_rgb(28, 48, 62));
         var win_width: c_int = undefined;
         var win_height: c_int = undefined;
         SDL_GetWindowSize(self.sdl.win, &win_width, &win_height);
@@ -376,10 +371,10 @@ pub const Plumbing = struct {
         var display_height: c_int = undefined;
         SDL_GL_GetDrawableSize(self.sdl.win, &display_width, &display_height);
         var ortho: [4][4]GLfloat = .{
-            .{2.0, 0.0, 0.0, 0.0},
-            .{0.0,-2.0, 0.0, 0.0},
-            .{0.0, 0.0,-1.0, 0.0},
-            .{-1.0,1.0, 0.0, 1.0},
+            .{ 2.0, 0.0, 0.0, 0.0 },
+            .{ 0.0, -2.0, 0.0, 0.0 },
+            .{ 0.0, 0.0, -1.0, 0.0 },
+            .{ -1.0, 1.0, 0.0, 1.0 },
         };
         ortho[0][0] /= @intToFloat(GLfloat, width);
         ortho[1][1] /= @intToFloat(GLfloat, height);
@@ -390,7 +385,7 @@ pub const Plumbing = struct {
         };
 
         // setup global state
-        glViewport(0,0,display_width,display_height);
+        glViewport(0, 0, display_width, display_height);
         glEnable(GL_BLEND);
         glBlendEquation(GL_FUNC_ADD);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -447,7 +442,7 @@ pub const Plumbing = struct {
                 .attribute = .NK_VERTEX_ATTRIBUTE_COUNT,
                 .format = .NK_FORMAT_COUNT,
                 .offset = 0,
-            }
+            },
         };
         _ = memset(&config, 0, @sizeOf(nk_convert_config));
         config.vertex_layout = &vertex_layout;
@@ -479,12 +474,7 @@ pub const Plumbing = struct {
         while (cmd != 0) : (cmd = nk__draw_next(cmd, &self.nk.cmds, &self.nk.ctx)) {
             if (cmd.*.elem_count == 0) continue;
             glBindTexture(GL_TEXTURE_2D, @intCast(GLuint, cmd.*.texture.id));
-            glScissor(
-                @floatToInt(GLint, cmd.*.clip_rect.x * scale.x),
-                @floatToInt(GLint, (@intToFloat(f32, height) - (cmd.*.clip_rect.y + cmd.*.clip_rect.h)) * scale.y),
-                @floatToInt(GLint, (cmd.*.clip_rect.w * scale.x)),
-                @floatToInt(GLint, (cmd.*.clip_rect.h * scale.y))
-            );
+            glScissor(@floatToInt(GLint, cmd.*.clip_rect.x * scale.x), @floatToInt(GLint, (@intToFloat(f32, height) - (cmd.*.clip_rect.y + cmd.*.clip_rect.h)) * scale.y), @floatToInt(GLint, (cmd.*.clip_rect.w * scale.x)), @floatToInt(GLint, (cmd.*.clip_rect.h * scale.y)));
             glDrawElements(GL_TRIANGLES, @intCast(GLsizei, cmd.*.elem_count), GL_UNSIGNED_SHORT, offset);
             offset += cmd.*.elem_count;
         }
@@ -502,7 +492,7 @@ pub const Plumbing = struct {
 };
 
 export fn clipboard_paste(usr: nk_handle, edit: [*c]nk_text_edit) void {
-    const text: [*c]const u8= SDL_GetClipboardText();
+    const text: [*c]const u8 = SDL_GetClipboardText();
     if (text != null) {
         _ = nk_textedit_paste(edit, text, nk_strlen(text));
     }
@@ -510,7 +500,7 @@ export fn clipboard_paste(usr: nk_handle, edit: [*c]nk_text_edit) void {
 
 export fn clipboard_copy(usr: nk_handle, text: [*c]const u8, len: c_int) void {
     if (len == 0) return;
-    var str: [*c]u8 = @ptrCast([*c]u8, malloc(@intCast(usize, len+1)));
+    var str: [*c]u8 = @ptrCast([*c]u8, malloc(@intCast(usize, len + 1)));
     if (str == null) return;
     defer free(str);
     _ = memcpy(str, text, @intCast(usize, len));
