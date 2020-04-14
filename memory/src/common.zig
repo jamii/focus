@@ -17,6 +17,3 @@ pub const std = @import("std");
 pub const warn = std.debug.warn;
 pub const assert = std.debug.assert;
 pub const Allocator = std.mem.Allocator;
-
-pub const window_width = 800;
-pub const window_height = 600;

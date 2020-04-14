@@ -1,12 +1,15 @@
 usingnamespace @import("common.zig");
 const Plumbing = @import("plumbing.zig").Plumbing;
 
+pub const screen_height = 1440;
+pub const screen_width = 720;
+
 pub fn main() anyerror!void {
     const Op = enum { Easy, Hard };
     var op: Op = .Easy;
     var property: c_int = 20;
 
-    var plumbing = Plumbing.init();
+    var plumbing = Plumbing.init(screen_height, screen_width);
     defer plumbing.deinit();
 
     var is_running = true;
@@ -14,7 +17,7 @@ pub fn main() anyerror!void {
         plumbing.handle_input(&is_running);
 
         var ctx = &plumbing.nk.ctx;
-        if (nk_true == nk_begin(ctx, "Demo", nk_rect(0, 0, window_width, window_height), 0)) {
+        if (nk_true == nk_begin(ctx, "Demo", nk_rect(0, 0, screen_width, screen_height), 0)) {
             nk_menubar_begin(ctx);
             nk_layout_row_begin(ctx, .NK_STATIC, 25, 2);
             nk_layout_row_push(ctx, 45);
@@ -46,7 +49,7 @@ pub fn main() anyerror!void {
         }
         nk_end(ctx);
 
-        plumbing.draw();
+        plumbing.draw(0.55);
     }
 
     warn("fin\n", .{});

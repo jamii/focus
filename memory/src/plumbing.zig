@@ -7,14 +7,14 @@ const SdlPlumbing = struct {
     win: *SDL_Window,
     ctx: SDL_GLContext,
 
-    fn init() SdlPlumbing {
+    fn init(window_width: c_int, window_height: c_int) SdlPlumbing {
         _ = SDL_SetHint(SDL_HINT_VIDEO_HIGHDPI_DISABLED, "0");
         _ = SDL_GL_SetAttribute(.SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
         _ = SDL_GL_SetAttribute(.SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
         _ = SDL_GL_SetAttribute(.SDL_GL_CONTEXT_MAJOR_VERSION, 3);
         _ = SDL_GL_SetAttribute(.SDL_GL_CONTEXT_MINOR_VERSION, 3);
         _ = SDL_GL_SetAttribute(.SDL_GL_DOUBLEBUFFER, 1);
-        const win = SDL_CreateWindow("Demo", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, window_width, window_height, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI).?;
+        const win = SDL_CreateWindow("Demo", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, window_width, window_height, SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE).?;
         const ctx = SDL_GL_CreateContext(win);
         glViewport(0, 0, window_width, window_height);
         return SdlPlumbing{ .win = win, .ctx = ctx };
@@ -237,8 +237,8 @@ pub const Plumbing = struct {
     gl: GlPlumbing,
     nk: NkPlumbing,
 
-    pub fn init() Plumbing {
-        const sdl = SdlPlumbing.init();
+    pub fn init(window_width: c_int, window_height: c_int) Plumbing {
+        const sdl = SdlPlumbing.init(window_width, window_height);
         const gl = GlPlumbing.init();
         const nk = NkPlumbing.init(&gl, &sdl);
         return Plumbing{
@@ -351,7 +351,7 @@ pub const Plumbing = struct {
         nk_input_end(ctx);
     }
 
-    pub fn draw(self: *Plumbing) void {
+    pub fn draw(self: *Plumbing, scaling_factor: GLfloat) void {
 
         // background
         var bg: [4]f32 = .{ 0, 0, 0, 0 };
@@ -376,8 +376,8 @@ pub const Plumbing = struct {
             .{ 0.0, 0.0, -1.0, 0.0 },
             .{ -1.0, 1.0, 0.0, 1.0 },
         };
-        ortho[0][0] /= @intToFloat(GLfloat, width);
-        ortho[1][1] /= @intToFloat(GLfloat, height);
+        ortho[0][0] /= @intToFloat(GLfloat, width) / scaling_factor;
+        ortho[1][1] /= @intToFloat(GLfloat, height) / scaling_factor;
         var scale: struct_nk_vec2 = .{
             .x = @intToFloat(f32, display_width) / @intToFloat(f32, width),
             .y = @intToFloat(f32, display_height) / @intToFloat(f32, height),
