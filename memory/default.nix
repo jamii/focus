@@ -4,8 +4,6 @@ let
 
   pkgs = import <nixpkgs> {};
 
-  # crossPkgs = import <nixpkgs> {crossSystem = pkgs.lib.systems.examples.aarch64-multiplatform;};
-
   hostPkgs = import <nixpkgs> {
     system = "aarch64-linux";
   };
@@ -15,7 +13,6 @@ let
       inherit (hostPkgs)
         mesa
         libGL
-        libGLU
         SDL2
       ;
     })];
@@ -29,7 +26,6 @@ pkgs.stdenv.mkDerivation rec {
   buildInputs = let
     inputs = pkgs: [
       pkgs.libGL.all
-      pkgs.libGLU.all
       pkgs.SDL2.all
       # zig # tracking master instead
     ];
