@@ -1,11 +1,155 @@
 usingnamespace @import("common.zig");
 
-pub const ATLAS_WHITE = MU_ICON_MAX;
-pub const ATLAS_FONT = ATLAS_WHITE + 1;
-pub const ATLAS_WIDTH = 128;
-pub const ATLAS_HEIGHT = 128;
+pub const width = 128;
+pub const height = 128;
 
-pub const atlas_texture: [ATLAS_WIDTH * ATLAS_HEIGHT]u8 = [_]u8{
+pub fn text_width(text: []const u8, len: usize) usize {
+    var width: usize = 0;
+    for (text) |p| {
+        const chr: u8 = std.math.min(p, 127);
+        width += chars[chr].w;
+    }
+    return width;
+}
+
+pub fn text_height() usize {
+    return 18;
+}
+
+pub const white = Rect{ .x=125, .y=68, .w=3, .h=3 };
+
+pub const chars = [128]Rect{
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    .{ .x=84, .y=68, .w=2, .h=17 },
+    .{ .x=39, .y=68, .w=3, .h=17 },
+    .{ .x=114, .y=51, .w=5, .h=17 },
+    .{ .x=34, .y=17, .w=7, .h=17 },
+    .{ .x=28, .y=34, .w=6, .h=17 },
+    .{ .x=58, .y=0, .w=9, .h=17 },
+    .{ .x=103, .y=0, .w=8, .h=17 },
+    .{ .x=86, .y=68, .w=2, .h=17 },
+    .{ .x=42, .y=68, .w=3, .h=17 },
+    .{ .x=45, .y=68, .w=3, .h=17 },
+    .{ .x=34, .y=34, .w=6, .h=17 },
+    .{ .x=40, .y=34, .w=6, .h=17 },
+    .{ .x=48, .y=68, .w=3, .h=17 },
+    .{ .x=51, .y=68, .w=3, .h=17 },
+    .{ .x=54, .y=68, .w=3, .h=17 },
+    .{ .x=124, .y=34, .w=4, .h=17 },
+    .{ .x=46, .y=34, .w=6, .h=17 },
+    .{ .x=52, .y=34, .w=6, .h=17 },
+    .{ .x=58, .y=34, .w=6, .h=17 },
+    .{ .x=64, .y=34, .w=6, .h=17 },
+    .{ .x=70, .y=34, .w=6, .h=17 },
+    .{ .x=76, .y=34, .w=6, .h=17 },
+    .{ .x=82, .y=34, .w=6, .h=17 },
+    .{ .x=88, .y=34, .w=6, .h=17 },
+    .{ .x=94, .y=34, .w=6, .h=17 },
+    .{ .x=100, .y=34, .w=6, .h=17 },
+    .{ .x=57, .y=68, .w=3, .h=17 },
+    .{ .x=60, .y=68, .w=3, .h=17 },
+    .{ .x=106, .y=34, .w=6, .h=17 },
+    .{ .x=112, .y=34, .w=6, .h=17 },
+    .{ .x=118, .y=34, .w=6, .h=17 },
+    .{ .x=119, .y=51, .w=5, .h=17 },
+    .{ .x=18, .y=0, .w=10, .h=17 },
+    .{ .x=41, .y=17, .w=7, .h=17 },
+    .{ .x=48, .y=17, .w=7, .h=17 },
+    .{ .x=55, .y=17, .w=7, .h=17 },
+    .{ .x=111, .y=0, .w=8, .h=17 },
+    .{ .x=0, .y=35, .w=6, .h=17 },
+    .{ .x=6, .y=35, .w=6, .h=17 },
+    .{ .x=119, .y=0, .w=8, .h=17 },
+    .{ .x=18, .y=17, .w=8, .h=17 },
+    .{ .x=63, .y=68, .w=3, .h=17 },
+    .{ .x=66, .y=68, .w=3, .h=17 },
+    .{ .x=62, .y=17, .w=7, .h=17 },
+    .{ .x=12, .y=51, .w=6, .h=17 },
+    .{ .x=28, .y=0, .w=10, .h=17 },
+    .{ .x=67, .y=0, .w=9, .h=17 },
+    .{ .x=76, .y=0, .w=9, .h=17 },
+    .{ .x=69, .y=17, .w=7, .h=17 },
+    .{ .x=85, .y=0, .w=9, .h=17 },
+    .{ .x=76, .y=17, .w=7, .h=17 },
+    .{ .x=18, .y=51, .w=6, .h=17 },
+    .{ .x=24, .y=51, .w=6, .h=17 },
+    .{ .x=26, .y=17, .w=8, .h=17 },
+    .{ .x=83, .y=17, .w=7, .h=17 },
+    .{ .x=38, .y=0, .w=10, .h=17 },
+    .{ .x=90, .y=17, .w=7, .h=17 },
+    .{ .x=30, .y=51, .w=6, .h=17 },
+    .{ .x=36, .y=51, .w=6, .h=17 },
+    .{ .x=69, .y=68, .w=3, .h=17 },
+    .{ .x=124, .y=51, .w=4, .h=17 },
+    .{ .x=72, .y=68, .w=3, .h=17 },
+    .{ .x=42, .y=51, .w=6, .h=17 },
+    .{ .x=15, .y=68, .w=4, .h=17 },
+    .{ .x=48, .y=51, .w=6, .h=17 },
+    .{ .x=54, .y=51, .w=6, .h=17 },
+    .{ .x=97, .y=17, .w=7, .h=17 },
+    .{ .x=0, .y=52, .w=5, .h=17 },
+    .{ .x=104, .y=17, .w=7, .h=17 },
+    .{ .x=60, .y=51, .w=6, .h=17 },
+    .{ .x=19, .y=68, .w=4, .h=17 },
+    .{ .x=66, .y=51, .w=6, .h=17 },
+    .{ .x=111, .y=17, .w=7, .h=17 },
+    .{ .x=75, .y=68, .w=3, .h=17 },
+    .{ .x=78, .y=68, .w=3, .h=17 },
+    .{ .x=72, .y=51, .w=6, .h=17 },
+    .{ .x=81, .y=68, .w=3, .h=17 },
+    .{ .x=48, .y=0, .w=10, .h=17 },
+    .{ .x=118, .y=17, .w=7, .h=17 },
+    .{ .x=0, .y=18, .w=7, .h=17 },
+    .{ .x=7, .y=18, .w=7, .h=17 },
+    .{ .x=14, .y=34, .w=7, .h=17 },
+    .{ .x=23, .y=68, .w=4, .h=17 },
+    .{ .x=5, .y=52, .w=5, .h=17 },
+    .{ .x=27, .y=68, .w=4, .h=17 },
+    .{ .x=21, .y=34, .w=7, .h=17 },
+    .{ .x=78, .y=51, .w=6, .h=17 },
+    .{ .x=94, .y=0, .w=9, .h=17 },
+    .{ .x=84, .y=51, .w=6, .h=17 },
+    .{ .x=90, .y=51, .w=6, .h=17 },
+    .{ .x=10, .y=68, .w=5, .h=17 },
+    .{ .x=31, .y=68, .w=4, .h=17 },
+    .{ .x=96, .y=51, .w=6, .h=17 },
+    .{ .x=35, .y=68, .w=4, .h=17 },
+    .{ .x=102, .y=51, .w=6, .h=17 },
+    .{ .x=108, .y=51, .w=6, .h=17 },
+};
+
+pub const texture = [width * height]u8{
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -1372,110 +1516,4 @@ pub const atlas_texture: [ATLAS_WIDTH * ATLAS_HEIGHT]u8 = [_]u8{
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
-};
-
-pub const atlas: [ATLAS_FONT+128]mu_Rect = atlas: {
-    var atlas_init: [ATLAS_FONT+128]mu_Rect = undefined;
-    atlas_init[ MU_ICON_CLOSE ] = .{ .x=88, .y=68, .w=16, .h=16, .dummy=undefined };
-    atlas_init[ MU_ICON_CHECK ] = .{ .x=0, .y=0, .w=18, .h=18, .dummy=undefined };
-    atlas_init[ MU_ICON_EXPANDED ] = .{ .x=118, .y=68, .w=7, .h=5, .dummy=undefined };
-    atlas_init[ MU_ICON_COLLAPSED ] = .{ .x=113, .y=68, .w=5, .h=7, .dummy=undefined };
-    atlas_init[ ATLAS_WHITE ] = .{ .x=125, .y=68, .w=3, .h=3, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+32 ] = .{ .x=84, .y=68, .w=2, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+33 ] = .{ .x=39, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+34 ] = .{ .x=114, .y=51, .w=5, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+35 ] = .{ .x=34, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+36 ] = .{ .x=28, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+37 ] = .{ .x=58, .y=0, .w=9, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+38 ] = .{ .x=103, .y=0, .w=8, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+39 ] = .{ .x=86, .y=68, .w=2, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+40 ] = .{ .x=42, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+41 ] = .{ .x=45, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+42 ] = .{ .x=34, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+43 ] = .{ .x=40, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+44 ] = .{ .x=48, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+45 ] = .{ .x=51, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+46 ] = .{ .x=54, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+47 ] = .{ .x=124, .y=34, .w=4, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+48 ] = .{ .x=46, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+49 ] = .{ .x=52, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+50 ] = .{ .x=58, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+51 ] = .{ .x=64, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+52 ] = .{ .x=70, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+53 ] = .{ .x=76, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+54 ] = .{ .x=82, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+55 ] = .{ .x=88, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+56 ] = .{ .x=94, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+57 ] = .{ .x=100, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+58 ] = .{ .x=57, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+59 ] = .{ .x=60, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+60 ] = .{ .x=106, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+61 ] = .{ .x=112, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+62 ] = .{ .x=118, .y=34, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+63 ] = .{ .x=119, .y=51, .w=5, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+64 ] = .{ .x=18, .y=0, .w=10, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+65 ] = .{ .x=41, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+66 ] = .{ .x=48, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+67 ] = .{ .x=55, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+68 ] = .{ .x=111, .y=0, .w=8, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+69 ] = .{ .x=0, .y=35, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+70 ] = .{ .x=6, .y=35, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+71 ] = .{ .x=119, .y=0, .w=8, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+72 ] = .{ .x=18, .y=17, .w=8, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+73 ] = .{ .x=63, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+74 ] = .{ .x=66, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+75 ] = .{ .x=62, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+76 ] = .{ .x=12, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+77 ] = .{ .x=28, .y=0, .w=10, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+78 ] = .{ .x=67, .y=0, .w=9, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+79 ] = .{ .x=76, .y=0, .w=9, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+80 ] = .{ .x=69, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+81 ] = .{ .x=85, .y=0, .w=9, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+82 ] = .{ .x=76, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+83 ] = .{ .x=18, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+84 ] = .{ .x=24, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+85 ] = .{ .x=26, .y=17, .w=8, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+86 ] = .{ .x=83, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+87 ] = .{ .x=38, .y=0, .w=10, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+88 ] = .{ .x=90, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+89 ] = .{ .x=30, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+90 ] = .{ .x=36, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+91 ] = .{ .x=69, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+92 ] = .{ .x=124, .y=51, .w=4, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+93 ] = .{ .x=72, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+94 ] = .{ .x=42, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+95 ] = .{ .x=15, .y=68, .w=4, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+96 ] = .{ .x=48, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+97 ] = .{ .x=54, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+98 ] = .{ .x=97, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+99 ] = .{ .x=0, .y=52, .w=5, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+100 ] = .{ .x=104, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+101 ] = .{ .x=60, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+102 ] = .{ .x=19, .y=68, .w=4, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+103 ] = .{ .x=66, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+104 ] = .{ .x=111, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+105 ] = .{ .x=75, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+106 ] = .{ .x=78, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+107 ] = .{ .x=72, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+108 ] = .{ .x=81, .y=68, .w=3, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+109 ] = .{ .x=48, .y=0, .w=10, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+110 ] = .{ .x=118, .y=17, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+111 ] = .{ .x=0, .y=18, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+112 ] = .{ .x=7, .y=18, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+113 ] = .{ .x=14, .y=34, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+114 ] = .{ .x=23, .y=68, .w=4, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+115 ] = .{ .x=5, .y=52, .w=5, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+116 ] = .{ .x=27, .y=68, .w=4, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+117 ] = .{ .x=21, .y=34, .w=7, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+118 ] = .{ .x=78, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+119 ] = .{ .x=94, .y=0, .w=9, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+120 ] = .{ .x=84, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+121 ] = .{ .x=90, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+122 ] = .{ .x=10, .y=68, .w=5, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+123 ] = .{ .x=31, .y=68, .w=4, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+124 ] = .{ .x=96, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+125 ] = .{ .x=35, .y=68, .w=4, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+126 ] = .{ .x=102, .y=51, .w=6, .h=17, .dummy=undefined };
-    atlas_init[ ATLAS_FONT+127 ] = .{ .x=108, .y=51, .w=6, .h=17, .dummy=undefined };
-    break :atlas atlas_init;
 };
