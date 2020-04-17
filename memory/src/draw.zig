@@ -101,10 +101,10 @@ fn flush() void {
 fn quad(dst: Rect, src: Rect, color: Color) void {
     if (buffer_ix == buffer_size) { flush(); }
 
-    const tx: f32 = @intToFloat(f32, src.x) / @intToFloat(f32, atlas.width);
-    const ty: f32 = @intToFloat(f32, src.y) / @intToFloat(f32, atlas.height);
-    const tw: f32 = @intToFloat(f32, src.w) / @intToFloat(f32, atlas.width);
-    const th: f32 = @intToFloat(f32, src.h) / @intToFloat(f32, atlas.height);
+    const tx = @intToFloat(f32, src.x) / @intToFloat(f32, atlas.width);
+    const ty = @intToFloat(f32, src.y) / @intToFloat(f32, atlas.height);
+    const tw = @intToFloat(f32, src.w) / @intToFloat(f32, atlas.width);
+    const th = @intToFloat(f32, src.h) / @intToFloat(f32, atlas.height);
     texture_buffer[buffer_ix] = .{
         .tl = .{.x=tx, .y=ty},
         .tr = .{.x=tx+tw, .y=ty},
@@ -112,10 +112,10 @@ fn quad(dst: Rect, src: Rect, color: Color) void {
         .br = .{.x=tx+tw, .y=ty+th},
     };
 
-    const vx: f32 = @intToFloat(f32, dst.x);
-    const vy: f32 = @intToFloat(f32, dst.y);
-    const vw: f32 = @intToFloat(f32, dst.w);
-    const vh: f32 = @intToFloat(f32, dst.h);
+    const vx = @intToFloat(f32, dst.x);
+    const vy = @intToFloat(f32, dst.y);
+    const vw = @intToFloat(f32, dst.w);
+    const vh = @intToFloat(f32, dst.h);
     vertex_buffer[buffer_ix] = .{
         .tl = .{.x=vx, .y=vy},
         .tr = .{.x=vx+vw, .y=vy},
@@ -154,8 +154,8 @@ pub fn rect(dst: Rect, color: Color) void {
 pub fn text(str: []const u8, pos: Vec2, color: Color) void {
     var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
     for (str) |p| {
-        const chr: u8 = std.math.min(p, 127);
-        const src: Rect = atlas.chars[chr];
+        const chr = std.math.min(p, 127);
+        const src = atlas.chars[chr];
         dst.w = src.w;
         dst.h = src.h;
         quad(dst, src, color);
