@@ -27,7 +27,7 @@ const buffer_size = 2^14;
 var texture_buffer = zero([buffer_size]Quad(Vec2f));
 var vertex_buffer = zero([buffer_size]Quad(Vec2f));
 var color_buffer = zero([buffer_size]Quad(Color));
-var index_buffer = zero([buffer_size * 2]Tri(u32));
+var index_buffer = zero([buffer_size][2]Tri(u32));
 
 pub const screen_width = @divTrunc(720, 2);
 pub const screen_height = @divTrunc(1440, 2);
@@ -130,17 +130,18 @@ fn quad(dst: Rect, src: Rect, color: Color) void {
         .br = color
     };
 
-    const index_ix = buffer_ix * 2;
     const vertex_ix = @intCast(u32, buffer_ix * 4);
-    index_buffer[index_ix + 0] = .{
-        .a = vertex_ix + 0,
-        .b = vertex_ix + 1,
-        .c = vertex_ix + 2,
-    };
-    index_buffer[index_ix + 1] = .{
-        .a = vertex_ix + 2,
-        .b = vertex_ix + 3,
-        .c = vertex_ix + 1,
+    index_buffer[buffer_ix] = .{
+        .{
+            .a = vertex_ix + 0,
+            .b = vertex_ix + 1,
+            .c = vertex_ix + 2,
+        },
+        .{
+            .a = vertex_ix + 2,
+            .b = vertex_ix + 3,
+            .c = vertex_ix + 1,
+        }
     };
 
     buffer_ix += 1;
