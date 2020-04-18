@@ -152,11 +152,11 @@ pub fn rect(dst: Rect, color: Color) void {
     quad(dst, atlas.white, color);
 }
 
-pub fn text(str: []const u8, pos: Vec2, color: Color) void {
+pub fn text(chars: str, pos: Vec2, color: Color) void {
     var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
-    for (str) |p| {
-        const chr = std.math.min(p, 127);
-        const src = atlas.chars[chr];
+    for (chars) |char| {
+        const ascii_char = std.math.min(char, 127);
+        const src = atlas.chars[ascii_char];
         dst.w = src.w * 2;
         dst.h = src.h * 2;
         quad(dst, src, color);

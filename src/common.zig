@@ -15,6 +15,8 @@ pub const Allocator = std.mem.Allocator;
 pub const ArenaAllocator = std.heap.ArenaAllocator;
 pub const ArrayList = std.ArrayList;
 
+pub const str = []const u8;
+
 pub fn debug_format(out_stream: var, indent: u32, thing: var) !void {
     const ti = @typeInfo(@TypeOf(thing));
     switch (ti) {

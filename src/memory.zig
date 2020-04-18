@@ -1,12 +1,37 @@
 usingnamespace @import("./common.zig");
 
-const str = []const u8;
+const Memory = struct {
+    clozes: []Cloze,
+    logs: ArrayList(Log),
+    urgency_threshold: f64,
+    queue: ArrayList(),
+    action: UIAction,
+};
 
 const Cloze = struct {
     filename: str,
     heading: str,
     text: str,
     renders: []str,
+
+    const State = struct {
+        render_ix: usize,
+        interval_ns: u64,
+        last_hit_ns: u64,
+        urgency: f64,
+    };
+};
+
+const Log = struct {
+    at_ns: u64,
+    cloze_text: str,
+    render_ix: usize,
+    event: Event,
+
+    const Event = enum {
+        Hit,
+        Miss,
+    };
 };
 
 /// List of clozes written in simple subset of markdown
