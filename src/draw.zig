@@ -156,8 +156,8 @@ pub fn text(str: []const u8, pos: Vec2, color: Color) void {
     for (str) |p| {
         const chr = std.math.min(p, 127);
         const src = atlas.chars[chr];
-        dst.w = src.w;
-        dst.h = src.h;
+        dst.w = src.w * 2;
+        dst.h = src.h * 2;
         quad(dst, src, color);
         dst.x += dst.w;
     }
