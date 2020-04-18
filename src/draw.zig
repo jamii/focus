@@ -1,4 +1,5 @@
 usingnamespace @import("common.zig");
+usingnamespace c;
 
 pub const Vec2f = packed struct {
     x: f32,
@@ -24,17 +25,17 @@ pub fn Quad(comptime t: type) type {
 }
 
 const buffer_size = 2^14;
-var texture_buffer = zero([buffer_size]Quad(Vec2f));
-var vertex_buffer = zero([buffer_size]Quad(Vec2f));
-var color_buffer = zero([buffer_size]Quad(Color));
-var index_buffer = zero([buffer_size][2]Tri(u32));
+var texture_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
+var vertex_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
+var color_buffer = std.mem.zeroes([buffer_size]Quad(Color));
+var index_buffer = std.mem.zeroes([buffer_size][2]Tri(u32));
 
 pub const screen_width = @divTrunc(720, 2);
 pub const screen_height = @divTrunc(1440, 2);
 
 var buffer_ix: usize = 0;
 
-var window: *SDL_Window = undefined;
+var window: *c.SDL_Window = undefined;
 
 pub fn init() void {
     // init SDL

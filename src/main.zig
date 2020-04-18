@@ -1,20 +1,25 @@
 usingnamespace @import("common.zig");
 
-const allocator = std.testing.allocator;
+const c_allocator = std.heap.c_allocator;
 
 const bg: Color = Color{.r=0, .g=0, .b=0, .a=255};
 
 pub fn main() anyerror!void {
     draw.init();
 
+    var arena = std.heap.ArenaAllocator.init(c_allocator);
+    defer arena.deinit();
+
+    const clozes = try memory.parse(&arena);
+
     // main loop
     while (true) {
 
         // handle SDL events
-        var e: SDL_Event = undefined;
-        while (SDL_PollEvent(&e) != 0) {
+        var e: c.SDL_Event = undefined;
+        while (c.SDL_PollEvent(&e) != 0) {
             switch (e.type) {
-                SDL_QUIT => exit(EXIT_SUCCESS),
+                c.SDL_QUIT => std.os.exit(0),
                 // SDL_MOUSEMOTION => mu_input_mousemove(ctx, e.motion.x, e.motion.y),
                 // SDL_MOUSEWHEEL => mu_input_scroll(ctx, 0, e.wheel.y * -30),
                 // SDL_TEXTINPUT => mu_input_text(ctx, &e.text.text),
