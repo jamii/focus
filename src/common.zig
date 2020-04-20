@@ -4,21 +4,85 @@ pub const c = @cImport({
     @cInclude("microui.h");
 });
 
-pub const atlas = @import("./atlas.zig");
-pub const draw = @import("./draw.zig");
-pub const memory = @import("./memory.zig");
-
 pub const std = @import("std");
 pub const warn = std.debug.warn;
 pub const assert = std.debug.assert;
+pub const panic = std.debug.panic;
 pub const Allocator = std.mem.Allocator;
 pub const ArenaAllocator = std.heap.ArenaAllocator;
 pub const ArrayList = std.ArrayList;
+pub const HashMap = std.HashMap;
 pub const AutoHashMap = std.AutoHashMap;
+
+pub fn DeepHashMap(comptime K: type, comptime V: type) type {
+    return HashMap(K, V, std.hash_map.getAutoHashStratFn(K, .DeepRecursive), struct {
+        fn eql(a: K, b: K) bool {
+            return deepEqual(K, a, b);
+        }
+    }.eql);
+}
 
 pub const str = []const u8;
 
-pub fn debug_format(out_stream: var, indent: u32, thing: var) !void {
+pub fn deepEqual(comptime T: type, a: T, b: T) bool {
+    const ti = @typeInfo(T);
+    switch (ti) {
+        .Struct => |sti| {
+            inline for (sti.fields) |fti| {
+                if (!deepEqual(fti.field_type, @field(a, fti.name), @field(b, fti.name))) {
+                    return false;
+                }
+            }
+            return true;
+        },
+        .Array => |ati| {
+            for (a) |a_elem, a_ix| {
+                if (!deepEqual(pti.child, a_elem, b[a_ix])) {
+                    return false;
+                }
+            }
+            return true;
+        },
+        .Pointer => |pti| {
+            switch (pti.size) {
+                .One => {
+                    return deepEqual(pti.child, a.*, b.*);
+                },
+                .Many => {
+                    comptime {
+                        panic("Can't deepEqual {}", T);
+                    }
+                },
+                .Slice => {
+                    if (a.len != b.len) {
+                        return false;
+                    }
+                    for (a) |a_elem, a_ix| {
+                        if (!deepEqual(pti.child, a_elem, b[a_ix])) {
+                            return false;
+                        }
+                    }
+                    return true;
+                },
+                .C => {
+                    comptime {
+                        panic("Can't deepEqual {}", T);
+                    }
+                },
+            }
+        },
+        .Int, .Float, .Bool => {
+            return a == b;
+        },
+        else => {
+            comptime {
+                panic("Can't deepEqual {}", T);
+            }
+        },
+    }
+}
+
+fn dump_inner(out_stream: var, indent: u32, thing: var) !void {
     const ti = @typeInfo(@TypeOf(thing));
     switch (ti) {
         .Struct => |sti| {
@@ -27,10 +91,11 @@ pub fn debug_format(out_stream: var, indent: u32, thing: var) !void {
             inline for (sti.fields) |field| {
                 try out_stream.writeByteNTimes(' ', indent + 4);
                 try std.fmt.format(out_stream, ".{} = ", .{field.name});
-                try debug_format(out_stream, indent + 4, @field(thing, field.name));
+                try dump_inner(out_stream, indent + 4, @field(thing, field.name));
                 try out_stream.writeAll(",\n");
             }
-            try out_stream.writeAll("}\n");
+            try out_stream.writeByteNTimes(' ', indent);
+            try out_stream.writeAll("}");
         },
         .Array => |ati| {
             if (ati.child == u8) {
@@ -39,21 +104,21 @@ pub fn debug_format(out_stream: var, indent: u32, thing: var) !void {
                 try std.fmt.format(out_stream, "[{}]{}[\n", .{ati.len, @typeName(ati.child)});
                 for (thing) |elem| {
                     try out_stream.writeByteNTimes(' ', indent + 4);
-                    try debug_format(out_stream, indent + 4, elem);
+                    try dump_inner(out_stream, indent + 4, elem);
                     try out_stream.writeAll(",\n");
                 }
-                try out_stream.writeAll("]\n");
+                try out_stream.writeByteNTimes(' ', indent);
+                try out_stream.writeAll("]");
             }
         },
         .Pointer => |pti| {
             switch (pti.size) {
                 .One => {
                     // TODO print '&'
-                    try debug_format(out_stream, indent, thing.*);
+                    try dump_inner(out_stream, indent, thing.*);
                 },
                 .Many => {
                     // bail
-                    try out_stream.writeByteNTimes(' ', indent);
                     try std.fmt.format(out_stream, "{}", .{thing});
                 },
                 .Slice => {
@@ -63,49 +128,30 @@ pub fn debug_format(out_stream: var, indent: u32, thing: var) !void {
                         try std.fmt.format(out_stream, "[]{}[\n", .{@typeName(pti.child)});
                         for (thing) |elem| {
                             try out_stream.writeByteNTimes(' ', indent + 4);
-                            try debug_format(out_stream, indent + 4, elem);
+                            try dump_inner(out_stream, indent + 4, elem);
                             try out_stream.writeAll(",\n");
                         }
-                        try out_stream.writeAll("]\n");
+                        try out_stream.writeByteNTimes(' ', indent);
+                        try out_stream.writeAll("]");
                     }
                 },
                 .C => {
                     // bail
-                    try out_stream.writeByteNTimes(' ', indent);
                     try std.fmt.format(out_stream, "{}", .{thing});
                 },
             }
         },
         else => {
             // bail
-            try out_stream.writeByteNTimes(' ', indent);
             try std.fmt.format(out_stream, "{}", .{thing});
         },
     }
 }
 
-pub fn d(thing: var) void {
+pub fn dump(thing: var) void {
     const held = std.debug.getStderrMutex().acquire();
     defer held.release();
     const my_stderr = std.debug.getStderrStream();
-    noasync debug_format(my_stderr.*, 0, thing) catch return;
+    dump_inner(my_stderr.*, 0, thing) catch return;
+    my_stderr.writeAll("\n") catch return;
 }
-
-pub const Vec2 = packed struct {
-    x: u32,
-    y: u32,
-};
-
-pub const Rect = packed struct {
-    x: u32,
-    y: u32,
-    w: u32,
-    h: u32,
-};
-
-pub const Color = packed struct {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
-};

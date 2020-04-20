@@ -10,12 +10,12 @@ pub fn build(b: *Builder) !void {
 
     const mode = b.standardReleaseOptions();
 
-    const local = b.addExecutable("focus", "./src/main.zig");
+    const local = b.addExecutable("focus", "./src/root.zig");
     include_common(local);
     local.setBuildMode(mode);
     local.install();
 
-    const cross = b.addExecutable("focus-cross", "./src/main.zig");
+    const cross = b.addExecutable("focus-cross", "./src/root.zig");
     include_common(cross);
     cross.setBuildMode(mode);
     cross.setTarget(

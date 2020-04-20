@@ -9,6 +9,10 @@ Status:
   * can put a sleep in the loop to fix it
   * how best to sample input?
 
+* memory
+  * urgency seems broken
+  * no draw yet
+
 # Installing mobile-nixos:
 
 https://mobile.nixos.org/getting-started.html

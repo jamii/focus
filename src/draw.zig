@@ -1,12 +1,28 @@
 usingnamespace @import("common.zig");
 usingnamespace c;
 
-pub const Vec2f = packed struct {
+pub const atlas = @import("./atlas.zig");
+
+pub const Rect = packed struct {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+};
+
+pub const Color = packed struct {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+};
+
+const Vec2 = packed struct {
     x: f32,
     y: f32,
 };
 
-pub fn Tri(comptime t: type) type {
+fn Tri(comptime t: type) type {
     // TODO which direction?
     return packed struct {
         a: t,
@@ -15,7 +31,7 @@ pub fn Tri(comptime t: type) type {
     };
 }
 
-pub fn Quad(comptime t: type) type {
+fn Quad(comptime t: type) type {
     return packed struct {
         tl: t,
         tr: t,
@@ -25,8 +41,8 @@ pub fn Quad(comptime t: type) type {
 }
 
 const buffer_size = 2^14;
-var texture_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
-var vertex_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
+var texture_buffer = std.mem.zeroes([buffer_size]Quad(Vec2));
+var vertex_buffer = std.mem.zeroes([buffer_size]Quad(Vec2));
 var color_buffer = std.mem.zeroes([buffer_size]Quad(Color));
 var index_buffer = std.mem.zeroes([buffer_size][2]Tri(u32));
 
