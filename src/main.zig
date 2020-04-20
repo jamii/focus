@@ -10,7 +10,7 @@ pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(c_allocator);
     defer arena.deinit();
 
-    const clozes = try memory.parse(&arena);
+    const the_memory = try memory.Memory.init(&arena);
 
     // main loop
     while (true) {
