@@ -4,7 +4,10 @@ Status:
 * local build is broken (X BadWindow) but worker earlier
 * cross build seems to work but need to copy over .so
 * focus build works
-  * why is drag laggy?
+* why is drag laggy?
+  * seems like input lag - turning off vsync fixes it but event polling loop is at 100%
+  * can put a sleep in the loop to fix it
+  * how best to sample input?
 
 # Installing mobile-nixos:
 

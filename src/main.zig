@@ -17,7 +17,9 @@ pub fn main() anyerror!void {
 
         // handle SDL events
         var e: c.SDL_Event = undefined;
+        var got_input = false;
         while (c.SDL_PollEvent(&e) != 0) {
+            got_input = true;
             switch (e.type) {
                 c.SDL_QUIT => std.os.exit(0),
                 // SDL_MOUSEMOTION => mu_input_mousemove(ctx, e.motion.x, e.motion.y),
@@ -62,11 +64,15 @@ pub fn main() anyerror!void {
             }
         }
 
-        // render
-        draw.clear(bg);
-        draw.set_clip(.{.x=0, .y=0, .w=100, .h=100});
-        draw.rect(.{.x=0, .y=0, .w=100, .h=100}, .{.r=100, .g=255, .b=0, .a=255});
-        draw.text("hello!", .{.x=0, .y=0}, .{.r=255, .g=255, .b=0, .a=255});
-        draw.swap();
+        if (got_input) {
+            // render
+            draw.clear(bg);
+            draw.set_clip(.{.x=0, .y=0, .w=100, .h=100});
+            draw.rect(.{.x=0, .y=0, .w=100, .h=100}, .{.r=100, .g=255, .b=0, .a=255});
+            draw.text("hello!", .{.x=0, .y=0}, .{.r=255, .g=255, .b=0, .a=255});
+            draw.swap();
+        }
+
+        std.time.sleep(@divTrunc(1_000_000_000, 120));
     }
 }

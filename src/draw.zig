@@ -70,8 +70,8 @@ pub fn init() void {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     assert(glGetError() == 0);
 
-    // sync swap to monitor refresh rate - blocks main loop on access to gl
-    _ = SDL_GL_SetSwapInterval(1);
+    // don't sync with monitor - causes input lag
+    _ = SDL_GL_SetSwapInterval(0);
 }
 
 fn flush() void {
