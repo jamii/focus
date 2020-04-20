@@ -11,6 +11,7 @@ pub fn main() anyerror!void {
     defer arena.deinit();
 
     const the_memory = try memory.Memory.init(&arena);
+    d(the_memory);
 
     // main loop
     while (true) {

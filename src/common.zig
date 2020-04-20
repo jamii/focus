@@ -14,6 +14,7 @@ pub const assert = std.debug.assert;
 pub const Allocator = std.mem.Allocator;
 pub const ArenaAllocator = std.heap.ArenaAllocator;
 pub const ArrayList = std.ArrayList;
+pub const AutoHashMap = std.AutoHashMap;
 
 pub const str = []const u8;
 
@@ -21,7 +22,6 @@ pub fn debug_format(out_stream: var, indent: u32, thing: var) !void {
     const ti = @typeInfo(@TypeOf(thing));
     switch (ti) {
         .Struct => |sti| {
-            try out_stream.writeByteNTimes(' ', indent);
             try out_stream.writeAll(@typeName(@TypeOf(thing)));
             try out_stream.writeAll("{\n");
             inline for (sti.fields) |field| {
@@ -34,10 +34,8 @@ pub fn debug_format(out_stream: var, indent: u32, thing: var) !void {
         },
         .Array => |ati| {
             if (ati.child == u8) {
-                try out_stream.writeByteNTimes(' ', indent);
                 try std.fmt.format(out_stream, "\"{s}\"", .{thing});
             } else {
-                try out_stream.writeByteNTimes(' ', indent);
                 try std.fmt.format(out_stream, "[{}]{}[\n", .{ati.len, @typeName(ati.child)});
                 for (thing) |elem| {
                     try out_stream.writeByteNTimes(' ', indent + 4);
@@ -60,10 +58,8 @@ pub fn debug_format(out_stream: var, indent: u32, thing: var) !void {
                 },
                 .Slice => {
                     if (pti.child == u8) {
-                        try out_stream.writeByteNTimes(' ', indent);
                         try std.fmt.format(out_stream, "\"{s}\"", .{thing});
                     } else {
-                        try out_stream.writeByteNTimes(' ', indent);
                         try std.fmt.format(out_stream, "[]{}[\n", .{@typeName(pti.child)});
                         for (thing) |elem| {
                             try out_stream.writeByteNTimes(' ', indent + 4);
@@ -87,7 +83,6 @@ pub fn debug_format(out_stream: var, indent: u32, thing: var) !void {
         },
     }
 }
-
 
 pub fn d(thing: var) void {
     const held = std.debug.getStderrMutex().acquire();
