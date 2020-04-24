@@ -11,10 +11,8 @@ pub fn main() anyerror!void {
     var fui = try Fui.init(root_allocator);
     defer fui.deinit();
 
-    var arena = std.heap.ArenaAllocator.init(root_allocator);
-    defer arena.deinit();
-
-    var memory = try Memory.init(&arena);
+    var memory = try Memory.init(root_allocator);
+    defer memory.deinit();
 
     while (true) {
         while (!fui.handle_input()) {

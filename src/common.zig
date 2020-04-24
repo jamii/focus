@@ -157,3 +157,10 @@ pub fn dump(thing: var) void {
     dump_inner(my_stderr.*, 0, thing) catch return;
     my_stderr.writeAll("\n") catch return;
 }
+
+pub fn format(allocator: *Allocator, comptime fmt: str, args: var) !str {
+    var buf = ArrayList(u8).init(allocator);
+    var out = buf.outStream();
+    try std.fmt.format(out, fmt, args);
+    return buf.items;
+}

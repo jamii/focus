@@ -8,6 +8,7 @@ Status:
   * seems like input lag - turning off vsync fixes it but event polling loop is at 100%
   * can put a sleep in the loop to fix it
   * how best to sample input?
+* how to setup ssh-over-usb?
 
 * memory
   * urgency seems broken

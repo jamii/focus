@@ -3,7 +3,9 @@ usingnamespace @import("./common.zig");
 pub const Fui = @import("./fui.zig").Fui;
 
 pub const Memory = struct {
-    arena: *ArenaAllocator,
+    allocator: *Allocator,
+    data_arena: ArenaAllocator,
+    frame_arena: ArenaAllocator,
     clozes: []Cloze,
     logs: ArrayList(Log),
     urgency_threshold: f64,
@@ -16,23 +18,36 @@ pub const Memory = struct {
         Reveal,
     };
 
-    pub fn init(arena: *ArenaAllocator) !Memory {
-        const clozes = try loadClozes(arena);
-        var logs = ArrayList(Log).init(&arena.allocator);
-        try logs.appendSlice(try loadLogs(arena));
+    pub fn init(allocator: *Allocator) !Memory {
+        var data_arena = ArenaAllocator.init(allocator);
+        const frame_arena = ArenaAllocator.init(allocator);
+        const clozes = try loadClozes(&data_arena);
+        var logs = ArrayList(Log).init(&data_arena.allocator);
+        try logs.appendSlice(try loadLogs(&data_arena));
+        const queue = try sortByUrgency(&data_arena, clozes, logs.items);
         return Memory{
-            .arena = arena,
+            .allocator = allocator,
+            .data_arena = data_arena,
+            .frame_arena = frame_arena,
             .clozes = clozes,
             .logs = logs,
             .urgency_threshold = 1.0,
-            .queue = try sortByUrgency(arena, clozes, logs.items),
+            .queue = queue,
             .state = .Prepare,
         };
+    }
+
+    pub fn deinit(self: *Memory) void {
+        self.data_arena.deinit();
+        self.frame_arena.deinit();
     }
 
     pub fn frame(self: *Memory, fui: *Fui) !void {
         // TODO remove `orelse 0`
         // https://github.com/ziglang/zig/issues/1332
+        self.frame_arena.deinit();
+        self.frame_arena = ArenaAllocator.init(self.allocator);
+        const allocator = &self.frame_arena.allocator;
         assert(self.queue.len > 0);
         if (fui.key orelse 0 == 'q') {
             try save_logs(self.logs.items);
@@ -40,22 +55,21 @@ pub const Memory = struct {
         }
         switch (self.state) {
             .Prepare => {
-                try fui.text("really long line with reaaaaaaaaaaaaaaaaaaaaaaaaasdfasdfasdfasdfasdfasdfasdfasdfllly reaaaaaaaaaaaaaaaaaaaaaaaaasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdffasdfasdfllly long word\nand another line\nand one more\"\"", .{.x=0,.y=0}, .{.r=255, .g=255, .b=255, .a=255});
-                warn("{} pending\n", .{self.queue.len});
+                try fui.text(try format(allocator, "{} pending", .{self.queue.len}), .{.x=0,.y=0}, .{.r=255, .g=255, .b=255, .a=255});
                 if (fui.key orelse 0 == 's') {
                     self.state = .Prompt;
                 }
             },
             .Prompt => {
                 const next = self.queue[0];
-                warn("{}\n\n(urgency={}, interval={})\n", .{next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns});
+                try fui.text(try format(allocator, "{}\n\n(urgency={}, interval={})", .{next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns}), .{.x=0,.y=0}, .{.r=255, .g=255, .b=255, .a=255});
                 if (fui.key orelse 0 == 's') {
                     self.state = .Reveal;
                 }
             },
             .Reveal => reveal: {
                 const next = self.queue[0];
-                warn("{}\n", .{next.cloze.text});
+                try fui.text(try format(allocator, "{}\n", .{next.cloze.text}), .{.x=0,.y=0}, .{.r=255, .g=255, .b=255, .a=255});
                 const event: Log.Event = switch (fui.key orelse 0) {
                     'a' => .Miss,
                     'd' => .Hit,
@@ -69,7 +83,7 @@ pub const Memory = struct {
                 });
                 self.queue = self.queue[1..];
                 if (self.queue.len == 0) {
-                    self.queue = try sortByUrgency(self.arena, self.clozes, self.logs.items);
+                    self.queue = try sortByUrgency(&self.frame_arena, self.clozes, self.logs.items);
                     self.state = .Prepare;
                 } else {
                     self.state = .Prompt;
