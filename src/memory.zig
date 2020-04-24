@@ -31,14 +31,8 @@ pub const Memory = struct {
     }
 
     pub fn frame(self: *Memory, fui: *Fui) !void {
-        // // render
-        // draw.rect(.{.x=0, .y=0, .w=100, .h=100}, .{.r=100, .g=255, .b=0, .a=255});
-        // draw.text("hello!", .{.x=0, .y=0}, .{.r=255, .g=255, .b=0, .a=255});
-        // draw.swap();
-
-        // TODO replace `orelse 0` with `T == ?T`
+        // TODO remove `orelse 0`
         // https://github.com/ziglang/zig/issues/1332
-
         assert(self.queue.len > 0);
         if (fui.key orelse 0 == 'q') {
             try save_logs(self.logs.items);
@@ -46,6 +40,7 @@ pub const Memory = struct {
         }
         switch (self.state) {
             .Prepare => {
+                try fui.text("really long line with reaaaaaaaaaaaaaaaaaaaaaaaaasdfasdfasdfasdfasdfasdfasdfasdfllly reaaaaaaaaaaaaaaaaaaaaaaaaasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdfasdffasdfasdfllly long word\nand another line\nand one more\"\"", .{.x=0,.y=0}, .{.r=255, .g=255, .b=255, .a=255});
                 warn("{} pending\n", .{self.queue.len});
                 if (fui.key orelse 0 == 's') {
                     self.state = .Prompt;

@@ -3,11 +3,18 @@ usingnamespace c;
 
 pub const atlas = @import("./atlas.zig");
 
-pub const Rect = packed struct {
-    x: u32,
-    y: u32,
-    w: u32,
-    h: u32,
+pub const Coord = u16;
+
+pub const Rect = struct {
+    x: Coord,
+    y: Coord,
+    w: Coord,
+    h: Coord,
+};
+
+pub const Vec2 = struct {
+    x: Coord,
+    y: Coord,
 };
 
 pub const Color = packed struct {
@@ -17,7 +24,7 @@ pub const Color = packed struct {
     a: u8,
 };
 
-const Vec2 = packed struct {
+const Vec2f = packed struct {
     x: f32,
     y: f32,
 };
@@ -41,8 +48,8 @@ fn Quad(comptime t: type) type {
 }
 
 const buffer_size = 2^14;
-var texture_buffer = std.mem.zeroes([buffer_size]Quad(Vec2));
-var vertex_buffer = std.mem.zeroes([buffer_size]Quad(Vec2));
+var texture_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
+var vertex_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
 var color_buffer = std.mem.zeroes([buffer_size]Quad(Color));
 var index_buffer = std.mem.zeroes([buffer_size][2]Tri(u32));
 
@@ -171,10 +178,9 @@ pub fn rect(dst: Rect, color: Color) void {
 pub fn text(chars: str, pos: Vec2, color: Color) void {
     var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
     for (chars) |char| {
-        const ascii_char = std.math.min(char, 127);
-        const src = atlas.chars[ascii_char];
-        dst.w = src.w * 2;
-        dst.h = src.h * 2;
+        const src = atlas.chars[min(char, 127)];
+        dst.w = src.w;
+        dst.h = src.h;
         quad(dst, src, color);
         dst.x += dst.w;
     }

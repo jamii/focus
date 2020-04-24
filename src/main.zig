@@ -4,24 +4,24 @@ const draw = @import("./draw.zig");
 const Fui = @import("./fui.zig").Fui;
 const Memory = @import("./memory.zig").Memory;
 
+const root_allocator = std.heap.c_allocator;
+
 pub fn main() anyerror!void {
     draw.init();
-    var fui = Fui.init();
+    var fui = try Fui.init(root_allocator);
+    defer fui.deinit();
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+    var arena = std.heap.ArenaAllocator.init(root_allocator);
     defer arena.deinit();
 
     var memory = try Memory.init(&arena);
-    dump(memory.queue);
 
-    // main loop
     while (true) {
-        if (fui.handle_input()) {
-            try memory.frame(&fui);
+        while (!fui.handle_input()) {
+            std.time.sleep(@divTrunc(std.time.second, 240));
         }
-        draw.clear(.{.r=0, .g=0, .b=0, .a=255});
-        draw.set_clip(.{.x=0, .y=0, .w=100, .h=100});
-        draw.swap();
-        std.time.sleep(@divTrunc(std.time.second, 120));
+        try fui.begin();
+        try memory.frame(&fui);
+        try fui.end();
     }
 }

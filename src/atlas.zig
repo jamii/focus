@@ -1,24 +1,39 @@
 usingnamespace @import("common.zig");
 
+const draw = @import("./draw.zig");
+
 pub const width = 128;
 pub const height = 128;
 
-pub fn text_width(text: []const u8, len: usize) usize {
+pub fn char_width(char: u8) usize {
+    return chars[min(char, 127)].w;
+}
+
+pub fn text_width(text: str) usize {
     var width: usize = 0;
-    for (text) |p| {
-        const chr: u8 = std.math.min(p, 127);
-        width += chars[chr].w;
+    for (text) |char| {
+        width += char_width(char);
     }
     return width;
 }
 
-pub fn text_height() usize {
-    return 18;
-}
+pub const text_height = 18;
 
-pub const white = Rect{ .x=125, .y=68, .w=3, .h=3 };
+pub const white = draw.Rect{ .x=125, .y=68, .w=3, .h=3 };
+pub const black = draw.Rect{ .x=84, .y=68, .w=2, .h=17 };
 
-pub const chars = [128]Rect{
+pub const chars = [128]draw.Rect{
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    white,
+    black,
     white,
     white,
     white,
@@ -40,18 +55,7 @@ pub const chars = [128]Rect{
     white,
     white,
     white,
-    white,
-    white,
-    white,
-    white,
-    white,
-    white,
-    white,
-    white,
-    white,
-    white,
-    white,
-    .{ .x=84, .y=68, .w=2, .h=17 },
+    black,
     .{ .x=39, .y=68, .w=3, .h=17 },
     .{ .x=114, .y=51, .w=5, .h=17 },
     .{ .x=34, .y=17, .w=7, .h=17 },
