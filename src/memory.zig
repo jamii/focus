@@ -1,5 +1,6 @@
 usingnamespace @import("./common.zig");
 
+pub const atlas = @import("./atlas.zig");
 pub const Fui = @import("./fui.zig").Fui;
 
 pub const Memory = struct {
@@ -56,6 +57,7 @@ pub const Memory = struct {
         switch (self.state) {
             .Prepare => {
                 try fui.text(rect, try format(allocator, "{} pending", .{self.queue.len}), .{.r=255, .g=255, .b=255, .a=255});
+                try fui.text(.{.x=0, .y=rect.h-atlas.text_height, .w=rect.w, .h=atlas.text_height}, "go", .{.r=255, .g=255, .b=255, .a=255});
                 if (fui.key orelse 0 == 's') {
                     self.state = .Prompt;
                 }
@@ -63,6 +65,7 @@ pub const Memory = struct {
             .Prompt => {
                 const next = self.queue[0];
                 try fui.text(rect, try format(allocator, "{}\n\n(urgency={}, interval={})", .{next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns}), .{.r=255, .g=255, .b=255, .a=255});
+                try fui.text(.{.x=0, .y=rect.h-atlas.text_height, .w=rect.w, .h=atlas.text_height}, "show", .{.r=255, .g=255, .b=255, .a=255});
                 if (fui.key orelse 0 == 's') {
                     self.state = .Reveal;
                 }
@@ -70,6 +73,8 @@ pub const Memory = struct {
             .Reveal => reveal: {
                 const next = self.queue[0];
                 try fui.text(rect, try format(allocator, "{}\n", .{next.cloze.text}), .{.r=255, .g=255, .b=255, .a=255});
+                try fui.text(.{.x=0, .y=rect.h-atlas.text_height, .w=@divTrunc(rect.w, 2), .h=atlas.text_height}, "miss", .{.r=255, .g=255, .b=255, .a=255});
+                try fui.text(.{.x=@divTrunc(rect.w, 2), .y=rect.h-atlas.text_height, .w=@divTrunc(rect.w, 2), .h=atlas.text_height}, "hit", .{.r=255, .g=255, .b=255, .a=255});
                 const event: Log.Event = switch (fui.key orelse 0) {
                     'a' => .Miss,
                     'd' => .Hit,
