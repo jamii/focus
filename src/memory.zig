@@ -42,7 +42,7 @@ pub const Memory = struct {
         self.frame_arena.deinit();
     }
 
-    pub fn frame(self: *Memory, fui: *Fui) !void {
+    pub fn frame(self: *Memory, fui: *Fui, rect: Fui.Rect) !void {
         // TODO remove `orelse 0`
         // https://github.com/ziglang/zig/issues/1332
         self.frame_arena.deinit();
@@ -55,21 +55,21 @@ pub const Memory = struct {
         }
         switch (self.state) {
             .Prepare => {
-                try fui.text(try format(allocator, "{} pending", .{self.queue.len}), .{.x=0,.y=0}, .{.r=255, .g=255, .b=255, .a=255});
+                try fui.text(rect, try format(allocator, "{} pending", .{self.queue.len}), .{.r=255, .g=255, .b=255, .a=255});
                 if (fui.key orelse 0 == 's') {
                     self.state = .Prompt;
                 }
             },
             .Prompt => {
                 const next = self.queue[0];
-                try fui.text(try format(allocator, "{}\n\n(urgency={}, interval={})", .{next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns}), .{.x=0,.y=0}, .{.r=255, .g=255, .b=255, .a=255});
+                try fui.text(rect, try format(allocator, "{}\n\n(urgency={}, interval={})", .{next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns}), .{.r=255, .g=255, .b=255, .a=255});
                 if (fui.key orelse 0 == 's') {
                     self.state = .Reveal;
                 }
             },
             .Reveal => reveal: {
                 const next = self.queue[0];
-                try fui.text(try format(allocator, "{}\n", .{next.cloze.text}), .{.x=0,.y=0}, .{.r=255, .g=255, .b=255, .a=255});
+                try fui.text(rect, try format(allocator, "{}\n", .{next.cloze.text}), .{.r=255, .g=255, .b=255, .a=255});
                 const event: Log.Event = switch (fui.key orelse 0) {
                     'a' => .Miss,
                     'd' => .Hit,

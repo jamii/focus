@@ -5,7 +5,6 @@ const draw = @import("./draw.zig");
 
 pub const Fui = struct {
     key: ?u8,
-    clip_stack: ArrayList(Rect),
     command_queue: ArrayList(Command),
 
     pub const Coord = draw.Coord;
@@ -14,7 +13,6 @@ pub const Fui = struct {
     pub const Rect = draw.Rect;
 
     pub const Command = union(enum){
-        Clip: Rect,
         Rect: struct {
             rect: Rect,
             color: Color,
@@ -26,18 +24,15 @@ pub const Fui = struct {
         },
     };
 
-    pub fn init(allocator: *Allocator) !Fui {
-        var clip_stack = ArrayList(Rect).init(allocator);
-        try clip_stack.append(Rect{.x=0, .y=0, .w=draw.screen_width, .h=draw.screen_height});
+    pub fn init(allocator: *Allocator) Fui {
         return Fui{
             .key = null,
-            .clip_stack = clip_stack,
             .command_queue = ArrayList(Command).init(allocator),
         };
     }
 
     pub fn deinit(self: *Fui) void {
-        // TODO
+        self.command_queue.deinit();
     }
 
     pub fn handle_input(self: *Fui) bool {
@@ -60,17 +55,15 @@ pub const Fui = struct {
         return got_input;
     }
 
-    pub fn begin(self: *Fui) !void {
-        assert(self.clip_stack.items.len == 1);
+    pub fn begin(self: *Fui) !Rect {
         assert(self.command_queue.items.len == 0);
+        return Rect{.x=0,.y=0,.w=draw.screen_width,.h=draw.screen_height};
     }
 
     pub fn end(self: *Fui) !void {
-        assert(self.clip_stack.items.len == 1);
         draw.clear(.{.r=0, .g=0, .b=0, .a=255});
         for (self.command_queue.items) |command| {
             switch (command) {
-                .Clip => |data| draw.set_clip(data),
                 .Rect => |data| draw.rect(data.rect, data.color),
                 .Text => |data| draw.text(data.chars, data.pos, data.color),
             }
@@ -79,30 +72,7 @@ pub const Fui = struct {
         try self.command_queue.resize(0);
     }
 
-    fn intersect_rects(rect1: Rect, rect2: Rect) Rect {
-        const x1 = max(rect1.x, rect2.x);
-        const y1 = max(rect1.y, rect2.y);
-        var x2 = min(rect1.x + rect1.w, rect2.x + rect2.w);
-        var y2 = min(rect1.y + rect1.h, rect2.y + rect2.h);
-        if (x2 < x1) { x2 = x1; }
-        if (y2 < y1) { y2 = y1; }
-        return Rect{.x=x1, .y=y1, .w=x2-x1, .h=y2-y1};
-    }
-
-    fn peek_clip(self: *Fui) Rect {
-        return self.clip_stack.items[self.clip_stack.items.len-1];
-    }
-
-    pub fn push_clip(self: *Fui, rect: Rect) !void {
-        try self.clip_stack.append(intersect_rects(rect, self.peek_clip()));
-    }
-
-    pub fn pop_clip(self: *Fui) void {
-        self.clip_stack.pop();
-    }
-
-    pub fn text(self: *Fui, chars: str, pos: Vec2, color: Color) !void {
-        const clip = self.peek_clip();
+    pub fn text(self: *Fui, rect: Rect, chars: str, color: Color) !void {
         var h: Coord = 0;
         var line_begin: usize = 0;
         while (true) {
@@ -117,7 +87,7 @@ pub const Fui = struct {
                     }
                     const char = chars[i];
                     w += @intCast(Coord, atlas.char_width(char));
-                    if (w > clip.w) {
+                    if (w > rect.w) {
                         // if haven't soft wrapped yet, hard wrap before this char
                         if (line_end == line_begin) {
                             line_end = i;
@@ -138,13 +108,13 @@ pub const Fui = struct {
                 }
             }
             try self.command_queue.append(.{.Text = .{
-                .pos = .{.x=clip.x, .y=clip.y+h},
+                .pos = .{.x=rect.x, .y=rect.y+h},
                 .color = color,
                 .chars = chars[line_begin..line_end],
             }});
             line_begin = line_end;
             h += atlas.text_height;
-            if (line_begin >= chars.len or h > clip.h) { break; }
+            if (line_begin >= chars.len or h > rect.h) { break; }
         }
     }
 };

@@ -8,7 +8,7 @@ const root_allocator = std.heap.c_allocator;
 
 pub fn main() anyerror!void {
     draw.init();
-    var fui = try Fui.init(root_allocator);
+    var fui = Fui.init(root_allocator);
     defer fui.deinit();
 
     var memory = try Memory.init(root_allocator);
@@ -18,8 +18,8 @@ pub fn main() anyerror!void {
         while (!fui.handle_input()) {
             std.time.sleep(@divTrunc(std.time.second, 240));
         }
-        try fui.begin();
-        try memory.frame(&fui);
+        const screen = try fui.begin();
+        try memory.frame(&fui, screen);
         try fui.end();
     }
 }
