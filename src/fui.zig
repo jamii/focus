@@ -15,7 +15,7 @@ pub const Fui = struct {
     pub const Vec2 = draw.Vec2;
     pub const Rect = draw.Rect;
 
-    pub const Command = union(enum){
+    pub const Command = union(enum) {
         Rect: struct {
             rect: Rect,
             color: Color,
@@ -30,9 +30,9 @@ pub const Fui = struct {
     pub fn init(allocator: *Allocator) Fui {
         return Fui{
             .key = null,
-            .mouse_pos = .{.x=0,.y=0},
-            .mouse_is_down = .{false,false,false},
-            .mouse_went_down = .{false,false,false},
+            .mouse_pos = .{ .x = 0, .y = 0 },
+            .mouse_is_down = .{ false, false, false },
+            .mouse_went_down = .{ false, false, false },
             .command_queue = ArrayList(Command).init(allocator),
         };
     }
@@ -44,7 +44,7 @@ pub const Fui = struct {
     pub fn handleInput(self: *Fui) bool {
         var got_input = false;
         var e: c.SDL_Event = undefined;
-        self.mouse_went_down = .{false,false,false};
+        self.mouse_went_down = .{ false, false, false };
         while (c.SDL_PollEvent(&e) != 0) {
             got_input = true;
             switch (e.type) {
@@ -57,7 +57,7 @@ pub const Fui = struct {
                     }
                 },
                 c.SDL_MOUSEMOTION => {
-                    self.mouse_pos = .{.x=@intCast(u16, e.motion.x * draw.scale), .y=@intCast(u16, e.motion.y * draw.scale)};
+                    self.mouse_pos = .{ .x = @intCast(u16, e.motion.x * draw.scale), .y = @intCast(u16, e.motion.y * draw.scale) };
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
                     switch (e.button.button) {
@@ -73,18 +73,18 @@ pub const Fui = struct {
                             self.mouse_is_down[2] = true;
                             self.mouse_went_down[2] = true;
                         },
-                        else => {}
+                        else => {},
                     }
                 },
                 c.SDL_MOUSEBUTTONUP => {
-                      switch (e.button.button) {
+                    switch (e.button.button) {
                         c.SDL_BUTTON_LEFT => self.mouse_is_down[0] = false,
                         c.SDL_BUTTON_MIDDLE => self.mouse_is_down[1] = false,
                         c.SDL_BUTTON_RIGHT => self.mouse_is_down[2] = false,
-                        else => {}
+                        else => {},
                     }
                 },
-                else => {}
+                else => {},
             }
         }
         return got_input;
@@ -92,11 +92,11 @@ pub const Fui = struct {
 
     pub fn begin(self: *Fui) !Rect {
         assert(self.command_queue.items.len == 0);
-        return Rect{.x=0,.y=0,.w=draw.screen_width,.h=draw.screen_height};
+        return Rect{ .x = 0, .y = 0, .w = draw.screen_width, .h = draw.screen_height };
     }
 
     pub fn end(self: *Fui) !void {
-        draw.clear(.{.r=0, .g=0, .b=0, .a=255});
+        draw.clear(.{ .r = 0, .g = 0, .b = 0, .a = 255 });
         for (self.command_queue.items) |command| {
             switch (command) {
                 .Rect => |data| draw.rect(data.rect, data.color),
@@ -108,18 +108,22 @@ pub const Fui = struct {
     }
 
     fn queueRect(self: *Fui, rect: Rect, color: Color) !void {
-        try self.command_queue.append(.{.Rect = .{
-            .rect = rect,
-            .color = color,
-        }});
+        try self.command_queue.append(.{
+            .Rect = .{
+                .rect = rect,
+                .color = color,
+            },
+        });
     }
 
     fn queueText(self: *Fui, pos: Vec2, color: Color, chars: str) !void {
-        try self.command_queue.append(.{.Text = .{
-            .pos = pos,
-            .color = color,
-            .chars = chars,
-        }});
+        try self.command_queue.append(.{
+            .Text = .{
+                .pos = pos,
+                .color = color,
+                .chars = chars,
+            },
+        });
     }
 
     pub fn text(self: *Fui, rect: Rect, chars: str, color: Color) !void {
@@ -146,49 +150,47 @@ pub const Fui = struct {
                     }
                     if (char == '\n') {
                         // commit to drawing this char and wrap here
-                        line_end = i+1;
+                        line_end = i + 1;
                         break;
                     }
                     if (char == ' ') {
                         // commit to drawing this char
-                        line_end = i+1;
+                        line_end = i + 1;
                     }
                     // otherwise keep looking ahead
                     i += 1;
                 }
             }
-            try self.queueText(.{.x=rect.x, .y=rect.y+h}, color, chars[line_begin..line_end]);
+            try self.queueText(.{ .x = rect.x, .y = rect.y + h }, color, chars[line_begin..line_end]);
             line_begin = line_end;
             h += atlas.text_height;
-            if (line_begin >= chars.len or h > rect.h) { break; }
+            if (line_begin >= chars.len or h > rect.h) {
+                break;
+            }
         }
     }
 
     pub fn mouseIsHere(self: *Fui, rect: Rect) bool {
-        return
-            self.mouse_pos.x >= rect.x and
+        return self.mouse_pos.x >= rect.x and
             self.mouse_pos.x < rect.x + rect.w and
             self.mouse_pos.y >= rect.y and
             self.mouse_pos.y < rect.y + rect.h;
     }
 
     pub fn mouseIsDown(self: *Fui, rect: Rect) bool {
-        return
-            self.mouse_is_down[0] and
+        return self.mouse_is_down[0] and
             self.mouseIsHere(rect);
     }
 
     pub fn mouseWentDown(self: *Fui, rect: Rect) bool {
-        return
-            self.mouse_went_down[0] and
+        return self.mouse_went_down[0] and
             self.mouseIsHere(rect);
     }
 
     pub fn button(self: *Fui, rect: Rect, chars: str, color: Color) !bool {
         try self.queueRect(rect, color);
         if (!self.mouseIsDown(rect)) {
-            try self.queueRect(.{.x=rect.x+atlas.scale, .y=rect.y+atlas.scale, .w=subSaturating(Coord, rect.w, 2*atlas.scale), .h=subSaturating(Coord, rect.h, 2*atlas.scale)},
-                                .{.r=0, .g=0, .b=0, .a=255});
+            try self.queueRect(.{ .x = rect.x + atlas.scale, .y = rect.y + atlas.scale, .w = subSaturating(Coord, rect.w, 2 * atlas.scale), .h = subSaturating(Coord, rect.h, 2 * atlas.scale) }, .{ .r = 0, .g = 0, .b = 0, .a = 255 });
         }
         try self.text(rect, chars, color);
         return self.mouseWentDown(rect);

@@ -102,7 +102,7 @@ fn dumpInner(out_stream: var, indent: u32, thing: var) !void {
             if (ati.child == u8) {
                 try std.fmt.format(out_stream, "\"{s}\"", .{thing});
             } else {
-                try std.fmt.format(out_stream, "[{}]{}[\n", .{ati.len, @typeName(ati.child)});
+                try std.fmt.format(out_stream, "[{}]{}[\n", .{ ati.len, @typeName(ati.child) });
                 for (thing) |elem| {
                     try out_stream.writeByteNTimes(' ', indent + 4);
                     try dumpInner(out_stream, indent + 4, elem);

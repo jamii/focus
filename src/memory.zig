@@ -58,26 +58,26 @@ pub const Memory = struct {
         }
         switch (self.state) {
             .Prepare => {
-                try fui.text(rect, try format(allocator, "{} pending", .{self.queue.len}), .{.r=255, .g=255, .b=255, .a=255});
-                if (try fui.button(.{.x=0, .y=rect.h-atlas.text_height, .w=rect.w, .h=atlas.text_height}, "go", .{.r=255, .g=255, .b=255, .a=255})) {
+                try fui.text(rect, try format(allocator, "{} pending", .{self.queue.len}), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
+                if (try fui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = rect.w, .h = atlas.text_height }, "go", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
                     self.state = .Prompt;
                 }
             },
             .Prompt => {
                 const next = self.queue[0];
-                try fui.text(rect, try format(allocator, "{}\n\n(urgency={}, interval={})", .{next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns}), .{.r=255, .g=255, .b=255, .a=255});
-                if (try fui.button(.{.x=0, .y=rect.h-atlas.text_height, .w=rect.w, .h=atlas.text_height}, "show", .{.r=255, .g=255, .b=255, .a=255})) {
+                try fui.text(rect, try format(allocator, "{}\n\n(urgency={}, interval={})", .{ next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns }), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
+                if (try fui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = rect.w, .h = atlas.text_height }, "show", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
                     self.state = .Reveal;
                 }
             },
             .Reveal => reveal: {
                 const next = self.queue[0];
-                try fui.text(rect, try format(allocator, "{}\n", .{next.cloze.text}), .{.r=255, .g=255, .b=255, .a=255});
+                try fui.text(rect, try format(allocator, "{}\n", .{next.cloze.text}), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
                 var event_o: ?Log.Event = null;
-                if (try fui.button(.{.x=0, .y=rect.h-atlas.text_height, .w=@divTrunc(rect.w, 2), .h=atlas.text_height}, "miss", .{.r=255, .g=255, .b=255, .a=255})) {
+                if (try fui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = @divTrunc(rect.w, 2), .h = atlas.text_height }, "miss", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
                     event_o = .Miss;
                 }
-                if (try fui.button(.{.x=@divTrunc(rect.w, 2), .y=rect.h-atlas.text_height, .w=@divTrunc(rect.w, 2), .h=atlas.text_height}, "hit", .{.r=255, .g=255, .b=255, .a=255})) {
+                if (try fui.button(.{ .x = @divTrunc(rect.w, 2), .y = rect.h - atlas.text_height, .w = @divTrunc(rect.w, 2), .h = atlas.text_height }, "hit", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
                     event_o = .Hit;
                 }
                 if (event_o) |event| {
@@ -176,7 +176,7 @@ fn loadClozes(arena: *ArenaAllocator) ![]Cloze {
                     '`' => {
                         is_code = !is_code;
                     },
-                    else => {}
+                    else => {},
                 }
             }
             try sections.append(cloze_str[last_read..]);
@@ -213,11 +213,7 @@ fn loadClozes(arena: *ArenaAllocator) ![]Cloze {
 fn loadLogs(arena: *ArenaAllocator) ![]Log {
     const filename = "/home/jamie/exo-secret/memory.log";
     const contents = try std.fs.cwd().readFileAlloc(&arena.allocator, filename, std.math.maxInt(usize));
-    const logs = try std.json.parse(
-        []Log,
-        &std.json.TokenStream.init(contents),
-        std.json.ParseOptions{.allocator = &arena.allocator}
-    );
+    const logs = try std.json.parse([]Log, &std.json.TokenStream.init(contents), std.json.ParseOptions{ .allocator = &arena.allocator });
     return logs;
 }
 
@@ -248,7 +244,7 @@ fn sortByUrgency(arena: *ArenaAllocator, clozes: []Cloze, logs: []Log) ![]Cloze.
                     .interval_ns = 24 * std.time.hour,
                     .last_hit_ns = std.time.milliTimestamp() * 1_000_000,
                     .urgency = 0,
-                }
+                },
             };
             try states.putNoClobber(key, value);
         }
@@ -268,7 +264,7 @@ fn sortByUrgency(arena: *ArenaAllocator, clozes: []Cloze, logs: []Log) ![]Cloze.
                 },
                 .Miss => {
                     state.interval_ns /= 2;
-                }
+                },
             }
         } else {
             warn("Can't find key: {}\n", .{key});
