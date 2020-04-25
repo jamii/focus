@@ -3,7 +3,7 @@ usingnamespace @import("common.zig");
 const atlas = @import("./atlas.zig");
 const draw = @import("./draw.zig");
 
-pub const Fui = struct {
+pub const UI = struct {
     key: ?u8,
     mouse_pos: Vec2,
     mouse_is_down: [3]bool,
@@ -27,8 +27,8 @@ pub const Fui = struct {
         },
     };
 
-    pub fn init(allocator: *Allocator) Fui {
-        return Fui{
+    pub fn init(allocator: *Allocator) UI {
+        return UI{
             .key = null,
             .mouse_pos = .{ .x = 0, .y = 0 },
             .mouse_is_down = .{ false, false, false },
@@ -37,11 +37,11 @@ pub const Fui = struct {
         };
     }
 
-    pub fn deinit(self: *Fui) void {
+    pub fn deinit(self: *UI) void {
         self.command_queue.deinit();
     }
 
-    pub fn handleInput(self: *Fui) bool {
+    pub fn handleInput(self: *UI) bool {
         var got_input = false;
         var e: c.SDL_Event = undefined;
         self.mouse_went_down = .{ false, false, false };
@@ -90,12 +90,12 @@ pub const Fui = struct {
         return got_input;
     }
 
-    pub fn begin(self: *Fui) !Rect {
+    pub fn begin(self: *UI) !Rect {
         assert(self.command_queue.items.len == 0);
         return Rect{ .x = 0, .y = 0, .w = draw.screen_width, .h = draw.screen_height };
     }
 
-    pub fn end(self: *Fui) !void {
+    pub fn end(self: *UI) !void {
         draw.clear(.{ .r = 0, .g = 0, .b = 0, .a = 255 });
         for (self.command_queue.items) |command| {
             switch (command) {
@@ -107,7 +107,7 @@ pub const Fui = struct {
         try self.command_queue.resize(0);
     }
 
-    fn queueRect(self: *Fui, rect: Rect, color: Color) !void {
+    fn queueRect(self: *UI, rect: Rect, color: Color) !void {
         try self.command_queue.append(.{
             .Rect = .{
                 .rect = rect,
@@ -116,7 +116,7 @@ pub const Fui = struct {
         });
     }
 
-    fn queueText(self: *Fui, pos: Vec2, color: Color, chars: str) !void {
+    fn queueText(self: *UI, pos: Vec2, color: Color, chars: str) !void {
         try self.command_queue.append(.{
             .Text = .{
                 .pos = pos,
@@ -126,7 +126,7 @@ pub const Fui = struct {
         });
     }
 
-    pub fn text(self: *Fui, rect: Rect, chars: str, color: Color) !void {
+    pub fn text(self: *UI, rect: Rect, chars: str, color: Color) !void {
         var h: Coord = 0;
         var line_begin: usize = 0;
         while (true) {
@@ -170,24 +170,24 @@ pub const Fui = struct {
         }
     }
 
-    pub fn mouseIsHere(self: *Fui, rect: Rect) bool {
+    pub fn mouseIsHere(self: *UI, rect: Rect) bool {
         return self.mouse_pos.x >= rect.x and
             self.mouse_pos.x < rect.x + rect.w and
             self.mouse_pos.y >= rect.y and
             self.mouse_pos.y < rect.y + rect.h;
     }
 
-    pub fn mouseIsDown(self: *Fui, rect: Rect) bool {
+    pub fn mouseIsDown(self: *UI, rect: Rect) bool {
         return self.mouse_is_down[0] and
             self.mouseIsHere(rect);
     }
 
-    pub fn mouseWentDown(self: *Fui, rect: Rect) bool {
+    pub fn mouseWentDown(self: *UI, rect: Rect) bool {
         return self.mouse_went_down[0] and
             self.mouseIsHere(rect);
     }
 
-    pub fn button(self: *Fui, rect: Rect, chars: str, color: Color) !bool {
+    pub fn button(self: *UI, rect: Rect, chars: str, color: Color) !bool {
         try self.queueRect(rect, color);
         if (!self.mouseIsDown(rect)) {
             try self.queueRect(.{ .x = rect.x + atlas.scale, .y = rect.y + atlas.scale, .w = subSaturating(Coord, rect.w, 2 * atlas.scale), .h = subSaturating(Coord, rect.h, 2 * atlas.scale) }, .{ .r = 0, .g = 0, .b = 0, .a = 255 });

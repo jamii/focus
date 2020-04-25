@@ -1,7 +1,7 @@
 usingnamespace @import("./common.zig");
 
 pub const atlas = @import("./atlas.zig");
-pub const Fui = @import("./fui.zig").Fui;
+pub const UI = @import("./ui.zig").UI;
 
 pub const Memory = struct {
     allocator: *Allocator,
@@ -45,39 +45,39 @@ pub const Memory = struct {
         self.logs.deinit();
     }
 
-    pub fn frame(self: *Memory, fui: *Fui, rect: Fui.Rect) !void {
+    pub fn frame(self: *Memory, ui: *UI, rect: UI.Rect) !void {
         // TODO remove `orelse 0`
         // https://github.com/ziglang/zig/issues/1332
         self.frame_arena.deinit();
         self.frame_arena = ArenaAllocator.init(self.allocator);
         const allocator = &self.frame_arena.allocator;
         assert(self.queue.len > 0);
-        if (fui.key orelse 0 == 'q') {
+        if (ui.key orelse 0 == 'q') {
             try saveLogs(self.logs.items);
             std.os.exit(0);
         }
         switch (self.state) {
             .Prepare => {
-                try fui.text(rect, try format(allocator, "{} pending", .{self.queue.len}), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
-                if (try fui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = rect.w, .h = atlas.text_height }, "go", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
+                try ui.text(rect, try format(allocator, "{} pending", .{self.queue.len}), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
+                if (try ui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = rect.w, .h = atlas.text_height }, "go", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
                     self.state = .Prompt;
                 }
             },
             .Prompt => {
                 const next = self.queue[0];
-                try fui.text(rect, try format(allocator, "{}\n\n(urgency={}, interval={})", .{ next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns }), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
-                if (try fui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = rect.w, .h = atlas.text_height }, "show", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
+                try ui.text(rect, try format(allocator, "{}\n\n(urgency={}, interval={})", .{ next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns }), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
+                if (try ui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = rect.w, .h = atlas.text_height }, "show", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
                     self.state = .Reveal;
                 }
             },
             .Reveal => reveal: {
                 const next = self.queue[0];
-                try fui.text(rect, try format(allocator, "{}\n", .{next.cloze.text}), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
+                try ui.text(rect, try format(allocator, "{}\n", .{next.cloze.text}), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
                 var event_o: ?Log.Event = null;
-                if (try fui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = @divTrunc(rect.w, 2), .h = atlas.text_height }, "miss", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
+                if (try ui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = @divTrunc(rect.w, 2), .h = atlas.text_height }, "miss", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
                     event_o = .Miss;
                 }
-                if (try fui.button(.{ .x = @divTrunc(rect.w, 2), .y = rect.h - atlas.text_height, .w = @divTrunc(rect.w, 2), .h = atlas.text_height }, "hit", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
+                if (try ui.button(.{ .x = @divTrunc(rect.w, 2), .y = rect.h - atlas.text_height, .w = @divTrunc(rect.w, 2), .h = atlas.text_height }, "hit", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
                     event_o = .Hit;
                 }
                 if (event_o) |event| {
