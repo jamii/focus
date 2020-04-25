@@ -69,7 +69,7 @@ pub fn init() void {
         SDL_WINDOWPOS_UNDEFINED,
         @as(c_int, screen_width),
         @as(c_int, screen_height),
-        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE
+        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI
     );
     if (window_o == null) {
         warn("SDL_CreateWindow failed: {s}", .{SDL_GetError()});
