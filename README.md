@@ -10,7 +10,6 @@ Status:
   * urgency seems broken
   * no touch yet
   * cpu usage is high
-  * button logic is slightly broken
 
 # Installing mobile-nixos:
 

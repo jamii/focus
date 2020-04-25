@@ -6,7 +6,8 @@ const draw = @import("./draw.zig");
 pub const Fui = struct {
     key: ?u8,
     mouse_pos: Vec2,
-    mouse_down: [3]bool,
+    mouse_is_down: [3]bool,
+    mouse_went_down: [3]bool,
     command_queue: ArrayList(Command),
 
     pub const Coord = draw.Coord;
@@ -30,7 +31,8 @@ pub const Fui = struct {
         return Fui{
             .key = null,
             .mouse_pos = .{.x=0,.y=0},
-            .mouse_down = .{false,false,false},
+            .mouse_is_down = .{false,false,false},
+            .mouse_went_down = .{false,false,false},
             .command_queue = ArrayList(Command).init(allocator),
         };
     }
@@ -42,6 +44,7 @@ pub const Fui = struct {
     pub fn handleInput(self: *Fui) bool {
         var got_input = false;
         var e: c.SDL_Event = undefined;
+        self.mouse_went_down = .{false,false,false};
         while (c.SDL_PollEvent(&e) != 0) {
             got_input = true;
             switch (e.type) {
@@ -58,17 +61,26 @@ pub const Fui = struct {
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
                     switch (e.button.button) {
-                        c.SDL_BUTTON_LEFT => self.mouse_down[0] = true,
-                        c.SDL_BUTTON_MIDDLE => self.mouse_down[1] = true,
-                        c.SDL_BUTTON_RIGHT => self.mouse_down[2] = true,
+                        c.SDL_BUTTON_LEFT => {
+                            self.mouse_is_down[0] = true;
+                            self.mouse_went_down[0] = true;
+                        },
+                        c.SDL_BUTTON_MIDDLE => {
+                            self.mouse_is_down[1] = true;
+                            self.mouse_went_down[1] = true;
+                        },
+                        c.SDL_BUTTON_RIGHT => {
+                            self.mouse_is_down[2] = true;
+                            self.mouse_went_down[2] = true;
+                        },
                         else => {}
                     }
                 },
                 c.SDL_MOUSEBUTTONUP => {
                       switch (e.button.button) {
-                        c.SDL_BUTTON_LEFT => self.mouse_down[0] = false,
-                        c.SDL_BUTTON_MIDDLE => self.mouse_down[1] = false,
-                        c.SDL_BUTTON_RIGHT => self.mouse_down[2] = false,
+                        c.SDL_BUTTON_LEFT => self.mouse_is_down[0] = false,
+                        c.SDL_BUTTON_MIDDLE => self.mouse_is_down[1] = false,
+                        c.SDL_BUTTON_RIGHT => self.mouse_is_down[2] = false,
                         else => {}
                     }
                 },
@@ -152,7 +164,7 @@ pub const Fui = struct {
         }
     }
 
-    pub fn isMouseHere(self: *Fui, rect: Rect) bool {
+    pub fn mouseIsHere(self: *Fui, rect: Rect) bool {
         return
             self.mouse_pos.x >= rect.x and
             self.mouse_pos.x < rect.x + rect.w and
@@ -160,20 +172,25 @@ pub const Fui = struct {
             self.mouse_pos.y < rect.y + rect.h;
     }
 
-    pub fn isMouseDown(self: *Fui, rect: Rect) bool {
+    pub fn mouseIsDown(self: *Fui, rect: Rect) bool {
         return
-            self.mouse_down[0] and
-            self.isMouseHere(rect);
+            self.mouse_is_down[0] and
+            self.mouseIsHere(rect);
+    }
+
+    pub fn mouseWentDown(self: *Fui, rect: Rect) bool {
+        return
+            self.mouse_went_down[0] and
+            self.mouseIsHere(rect);
     }
 
     pub fn button(self: *Fui, rect: Rect, chars: str, color: Color) !bool {
-        const down = self.isMouseDown(rect);
         try self.queueRect(rect, color);
-        if (!down) {
+        if (!self.mouseIsDown(rect)) {
             try self.queueRect(.{.x=rect.x+atlas.scale, .y=rect.y+atlas.scale, .w=subSaturating(Coord, rect.w, 2*atlas.scale), .h=subSaturating(Coord, rect.h, 2*atlas.scale)},
                                 .{.r=0, .g=0, .b=0, .a=255});
         }
         try self.text(rect, chars, color);
-        return down;
+        return self.mouseWentDown(rect);
     }
 };
