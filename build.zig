@@ -11,12 +11,12 @@ pub fn build(b: *Builder) !void {
     const mode = b.standardReleaseOptions();
 
     const local = b.addExecutable("focus", "./src/root.zig");
-    include_common(local);
+    includeCommon(local);
     local.setBuildMode(mode);
     local.install();
 
     const cross = b.addExecutable("focus-cross", "./src/root.zig");
-    include_common(cross);
+    includeCommon(cross);
     cross.setBuildMode(mode);
     cross.setTarget(
         std.zig.CrossTarget{
@@ -38,22 +38,9 @@ pub fn build(b: *Builder) !void {
     run_step.dependOn(&run.step);
 }
 
-fn include_common(exe: *std.build.LibExeObjStep) void {
+fn includeCommon(exe: *std.build.LibExeObjStep) void {
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("GL");
     exe.linkSystemLibrary("SDL2");
-    exe.addIncludeDir("./include");
-    exe.addCSourceFile("./include/microui.c", &[_]str{
-        "-std=c99",
-        "-fno-sanitize=undefined",
-    });
     exe.setOutputDir("zig-cache");
-}
-
-fn include_nix(exe: *std.build.LibExeObjStep, env_var: str) !void {
-    var buf = strbuf.init(alloc);
-    defer buf.deinit();
-    try buf.appendSlice(std.os.getenv(env_var).?);
-    try buf.appendSlice("/include");
-    exe.addIncludeDir(buf.items);
 }
