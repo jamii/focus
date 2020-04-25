@@ -1,18 +1,14 @@
 Status:
 
 * mobile-nixos installed but no config.nix yet
-* local build is broken (X BadWindow) but worked earlier
-* cross build seems to work but need to copy over .so
-* focus build works
-* why is drag laggy?
-  * seems like input lag - turning off vsync fixes it but event polling loop is at 100%
-  * can put a sleep in the loop to fix it
-  * how best to sample input?
+* host build works
+* cross build works
+* target build is broken - compiler crashes
 * how to setup ssh-over-usb?
 
 * memory
   * urgency seems broken
-  * no draw yet
+  * no touch yet
 
 # Installing mobile-nixos:
 
@@ -37,7 +33,7 @@ unzstd ~/Downloads/NIXOS_SYSTEM.img.zst
 dd if=Downloads/NIXOS_SYSTEM.img of=/dev/mmcblk0p2 bs=8M oflag=sync,direct status=progress
 
 # boot focus
-# connect to network
+# connect to wifi
 ```
 
 On focus:
@@ -51,10 +47,22 @@ sudo nix-channel --update
 
 Uses config from https://github.com/NixOS/mobile-nixos/blob/master/examples/demo/configuration.nix
 
-For app:
+Local build:
 
 ```
 nix-shell
-export DISPLAY=:0
-../zig-linux-aarch64-0.6.0/zig build run -Drelease-fast=true
+zig build run
+```
+
+Cross build:
+
+```
+nix-shell --arg cross true
+zig build cross
+./sync
+ssh $FOCUS
+  cd /home/jamie
+  nix-shell
+  export DISPLAY=:0
+  ./focus
 ```

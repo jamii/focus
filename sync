@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 
 set -ex
+
+patchelf --set-interpreter $(cat $NIX_GCC/nix-support/dynamic-linker) zig-cache/focus-cross
+patchelf --set-rpath $NIX_LIBGL_LIB/lib:$NIX_SDL2_LIB/lib zig-cache/focus-cross
+scp ./zig-cache/focus-cross $FOCUS:/home/jamie/focus
+
+scp ./default.nix $FOCUS:/home/jamie/default.nix
+
 scp /home/jamie/exo-secret/memory.md $FOCUS:/home/jamie/exo-secret/memory.md
 scp $FOCUS:/home/jamie/exo-secret/memory.log /home/jamie/exo-secret/memory.log
-for file in $(rg --files)
-do
-    scp ./$file $FOCUS:/home/jamie/focus/$file
-done

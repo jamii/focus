@@ -7,16 +7,15 @@ const strbuf = std.ArrayList(u8);
 const alloc = std.testing.allocator;
 
 pub fn build(b: *Builder) !void {
-
     const mode = b.standardReleaseOptions();
 
     const local = b.addExecutable("focus", "./src/root.zig");
-    includeCommon(local);
+    try includeCommon(local);
     local.setBuildMode(mode);
     local.install();
 
     const cross = b.addExecutable("focus-cross", "./src/root.zig");
-    includeCommon(cross);
+    try includeCommon(cross);
     cross.setBuildMode(mode);
     cross.setTarget(
         std.zig.CrossTarget{
@@ -38,9 +37,19 @@ pub fn build(b: *Builder) !void {
     run_step.dependOn(&run.step);
 }
 
-fn includeCommon(exe: *std.build.LibExeObjStep) void {
+fn includeCommon(exe: *std.build.LibExeObjStep) !void {
     exe.linkSystemLibrary("c");
+    try includeNix(exe, "NIX_LIBGL_DEV");
     exe.linkSystemLibrary("GL");
+    try includeNix(exe, "NIX_SDL2_DEV");
     exe.linkSystemLibrary("SDL2");
     exe.setOutputDir("zig-cache");
+}
+
+fn includeNix(exe: *std.build.LibExeObjStep, env_var: str) !void {
+    var buf = strbuf.init(alloc);
+    defer buf.deinit();
+    try buf.appendSlice(std.os.getenv(env_var).?);
+    try buf.appendSlice("/include");
+    exe.addIncludeDir(buf.items);
 }
