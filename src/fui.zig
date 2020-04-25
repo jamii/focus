@@ -170,7 +170,7 @@ pub const Fui = struct {
         const down = self.isMouseDown(rect);
         try self.queueRect(rect, color);
         if (!down) {
-            try self.queueRect(.{.x=rect.x+atlas.scale, .y=rect.y+atlas.scale, .w=subSaturating(Coord, rect.w, atlas.scale), .h=subSaturating(Coord, rect.h, atlas.scale)},
+            try self.queueRect(.{.x=rect.x+atlas.scale, .y=rect.y+atlas.scale, .w=subSaturating(Coord, rect.w, 2*atlas.scale), .h=subSaturating(Coord, rect.h, 2*atlas.scale)},
                                 .{.r=0, .g=0, .b=0, .a=255});
         }
         try self.text(rect, chars, color);
