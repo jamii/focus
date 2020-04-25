@@ -34,4 +34,5 @@ pkgs.stdenv.mkDerivation rec {
       pkgs.pkg-config
     ] ++
     (inputs (if cross then crossPkgs else pkgs));
+  FOCUS="nixos@192.168.1.83";
 }

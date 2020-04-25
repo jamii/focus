@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+set -ex
+scp /home/jamie/exo-secret/memory.md $FOCUS:/home/jamie/exo-secret/memory.md
+scp $FOCUS:/home/jamie/exo-secret/memory.log /home/jamie/exo-secret/memory.log
+for file in $(rg --files)
+do
+    scp ./$file $FOCUS:/home/jamie/focus/$file
+done

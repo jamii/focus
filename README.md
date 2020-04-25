@@ -1,7 +1,7 @@
 Status:
 
 * mobile-nixos installed but no config.nix yet
-* local build is broken (X BadWindow) but worker earlier
+* local build is broken (X BadWindow) but worked earlier
 * cross build seems to work but need to copy over .so
 * focus build works
 * why is drag laggy?
@@ -50,3 +50,11 @@ sudo nix-channel --update
 ```
 
 Uses config from https://github.com/NixOS/mobile-nixos/blob/master/examples/demo/configuration.nix
+
+For app:
+
+```
+nix-shell
+export DISPLAY=:0
+../zig-linux-aarch64-0.6.0/zig build run -Drelease-fast=true
+```
