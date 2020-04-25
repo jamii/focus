@@ -54,7 +54,7 @@ pub const Fui = struct {
                     }
                 },
                 c.SDL_MOUSEMOTION => {
-                    self.mouse_pos = .{.x=@intCast(u16, e.motion.x), .y=@intCast(u16, e.motion.y)};
+                    self.mouse_pos = .{.x=@intCast(u16, e.motion.x * draw.scale), .y=@intCast(u16, e.motion.y * draw.scale)};
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
                     switch (e.button.button) {
@@ -170,7 +170,7 @@ pub const Fui = struct {
         const down = self.isMouseDown(rect);
         try self.queueRect(rect, color);
         if (!down) {
-            try self.queueRect(.{.x=rect.x+1, .y=rect.y+1, .w=subSaturating(Coord, rect.w, 2), .h=subSaturating(Coord, rect.h, 2)},
+            try self.queueRect(.{.x=rect.x+atlas.scale, .y=rect.y+atlas.scale, .w=subSaturating(Coord, rect.w, atlas.scale), .h=subSaturating(Coord, rect.h, atlas.scale)},
                                 .{.r=0, .g=0, .b=0, .a=255});
         }
         try self.text(rect, chars, color);

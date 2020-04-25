@@ -53,8 +53,11 @@ var vertex_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
 var color_buffer = std.mem.zeroes([buffer_size]Quad(Color));
 var index_buffer = std.mem.zeroes([buffer_size][2]Tri(u32));
 
-pub const screen_width = @divTrunc(720, 1);
-pub const screen_height = @divTrunc(1440, 1);
+// can't fit on my laptop screen, so scale down
+pub const scale = if (std.Target.current.cpu.arch == .aarch64) 1 else 2;
+
+pub const screen_width = 720;
+pub const screen_height = 1440;
 
 var buffer_ix: usize = 0;
 
@@ -67,8 +70,8 @@ pub fn init() void {
         "focus",
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
-        @as(c_int, screen_width),
-        @as(c_int, screen_height),
+        @as(c_int, @divTrunc(screen_width, scale)),
+        @as(c_int, @divTrunc(screen_height, scale)),
         SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI
     );
     if (window_o == null) {
@@ -76,7 +79,9 @@ pub fn init() void {
         std.os.exit(1);
     }
     window = window_o.?;
-    _ = SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    if (std.Target.current.cpu.arch == .aarch64) {
+        _ = SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
+    }
     _ = SDL_GL_CreateContext(window);
 
     // init gl
@@ -105,7 +110,7 @@ pub fn init() void {
 fn flush() void {
     if (buffer_ix == 0) { return; }
 
-    glViewport(0, 0, screen_width, screen_height);
+    glViewport(0, 0, @divTrunc(screen_width, scale), @divTrunc(screen_height, scale));
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -184,8 +189,8 @@ pub fn text(chars: str, pos: Vec2, color: Color) void {
     var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
     for (chars) |char| {
         const src = atlas.chars[min(char, 127)];
-        dst.w = src.w;
-        dst.h = src.h;
+        dst.w = src.w * atlas.scale;
+        dst.h = src.h * atlas.scale;
         quad(dst, src, color);
         dst.x += dst.w;
     }

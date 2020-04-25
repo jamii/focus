@@ -2,11 +2,13 @@ usingnamespace @import("common.zig");
 
 const draw = @import("./draw.zig");
 
+pub const scale = 3;
+
 pub const width = 128;
 pub const height = 128;
 
 pub fn charWidth(char: u8) usize {
-    return chars[min(char, 127)].w;
+    return chars[min(char, 127)].w * scale;
 }
 
 pub fn textWidth(text: str) usize {
@@ -17,7 +19,7 @@ pub fn textWidth(text: str) usize {
     return width;
 }
 
-pub const text_height = 18;
+pub const text_height = 18 * scale;
 
 pub const white = draw.Rect{ .x=125, .y=68, .w=3, .h=3 };
 pub const black = draw.Rect{ .x=84, .y=68, .w=2, .h=17 };
