@@ -179,8 +179,13 @@ fn loadClozes(arena: *ArenaAllocator) ![]Cloze {
                     else => {}
                 }
             }
+            try sections.append(cloze_str[last_read..]);
             assert(is_code == false);
             assert(is_blank == false);
+            var text = ArrayList(u8).init(&arena.allocator);
+            for (sections.items) |section| {
+                try text.appendSlice(section);
+            }
             var renders = ArrayList(str).init(&arena.allocator);
             var render_ix: usize = 1;
             while (render_ix < sections.items.len) : (render_ix += 2) {
@@ -194,11 +199,10 @@ fn loadClozes(arena: *ArenaAllocator) ![]Cloze {
                 }
                 try renders.append(render.items);
             }
-            try sections.append(cloze_str[last_read..]);
             try clozes.append(.{
                 .filename = filename,
                 .heading = heading,
-                .text = cloze_str,
+                .text = text.items,
                 .renders = renders.items,
             });
         }
