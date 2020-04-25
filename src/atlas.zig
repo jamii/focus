@@ -5,14 +5,14 @@ const draw = @import("./draw.zig");
 pub const width = 128;
 pub const height = 128;
 
-pub fn char_width(char: u8) usize {
+pub fn charWidth(char: u8) usize {
     return chars[min(char, 127)].w;
 }
 
-pub fn text_width(text: str) usize {
+pub fn textWidth(text: str) usize {
     var width: usize = 0;
     for (text) |char| {
-        width += char_width(char);
+        width += charWidth(char);
     }
     return width;
 }

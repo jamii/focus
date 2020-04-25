@@ -1,7 +1,6 @@
 pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
     @cInclude("SDL2/SDL_opengl.h");
-    @cInclude("microui.h");
 });
 
 pub const std = @import("std");
@@ -84,7 +83,7 @@ pub fn deepEqual(comptime T: type, a: T, b: T) bool {
     }
 }
 
-fn dump_inner(out_stream: var, indent: u32, thing: var) !void {
+fn dumpInner(out_stream: var, indent: u32, thing: var) !void {
     const ti = @typeInfo(@TypeOf(thing));
     switch (ti) {
         .Struct => |sti| {
@@ -93,7 +92,7 @@ fn dump_inner(out_stream: var, indent: u32, thing: var) !void {
             inline for (sti.fields) |field| {
                 try out_stream.writeByteNTimes(' ', indent + 4);
                 try std.fmt.format(out_stream, ".{} = ", .{field.name});
-                try dump_inner(out_stream, indent + 4, @field(thing, field.name));
+                try dumpInner(out_stream, indent + 4, @field(thing, field.name));
                 try out_stream.writeAll(",\n");
             }
             try out_stream.writeByteNTimes(' ', indent);
@@ -106,7 +105,7 @@ fn dump_inner(out_stream: var, indent: u32, thing: var) !void {
                 try std.fmt.format(out_stream, "[{}]{}[\n", .{ati.len, @typeName(ati.child)});
                 for (thing) |elem| {
                     try out_stream.writeByteNTimes(' ', indent + 4);
-                    try dump_inner(out_stream, indent + 4, elem);
+                    try dumpInner(out_stream, indent + 4, elem);
                     try out_stream.writeAll(",\n");
                 }
                 try out_stream.writeByteNTimes(' ', indent);
@@ -117,7 +116,7 @@ fn dump_inner(out_stream: var, indent: u32, thing: var) !void {
             switch (pti.size) {
                 .One => {
                     // TODO print '&'
-                    try dump_inner(out_stream, indent, thing.*);
+                    try dumpInner(out_stream, indent, thing.*);
                 },
                 .Many => {
                     // bail
@@ -130,7 +129,7 @@ fn dump_inner(out_stream: var, indent: u32, thing: var) !void {
                         try std.fmt.format(out_stream, "[]{}[\n", .{@typeName(pti.child)});
                         for (thing) |elem| {
                             try out_stream.writeByteNTimes(' ', indent + 4);
-                            try dump_inner(out_stream, indent + 4, elem);
+                            try dumpInner(out_stream, indent + 4, elem);
                             try out_stream.writeAll(",\n");
                         }
                         try out_stream.writeByteNTimes(' ', indent);
@@ -154,7 +153,7 @@ pub fn dump(thing: var) void {
     const held = std.debug.getStderrMutex().acquire();
     defer held.release();
     const my_stderr = std.debug.getStderrStream();
-    dump_inner(my_stderr.*, 0, thing) catch return;
+    dumpInner(my_stderr.*, 0, thing) catch return;
     my_stderr.writeAll("\n") catch return;
 }
 
@@ -163,4 +162,12 @@ pub fn format(allocator: *Allocator, comptime fmt: str, args: var) !str {
     var out = buf.outStream();
     try std.fmt.format(out, fmt, args);
     return buf.items;
+}
+
+pub fn subSaturating(comptime T: type, a: T, b: T) T {
+    if (b > a) {
+        return 0;
+    } else {
+        return a - b;
+    }
 }

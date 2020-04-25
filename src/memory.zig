@@ -23,7 +23,8 @@ pub const Memory = struct {
         var data_arena = ArenaAllocator.init(allocator);
         const frame_arena = ArenaAllocator.init(allocator);
         const clozes = try loadClozes(&data_arena);
-        var logs = ArrayList(Log).init(&data_arena.allocator);
+        // TODO we consistently get segfaults if we use &data_arena.allocator here - why?
+        var logs = ArrayList(Log).init(allocator);
         try logs.appendSlice(try loadLogs(&data_arena));
         const queue = try sortByUrgency(&data_arena, clozes, logs.items);
         return Memory{
@@ -41,6 +42,7 @@ pub const Memory = struct {
     pub fn deinit(self: *Memory) void {
         self.data_arena.deinit();
         self.frame_arena.deinit();
+        self.logs.deinit();
     }
 
     pub fn frame(self: *Memory, fui: *Fui, rect: Fui.Rect) !void {
@@ -51,47 +53,47 @@ pub const Memory = struct {
         const allocator = &self.frame_arena.allocator;
         assert(self.queue.len > 0);
         if (fui.key orelse 0 == 'q') {
-            try save_logs(self.logs.items);
+            try saveLogs(self.logs.items);
             std.os.exit(0);
         }
         switch (self.state) {
             .Prepare => {
                 try fui.text(rect, try format(allocator, "{} pending", .{self.queue.len}), .{.r=255, .g=255, .b=255, .a=255});
-                try fui.text(.{.x=0, .y=rect.h-atlas.text_height, .w=rect.w, .h=atlas.text_height}, "go", .{.r=255, .g=255, .b=255, .a=255});
-                if (fui.key orelse 0 == 's') {
+                if (try fui.button(.{.x=0, .y=rect.h-atlas.text_height, .w=rect.w, .h=atlas.text_height}, "go", .{.r=255, .g=255, .b=255, .a=255})) {
                     self.state = .Prompt;
                 }
             },
             .Prompt => {
                 const next = self.queue[0];
                 try fui.text(rect, try format(allocator, "{}\n\n(urgency={}, interval={})", .{next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns}), .{.r=255, .g=255, .b=255, .a=255});
-                try fui.text(.{.x=0, .y=rect.h-atlas.text_height, .w=rect.w, .h=atlas.text_height}, "show", .{.r=255, .g=255, .b=255, .a=255});
-                if (fui.key orelse 0 == 's') {
+                if (try fui.button(.{.x=0, .y=rect.h-atlas.text_height, .w=rect.w, .h=atlas.text_height}, "show", .{.r=255, .g=255, .b=255, .a=255})) {
                     self.state = .Reveal;
                 }
             },
             .Reveal => reveal: {
                 const next = self.queue[0];
                 try fui.text(rect, try format(allocator, "{}\n", .{next.cloze.text}), .{.r=255, .g=255, .b=255, .a=255});
-                try fui.text(.{.x=0, .y=rect.h-atlas.text_height, .w=@divTrunc(rect.w, 2), .h=atlas.text_height}, "miss", .{.r=255, .g=255, .b=255, .a=255});
-                try fui.text(.{.x=@divTrunc(rect.w, 2), .y=rect.h-atlas.text_height, .w=@divTrunc(rect.w, 2), .h=atlas.text_height}, "hit", .{.r=255, .g=255, .b=255, .a=255});
-                const event: Log.Event = switch (fui.key orelse 0) {
-                    'a' => .Miss,
-                    'd' => .Hit,
-                    else => break :reveal,
-                };
-                try self.logs.append(.{
-                    .at_ns = std.time.milliTimestamp() * 1_000_000,
-                    .cloze_text = next.cloze.text,
-                    .render_ix = next.state.render_ix,
-                    .event = event,
-                });
-                self.queue = self.queue[1..];
-                if (self.queue.len == 0) {
-                    self.queue = try sortByUrgency(&self.frame_arena, self.clozes, self.logs.items);
-                    self.state = .Prepare;
-                } else {
-                    self.state = .Prompt;
+                var event_o: ?Log.Event = null;
+                if (try fui.button(.{.x=0, .y=rect.h-atlas.text_height, .w=@divTrunc(rect.w, 2), .h=atlas.text_height}, "miss", .{.r=255, .g=255, .b=255, .a=255})) {
+                    event_o = .Miss;
+                }
+                if (try fui.button(.{.x=@divTrunc(rect.w, 2), .y=rect.h-atlas.text_height, .w=@divTrunc(rect.w, 2), .h=atlas.text_height}, "hit", .{.r=255, .g=255, .b=255, .a=255})) {
+                    event_o = .Hit;
+                }
+                if (event_o) |event| {
+                    try self.logs.append(.{
+                        .at_ns = std.time.milliTimestamp() * 1_000_000,
+                        .cloze_text = next.cloze.text,
+                        .render_ix = next.state.render_ix,
+                        .event = event,
+                    });
+                    self.queue = self.queue[1..];
+                    if (self.queue.len == 0) {
+                        self.queue = try sortByUrgency(&self.frame_arena, self.clozes, self.logs.items);
+                        self.state = .Prepare;
+                    } else {
+                        self.state = .Prompt;
+                    }
                 }
             },
         }
@@ -215,7 +217,7 @@ fn loadLogs(arena: *ArenaAllocator) ![]Log {
     return logs;
 }
 
-fn save_logs(logs: []Log) !void {
+fn saveLogs(logs: []Log) !void {
     const filename = "/home/jamie/exo-secret/memory.log";
     var file = try std.fs.cwd().createFile(filename, .{});
     defer file.close();

@@ -78,7 +78,6 @@ pub fn init() void {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
-    // glEnable(GL_SCISSOR_TEST);
     glEnable(GL_TEXTURE_2D);
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
@@ -184,16 +183,6 @@ pub fn text(chars: str, pos: Vec2, color: Color) void {
         quad(dst, src, color);
         dst.x += dst.w;
     }
-}
-
-pub fn set_clip(clip: Rect) void {
-    flush();
-    glScissor(
-        @intCast(c_int, clip.x),
-        @intCast(c_int, screen_height - (clip.y + clip.h)),
-        @intCast(c_int, clip.w),
-        @intCast(c_int, clip.h),
-    );
 }
 
 pub fn clear(color: Color) void {

@@ -15,7 +15,7 @@ pub fn main() anyerror!void {
     defer memory.deinit();
 
     while (true) {
-        while (!fui.handle_input()) {
+        while (!fui.handleInput()) {
             std.time.sleep(@divTrunc(std.time.second, 240));
         }
         const screen = try fui.begin();
