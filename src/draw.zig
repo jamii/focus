@@ -53,8 +53,8 @@ var vertex_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
 var color_buffer = std.mem.zeroes([buffer_size]Quad(Color));
 var index_buffer = std.mem.zeroes([buffer_size][2]Tri(u32));
 
-pub const screen_width = @divTrunc(720, 2);
-pub const screen_height = @divTrunc(1440, 2);
+pub const screen_width = @divTrunc(720, 1);
+pub const screen_height = @divTrunc(1440, 1);
 
 var buffer_ix: usize = 0;
 
@@ -63,14 +63,20 @@ var window: *c.SDL_Window = undefined;
 pub fn init() void {
     // init SDL
     _ = SDL_Init(SDL_INIT_EVERYTHING);
-    window = SDL_CreateWindow(
+    const window_o = SDL_CreateWindow(
         "focus",
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
         @as(c_int, screen_width),
         @as(c_int, screen_height),
-        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI // | SDL_WINDOW_RESIZABLE
-    ).?;
+        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE
+    );
+    if (window_o == null) {
+        warn("SDL_CreateWindow failed: {s}", .{SDL_GetError()});
+        std.os.exit(1);
+    }
+    window = window_o.?;
+    _ = SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
     _ = SDL_GL_CreateContext(window);
 
     // init gl
