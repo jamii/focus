@@ -9,7 +9,7 @@ const alloc = std.testing.allocator;
 pub fn build(b: *Builder) !void {
     const mode = b.standardReleaseOptions();
 
-    const local = b.addExecutable("focus", "./src/root.zig");
+    const local = b.addExecutable("focus-local", "./src/root.zig");
     try includeCommon(local);
     local.setBuildMode(mode);
     local.install();
@@ -43,7 +43,7 @@ fn includeCommon(exe: *std.build.LibExeObjStep) !void {
     exe.linkSystemLibrary("GL");
     try includeNix(exe, "NIX_SDL2_DEV");
     exe.linkSystemLibrary("SDL2");
-    exe.setOutputDir("zig-cache");
+    exe.setOutputDir("./zig-cache");
 }
 
 fn includeNix(exe: *std.build.LibExeObjStep, env_var: str) !void {
