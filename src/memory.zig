@@ -76,7 +76,7 @@ pub const Memory = struct {
                     self.state = .Reveal;
                 }
             },
-            .Reveal => reveal: {
+            .Reveal => {
                 const next = self.queue[0];
                 try ui.text(rect, white, try format(allocator, "{}\n", .{next.cloze.text}));
                 var event_o: ?Log.Event = null;
