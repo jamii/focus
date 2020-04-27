@@ -46,8 +46,6 @@ pub const Memory = struct {
     }
 
     pub fn frame(self: *Memory, ui: *UI, rect: UI.Rect) !void {
-        // TODO remove `orelse 0`
-        // https://github.com/ziglang/zig/issues/1332
         self.frame_arena.deinit();
         self.frame_arena = ArenaAllocator.init(self.allocator);
         const allocator = &self.frame_arena.allocator;
