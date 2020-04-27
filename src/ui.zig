@@ -126,7 +126,7 @@ pub const UI = struct {
         });
     }
 
-    pub fn text(self: *UI, rect: Rect, chars: str, color: Color) !void {
+    pub fn text(self: *UI, rect: Rect, color: Color, chars: str) !void {
         var h: Coord = 0;
         var line_begin: usize = 0;
         while (true) {
@@ -187,12 +187,12 @@ pub const UI = struct {
             self.mouseIsHere(rect);
     }
 
-    pub fn button(self: *UI, rect: Rect, chars: str, color: Color) !bool {
+    pub fn button(self: *UI, rect: Rect, color: Color, chars: str) !bool {
         try self.queueRect(rect, color);
         if (!self.mouseIsDown(rect)) {
             try self.queueRect(.{ .x = rect.x + atlas.scale, .y = rect.y + atlas.scale, .w = subSaturating(Coord, rect.w, 2 * atlas.scale), .h = subSaturating(Coord, rect.h, 2 * atlas.scale) }, .{ .r = 0, .g = 0, .b = 0, .a = 255 });
         }
-        try self.text(rect, chars, color);
+        try self.text(rect, color, chars);
         return self.mouseWentDown(rect);
     }
 };

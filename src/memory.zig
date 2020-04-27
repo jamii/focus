@@ -46,36 +46,46 @@ pub const Memory = struct {
     }
 
     pub fn frame(self: *Memory, ui: *UI, rect: UI.Rect) !void {
+
         self.frame_arena.deinit();
         self.frame_arena = ArenaAllocator.init(self.allocator);
         const allocator = &self.frame_arena.allocator;
+
         assert(self.queue.len > 0);
+
         if (ui.key orelse 0 == 'q') {
             try saveLogs(self.logs.items);
             std.os.exit(0);
         }
+
+        const white = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+        var text_rect = rect;
+        var button_rect = text_rect.splitBottom(atlas.text_height);
+
         switch (self.state) {
             .Prepare => {
-                try ui.text(rect, try format(allocator, "{} pending", .{self.queue.len}), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
-                if (try ui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = rect.w, .h = atlas.text_height }, "go", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
+                try ui.text(text_rect, white, try format(allocator, "{} pending", .{self.queue.len}));
+                if (try ui.button(button_rect, white, "go")) {
                     self.state = .Prompt;
                 }
             },
             .Prompt => {
                 const next = self.queue[0];
-                try ui.text(rect, try format(allocator, "{}\n\n(urgency={}, interval={})", .{ next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns }), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
-                if (try ui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = rect.w, .h = atlas.text_height }, "show", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
+                try ui.text(text_rect, white, try format(allocator, "{}\n\n(urgency={}, interval={})", .{ next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns }));
+                if (try ui.button(button_rect, white, "show")) {
                     self.state = .Reveal;
                 }
             },
             .Reveal => reveal: {
                 const next = self.queue[0];
-                try ui.text(rect, try format(allocator, "{}\n", .{next.cloze.text}), .{ .r = 255, .g = 255, .b = 255, .a = 255 });
+                try ui.text(rect, white, try format(allocator, "{}\n", .{next.cloze.text}));
                 var event_o: ?Log.Event = null;
-                if (try ui.button(.{ .x = 0, .y = rect.h - atlas.text_height, .w = @divTrunc(rect.w, 2), .h = atlas.text_height }, "miss", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
+                var miss_rect = button_rect;
+                var hit_rect = miss_rect.splitRight(@divTrunc(miss_rect.w, 2));
+                if (try ui.button(miss_rect, white, "miss")) {
                     event_o = .Miss;
                 }
-                if (try ui.button(.{ .x = @divTrunc(rect.w, 2), .y = rect.h - atlas.text_height, .w = @divTrunc(rect.w, 2), .h = atlas.text_height }, "hit", .{ .r = 255, .g = 255, .b = 255, .a = 255 })) {
+                if (try ui.button(hit_rect, white, "hit")) {
                     event_o = .Hit;
                 }
                 if (event_o) |event| {

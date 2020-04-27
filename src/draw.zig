@@ -10,6 +10,20 @@ pub const Rect = struct {
     y: Coord,
     w: Coord,
     h: Coord,
+
+    pub fn splitRight(self: *Rect, w: Coord) Rect {
+        assert(self.w >= w);
+        const split = Rect{.x=self.x+self.w-w, .y=self.y, .w=w, .h=self.h};
+        self.w -= w;
+        return split;
+    }
+
+    pub fn splitBottom(self: *Rect, h: Coord) Rect {
+        assert(self.h >= h);
+        const split = Rect{.x=self.x, .y=self.y+self.h-h, .w=self.w, .h=h};
+        self.h -= h;
+        return split;
+    }
 };
 
 pub const Vec2 = struct {
