@@ -30,8 +30,7 @@ let
 
 in
 
-hostPkgs.stdenv.mkDerivation rec {
-  name = "memory";
+hostPkgs.mkShell rec {
   buildInputs = [
     hostPkgs.pkg-config
     hostPkgs.patchelf
