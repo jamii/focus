@@ -1,10 +1,7 @@
+const builtin = @import("builtin");
 const std = @import("std");
 const Builder = std.build.Builder;
-const builtin = @import("builtin");
-
-const str = []const u8;
-const strbuf = std.ArrayList(u8);
-const alloc = std.testing.allocator;
+const allocator = std.testing.allocator;
 
 pub fn build(b: *Builder) !void {
     const mode = b.standardReleaseOptions();
@@ -46,8 +43,8 @@ fn includeCommon(exe: *std.build.LibExeObjStep) !void {
     exe.setOutputDir("./zig-cache");
 }
 
-fn includeNix(exe: *std.build.LibExeObjStep, env_var: str) !void {
-    var buf = strbuf.init(alloc);
+fn includeNix(exe: *std.build.LibExeObjStep, env_var: []const u8) !void {
+    var buf = std.ArrayList(u8).init(allocator);
     defer buf.deinit();
     try buf.appendSlice(std.os.getenv(env_var).?);
     try buf.appendSlice("/include");
