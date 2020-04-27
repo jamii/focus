@@ -78,7 +78,7 @@ pub const Memory = struct {
             },
             .Reveal => {
                 const next = self.queue[0];
-                try ui.text(rect, white, try format(allocator, "{}\n", .{next.cloze.text}));
+                try ui.text(rect, white, try format(allocator, "{}", .{next.cloze.text}));
                 var event_o: ?Log.Event = null;
                 var miss_rect = button_rect;
                 var hit_rect = miss_rect.splitRight(@divTrunc(miss_rect.w, 2));
