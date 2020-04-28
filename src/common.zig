@@ -72,6 +72,29 @@ pub fn deepEqual(comptime T: type, a: T, b: T) bool {
                 },
             }
         },
+        .Enum => |_| {
+            return a == b;
+        },
+        .Union => |uti| {
+            if (uti.tag_type) |tag_type| {
+                inline for (uti.fields) |fti| {
+                    if (@enumToInt(@as(tag_type, a)) == fti.enum_field.?.value) {
+                        if (@enumToInt(@as(tag_type, b)) == fti.enum_field.?.value) {
+                            return deepEqual(
+                                fti.field_type,
+                                @field(a, fti.name),
+                                @field(b, fti.name),
+                            );
+                        } else {
+                            return false;
+                        }
+                    }
+                }
+                unreachable;
+            } else {
+                panic("Can't deepEqual {}", T);
+            }
+        },
         .Int, .Float, .Bool => {
             return a == b;
         },
