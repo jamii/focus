@@ -5,8 +5,8 @@ pub const UI = @import("./ui.zig").UI;
 
 pub const Memory = struct {
     allocator: *Allocator,
-    data_arena: ArenaAllocator,
-    frame_arena: ArenaAllocator,
+    data_arena: *ArenaAllocator,
+    frame_arena: *ArenaAllocator,
     clozes: []Cloze,
     logs: ArrayList(Log),
     urgency_threshold: f64,
@@ -20,13 +20,14 @@ pub const Memory = struct {
     };
 
     pub fn init(allocator: *Allocator) !Memory {
-        var data_arena = ArenaAllocator.init(allocator);
-        const frame_arena = ArenaAllocator.init(allocator);
-        const clozes = try loadClozes(&data_arena);
-        // TODO we consistently get segfaults if we use &data_arena.allocator here - why?
-        var logs = ArrayList(Log).init(allocator);
-        try logs.appendSlice(try loadLogs(&data_arena));
-        const queue = try sortByUrgency(&data_arena, clozes, logs.items);
+        var data_arena = try allocator.create(ArenaAllocator);
+        data_arena.* = ArenaAllocator.init(allocator);
+        var frame_arena = try allocator.create(ArenaAllocator);
+        frame_arena.* = ArenaAllocator.init(allocator);
+        const clozes = try loadClozes(data_arena);
+        var logs = ArrayList(Log).init(&data_arena.allocator);
+        try logs.appendSlice(try loadLogs(data_arena));
+        const queue = try sortByUrgency(data_arena, clozes, logs.items);
         return Memory{
             .allocator = allocator,
             .data_arena = data_arena,
@@ -42,13 +43,13 @@ pub const Memory = struct {
     pub fn deinit(self: *Memory) void {
         self.data_arena.deinit();
         self.frame_arena.deinit();
-        self.logs.deinit();
+        self.allocator.destroy(self.data_arena);
+        self.allocator.destroy(self.frame_arena);
     }
 
     pub fn frame(self: *Memory, ui: *UI, rect: UI.Rect) !void {
-
         self.frame_arena.deinit();
-        self.frame_arena = ArenaAllocator.init(self.allocator);
+        self.frame_arena.* = ArenaAllocator.init(self.allocator);
         const allocator = &self.frame_arena.allocator;
 
         assert(self.queue.len > 0);
@@ -97,7 +98,7 @@ pub const Memory = struct {
                     });
                     self.queue = self.queue[1..];
                     if (self.queue.len == 0) {
-                        self.queue = try sortByUrgency(&self.frame_arena, self.clozes, self.logs.items);
+                        self.queue = try sortByUrgency(self.frame_arena, self.clozes, self.logs.items);
                         self.state = .Prepare;
                     } else {
                         self.state = .Prompt;
