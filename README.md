@@ -67,3 +67,33 @@ ssh $FOCUS
   export DISPLAY=:0
   ./focus
 ```
+
+# TODO
+
+* functions
+  * keyboard
+  * menu
+  * alarm, timer
+  * sms
+  * calls
+  * contacts
+  * calendar
+  * music
+  * pdf/epub
+  * maps
+  * notes
+  * weather
+  * bank
+  * photo/video
+  * otp
+  * email
+  * matrix
+  * sync
+  * file upload
+* support
+  * layout
+  * font
+  * anti-aliasing
+  * touch input
+  * gestures
+  * scroll
