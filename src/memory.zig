@@ -252,9 +252,8 @@ fn sortByUrgency(arena: *ArenaAllocator, clozes: []Cloze, logs: []Log) ![]Cloze.
                 .cloze = cloze,
                 .state = Cloze.State{
                     .render_ix = render_ix,
-                    // newly added stuff is at back of queue until all urgent stuff is done
-                    .interval_ns = 24 * std.time.hour,
-                    .last_hit_ns = std.time.milliTimestamp() * 1_000_000,
+                    .interval_ns = 12 * std.time.hour, // ie 1 day after first hit
+                    .last_hit_ns = 0,
                     .urgency = 0,
                 },
             };
@@ -286,12 +285,22 @@ fn sortByUrgency(arena: *ArenaAllocator, clozes: []Cloze, logs: []Log) ![]Cloze.
     var random = std.rand.DefaultPrng.init(42).random;
     var sorted_clozes = ArrayList(Cloze.WithState).init(&arena.allocator);
     var states_iter = states.iterator();
+    var new_clozes: isize = 0;
     while (states_iter.next()) |kv| {
         var state = &kv.value.state;
         const since_hit_ns = now_ns - state.last_hit_ns;
-        // random tiebreaker on urgency to avoid always seeing stuff in the same order
-        const tiebreaker: f64 = 1 + ((random.float(f64) - 0.5) / 10);
-        state.urgency = tiebreaker * (@intToFloat(f64, since_hit_ns) / @intToFloat(f64, state.interval_ns));
+        state.urgency = (@intToFloat(f64, since_hit_ns) / @intToFloat(f64, state.interval_ns));
+        if (state.last_hit_ns == 0) {
+            new_clozes += 1;
+            if (new_clozes > 10) {
+                continue;
+            }
+        }
+        if (state.urgency < 1) {
+            continue;
+        }
+        // random tiebreaker to avoid always seeing stuff in the same order
+        state.urgency *= 1 + ((random.float(f64) - 0.5) / 10);
         try sorted_clozes.append(kv.value);
     }
     std.sort.sort(Cloze.WithState, sorted_clozes.items, moreUrgent);
