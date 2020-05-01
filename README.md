@@ -65,6 +65,7 @@ ssh $FOCUS
   cd /home/jamie
   nix-shell
   export DISPLAY=:0
+  export SDL_VIDEODRIVER=wayland
   ./focus
 ```
 

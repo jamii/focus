@@ -11,17 +11,23 @@ pub const Rect = struct {
     w: Coord,
     h: Coord,
 
-    pub fn splitRight(self: *Rect, w: Coord) Rect {
+    pub fn shrink(self: *const Rect, margin: Coord) Rect {
+        assert(self.w >= 2 * margin);
+        assert(self.h >= 2 * margin);
+        return Rect{.x=self.x+margin, .y=self.y+margin, .w=self.w-(2*margin), .h=self.h-(2*margin)};
+    }
+
+    pub fn splitRight(self: *Rect, w: Coord, margin: Coord) Rect {
         assert(self.w >= w);
         const split = Rect{.x=self.x+self.w-w, .y=self.y, .w=w, .h=self.h};
-        self.w -= w;
+        self.w -= w + margin;
         return split;
     }
 
-    pub fn splitBottom(self: *Rect, h: Coord) Rect {
+    pub fn splitBottom(self: *Rect, h: Coord, margin: Coord) Rect {
         assert(self.h >= h);
         const split = Rect{.x=self.x, .y=self.y+self.h-h, .w=self.w, .h=h};
-        self.h -= h;
+        self.h -= h + margin;
         return split;
     }
 };

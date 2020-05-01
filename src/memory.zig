@@ -60,20 +60,23 @@ pub const Memory = struct {
         }
 
         const white = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
-        var text_rect = rect;
-        var button_rect = text_rect.splitBottom(atlas.text_height);
+        const margin = 5;
+        var screen_rect = rect;
+        var app_rect = screen_rect.shrink(margin);
+        var button_rect = app_rect.splitBottom(UI.buttonHeight(margin), margin);
+        var text_rect = app_rect;
 
         switch (self.state) {
             .Prepare => {
                 try ui.text(text_rect, white, try format(allocator, "{} pending", .{self.queue.len}));
-                if (try ui.button(button_rect, white, "go")) {
+                if (try ui.button(button_rect, white, margin, "go")) {
                     self.state = .Prompt;
                 }
             },
             .Prompt => {
                 const next = self.queue[0];
                 try ui.text(text_rect, white, try format(allocator, "{}\n\n(urgency={}, interval={})", .{ next.cloze.renders[next.state.render_ix], next.state.urgency, next.state.interval_ns }));
-                if (try ui.button(button_rect, white, "show")) {
+                if (try ui.button(button_rect, white, margin, "show")) {
                     self.state = .Reveal;
                 }
             },
@@ -81,12 +84,12 @@ pub const Memory = struct {
                 const next = self.queue[0];
                 try ui.text(rect, white, try format(allocator, "{}", .{next.cloze.text}));
                 var event_o: ?Log.Event = null;
+                var hit_rect = button_rect.splitRight(@divTrunc(button_rect.w, 2), margin);
                 var miss_rect = button_rect;
-                var hit_rect = miss_rect.splitRight(@divTrunc(miss_rect.w, 2));
-                if (try ui.button(miss_rect, white, "miss")) {
+                if (try ui.button(miss_rect, white, margin, "miss")) {
                     event_o = .Miss;
                 }
-                if (try ui.button(hit_rect, white, "hit")) {
+                if (try ui.button(hit_rect, white, margin, "hit")) {
                     event_o = .Hit;
                 }
                 if (event_o) |event| {

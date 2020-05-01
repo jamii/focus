@@ -187,12 +187,18 @@ pub const UI = struct {
             self.mouseIsHere(rect);
     }
 
-    pub fn button(self: *UI, rect: Rect, color: Color, chars: str) !bool {
+    pub fn buttonHeight(margin: Coord) Coord {
+        return atlas.text_height + (margin * 4);
+    }
+
+    pub fn button(self: *UI, rect: Rect, color: Color, margin: Coord, chars: str) !bool {
         try self.queueRect(rect, color);
         if (!self.mouseIsDown(rect)) {
-            try self.queueRect(.{ .x = rect.x + atlas.scale, .y = rect.y + atlas.scale, .w = subSaturating(Coord, rect.w, 2 * atlas.scale), .h = subSaturating(Coord, rect.h, 2 * atlas.scale) }, .{ .r = 0, .g = 0, .b = 0, .a = 255 });
+            try self.queueRect(rect.shrink(margin), .{ .r = 0, .g = 0, .b = 0, .a = 255 });
         }
-        try self.text(rect, color, chars);
+        var text_rect = rect.shrink(margin*2);
+        text_rect.x += @divTrunc(text_rect.w - @intCast(u16, atlas.textWidth(chars)), 2);
+        try self.text(text_rect, color, chars);
         return self.mouseWentDown(rect);
     }
 };

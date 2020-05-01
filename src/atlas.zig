@@ -12,11 +12,11 @@ pub fn charWidth(char: u8) usize {
 }
 
 pub fn textWidth(text: str) usize {
-    var width: usize = 0;
+    var text_width: usize = 0;
     for (text) |char| {
-        width += charWidth(char);
+        text_width += charWidth(char);
     }
-    return width;
+    return text_width;
 }
 
 pub const text_height = 18 * scale;
