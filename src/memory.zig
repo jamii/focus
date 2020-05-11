@@ -9,7 +9,6 @@ pub const Memory = struct {
     frame_arena: *ArenaAllocator,
     clozes: []Cloze,
     logs: ArrayList(Log),
-    urgency_threshold: f64,
     queue: []Cloze.WithState,
     state: State,
 
@@ -34,7 +33,6 @@ pub const Memory = struct {
             .frame_arena = frame_arena,
             .clozes = clozes,
             .logs = logs,
-            .urgency_threshold = 1.0,
             .queue = queue,
             .state = .Prepare,
         };
