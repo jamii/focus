@@ -1,7 +1,7 @@
-usingnamespace @import("common.zig");
-usingnamespace c;
-
-pub const atlas = @import("./atlas.zig");
+const focus = @import("../focus.zig");
+usingnamespace focus.common;
+usingnamespace focus.common.c;
+const atlas = focus.atlas;
 
 pub const Coord = u16;
 
@@ -202,7 +202,7 @@ pub fn rect(dst: Rect, color: Color) void {
     quad(dst, atlas.white, color);
 }
 
-pub fn text(chars: str, pos: Vec2, color: Color) void {
+pub fn text(chars: []const u8, pos: Vec2, color: Color) void {
     var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
     for (chars) |char| {
         const src = atlas.chars[min(char, 127)];

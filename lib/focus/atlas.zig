@@ -1,6 +1,6 @@
-usingnamespace @import("common.zig");
-
-const draw = @import("./draw.zig");
+const focus = @import("../focus.zig");
+usingnamespace focus.common;
+const draw = focus.draw;
 
 pub const scale = 3;
 
@@ -11,7 +11,7 @@ pub fn charWidth(char: u8) usize {
     return chars[min(char, 127)].w * scale;
 }
 
-pub fn textWidth(text: str) usize {
+pub fn textWidth(text: []const u8) usize {
     var text_width: usize = 0;
     for (text) |char| {
         text_width += charWidth(char);

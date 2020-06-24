@@ -6,12 +6,12 @@ const allocator = std.testing.allocator;
 pub fn build(b: *Builder) !void {
     const mode = b.standardReleaseOptions();
 
-    const local = b.addExecutable("focus-local", "./src/root.zig");
+    const local = b.addExecutable("focus-local", "./bin/focus.zig");
     try includeCommon(local);
     local.setBuildMode(mode);
     local.install();
 
-    const cross = b.addExecutable("focus-cross", "./src/root.zig");
+    const cross = b.addExecutable("focus-cross", "./bin/focus.zig");
     try includeCommon(cross);
     cross.setBuildMode(mode);
     cross.setTarget(
@@ -35,6 +35,7 @@ pub fn build(b: *Builder) !void {
 }
 
 fn includeCommon(exe: *std.build.LibExeObjStep) !void {
+    exe.setMainPkgPath("./");
     exe.linkSystemLibrary("c");
     try includeNix(exe, "NIX_LIBGL_DEV");
     exe.linkSystemLibrary("GL");

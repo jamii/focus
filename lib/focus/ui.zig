@@ -1,7 +1,7 @@
-usingnamespace @import("common.zig");
-
-const atlas = @import("./atlas.zig");
-const draw = @import("./draw.zig");
+const focus = @import("../focus.zig");
+usingnamespace focus.common;
+const atlas = focus.atlas;
+const draw = focus.draw;
 
 pub const UI = struct {
     key: ?u8,
@@ -23,7 +23,7 @@ pub const UI = struct {
         Text: struct {
             pos: Vec2,
             color: draw.Color,
-            chars: str,
+            chars: []const u8,
         },
     };
 
@@ -116,7 +116,7 @@ pub const UI = struct {
         });
     }
 
-    fn queueText(self: *UI, pos: Vec2, color: Color, chars: str) !void {
+    fn queueText(self: *UI, pos: Vec2, color: Color, chars: []const u8) !void {
         try self.command_queue.append(.{
             .Text = .{
                 .pos = pos,
@@ -126,7 +126,7 @@ pub const UI = struct {
         });
     }
 
-    pub fn text(self: *UI, rect: Rect, color: Color, chars: str) !void {
+    pub fn text(self: *UI, rect: Rect, color: Color, chars: []const u8) !void {
         var h: Coord = 0;
         var line_begin: usize = 0;
         while (true) {
@@ -191,7 +191,7 @@ pub const UI = struct {
         return atlas.text_height + (margin * 4);
     }
 
-    pub fn button(self: *UI, rect: Rect, color: Color, margin: Coord, chars: str) !bool {
+    pub fn button(self: *UI, rect: Rect, color: Color, margin: Coord, chars: []const u8) !bool {
         try self.queueRect(rect, color);
         if (!self.mouseIsDown(rect)) {
             try self.queueRect(rect.shrink(margin), .{ .r = 0, .g = 0, .b = 0, .a = 255 });

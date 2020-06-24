@@ -1,7 +1,7 @@
-usingnamespace @import("./common.zig");
-
-pub const atlas = @import("./atlas.zig");
-pub const UI = @import("./ui.zig").UI;
+const focus = @import("../focus.zig");
+usingnamespace focus.common;
+const atlas = focus.atlas;
+const UI = focus.UI;
 
 pub const Memory = struct {
     allocator: *Allocator,
@@ -111,10 +111,10 @@ pub const Memory = struct {
 };
 
 const Cloze = struct {
-    filename: str,
-    heading: str,
-    text: str,
-    renders: []str,
+    filename: []const u8,
+    heading: []const u8,
+    text: []const u8,
+    renders: [][]const u8,
 
     const State = struct {
         render_ix: usize,
@@ -131,7 +131,7 @@ const Cloze = struct {
 
 const Log = struct {
     at_ns: u64,
-    cloze_text: str,
+    cloze_text: []const u8,
     render_ix: usize,
     event: Event,
 
@@ -151,7 +151,7 @@ fn loadClozes(arena: *ArenaAllocator) ![]Cloze {
     const contents = try std.fs.cwd().readFileAlloc(&arena.allocator, filename, std.math.maxInt(usize));
     var clozes = ArrayList(Cloze).init(&arena.allocator);
     var cloze_strs = std.mem.split(std.fmt.trim(contents), "\n\n");
-    var heading: str = "";
+    var heading: []const u8 = "";
     while (cloze_strs.next()) |cloze_str| {
         if (std.mem.startsWith(u8, cloze_str, "#")) {
             // is a heading
@@ -161,7 +161,7 @@ fn loadClozes(arena: *ArenaAllocator) ![]Cloze {
             var render = ArrayList(u8).init(&arena.allocator);
             try render.appendSlice(cloze_str[0..line_end]);
             try render.appendSlice("\n___");
-            var renders: []str = try arena.allocator.alloc(str, 1);
+            var renders: [][]const u8 = try arena.allocator.alloc([]const u8, 1);
             renders[0] = render.items;
             try clozes.append(.{
                 .filename = filename,
@@ -172,7 +172,7 @@ fn loadClozes(arena: *ArenaAllocator) ![]Cloze {
         } else {
             // single line, blanks look like *...*
             // even numbers are text, odd numbers are blanks
-            var sections = ArrayList(str).init(&arena.allocator);
+            var sections = ArrayList([]const u8).init(&arena.allocator);
             var is_code = false;
             var is_blank = false;
             var last_read: usize = 0;
@@ -196,7 +196,7 @@ fn loadClozes(arena: *ArenaAllocator) ![]Cloze {
             for (sections.items) |section| {
                 try text.appendSlice(section);
             }
-            var renders = ArrayList(str).init(&arena.allocator);
+            var renders = ArrayList([]const u8).init(&arena.allocator);
             var render_ix: usize = 1;
             while (render_ix < sections.items.len) : (render_ix += 2) {
                 var render = ArrayList(u8).init(&arena.allocator);
@@ -236,7 +236,7 @@ fn saveLogs(logs: []Log) !void {
 
 fn sortByUrgency(arena: *ArenaAllocator, clozes: []Cloze, logs: []Log) ![]Cloze.WithState {
     const Key = struct {
-        cloze_text: str,
+        cloze_text: []const u8,
         render_ix: usize,
     };
     var states = DeepHashMap(Key, Cloze.WithState).init(&arena.allocator);
