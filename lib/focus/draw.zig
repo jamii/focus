@@ -73,8 +73,7 @@ var vertex_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
 var color_buffer = std.mem.zeroes([buffer_size]Quad(Color));
 var index_buffer = std.mem.zeroes([buffer_size][2]Tri(u32));
 
-// can't fit on my laptop screen, so scale down
-pub const scale = if (std.Target.current.cpu.arch == .aarch64) 1 else 2;
+pub const scale = 1;
 
 pub const screen_width = 720;
 pub const screen_height = 1440;
@@ -202,6 +201,7 @@ pub fn rect(dst: Rect, color: Color) void {
     quad(dst, atlas.white, color);
 }
 
+// TODO going to need to be able to clip text
 pub fn text(chars: []const u8, pos: Vec2, color: Color) void {
     var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
     for (chars) |char| {

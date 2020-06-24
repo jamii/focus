@@ -2,7 +2,7 @@ const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const draw = focus.draw;
 
-pub const scale = 3;
+pub const scale = 1;
 
 pub const width = 128;
 pub const height = 128;
