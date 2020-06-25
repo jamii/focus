@@ -69,8 +69,7 @@ pub const Editor = struct {
         if (self.searchForwards("\n")) |line_end| {
             self.cursor.pos = line_end;
             self.goRightPreserveCol();
-            const line_len = (self.searchForwards("\n") orelse self.text.items.len) - self.cursor.pos;
-            self.cursor.pos += min(self.cursor.col, line_len);
+            self.goCol(self.cursor.col);
         }
     }
 
@@ -78,8 +77,7 @@ pub const Editor = struct {
         self.goLineStart();
         self.goLeftPreserveCol();
         self.goLineStart();
-        const line_len = (self.searchForwards("\n") orelse self.text.items.len) - self.cursor.pos;
-        self.cursor.pos += min(self.cursor.col, line_len);
+        self.goCol(self.cursor.col);
     }
 
     fn deleteBackwards(self: *Editor) void {
@@ -104,6 +102,25 @@ pub const Editor = struct {
         self.goRight();
     }
 
+    fn goCol(self: *Editor, col: usize) void {
+        const line_len = (self.searchForwards("\n") orelse self.text.items.len) - self.cursor.pos;
+        self.cursor.pos += min(col, line_len);
+    }
+
+    fn goLine(self: *Editor, line: usize) void {
+        self.cursor.pos = 0;
+        var lines_remaining = line;
+        while (lines_remaining > 0) : (lines_remaining -= 1) {
+            self.goLineEnd();
+            self.goRight();
+        }
+    }
+
+    fn goLineCol(self: *Editor, line: usize, col: usize) void {
+        self.goLine(line);
+        self.goCol(col);
+    }
+
     pub fn frame(self: *Editor, ui: *UI, rect: UI.Rect) ! void {
         for (ui.key_went_down.items) |key| {
             switch (key) {
@@ -118,7 +135,13 @@ pub const Editor = struct {
                     try self.insertChar(key);
                 }
             }
-            dump(key);
+        }
+
+        if (ui.mouse_is_down[0]) {
+            const line = @divTrunc(ui.mouse_pos.y - rect.y, atlas.text_height);
+            const col = @divTrunc(ui.mouse_pos.x - rect.x, atlas.max_char_width);
+            dump(.{line, col});
+            self.goLineCol(line, col);
         }
 
         var lines = std.mem.split(self.text.items, "\n");
