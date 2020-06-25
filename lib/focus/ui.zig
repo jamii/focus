@@ -58,7 +58,10 @@ pub const UI = struct {
                             self.key = @intCast(u8, e.key.keysym.sym & 0xff);
                             self.key_went_down = true;
                         },
-                        c.SDL_KEYUP => self.key = null,
+                        c.SDL_KEYUP => {
+                            assert(!self.key_went_down); // can we get down and up in a single frame?
+                            self.key = null;
+                        },
                         else => unreachable,
                     }
                 },

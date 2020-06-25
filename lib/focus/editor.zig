@@ -82,11 +82,46 @@ pub const Editor = struct {
         self.cursor.pos += min(self.cursor.col, line_len);
     }
 
+    fn deleteBackwards(self: *Editor) void {
+        if (self.cursor.pos > 0) {
+            std.mem.copy(u8, self.text.items[self.cursor.pos-1..], self.text.items[self.cursor.pos..]);
+            _ = self.text.pop();
+            self.goLeft();
+        }
+    }
+
+    fn deleteForwards(self: *Editor) void {
+        if (self.cursor.pos < self.text.items.len) {
+            std.mem.copy(u8, self.text.items[self.cursor.pos..], self.text.items[self.cursor.pos+1..]);
+            _ = self.text.pop();
+        }
+    }
+
+    fn insertChar(self: *Editor, char: u8) ! void {
+        try self.text.append(0);
+        std.mem.copyBackwards(u8, self.text.items[self.cursor.pos+1..], self.text.items[self.cursor.pos..self.text.items.len-1]);
+        self.text.items[self.cursor.pos] = char;
+        self.goRight();
+    }
+
     pub fn frame(self: *Editor, ui: *UI, rect: UI.Rect) ! void {
-        if (ui.keyWentDown(79)) self.goRight();
-        if (ui.keyWentDown(80)) self.goLeft();
-        if (ui.keyWentDown(81)) self.goDown();
-        if (ui.keyWentDown(82)) self.goUp();
+        if (ui.key_went_down) {
+            const key = ui.key.?;
+            switch (key) {
+                8 => self.deleteBackwards(),
+                13 => try self.insertChar('\n'),
+                79 => self.goRight(),
+                80 => self.goLeft(),
+                81 => self.goDown(),
+                82 => self.goUp(),
+                127 => self.deleteForwards(),
+                else => if (key >= 32 and key <= 126) {
+                    try self.insertChar(key);
+                }
+            }
+            dump(key);
+        }
+
 
         var lines = std.mem.split(self.text.items, "\n");
         var line_ix: u16 = 0;
