@@ -4,8 +4,8 @@ const atlas = focus.atlas;
 const draw = focus.draw;
 
 pub const UI = struct {
-    prev_key: ?u8,
     key: ?u8,
+    key_went_down: bool,
     mouse_pos: Vec2,
     mouse_is_down: [3]bool,
     mouse_went_down: [3]bool,
@@ -30,8 +30,8 @@ pub const UI = struct {
 
     pub fn init(allocator: *Allocator) UI {
         return UI{
-            .prev_key = null,
             .key = null,
+            .key_went_down = false,
             .mouse_pos = .{ .x = 0, .y = 0 },
             .mouse_is_down = .{ false, false, false },
             .mouse_went_down = .{ false, false, false },
@@ -45,16 +45,19 @@ pub const UI = struct {
 
     pub fn handleInput(self: *UI) bool {
         var got_input = false;
-        var e: c.SDL_Event = undefined;
+        self.key_went_down = false;
         self.mouse_went_down = .{ false, false, false };
-        self.prev_key = self.key;
+        var e: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&e) != 0) {
             got_input = true;
             switch (e.type) {
                 c.SDL_QUIT => std.os.exit(0),
                 c.SDL_KEYDOWN, c.SDL_KEYUP => {
                     switch (e.type) {
-                        c.SDL_KEYDOWN => self.key = @intCast(u8, e.key.keysym.sym & 0xff),
+                        c.SDL_KEYDOWN => {
+                            self.key = @intCast(u8, e.key.keysym.sym & 0xff);
+                            self.key_went_down = true;
+                        },
                         c.SDL_KEYUP => self.key = null,
                         else => unreachable,
                     }
@@ -195,7 +198,7 @@ pub const UI = struct {
     }
 
     pub fn keyWentDown(self: *UI, key: u8) bool {
-        return self.keyIsDown(key) and (self.key orelse 0) != (self.prev_key orelse 0);
+        return self.keyIsDown(key) and self.key_went_down;
     }
 
     pub fn buttonHeight(margin: Coord) Coord {

@@ -66,10 +66,12 @@ pub const Editor = struct {
     }
 
     fn goDown(self: *Editor) void {
-        self.goLineEnd();
-        self.goRightPreserveCol();
-        const line_len = (self.searchForwards("\n") orelse self.text.items.len) - self.cursor.pos;
-        self.cursor.pos += min(self.cursor.col, line_len);
+        if (self.searchForwards("\n")) |line_end| {
+            self.cursor.pos = line_end;
+            self.goRightPreserveCol();
+            const line_len = (self.searchForwards("\n") orelse self.text.items.len) - self.cursor.pos;
+            self.cursor.pos += min(self.cursor.col, line_len);
+        }
     }
 
     fn goUp(self: *Editor) void {
@@ -85,8 +87,6 @@ pub const Editor = struct {
         if (ui.keyWentDown(80)) self.goLeft();
         if (ui.keyWentDown(81)) self.goDown();
         if (ui.keyWentDown(82)) self.goUp();
-
-        if (ui.keyWentDown(101)) self.goLineEnd();
 
         var lines = std.mem.split(self.text.items, "\n");
         var line_ix: u16 = 0;
