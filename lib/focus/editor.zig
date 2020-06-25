@@ -105,8 +105,7 @@ pub const Editor = struct {
     }
 
     pub fn frame(self: *Editor, ui: *UI, rect: UI.Rect) ! void {
-        if (ui.key_went_down) {
-            const key = ui.key.?;
+        for (ui.key_went_down.items) |key| {
             switch (key) {
                 8 => self.deleteBackwards(),
                 13 => try self.insertChar('\n'),
@@ -121,7 +120,6 @@ pub const Editor = struct {
             }
             dump(key);
         }
-
 
         var lines = std.mem.split(self.text.items, "\n");
         var line_ix: u16 = 0;

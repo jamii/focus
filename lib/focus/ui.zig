@@ -4,8 +4,8 @@ const atlas = focus.atlas;
 const draw = focus.draw;
 
 pub const UI = struct {
-    key: ?u8,
-    key_went_down: bool,
+    key_is_down: [256]bool,
+    key_went_down: ArrayList(u8),
     mouse_pos: Vec2,
     mouse_is_down: [3]bool,
     mouse_went_down: [3]bool,
@@ -29,9 +29,11 @@ pub const UI = struct {
     };
 
     pub fn init(allocator: *Allocator) UI {
+        var key_is_down: [256]bool = undefined;
+        for (key_is_down) |*b| b.* = false;
         return UI{
-            .key = null,
-            .key_went_down = false,
+            .key_is_down = key_is_down,
+            .key_went_down = ArrayList(u8).init(allocator),
             .mouse_pos = .{ .x = 0, .y = 0 },
             .mouse_is_down = .{ false, false, false },
             .mouse_went_down = .{ false, false, false },
@@ -40,12 +42,13 @@ pub const UI = struct {
     }
 
     pub fn deinit(self: *UI) void {
+        self.key_went_down.deinit();
         self.command_queue.deinit();
     }
 
-    pub fn handleInput(self: *UI) bool {
+    pub fn handleInput(self: *UI) ! bool {
         var got_input = false;
-        self.key_went_down = false;
+        self.key_went_down.items.len = 0;
         self.mouse_went_down = .{ false, false, false };
         var e: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&e) != 0) {
@@ -53,14 +56,14 @@ pub const UI = struct {
             switch (e.type) {
                 c.SDL_QUIT => std.os.exit(0),
                 c.SDL_KEYDOWN, c.SDL_KEYUP => {
+                    const key = @intCast(u8, e.key.keysym.sym & 0xff);
                     switch (e.type) {
                         c.SDL_KEYDOWN => {
-                            self.key = @intCast(u8, e.key.keysym.sym & 0xff);
-                            self.key_went_down = true;
+                            try self.key_went_down.append(key);
+                            self.key_is_down[key] = true;
                         },
                         c.SDL_KEYUP => {
-                            assert(!self.key_went_down); // can we get down and up in a single frame?
-                            self.key = null;
+                            self.key_is_down[key] = false;
                         },
                         else => unreachable,
                     }
@@ -194,14 +197,6 @@ pub const UI = struct {
     pub fn mouseWentDown(self: *UI, rect: Rect) bool {
         return self.mouse_went_down[0] and
             self.mouseIsHere(rect);
-    }
-
-    pub fn keyIsDown(self: *UI, key: u8) bool {
-        return (self.key orelse 0) == key;
-    }
-
-    pub fn keyWentDown(self: *UI, key: u8) bool {
-        return self.keyIsDown(key) and self.key_went_down;
     }
 
     pub fn buttonHeight(margin: Coord) Coord {

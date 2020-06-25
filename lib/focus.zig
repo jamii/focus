@@ -19,7 +19,7 @@ pub fn run(allocator: *Allocator) !void {
     var editor = try Editor.init(allocator, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long");
 
     while (true) {
-        _ = ui.handleInput();
+        _ = try ui.handleInput();
         const screen = try ui.begin();
         // try memory.frame(&ui, screen);
         try editor.frame(&ui, screen);
