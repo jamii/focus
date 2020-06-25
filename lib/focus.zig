@@ -16,7 +16,7 @@ pub fn run(allocator: *Allocator) !void {
     // var memory = try Memory.init(allocator);
     // defer memory.deinit();
 
-    var editor = try Editor.init(allocator, "some initial text\nand some more");
+    var editor = try Editor.init(allocator, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long");
 
     while (true) {
         _ = ui.handleInput();

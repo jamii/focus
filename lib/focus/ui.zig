@@ -4,6 +4,7 @@ const atlas = focus.atlas;
 const draw = focus.draw;
 
 pub const UI = struct {
+    prev_key: ?u8,
     key: ?u8,
     mouse_pos: Vec2,
     mouse_is_down: [3]bool,
@@ -29,6 +30,7 @@ pub const UI = struct {
 
     pub fn init(allocator: *Allocator) UI {
         return UI{
+            .prev_key = null,
             .key = null,
             .mouse_pos = .{ .x = 0, .y = 0 },
             .mouse_is_down = .{ false, false, false },
@@ -45,6 +47,7 @@ pub const UI = struct {
         var got_input = false;
         var e: c.SDL_Event = undefined;
         self.mouse_went_down = .{ false, false, false };
+        self.prev_key = self.key;
         while (c.SDL_PollEvent(&e) != 0) {
             got_input = true;
             switch (e.type) {
@@ -140,7 +143,7 @@ pub const UI = struct {
                         break;
                     }
                     const char = chars[i];
-                    w += @intCast(Coord, atlas.charWidth(char));
+                    w += @intCast(Coord, atlas.max_char_width);
                     if (w > rect.w) {
                         // if haven't soft wrapped yet, hard wrap before this char
                         if (line_end == line_begin) {
@@ -185,6 +188,14 @@ pub const UI = struct {
     pub fn mouseWentDown(self: *UI, rect: Rect) bool {
         return self.mouse_went_down[0] and
             self.mouseIsHere(rect);
+    }
+
+    pub fn keyIsDown(self: *UI, key: u8) bool {
+        return (self.key orelse 0) == key;
+    }
+
+    pub fn keyWentDown(self: *UI, key: u8) bool {
+        return self.keyIsDown(key) and (self.key orelse 0) != (self.prev_key orelse 0);
     }
 
     pub fn buttonHeight(margin: Coord) Coord {

@@ -209,7 +209,7 @@ pub fn text(chars: []const u8, pos: Vec2, color: Color) void {
         dst.w = src.w * atlas.scale;
         dst.h = src.h * atlas.scale;
         quad(dst, src, color);
-        dst.x += dst.w;
+        dst.x += @intCast(u16, atlas.max_char_width);
     }
 }
 

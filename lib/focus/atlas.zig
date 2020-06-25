@@ -11,6 +11,14 @@ pub fn charWidth(char: u8) usize {
     return chars[min(char, 127)].w * scale;
 }
 
+pub const max_char_width = char_width: {
+    var char_width: usize = 0;
+    for (chars) |_, char| {
+        char_width = max(char_width, charWidth(char));
+    }
+    break :char_width char_width + 1;
+};
+
 pub fn textWidth(text: []const u8) usize {
     var text_width: usize = 0;
     for (text) |char| {
