@@ -4,7 +4,7 @@ pub const atlas = @import("./focus/atlas.zig");
 pub const draw = @import("./focus/draw.zig");
 pub const UI = @import("./focus/ui.zig").UI;
 pub const Memory = @import("./focus/memory.zig").Memory;
-pub const Editor = @import("./focus/editor.zig").Editor;
+pub const editor = @import("./focus/editor.zig");
 
 usingnamespace common;
 
@@ -16,13 +16,15 @@ pub fn run(allocator: *Allocator) !void {
     // var memory = try Memory.init(allocator);
     // defer memory.deinit();
 
-    var editor = try Editor.init(allocator, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long");
+    var buffer = editor.Buffer.init(allocator);
+    try buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long");
+    var view = editor.View.init(allocator, &buffer);
 
     while (true) {
         _ = try ui.handleInput();
         const screen = try ui.begin();
         // try memory.frame(&ui, screen);
-        try editor.frame(&ui, screen);
+        try view.frame(&ui, screen);
         try ui.end();
     }
 }

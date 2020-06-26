@@ -3,252 +3,329 @@ usingnamespace focus.common;
 const atlas = focus.atlas;
 const UI = focus.UI;
 
-const Cursor = struct {
-    head_pos: usize,
-    head_col: usize,
-    tail_pos: ?usize,
-};
-
-pub const Editor = struct {
+pub const Buffer = struct {
     allocator: *Allocator,
     text: ArrayList(u8),
-    cursor: Cursor,
-    clipboard: ?[]const u8,
-    mouse_went_down_at: Cursor,
 
-    pub fn init(allocator: *Allocator, init_text: []const u8) ! Editor {
-        var text = try ArrayList(u8).initCapacity(allocator, init_text.len);
-        try text.appendSlice(init_text);
-        return Editor{
+    pub fn init(allocator: *Allocator) Buffer {
+        return Buffer{
             .allocator = allocator,
-            .text = text,
-            .cursor = .{.head_pos=0, .head_col=0, .tail_pos=null},
-            .clipboard=null,
-            .mouse_went_down_at = .{.head_pos=0, .head_col=0, .tail_pos=null},
+            .text = ArrayList(u8).init(allocator),
         };
     }
 
-    pub fn deinit(self: *Editor) void {
+    pub fn deinit(self: *Buffer) void {
         self.text.deinit();
     }
 
-    fn searchBackwards(self: *Editor, needle: []const u8) ?usize {
-        const text = self.text.items[0..self.cursor.head_pos];
-        return if (std.mem.lastIndexOf(u8, text, needle)) |pos| pos + needle.len else null;
+    pub fn bufferEnd(self: *Buffer) usize {
+        return self.text.items.len;
     }
 
-    fn searchForwards(self: *Editor, needle: []const u8) ?usize {
-        const text = self.text.items[self.cursor.head_pos..];
-        return if (std.mem.indexOf(u8, text, needle)) |pos| pos + self.cursor.head_pos else null;
+    pub fn lineStart(self: *Buffer, line: usize) usize {
+        var pos: usize = 0;
+        var lines_remaining = line;
+        while (lines_remaining > 0) : (lines_remaining -= 1) {
+            pos = if (self.searchForwards(pos, "\n")) |next_pos| next_pos + 1 else self.text.items.len;
+        }
+        return pos;
     }
 
-    fn lineStart(self: *Editor) usize {
+    pub fn lineCol(self: *Buffer, pos: usize) [2]usize {
+        var line: usize = 0;
+        const col = pos - self.lineStart();
+        var pos_remaining = pos;
+        while (self.searchBackwards(pos_remaining, "\n")) |line_start| {
+            pos_remaining = line_start - 1;
+            line += 1;
+        }
+        return .{line, col};
+    }
+
+    pub fn searchBackwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
+        const text = self.text.items[0..pos];
+        return if (std.mem.lastIndexOf(u8, text, needle)) |result_pos| result_pos + needle.len else null;
+    }
+
+    pub fn searchForwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
+        const text = self.text.items[pos..];
+        return if (std.mem.indexOf(u8, text, needle)) |result_pos| result_pos + pos else null;
+    }
+
+    pub fn copy(self: *Buffer, allocator: *Allocator, start: usize, end: usize) ! []const u8 {
+        assert(start <= end);
+        assert(end <= self.text.items.len);
+        return std.mem.dupe(allocator, u8, self.text.items[start..end]);
+    }
+
+    pub fn insert(self: *Buffer, pos: usize, chars: []const u8) ! void {
+        try self.text.resize(self.text.items.len + chars.len);
+        std.mem.copyBackwards(u8, self.text.items[pos+chars.len..], self.text.items[pos..self.text.items.len-chars.len]);
+        std.mem.copy(u8, self.text.items[pos..], chars);
+    }
+
+    pub fn delete(self: *Buffer, start: usize, end: usize) void {
+        assert(start <= end);
+        assert(end <= self.text.items.len);
+        std.mem.copy(u8, self.text.items[start..], self.text.items[end..]);
+        self.text.shrink(self.text.items.len - (end - start));
+    }
+
+    pub fn and_cursor(self: *Buffer, cursor: *Cursor) BufferAndCursor {
+        return BufferAndCursor{.buffer = self, .cursor = cursor};
+    }
+};
+
+pub const CursorData = struct {
+    // 0 <= head_pos <= buffer.bufferEnd()
+    head_pos: usize,
+    // what column the cursor 'wants' to be at
+    // should only be updated by left/right movement
+    head_col: usize,
+    // 0 <= tail_pos <= buffer.bufferEnd()
+    tail_pos: ?usize,
+    // allocated by view.allocator
+    clipboard: []const u8,
+};
+
+pub const Cursor = struct {
+    allocator: *Allocator,
+    buffer: *Buffer,
+    data: *CursorData,
+    
+    pub fn searchBackwards(self: Cursor, needle: []const u8) ?usize {
+        return self.buffer.searchBackwards(self.data.head_pos, needle);
+    }
+
+    pub fn searchForwards(self: Cursor, needle: []const u8) ?usize {
+        return self.buffer.searchForwards(self.data.head_pos, needle);
+    }
+
+    pub fn lineStart(self: Cursor) usize {
         return self.searchBackwards("\n") orelse 0;
     }
 
-    fn lineEnd(self: *Editor) usize {
-        return self.searchForwards("\n") orelse self.text.items.len;
+    pub fn lineEnd(self: Cursor) usize {
+        return self.searchForwards("\n") orelse self.buffer.bufferEnd();
     }
 
-    fn updateCol(self: *Editor) void {
-        self.cursor.head_col = self.cursor.head_pos - self.lineStart();
+    pub fn updateCol(self: Cursor) void {
+        self.data.head_col = self.data.head_pos - self.lineStart();
     }
 
-    fn goPos(self: *Editor, pos: usize) void {
-        self.cursor.head_pos = pos;
+    pub fn goPos(self: Cursor, pos: usize) void {
+        self.data.head_pos = pos;
         self.updateCol();
     }
 
-    fn goCol(self: *Editor, col: usize) void {
+    pub fn goCol(self: Cursor, col: usize) void {
         const line_start = self.lineStart();
-        self.cursor.head_col = min(col, self.lineEnd() - line_start);
-        self.cursor.head_pos = line_start + self.cursor.head_col;
+        self.data.head_col = min(col, self.lineEnd() - line_start);
+        self.data.head_pos = line_start + self.data.head_col;
     }
 
-    fn goLine(self: *Editor, line: usize) void {
-        self.cursor.head_pos = 0;
-        var lines_remaining = line;
-        while (lines_remaining > 0) : (lines_remaining -= 1) {
-            self.goLineEnd();
-            self.goRight();
-        }
+    pub fn goLine(self: Cursor, line: usize) void {
+        self.data.head_pos = self.buffer.lineStart(line);
+        // leave head_col intact
     }
 
-    fn goLineCol(self: *Editor, line: usize, col: usize) void {
+    pub fn goLineCol(self: Cursor, line: usize, col: usize) void {
         self.goLine(line);
         self.goCol(col);
     }
 
-    fn goLeft(self: *Editor) void {
-        self.cursor.head_pos -= @as(usize, if (self.cursor.head_pos == 0) 0 else 1);
+    pub fn goLeft(self: Cursor) void {
+        self.data.head_pos -= @as(usize, if (self.data.head_pos == 0) 0 else 1);
         self.updateCol();
     }
 
-    fn goRight(self: *Editor) void {
-        self.cursor.head_pos += @as(usize, if (self.cursor.head_pos >= self.text.items.len) 0 else 1);
+    pub fn goRight(self: Cursor) void {
+        self.data.head_pos += @as(usize, if (self.data.head_pos >= self.buffer.bufferEnd()) 0 else 1);
         self.updateCol();
     }
 
-    fn goLineStart(self: *Editor) void {
-        self.cursor.head_pos = self.lineStart();
-        self.cursor.head_col = 0;
+    pub fn goDown(self: Cursor) void {
+        if (self.searchForwards("\n")) |line_end| {
+            const col = self.data.head_col;
+            self.data.head_pos = line_end + 1;
+            self.goCol(col);
+            self.data.head_col = col;
+        }
     }
 
-    fn goLineEnd(self: *Editor) void {
-        self.cursor.head_pos = self.searchForwards("\n") orelse self.text.items.len;
+    pub fn goUp(self: Cursor) void {
+        if (self.searchBackwards("\n")) |line_start| {
+            const col = self.data.head_col;
+            self.data.head_pos = line_start - 1;
+            self.goCol(col);
+            self.data.head_col = col;
+        }
     }
 
-    fn goPageStart(self: *Editor) void {
+    pub fn goLineStart(self: Cursor) void {
+        self.data.head_pos = self.lineStart();
+        self.data.head_col = 0;
+    }
+
+    pub fn goLineEnd(self: Cursor) void {
+        self.data.head_pos = self.searchForwards("\n") orelse self.buffer.bufferEnd();
+        self.updateCol();
+    }
+
+    pub fn goPageStart(self: Cursor) void {
         self.goPos(0);
     }
 
-    fn goPageEnd(self: *Editor) void {
-        self.goPos(self.text.items.len);
+    pub fn goPageEnd(self: Cursor) void {
+        self.goPos(self.buffer.bufferEnd());
     }
 
-    fn goDown(self: *Editor) void {
-        if (self.searchForwards("\n")) |line_end| {
-            const col = self.cursor.head_col;
-            self.cursor.head_pos = line_end;
-            self.goRight();
-            self.goCol(col);
-            self.cursor.head_col = col;
-        }
-    }
-
-    fn goUp(self: *Editor) void {
-        if (self.searchBackwards("\n")) |line_start| {
-            const col = self.cursor.head_col;
-            self.cursor.head_pos = line_start;
-            self.goLeft();
-            self.goCol(col);
-            self.cursor.head_col = col;
-        }
-    }
-
-    fn deleteSelection(self: *Editor) void {
+    pub fn deleteSelection(self: Cursor) void {
         if (self.selectionPos()) |pos| {
-            std.mem.copy(u8, self.text.items[pos[0]..], self.text.items[pos[1]..]);
-            self.text.shrink(self.text.items.len - (pos[1] - pos[0]));
-            self.cursor.head_pos = pos[0];
-            self.cursor.head_col = pos[0];
-            self.clearMark();
+            self.buffer.delete(pos[0], pos[1]);
+            self.data.head_pos = pos[0];
+            self.data.head_col = pos[0];
         }
+        self.clearMark();
     }
 
-    fn deleteBackwards(self: *Editor) void {
+    pub fn deleteBackwards(self: Cursor) void {
         if (self.selectionPos()) |_| {
             self.deleteSelection();
-        } else if (self.cursor.head_pos > 0) {
-            std.mem.copy(u8, self.text.items[self.cursor.head_pos-1..], self.text.items[self.cursor.head_pos..]);
-            _ = self.text.pop();
+        } else if (self.data.head_pos > 0) {
+            self.buffer.delete(self.data.head_pos-1, self.data.head_pos);
             self.goLeft();
         }
     }
 
-    fn deleteForwards(self: *Editor) void {
+    pub fn deleteForwards(self: Cursor) void {
         if (self.selectionPos()) |_| {
             self.deleteSelection();
-        } else if (self.cursor.head_pos < self.text.items.len) {
-            std.mem.copy(u8, self.text.items[self.cursor.head_pos..], self.text.items[self.cursor.head_pos+1..]);
-            _ = self.text.pop();
+        } else if (self.data.head_pos < self.buffer.bufferEnd()) {
+            self.buffer.delete(self.data.head_pos, self.data.head_pos+1);
         }
     }
 
-    fn insert(self: *Editor, chars: []const u8) ! void {
-        try self.text.resize(self.text.items.len + chars.len);
-        std.mem.copyBackwards(u8, self.text.items[self.cursor.head_pos+chars.len..], self.text.items[self.cursor.head_pos..self.text.items.len-chars.len]);
-        std.mem.copy(u8, self.text.items[self.cursor.head_pos..], chars);
-        self.cursor.head_pos += chars.len;
+    pub fn insert(self: Cursor, chars: []const u8) ! void {
+        self.deleteSelection();
+        try self.buffer.insert(self.data.head_pos, chars);
+        self.data.head_pos += chars.len;
+        self.updateCol();
     }
 
-    fn clearMark(self: *Editor) void {
-        self.cursor.tail_pos = null;
+    pub fn clearMark(self: Cursor) void {
+        self.data.tail_pos = null;
     }
 
-    fn setMarkPos(self: *Editor, pos: usize) void {
-        self.cursor.tail_pos = pos;
+    pub fn setMarkPos(self: Cursor, pos: usize) void {
+        self.data.tail_pos = pos;
     }
 
-    fn setMark(self: *Editor) void {
-        self.cursor.tail_pos = self.cursor.head_pos;
+    pub fn setMark(self: Cursor) void {
+        self.data.tail_pos = self.data.head_pos;
     }
 
-    fn selectionPos(self: *Editor) ?[2]usize {
-        if (self.cursor.tail_pos) |tail_pos| {
-            const selection_start_pos = min(self.cursor.head_pos, tail_pos);
-            const selection_end_pos = max(self.cursor.head_pos, tail_pos);
+    pub fn selectionPos(self: Cursor) ?[2]usize {
+        if (self.data.tail_pos) |tail_pos| {
+            const selection_start_pos = min(self.data.head_pos, tail_pos);
+            const selection_end_pos = max(self.data.head_pos, tail_pos);
             return [2]usize{selection_start_pos, selection_end_pos};
         } else {
             return null;
         }
     }
 
-    fn selection(self: *Editor) ?[]const u8 {
+    pub fn selection(self: Cursor) ! []const u8 {
         if (self.selectionPos()) |pos| {
-            return self.text.items[pos[0]..pos[1]];
+            return self.buffer.copy(self.allocator, pos[0], pos[1]);
         } else {
-            return null;
+            return "";
         }
     }
 
-    fn copy(self: *Editor) ! void {
-        if (self.clipboard) |clipboard| {
-            self.allocator.free(clipboard);
-        }
-        self.clipboard = try std.mem.dupe(self.allocator, u8, self.selection() orelse "");
+    pub fn copy(self: Cursor) ! void {
+        self.allocator.free(self.data.clipboard);
+        self.data.clipboard = try self.selection();
         self.clearMark();
     }
 
-    fn cut(self: *Editor) ! void {
-        if (self.clipboard) |clipboard| {
-            self.allocator.free(clipboard);
-        }
-        self.clipboard = try std.mem.dupe(self.allocator, u8, self.selection() orelse "");
+    pub fn cut(self: Cursor) ! void {
+        self.allocator.free(self.data.clipboard);
+        self.data.clipboard = try self.selection();
         self.deleteSelection();
     }
 
-    fn paste(self: *Editor) ! void {
-        try self.insert(self.clipboard orelse "");
+    pub fn paste(self: Cursor) ! void {
+        try self.insert(self.data.clipboard);
+    }
+};
+
+pub const View = struct {
+    allocator: *Allocator,
+    buffer: *Buffer,
+    cursor_data: CursorData,
+    mouse_went_down_at: usize,
+
+    pub fn init(allocator: *Allocator, buffer: *Buffer) View {
+        return View{
+            .allocator = allocator,
+            .buffer = buffer,
+            .cursor_data = .{
+                .head_pos=0,
+                .head_col=0,
+                .tail_pos=null,
+                .clipboard="",
+            },
+            .mouse_went_down_at = 0,
+        };
     }
 
-    pub fn frame(self: *Editor, ui: *UI, rect: UI.Rect) ! void {
+    pub fn deinit(self: *View) void {
+        self.allocator.free(self.cursor_data.clipboard);
+    }
+
+    pub fn frame(self: *View, ui: *UI, rect: UI.Rect) ! void {
+        const cursor = Cursor{
+            .allocator = self.allocator,
+            .buffer = self.buffer,
+            .data = &self.cursor_data
+        };
+        
         for (ui.key_went_down.items) |key| {
-            dump(key);
             const ctrl = 224;
             const alt = 226;
             if (ui.key_is_down[ctrl]) {
                 switch (key) {
-                    ' ' => self.setMark(),
-                    'c' => try self.copy(),
-                    'x' => try self.cut(),
-                    'v' => try self.paste(),
-                    'j' => self.goLeft(),
-                    'l' => self.goRight(),
-                    'k' => self.goDown(),
-                    'i' => self.goUp(),
+                    ' ' => cursor.setMark(),
+                    'c' => try cursor.copy(),
+                    'x' => try cursor.cut(),
+                    'v' => try cursor.paste(),
+                    'j' => cursor.goLeft(),
+                    'l' => cursor.goRight(),
+                    'k' => cursor.goDown(),
+                    'i' => cursor.goUp(),
                     else => {},
                 }
             } else if (ui.key_is_down[alt]) {
                 switch (key) {
-                    ' ' => self.clearMark(),
-                    'j' => self.goLineStart(),
-                    'l' => self.goLineEnd(),
-                    'k' => self.goPageEnd(),
-                    'i' => self.goPageStart(),
+                    ' ' => cursor.clearMark(),
+                    'j' => cursor.goLineStart(),
+                    'l' => cursor.goLineEnd(),
+                    'k' => cursor.goPageEnd(),
+                    'i' => cursor.goPageStart(),
                     else => {},
                 }
             } else {
                 switch (key) {
-                    8 => self.deleteBackwards(),
-                    13 => try self.insert(&[1]u8{'\n'}),
-                    79 => self.goRight(),
-                    80 => self.goLeft(),
-                    81 => self.goDown(),
-                    82 => self.goUp(),
-                    127 => self.deleteForwards(),
+                    8 => cursor.deleteBackwards(),
+                    13 => try cursor.insert(&[1]u8{'\n'}),
+                    79 => cursor.goRight(),
+                    80 => cursor.goLeft(),
+                    81 => cursor.goDown(),
+                    82 => cursor.goUp(),
+                    127 => cursor.deleteForwards(),
                     else => if (key >= 32 and key <= 126) {
-                        try self.insert(&[1]u8{key});
+                        try cursor.insert(&[1]u8{key});
                     }
                 }
             }
@@ -257,23 +334,23 @@ pub const Editor = struct {
         if (ui.mouse_is_down[0]) {
             const line = @divTrunc(ui.mouse_pos.y - rect.y, atlas.text_height);
             const col = @divTrunc(ui.mouse_pos.x - rect.x, atlas.max_char_width);
-            self.goLineCol(line, col);
+            cursor.goLineCol(line, col);
             if (ui.mouse_went_down[0]) {
-                self.clearMark();
-                self.mouse_went_down_at = self.cursor;
-            } else if (self.cursor.head_pos != self.mouse_went_down_at.head_pos) {
-                self.setMarkPos(self.mouse_went_down_at.head_pos);
+                cursor.clearMark();
+                self.mouse_went_down_at = cursor.data.head_pos;
+            } else if (cursor.data.head_pos != self.mouse_went_down_at) {
+                cursor.setMarkPos(self.mouse_went_down_at);
             }   
         }
 
         const text_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
         const highlight_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 100 };
         
-        var lines = std.mem.split(self.text.items, "\n");
+        var lines = std.mem.split(self.buffer.text.items, "\n");
         var line_ix: u16 = 0;
         var line_start_pos: usize = 0;
-        const selection_start_pos = min(self.cursor.head_pos, self.cursor.tail_pos orelse self.cursor.head_pos);
-        const selection_end_pos = max(self.cursor.head_pos, self.cursor.tail_pos orelse self.cursor.head_pos);
+        const selection_start_pos = min(cursor.data.head_pos, cursor.data.tail_pos orelse cursor.data.head_pos);
+        const selection_end_pos = max(cursor.data.head_pos, cursor.data.tail_pos orelse cursor.data.head_pos);
         while (lines.next()) |line| : (line_ix += 1) {
             if ((line_ix * atlas.text_height) > rect.h) break;
             
@@ -281,8 +358,8 @@ pub const Editor = struct {
             const line_end_pos = line_start_pos + line.len;
 
             // draw cursor
-            if (self.cursor.head_pos >= line_start_pos and self.cursor.head_pos <= line_end_pos) {
-                const x = rect.x + ((self.cursor.head_pos - line_start_pos) * atlas.max_char_width);
+            if (cursor.data.head_pos >= line_start_pos and cursor.data.head_pos <= line_end_pos) {
+                const x = rect.x + ((cursor.data.head_pos - line_start_pos) * atlas.max_char_width);
                 try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height}, text_color);
             }
 
