@@ -18,7 +18,7 @@ pub fn run(allocator: *Allocator) !void {
 
     var buffer = editor.Buffer.init(allocator);
     try buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long");
-    var view = editor.View.init(allocator, &buffer);
+    var view = try editor.View.init(allocator, &buffer);
 
     while (true) {
         _ = try ui.handleInput();

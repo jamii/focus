@@ -225,6 +225,14 @@ pub const Cursor = struct {
         self.data.tail_pos = self.data.head_pos;
     }
 
+    pub fn toggleMark(self: Cursor) void {
+        if (self.data.tail_pos) |_| {
+            self.clearMark();
+        } else {
+            self.setMark();
+        }
+    }
+
     pub fn selectionPos(self: Cursor) ?[2]usize {
         if (self.data.tail_pos) |tail_pos| {
             const selection_start_pos = min(self.data.head_pos, tail_pos);
@@ -263,77 +271,99 @@ pub const Cursor = struct {
 pub const View = struct {
     allocator: *Allocator,
     buffer: *Buffer,
-    cursor_data: CursorData,
+    cursor_datas: ArrayList(CursorData),
     mouse_went_down_at: usize,
 
-    pub fn init(allocator: *Allocator, buffer: *Buffer) View {
-        return View{
-            .allocator = allocator,
-            .buffer = buffer,
-            .cursor_data = .{
+    pub fn init(allocator: *Allocator, buffer: *Buffer) ! View {
+        var cursor_datas = ArrayList(CursorData).init(allocator);
+        try cursor_datas.append(.{
                 .head_pos=0,
                 .head_col=0,
                 .tail_pos=null,
                 .clipboard="",
-            },
+        });
+        return View{
+            .allocator = allocator,
+            .buffer = buffer,
+            .cursor_datas = cursor_datas,
             .mouse_went_down_at = 0,
         };
     }
 
     pub fn deinit(self: *View) void {
-        self.allocator.free(self.cursor_data.clipboard);
+        for (self.cursors) |cursor_data| {
+            self.allocator.free(cursor_data.clipboard);
+        }
+        self.cursors.deinit();
+    }
+
+    fn makeCursor(self: *View, data: *CursorData) Cursor {
+        return Cursor{
+            .allocator = self.allocator,
+            .buffer = self.buffer,
+            .data = data,
+        };
     }
 
     pub fn frame(self: *View, ui: *UI, rect: UI.Rect) ! void {
-        const cursor = Cursor{
-            .allocator = self.allocator,
-            .buffer = self.buffer,
-            .data = &self.cursor_data
-        };
-        
+        // TODO rctrl/ralt?
+        const ctrl = 224;
+        const alt = 226;
+
+        // handle keys
         for (ui.key_went_down.items) |key| {
-            const ctrl = 224;
-            const alt = 226;
             if (ui.key_is_down[ctrl]) {
                 switch (key) {
-                    ' ' => cursor.setMark(),
-                    'c' => try cursor.copy(),
-                    'x' => try cursor.cut(),
-                    'v' => try cursor.paste(),
-                    'j' => cursor.goLeft(),
-                    'l' => cursor.goRight(),
-                    'k' => cursor.goDown(),
-                    'i' => cursor.goUp(),
+                    ' ' => for (self.cursor_datas.items) |*data| self.makeCursor(data).toggleMark(),
+                    'c' => for (self.cursor_datas.items) |*data| try self.makeCursor(data).copy(),
+                    'x' => for (self.cursor_datas.items) |*data| try self.makeCursor(data).cut(), // TODO
+                    'v' => for (self.cursor_datas.items) |*data| try self.makeCursor(data).paste(), // TODO
+                    'j' => for (self.cursor_datas.items) |*data| self.makeCursor(data).goLeft(),
+                    'l' => for (self.cursor_datas.items) |*data| self.makeCursor(data).goRight(),
+                    'k' => for (self.cursor_datas.items) |*data| self.makeCursor(data).goDown(),
+                    'i' => for (self.cursor_datas.items) |*data| self.makeCursor(data).goUp(),
                     else => {},
                 }
             } else if (ui.key_is_down[alt]) {
                 switch (key) {
-                    ' ' => cursor.clearMark(),
-                    'j' => cursor.goLineStart(),
-                    'l' => cursor.goLineEnd(),
-                    'k' => cursor.goPageEnd(),
-                    'i' => cursor.goPageStart(),
+                    'j' => for (self.cursor_datas.items) |*data| self.makeCursor(data).goLineStart(),
+                    'l' => for (self.cursor_datas.items) |*data| self.makeCursor(data).goLineEnd(),
+                    'k' => for (self.cursor_datas.items) |*data| self.makeCursor(data).goPageEnd(),
+                    'i' => for (self.cursor_datas.items) |*data| self.makeCursor(data).goPageStart(),
                     else => {},
                 }
             } else {
                 switch (key) {
-                    8 => cursor.deleteBackwards(),
-                    13 => try cursor.insert(&[1]u8{'\n'}),
-                    79 => cursor.goRight(),
-                    80 => cursor.goLeft(),
-                    81 => cursor.goDown(),
-                    82 => cursor.goUp(),
-                    127 => cursor.deleteForwards(),
+                    8 => for (self.cursor_datas.items) |*data| self.makeCursor(data).deleteBackwards(), // TODO
+                    13 => for (self.cursor_datas.items) |*data| try self.makeCursor(data).insert(&[1]u8{'\n'}), // TODO
+                    79 => for (self.cursor_datas.items) |*data| self.makeCursor(data).goRight(),
+                    80 => for (self.cursor_datas.items) |*data| self.makeCursor(data).goLeft(),
+                    81 => for (self.cursor_datas.items) |*data| self.makeCursor(data).goDown(),
+                    82 => for (self.cursor_datas.items) |*data| self.makeCursor(data).goUp(),
+                    127 => for (self.cursor_datas.items) |*data| self.makeCursor(data).deleteForwards(), // TODO
                     else => if (key >= 32 and key <= 126) {
-                        try cursor.insert(&[1]u8{key});
+                        for (self.cursor_datas.items) |*data| try self.makeCursor(data).insert(&[1]u8{key}); // TODO
                     }
                 }
             }
         }
 
+        // handle mouse
         if (ui.mouse_is_down[0]) {
             const line = @divTrunc(ui.mouse_pos.y - rect.y, atlas.text_height);
             const col = @divTrunc(ui.mouse_pos.x - rect.x, atlas.max_char_width);
+            if (ui.mouse_went_down[0]) {
+                if (!ui.key_is_down[ctrl]) {
+                    self.cursor_datas.shrink(0);
+                }
+                try self.cursor_datas.append(.{
+                    .head_pos=0,
+                    .head_col=0,
+                    .tail_pos=null,
+                    .clipboard="",
+                });
+            }
+            const cursor = self.makeCursor(&self.cursor_datas.items[self.cursor_datas.items.len - 1]);
             cursor.goLineCol(line, col);
             if (ui.mouse_went_down[0]) {
                 cursor.clearMark();
@@ -343,36 +373,40 @@ pub const View = struct {
             }   
         }
 
+        // draw
         const text_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
         const highlight_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 100 };
-        
         var lines = std.mem.split(self.buffer.text.items, "\n");
         var line_ix: u16 = 0;
         var line_start_pos: usize = 0;
-        const selection_start_pos = min(cursor.data.head_pos, cursor.data.tail_pos orelse cursor.data.head_pos);
-        const selection_end_pos = max(cursor.data.head_pos, cursor.data.tail_pos orelse cursor.data.head_pos);
         while (lines.next()) |line| : (line_ix += 1) {
             if ((line_ix * atlas.text_height) > rect.h) break;
             
             const y = rect.y + (line_ix * atlas.text_height);
             const line_end_pos = line_start_pos + line.len;
 
-            // draw cursor
-            if (cursor.data.head_pos >= line_start_pos and cursor.data.head_pos <= line_end_pos) {
-                const x = rect.x + ((cursor.data.head_pos - line_start_pos) * atlas.max_char_width);
-                try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height}, text_color);
-            }
+            for (self.cursor_datas.items) |*data| {
+                const cursor = self.makeCursor(data);
 
-            // draw selection
-            const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
-            const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
-            if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_end_pos and selection_end_pos > line_end_pos)) {
-                const x = rect.x + ((highlight_start_pos - line_start_pos) * atlas.max_char_width);
-                const w = if (selection_end_pos > line_end_pos)
-                    rect.x + rect.w - x
-                else
-                    (highlight_end_pos - highlight_start_pos) * atlas.max_char_width;
-                try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=atlas.text_height}, highlight_color);
+                // draw cursor
+                if (cursor.data.head_pos >= line_start_pos and cursor.data.head_pos <= line_end_pos) {
+                    const x = rect.x + ((cursor.data.head_pos - line_start_pos) * atlas.max_char_width);
+                    try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height}, text_color);
+                }
+
+                // draw selection
+                const selection_start_pos = min(cursor.data.head_pos, cursor.data.tail_pos orelse cursor.data.head_pos);
+                const selection_end_pos = max(cursor.data.head_pos, cursor.data.tail_pos orelse cursor.data.head_pos);
+                const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
+                const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
+                if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_end_pos and selection_end_pos > line_end_pos)) {
+                    const x = rect.x + ((highlight_start_pos - line_start_pos) * atlas.max_char_width);
+                    const w = if (selection_end_pos > line_end_pos)
+                        rect.x + rect.w - x
+                        else
+                        (highlight_end_pos - highlight_start_pos) * atlas.max_char_width;
+                    try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=atlas.text_height}, highlight_color);
+                }
             }
             
             // draw text
