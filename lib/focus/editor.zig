@@ -18,11 +18,11 @@ pub const Buffer = struct {
         self.text.deinit();
     }
 
-    pub fn bufferEnd(self: *Buffer) usize {
+    pub fn getBufferEnd(self: *Buffer) usize {
         return self.text.items.len;
     }
 
-    pub fn lineStart(self: *Buffer, line: usize) usize {
+    pub fn getLineStart(self: *Buffer, line: usize) usize {
         var pos: usize = 0;
         var lines_remaining = line;
         while (lines_remaining > 0) : (lines_remaining -= 1) {
@@ -31,7 +31,7 @@ pub const Buffer = struct {
         return pos;
     }
 
-    pub fn lineCol(self: *Buffer, pos: usize) [2]usize {
+    pub fn getLineColPos(self: *Buffer, pos: usize) [2]usize {
         var line: usize = 0;
         const col = pos - self.lineStart();
         var pos_remaining = pos;
@@ -77,12 +77,12 @@ pub const Buffer = struct {
 };
 
 pub const CursorData = struct {
-    // 0 <= head_pos <= buffer.bufferEnd()
+    // 0 <= head_pos <= buffer.getBufferEnd()
     head_pos: usize,
     // what column the cursor 'wants' to be at
     // should only be updated by left/right movement
     head_col: usize,
-    // 0 <= tail_pos <= buffer.bufferEnd()
+    // 0 <= tail_pos <= buffer.getBufferEnd()
     tail_pos: ?usize,
     // allocated by view.allocator
     clipboard: []const u8,
@@ -101,16 +101,16 @@ pub const Cursor = struct {
         return self.buffer.searchForwards(self.data.head_pos, needle);
     }
 
-    pub fn lineStart(self: Cursor) usize {
+    pub fn getLineStart(self: Cursor) usize {
         return self.searchBackwards("\n") orelse 0;
     }
 
-    pub fn lineEnd(self: Cursor) usize {
-        return self.searchForwards("\n") orelse self.buffer.bufferEnd();
+    pub fn getLineEnd(self: Cursor) usize {
+        return self.searchForwards("\n") orelse self.buffer.getBufferEnd();
     }
 
     pub fn updateCol(self: Cursor) void {
-        self.data.head_col = self.data.head_pos - self.lineStart();
+        self.data.head_col = self.data.head_pos - self.getLineStart();
     }
 
     pub fn goPos(self: Cursor, pos: usize) void {
@@ -119,13 +119,13 @@ pub const Cursor = struct {
     }
 
     pub fn goCol(self: Cursor, col: usize) void {
-        const line_start = self.lineStart();
-        self.data.head_col = min(col, self.lineEnd() - line_start);
+        const line_start = self.getLineStart();
+        self.data.head_col = min(col, self.getLineEnd() - line_start);
         self.data.head_pos = line_start + self.data.head_col;
     }
 
     pub fn goLine(self: Cursor, line: usize) void {
-        self.data.head_pos = self.buffer.lineStart(line);
+        self.data.head_pos = self.buffer.getLineStart(line);
         // leave head_col intact
     }
 
@@ -140,7 +140,7 @@ pub const Cursor = struct {
     }
 
     pub fn goRight(self: Cursor) void {
-        self.data.head_pos += @as(usize, if (self.data.head_pos >= self.buffer.bufferEnd()) 0 else 1);
+        self.data.head_pos += @as(usize, if (self.data.head_pos >= self.buffer.getBufferEnd()) 0 else 1);
         self.updateCol();
     }
 
@@ -163,12 +163,12 @@ pub const Cursor = struct {
     }
 
     pub fn goLineStart(self: Cursor) void {
-        self.data.head_pos = self.lineStart();
+        self.data.head_pos = self.getLineStart();
         self.data.head_col = 0;
     }
 
     pub fn goLineEnd(self: Cursor) void {
-        self.data.head_pos = self.searchForwards("\n") orelse self.buffer.bufferEnd();
+        self.data.head_pos = self.searchForwards("\n") orelse self.buffer.getBufferEnd();
         self.updateCol();
     }
 
@@ -177,11 +177,12 @@ pub const Cursor = struct {
     }
 
     pub fn goPageEnd(self: Cursor) void {
-        self.goPos(self.buffer.bufferEnd());
+        self.goPos(self.buffer.getBufferEnd());
     }
 
     pub fn deleteSelection(self: Cursor) void {
-        if (self.selectionPos()) |pos| {
+        if (self.data.tail_pos) |_| {
+            const pos = self.getSelectionPos();
             self.buffer.delete(pos[0], pos[1]);
             self.data.head_pos = pos[0];
             self.data.head_col = pos[0];
@@ -190,7 +191,7 @@ pub const Cursor = struct {
     }
 
     pub fn deleteBackwards(self: Cursor) void {
-        if (self.selectionPos()) |_| {
+        if (self.data.tail_pos) |_| {
             self.deleteSelection();
         } else if (self.data.head_pos > 0) {
             self.buffer.delete(self.data.head_pos-1, self.data.head_pos);
@@ -199,9 +200,9 @@ pub const Cursor = struct {
     }
 
     pub fn deleteForwards(self: Cursor) void {
-        if (self.selectionPos()) |_| {
+        if (self.data.tail_pos) |_| {
             self.deleteSelection();
-        } else if (self.data.head_pos < self.buffer.bufferEnd()) {
+        } else if (self.data.head_pos < self.buffer.getBufferEnd()) {
             self.buffer.delete(self.data.head_pos, self.data.head_pos+1);
         }
     }
@@ -233,33 +234,30 @@ pub const Cursor = struct {
         }
     }
 
-    pub fn selectionPos(self: Cursor) ?[2]usize {
+    pub fn getSelectionPos(self: Cursor) [2]usize {
         if (self.data.tail_pos) |tail_pos| {
             const selection_start_pos = min(self.data.head_pos, tail_pos);
             const selection_end_pos = max(self.data.head_pos, tail_pos);
             return [2]usize{selection_start_pos, selection_end_pos};
         } else {
-            return null;
+            return [2]usize{self.data.head_pos, self.data.head_pos};
         }
     }
 
-    pub fn selection(self: Cursor) ! []const u8 {
-        if (self.selectionPos()) |pos| {
-            return self.buffer.copy(self.allocator, pos[0], pos[1]);
-        } else {
-            return "";
-        }
+    pub fn getSelection(self: Cursor) ! []const u8 {
+        const pos = self.getSelectionPos();
+        return self.buffer.copy(self.allocator, pos[0], pos[1]);
     }
 
     pub fn copy(self: Cursor) ! void {
         self.allocator.free(self.data.clipboard);
-        self.data.clipboard = try self.selection();
+        self.data.clipboard = try self.getSelection();
         self.clearMark();
     }
 
     pub fn cut(self: Cursor) ! void {
         self.allocator.free(self.data.clipboard);
-        self.data.clipboard = try self.selection();
+        self.data.clipboard = try self.getSelection();
         self.deleteSelection();
     }
 
