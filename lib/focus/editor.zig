@@ -121,7 +121,7 @@ pub const View = struct {
     }
 
     pub fn deinit(self: *View) void {
-        for (self.cursors) |cursor| {
+        for (self.cursors.items) |cursor| {
             self.allocator.free(cursor.clipboard);
         }
         self.cursors.deinit();
@@ -213,12 +213,33 @@ pub const View = struct {
         self.goPos(cursor, self.buffer.getBufferEnd());
     }
 
+    pub fn insert(self: *View, cursor: *Cursor, chars: []const u8) ! void {
+        self.deleteSelection(cursor);
+        try self.buffer.insert(cursor.head_pos, chars);
+        const insert_at = cursor.head_pos;
+        for (self.cursors.items) |*other_cursor| {
+            if (other_cursor.head_pos >= insert_at) other_cursor.head_pos += chars.len;
+            if (other_cursor.tail_pos != null and other_cursor.tail_pos.? >= insert_at) other_cursor.tail_pos.? += chars.len;
+            self.updateCol(other_cursor);
+        }
+    }
+
+    pub fn delete(self: *View, start: usize, end: usize) void {
+        assert(start <= end);
+        self.buffer.delete(start, end);
+        for (self.cursors.items) |*other_cursor| {
+            if (other_cursor.head_pos >= start and other_cursor.head_pos <= end) other_cursor.head_pos = start;
+            if (other_cursor.head_pos > end) other_cursor.head_pos -= (end - start);
+            if (other_cursor.tail_pos != null and other_cursor.tail_pos.? >= start and other_cursor.tail_pos.? <= end) other_cursor.tail_pos.? = start;
+            if (other_cursor.tail_pos != null and other_cursor.tail_pos.? > end) other_cursor.tail_pos.? -= (end - start);
+            self.updateCol(other_cursor);
+        }
+    }
+
     pub fn deleteSelection(self: *View, cursor: *Cursor) void {
         if (cursor.tail_pos) |_| {
             const pos = cursor.getSelection();
-            self.buffer.delete(pos[0], pos[1]);
-            cursor.head_pos = pos[0];
-            cursor.head_col = pos[0];
+            self.delete(pos[0], pos[1]);
         }
         self.clearMark(cursor);
     }
@@ -227,8 +248,7 @@ pub const View = struct {
         if (cursor.tail_pos) |_| {
             self.deleteSelection(cursor);
         } else if (cursor.head_pos > 0) {
-            self.buffer.delete(cursor.head_pos-1, cursor.head_pos);
-            self.goLeft(cursor);
+            self.delete(cursor.head_pos-1, cursor.head_pos);
         }
     }
 
@@ -236,15 +256,8 @@ pub const View = struct {
         if (cursor.tail_pos) |_| {
             self.deleteSelection(cursor);
         } else if (cursor.head_pos < self.buffer.getBufferEnd()) {
-            self.buffer.delete(cursor.head_pos, cursor.head_pos+1);
+            self.delete(cursor.head_pos, cursor.head_pos+1);
         }
-    }
-
-    pub fn insert(self: *View, cursor: *Cursor, chars: []const u8) ! void {
-        self.deleteSelection(cursor);
-        try self.buffer.insert(cursor.head_pos, chars);
-        cursor.head_pos += chars.len;
-        self.updateCol(cursor);
     }
 
     pub fn clearMark(self: *View, cursor: *Cursor) void {
