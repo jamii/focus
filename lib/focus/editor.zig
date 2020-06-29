@@ -22,7 +22,7 @@ pub const Buffer = struct {
         return self.text.items.len;
     }
 
-    pub fn getLineStart(self: *Buffer, line: usize) usize {
+    pub fn getPosForLine(self: *Buffer, line: usize) usize {
         var pos: usize = 0;
         var lines_remaining = line;
         while (lines_remaining > 0) : (lines_remaining -= 1) {
@@ -31,7 +31,14 @@ pub const Buffer = struct {
         return pos;
     }
 
-    pub fn getLineColPos(self: *Buffer, pos: usize) [2]usize {
+    pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
+        var pos = self.getPosForLine(line);
+        const end = if (self.searchForwards(pos, "\n")) |line_end| line_end + 1 else self.text.items.len;
+        pos += min(col, end - pos);
+        return pos;
+    }
+
+    pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
         var line: usize = 0;
         const col = pos - self.lineStart();
         var pos_remaining = pos;
@@ -52,7 +59,7 @@ pub const Buffer = struct {
         return if (std.mem.indexOf(u8, text, needle)) |result_pos| result_pos + pos else null;
     }
 
-    pub fn copy(self: *Buffer, allocator: *Allocator, start: usize, end: usize) ! []const u8 {
+    pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) ! []const u8 {
         assert(start <= end);
         assert(end <= self.text.items.len);
         return std.mem.dupe(allocator, u8, self.text.items[start..end]);
@@ -76,47 +83,45 @@ pub const Buffer = struct {
     }
 };
 
-pub const Cursor = struct {
-    // 0 <= head_pos <= buffer.getBufferEnd()
-    head_pos: usize,
-    // what column the cursor 'wants' to be at
+pub const Point = struct {
+    // what char we're at
+    // 0 <= pos <= buffer.getBufferEnd()
+    pos: usize,
+    // what column we 'want' to be at
     // should only be updated by left/right movement
-    head_col: usize,
-    // 0 <= tail_pos <= buffer.getBufferEnd()
-    tail_pos: ?usize,
+    // 0 <= col
+    col: usize,
+};
+
+pub const Cursor = struct {
+    // the actual cursor
+    head: Point,
+    // the other end of the selection, if view.marked
+    tail: Point,
     // allocated by view.allocator
     clipboard: []const u8,
-
-    pub fn getSelection(self: Cursor) [2]usize {
-        if (self.tail_pos) |tail_pos| {
-            const selection_start_pos = min(self.head_pos, tail_pos);
-            const selection_end_pos = max(self.head_pos, tail_pos);
-            return [2]usize{selection_start_pos, selection_end_pos};
-        } else {
-            return [2]usize{self.head_pos, self.head_pos};
-        }
-    }
 };
 
 pub const View = struct {
     allocator: *Allocator,
     buffer: *Buffer,
     cursors: ArrayList(Cursor),
-    mouse_went_down_at: usize,
+    marked: bool,
+    mouse_cursor: ?Cursor,
 
     pub fn init(allocator: *Allocator, buffer: *Buffer) ! View {
         var cursors = ArrayList(Cursor).init(allocator);
         try cursors.append(.{
-                .head_pos=0,
-                .head_col=0,
-                .tail_pos=null,
-                .clipboard="",
+            .head = .{.pos=0, .col=0},
+            .tail = .{.pos=0, .col=0},
+            .clipboard="",
         });
         return View{
             .allocator = allocator,
             .buffer = buffer,
             .cursors = cursors,
-            .mouse_went_down_at = 0,
+            .marked = false,
+            .mouse_cursor = null,
         };
     }
 
@@ -127,39 +132,39 @@ pub const View = struct {
         self.cursors.deinit();
     }
 
-    pub fn searchBackwards(self: *View, cursor: *Cursor, needle: []const u8) ?usize {
-        return self.buffer.searchBackwards(cursor.head_pos, needle);
+    pub fn searchBackwards(self: *View, point: Point, needle: []const u8) ?usize {
+        return self.buffer.searchBackwards(point.pos, needle);
     }
 
-    pub fn searchForwards(self: *View, cursor: *Cursor, needle: []const u8) ?usize {
-        return self.buffer.searchForwards(cursor.head_pos, needle);
+    pub fn searchForwards(self: *View, point: Point, needle: []const u8) ?usize {
+        return self.buffer.searchForwards(point.pos, needle);
     }
 
-    pub fn getLineStart(self: *View, cursor: *Cursor) usize {
-        return self.searchBackwards(cursor, "\n") orelse 0;
+    pub fn getLineStart(self: *View, point: Point) usize {
+        return self.searchBackwards(point, "\n") orelse 0;
     }
 
-    pub fn getLineEnd(self: *View, cursor: *Cursor) usize {
-        return self.searchForwards(cursor, "\n") orelse self.buffer.getBufferEnd();
+    pub fn getLineEnd(self: *View, point: Point) usize {
+        return self.searchForwards(point, "\n") orelse self.buffer.getBufferEnd();
     }
 
-    pub fn updateCol(self: *View, cursor: *Cursor) void {
-        cursor.head_col = cursor.head_pos - self.getLineStart(cursor);
+    pub fn updateCol(self: *View, point: *Point) void {
+        point.col = point.pos - self.getLineStart(point.*);
     }
 
     pub fn goPos(self: *View, cursor: *Cursor, pos: usize) void {
-        cursor.head_pos = pos;
+        cursor.head.pos = pos;
     }
 
     pub fn goCol(self: *View, cursor: *Cursor, col: usize) void {
-        const line_start = self.getLineStart(cursor);
-        cursor.head_col = min(col, self.getLineEnd(cursor) - line_start);
-        cursor.head_pos = line_start + cursor.head_col;
+        const line_start = self.getLineStart(cursor.head);
+        cursor.head.col = min(col, self.getLineEnd(cursor.head) - line_start);
+        cursor.head.pos = line_start + cursor.head.col;
     }
 
     pub fn goLine(self: *View, cursor: *Cursor, line: usize) void {
-        cursor.head_pos = self.buffer.getLineStart(line);
-        // leave head_col intact
+        cursor.head.pos = self.buffer.getPosForLine(line);
+        // leave head.col intact
     }
 
     pub fn goLineCol(self: *View, cursor: *Cursor, line: usize, col: usize) void {
@@ -168,41 +173,41 @@ pub const View = struct {
     }
 
     pub fn goLeft(self: *View, cursor: *Cursor) void {
-        cursor.head_pos -= @as(usize, if (cursor.head_pos == 0) 0 else 1);
-        self.updateCol(cursor);
+        cursor.head.pos -= @as(usize, if (cursor.head.pos == 0) 0 else 1);
+        self.updateCol(&cursor.head);
     }
 
     pub fn goRight(self: *View, cursor: *Cursor) void {
-        cursor.head_pos += @as(usize, if (cursor.head_pos >= self.buffer.getBufferEnd()) 0 else 1);
-        self.updateCol(cursor);
+        cursor.head.pos += @as(usize, if (cursor.head.pos >= self.buffer.getBufferEnd()) 0 else 1);
+        self.updateCol(&cursor.head);
     }
 
     pub fn goDown(self: *View, cursor: *Cursor) void {
-        if (self.searchForwards(cursor, "\n")) |line_end| {
-            const col = cursor.head_col;
-            cursor.head_pos = line_end + 1;
+        if (self.searchForwards(cursor.head, "\n")) |line_end| {
+            const col = cursor.head.col;
+            cursor.head.pos = line_end + 1;
             self.goCol(cursor, col);
-            cursor.head_col = col;
+            cursor.head.col = col;
         }
     }
 
     pub fn goUp(self: *View, cursor: *Cursor) void {
-        if (self.searchBackwards(cursor, "\n")) |line_start| {
-            const col = cursor.head_col;
-            cursor.head_pos = line_start - 1;
+        if (self.searchBackwards(cursor.head, "\n")) |line_start| {
+            const col = cursor.head.col;
+            cursor.head.pos = line_start - 1;
             self.goCol(cursor, col);
-            cursor.head_col = col;
+            cursor.head.col = col;
         }
     }
 
     pub fn goLineStart(self: *View, cursor: *Cursor) void {
-        cursor.head_pos = self.getLineStart(cursor);
-        cursor.head_col = 0;
+        cursor.head.pos = self.getLineStart(cursor.head);
+        cursor.head.col = 0;
     }
 
     pub fn goLineEnd(self: *View, cursor: *Cursor) void {
-        cursor.head_pos = self.searchForwards(cursor, "\n") orelse self.buffer.getBufferEnd();
-        self.updateCol(cursor);
+        cursor.head.pos = self.searchForwards(cursor.head, "\n") orelse self.buffer.getBufferEnd();
+        self.updateCol(&cursor.head);
     }
 
     pub fn goPageStart(self: *View, cursor: *Cursor) void {
@@ -215,12 +220,13 @@ pub const View = struct {
 
     pub fn insert(self: *View, cursor: *Cursor, chars: []const u8) ! void {
         self.deleteSelection(cursor);
-        try self.buffer.insert(cursor.head_pos, chars);
-        const insert_at = cursor.head_pos;
+        try self.buffer.insert(cursor.head.pos, chars);
+        const insert_at = cursor.head.pos;
         for (self.cursors.items) |*other_cursor| {
-            if (other_cursor.head_pos >= insert_at) other_cursor.head_pos += chars.len;
-            if (other_cursor.tail_pos != null and other_cursor.tail_pos.? >= insert_at) other_cursor.tail_pos.? += chars.len;
-            self.updateCol(other_cursor);
+            for (&[2]*Point{&other_cursor.head, &other_cursor.tail}) |point| {
+                if (point.pos >= insert_at) point.pos += chars.len;
+                self.updateCol(point);
+            }
         }
     }
 
@@ -228,78 +234,88 @@ pub const View = struct {
         assert(start <= end);
         self.buffer.delete(start, end);
         for (self.cursors.items) |*other_cursor| {
-            if (other_cursor.head_pos >= start and other_cursor.head_pos <= end) other_cursor.head_pos = start;
-            if (other_cursor.head_pos > end) other_cursor.head_pos -= (end - start);
-            if (other_cursor.tail_pos != null and other_cursor.tail_pos.? >= start and other_cursor.tail_pos.? <= end) other_cursor.tail_pos.? = start;
-            if (other_cursor.tail_pos != null and other_cursor.tail_pos.? > end) other_cursor.tail_pos.? -= (end - start);
-            self.updateCol(other_cursor);
+            for (&[2]*Point{&other_cursor.head, &other_cursor.tail}) |point| {
+                if (point.pos >= start and point.pos <= end) point.pos = start;
+                if (point.pos > end) point.pos -= (end - start);
+                self.updateCol(point);
+            }
         }
     }
 
     pub fn deleteSelection(self: *View, cursor: *Cursor) void {
-        if (cursor.tail_pos) |_| {
-            const pos = cursor.getSelection();
-            self.delete(pos[0], pos[1]);
-        }
-        self.clearMark(cursor);
+        assert(self.marked);
+        const selection = self.getSelection(cursor);
+        self.delete(selection[0], selection[1]);
     }
 
     pub fn deleteBackwards(self: *View, cursor: *Cursor) void {
-        if (cursor.tail_pos) |_| {
+        if (self.marked) {
             self.deleteSelection(cursor);
-        } else if (cursor.head_pos > 0) {
-            self.delete(cursor.head_pos-1, cursor.head_pos);
+        } else if (cursor.head.pos > 0) {
+            self.delete(cursor.head.pos-1, cursor.head.pos);
         }
     }
 
     pub fn deleteForwards(self: *View, cursor: *Cursor) void {
-        if (cursor.tail_pos) |_| {
+        if (self.marked) {
             self.deleteSelection(cursor);
-        } else if (cursor.head_pos < self.buffer.getBufferEnd()) {
-            self.delete(cursor.head_pos, cursor.head_pos+1);
+        } else if (cursor.head.pos < self.buffer.getBufferEnd()) {
+            self.delete(cursor.head.pos, cursor.head.pos+1);
         }
     }
 
-    pub fn clearMark(self: *View, cursor: *Cursor) void {
-        cursor.tail_pos = null;
+    pub fn clearMark(self: *View) void {
+        self.marked = false;
     }
 
-    pub fn setMarkPos(self: *View, cursor: *Cursor, pos: usize) void {
-        cursor.tail_pos = pos;
+    pub fn setMark(self: *View) void {
+        self.marked = true;
+        for (self.cursors.items) |*other_cursor| {
+            other_cursor.tail = other_cursor.head;
+        }
     }
 
-    pub fn setMark(self: *View, cursor: *Cursor) void {
-        cursor.tail_pos = cursor.head_pos;
-    }
-
-    pub fn toggleMark(self: *View, cursor: *Cursor) void {
-        if (cursor.tail_pos) |_| {
-            self.clearMark(cursor);
+    pub fn toggleMark(self: *View) void {
+        if (self.marked) {
+            self.clearMark();
         } else {
-            self.setMark(cursor);
+            self.setMark();
         }
     }
 
-    pub fn getSelection(self: *View, cursor: *Cursor) ! []const u8 {
-        const pos = cursor.getSelection();
-        return self.buffer.copy(self.allocator, pos[0], pos[1]);
+    pub fn swapHead(self: *View, cursor: *Cursor) void {
+        std.mem.swap(Point, &cursor.head, &cursor.tail);
+    }
+
+    pub fn getSelection(self: *View, cursor: *Cursor) [2]usize {
+        assert(self.marked);
+        const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
+        const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
+        return [2]usize{selection_start_pos, selection_end_pos};
+    }
+
+    pub fn dupeSelection(self: *View, cursor: *Cursor) ! []const u8 {
+        const selection = self.getSelection(cursor);
+        return self.buffer.dupe(self.allocator, selection[0], selection[1]);
     }
 
     pub fn copy(self: *View, cursor: *Cursor) ! void {
         self.allocator.free(cursor.clipboard);
-        cursor.clipboard = try self.getSelection(cursor);
-        self.clearMark(cursor);
+        cursor.clipboard = try self.dupeSelection(cursor);
     }
 
     pub fn cut(self: *View, cursor: *Cursor) ! void {
         self.allocator.free(cursor.clipboard);
-        cursor.clipboard = try self.getSelection(cursor);
+        cursor.clipboard = try self.dupeSelection(cursor);
         self.deleteSelection(cursor);
     }
 
     pub fn paste(self: *View, cursor: *Cursor) ! void {
         try self.insert(cursor, cursor.clipboard);
     }
+
+    const text_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+    const highlight_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 100 };
 
     pub fn frame(self: *View, ui: *UI, rect: UI.Rect) ! void {
         // TODO rctrl/ralt?
@@ -310,10 +326,10 @@ pub const View = struct {
         for (ui.key_went_down.items) |key| {
             if (ui.key_is_down[ctrl]) {
                 switch (key) {
-                    ' ' => for (self.cursors.items) |*cursor| self.toggleMark(cursor),
-                    'c' => for (self.cursors.items) |*cursor| try self.copy(cursor),
-                    'x' => for (self.cursors.items) |*cursor| try self.cut(cursor), // TODO
-                    'v' => for (self.cursors.items) |*cursor| try self.paste(cursor), // TODO
+                    ' ' => self.toggleMark(),
+                    'c' => for (self.cursors.items) |*cursor| { try self.copy(cursor); self.clearMark(); },
+                    'x' => for (self.cursors.items) |*cursor| { try self.cut(cursor); self.clearMark(); },
+                    'v' => for (self.cursors.items) |*cursor| { try self.paste(cursor); self.clearMark(); },
                     'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
                     'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
                     'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
@@ -322,6 +338,7 @@ pub const View = struct {
                 }
             } else if (ui.key_is_down[alt]) {
                 switch (key) {
+                    ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
                     'j' => for (self.cursors.items) |*cursor| self.goLineStart(cursor),
                     'l' => for (self.cursors.items) |*cursor| self.goLineEnd(cursor),
                     'k' => for (self.cursors.items) |*cursor| self.goPageEnd(cursor),
@@ -330,48 +347,60 @@ pub const View = struct {
                 }
             } else {
                 switch (key) {
-                    8 => for (self.cursors.items) |*cursor| self.deleteBackwards(cursor), // TODO
-                    13 => for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'}), // TODO
+                    8 => for (self.cursors.items) |*cursor| { self.deleteBackwards(cursor); self.clearMark(); },
+                    13 => for (self.cursors.items) |*cursor| { try self.insert(cursor, &[1]u8{'\n'}); self.clearMark(); },
                     79 => for (self.cursors.items) |*cursor| self.goRight(cursor),
                     80 => for (self.cursors.items) |*cursor| self.goLeft(cursor),
                     81 => for (self.cursors.items) |*cursor| self.goDown(cursor),
                     82 => for (self.cursors.items) |*cursor| self.goUp(cursor),
-                    127 => for (self.cursors.items) |*cursor| self.deleteForwards(cursor), // TODO
+                    127 => for (self.cursors.items) |*cursor| { self.deleteForwards(cursor); self.clearMark(); },
                     else => if (key >= 32 and key <= 126) {
-                        for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{key}); // TODO
+                        for (self.cursors.items) |*cursor| { try self.insert(cursor, &[1]u8{key}); self.clearMark(); }
                     }
                 }
             }
         }
 
         // handle mouse
+        // if !ctrl and !drag, set a single cursor and clear mark
+        // if !ctrl and drag, set a single cursor and reset mark
+        // if ctrl and !drag, add a single cursor and leave mark as is
+        // if ctrl and drag, add a single cursor and reset mark
         if (ui.mouse_is_down[0]) {
             const line = @divTrunc(ui.mouse_pos.y - rect.y, atlas.text_height);
             const col = @divTrunc(ui.mouse_pos.x - rect.x, atlas.max_char_width);
+            const pos = self.buffer.getPosForLineCol(line, col);
+
             if (ui.mouse_went_down[0]) {
+                // on mouse down
                 if (!ui.key_is_down[ctrl]) {
+                    self.mouse_cursor = self.cursors.items[0];
                     self.cursors.shrink(0);
+                    self.clearMark();
+                } else {
+                    self.mouse_cursor = .{
+                        .head = .{.pos=pos, .col=0},
+                        .tail = .{.pos=pos, .col=0},
+                        .clipboard="",
+                    };
+                    self.updateCol(&self.mouse_cursor.?.head);
+                    self.updateCol(&self.mouse_cursor.?.tail);
                 }
-                try self.cursors.append(.{
-                    .head_pos=0,
-                    .head_col=0,
-                    .tail_pos=null,
-                    .clipboard="",
-                });
+            } else {
+                // on mouse drag
+                self.mouse_cursor.?.head.pos = pos;
+                self.updateCol(&self.mouse_cursor.?.head);
             }
-            var cursor = &self.cursors.items[self.cursors.items.len - 1];
-            self.goLineCol(cursor, line, col);
-            if (ui.mouse_went_down[0]) {
-                self.clearMark(cursor);
-                self.mouse_went_down_at = cursor.head_pos;
-            } else if (cursor.head_pos != self.mouse_went_down_at) {
-                self.setMarkPos(cursor, self.mouse_went_down_at);
-            }   
+        } else if (self.mouse_cursor) |mouse_cursor| {
+            // on mouse up
+            if (self.mouse_cursor.?.tail.pos != self.mouse_cursor.?.head.pos and !self.marked) {
+                self.setMark();
+            }
+            try self.cursors.append(mouse_cursor);
+            self.mouse_cursor = null;
         }
 
         // draw
-        const text_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
-        const highlight_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 100 };
         var lines = std.mem.split(self.buffer.text.items, "\n");
         var line_ix: u16 = 0;
         var line_start_pos: usize = 0;
@@ -381,32 +410,41 @@ pub const View = struct {
             const y = rect.y + (line_ix * atlas.text_height);
             const line_end_pos = line_start_pos + line.len;
 
-            for (self.cursors.items) |*cursor| {
-                // draw cursor
-                if (cursor.head_pos >= line_start_pos and cursor.head_pos <= line_end_pos) {
-                    const x = rect.x + ((cursor.head_pos - line_start_pos) * atlas.max_char_width);
-                    try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height}, text_color);
-                }
-
-                // draw selection
-                const selection_start_pos = min(cursor.head_pos, cursor.tail_pos orelse cursor.head_pos);
-                const selection_end_pos = max(cursor.head_pos, cursor.tail_pos orelse cursor.head_pos);
-                const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
-                const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
-                if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_end_pos and selection_end_pos > line_end_pos)) {
-                    const x = rect.x + ((highlight_start_pos - line_start_pos) * atlas.max_char_width);
-                    const w = if (selection_end_pos > line_end_pos)
-                        rect.x + rect.w - x
-                        else
-                        (highlight_end_pos - highlight_start_pos) * atlas.max_char_width;
-                    try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=atlas.text_height}, highlight_color);
-                }
+            for (self.cursors.items) |cursor| {
+                try self.drawCursor(ui, rect, y, line_ix, line_start_pos, line_end_pos, cursor, false);
+            }
+            if (self.mouse_cursor) |cursor| {
+                try self.drawCursor(ui, rect, y, line_ix, line_start_pos, line_end_pos, cursor, true);
             }
             
             // draw text
             try ui.queueText(.{.x = rect.x, .y = y}, text_color, line);
             
             line_start_pos = line_end_pos + 1; // + 1 for '\n'
+        }
+    }
+
+    fn drawCursor(self: *View, ui: *UI, rect: UI.Rect, y: u16, line_ix: usize, line_start_pos: usize, line_end_pos: usize, cursor: Cursor, is_mouse_cursor: bool) ! void {
+        // draw cursor
+        if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
+            const x = rect.x + ((cursor.head.pos - line_start_pos) * atlas.max_char_width);
+            try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height}, text_color);
+        }
+
+        // draw selection
+        if (self.marked or is_mouse_cursor) {
+            const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
+            const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
+            const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
+            const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
+            if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_end_pos and selection_end_pos > line_end_pos)) {
+                const x = rect.x + ((highlight_start_pos - line_start_pos) * atlas.max_char_width);
+                const w = if (selection_end_pos > line_end_pos)
+                    rect.x + rect.w - x
+                    else
+                    (highlight_end_pos - highlight_start_pos) * atlas.max_char_width;
+                try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=atlas.text_height}, highlight_color);
+            }
         }
     }
 };
