@@ -33,7 +33,7 @@ pub const Buffer = struct {
 
     pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
         var pos = self.getPosForLine(line);
-        const end = if (self.searchForwards(pos, "\n")) |line_end| line_end + 1 else self.bytes.items.len;
+        const end = if (self.searchForwards(pos, "\n")) |line_end| line_end else self.bytes.items.len;
         pos += min(col, end - pos);
         return pos;
     }
@@ -290,7 +290,9 @@ pub const View = struct {
     }
 
     pub fn swapHead(self: *View, cursor: *Cursor) void {
-        std.mem.swap(Point, &cursor.head, &cursor.tail);
+        if (self.marked) {
+            std.mem.swap(Point, &cursor.head, &cursor.tail);
+        }
     }
 
     pub fn getSelection(self: *View, cursor: *Cursor) [2]usize {
@@ -348,6 +350,10 @@ pub const View = struct {
 
     pub fn frame(self: *View, ui: *UI, rect: UI.Rect) ! void {
         // handle events
+        // if we get textinput, we'll also get the keydown first
+        // if the keydown is mapped to a command, we'll do that and ignore the textinput
+        // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
+        var accept_textinput = false;
         for (ui.events.items) |event| {
             switch (event.type) {
                 c.SDL_KEYDOWN => {
@@ -371,7 +377,7 @@ pub const View = struct {
                             'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
                             'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
                             'i' => for (self.cursors.items) |*cursor| self.goUp(cursor),
-                            else => {},
+                            else => accept_textinput = true,
                         }
                     } else if (sym.mod & @intCast(u16, c.KMOD_ALT) != 0) {
                         switch (sym.sym) {
@@ -380,7 +386,7 @@ pub const View = struct {
                             'l' => for (self.cursors.items) |*cursor| self.goLineEnd(cursor),
                             'k' => for (self.cursors.items) |*cursor| self.goPageEnd(cursor),
                             'i' => for (self.cursors.items) |*cursor| self.goPageStart(cursor),
-                            else => {},
+                            else => accept_textinput = true,
                         }
                     } else {
                         switch (sym.sym) {
@@ -404,14 +410,16 @@ pub const View = struct {
                                 for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
                                 self.clearMark();
                             },
-                            else => {},
+                            else => accept_textinput = true,
                         }
                     }
                 },
                 c.SDL_TEXTINPUT => {
-                    const text = event.text.text[0..std.mem.indexOfScalar(u8, &event.text.text, 0).?];
-                    for (self.cursors.items) |*cursor| try self.insert(cursor, text);
-                    self.clearMark();
+                    if (accept_textinput) {
+                        const text = event.text.text[0..std.mem.indexOfScalar(u8, &event.text.text, 0).?];
+                        for (self.cursors.items) |*cursor| try self.insert(cursor, text);
+                        self.clearMark();
+                    }
                 },
                 c.SDL_MOUSEBUTTONDOWN => {
                     const button = event.button;
