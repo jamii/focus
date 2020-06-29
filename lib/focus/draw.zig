@@ -117,6 +117,9 @@ pub fn init() void {
 
     // sync with monitor - causes input lag
     _ = SDL_GL_SetSwapInterval(1);
+
+    // accept unicode input
+    SDL_StartTextInput();
 }
 
 fn flush() void {

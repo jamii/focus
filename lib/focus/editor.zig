@@ -5,35 +5,35 @@ const UI = focus.UI;
 
 pub const Buffer = struct {
     allocator: *Allocator,
-    text: ArrayList(u8),
+    bytes: ArrayList(u8),
 
     pub fn init(allocator: *Allocator) Buffer {
         return Buffer{
             .allocator = allocator,
-            .text = ArrayList(u8).init(allocator),
+            .bytes = ArrayList(u8).init(allocator),
         };
     }
 
     pub fn deinit(self: *Buffer) void {
-        self.text.deinit();
+        self.bytes.deinit();
     }
 
     pub fn getBufferEnd(self: *Buffer) usize {
-        return self.text.items.len;
+        return self.bytes.items.len;
     }
 
     pub fn getPosForLine(self: *Buffer, line: usize) usize {
         var pos: usize = 0;
         var lines_remaining = line;
         while (lines_remaining > 0) : (lines_remaining -= 1) {
-            pos = if (self.searchForwards(pos, "\n")) |next_pos| next_pos + 1 else self.text.items.len;
+            pos = if (self.searchForwards(pos, "\n")) |next_pos| next_pos + 1 else self.bytes.items.len;
         }
         return pos;
     }
 
     pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
         var pos = self.getPosForLine(line);
-        const end = if (self.searchForwards(pos, "\n")) |line_end| line_end + 1 else self.text.items.len;
+        const end = if (self.searchForwards(pos, "\n")) |line_end| line_end + 1 else self.bytes.items.len;
         pos += min(col, end - pos);
         return pos;
     }
@@ -50,32 +50,32 @@ pub const Buffer = struct {
     }
 
     pub fn searchBackwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
-        const text = self.text.items[0..pos];
-        return if (std.mem.lastIndexOf(u8, text, needle)) |result_pos| result_pos + needle.len else null;
+        const bytes = self.bytes.items[0..pos];
+        return if (std.mem.lastIndexOf(u8, bytes, needle)) |result_pos| result_pos + needle.len else null;
     }
 
     pub fn searchForwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
-        const text = self.text.items[pos..];
-        return if (std.mem.indexOf(u8, text, needle)) |result_pos| result_pos + pos else null;
+        const bytes = self.bytes.items[pos..];
+        return if (std.mem.indexOf(u8, bytes, needle)) |result_pos| result_pos + pos else null;
     }
 
     pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) ! []const u8 {
         assert(start <= end);
-        assert(end <= self.text.items.len);
-        return std.mem.dupe(allocator, u8, self.text.items[start..end]);
+        assert(end <= self.bytes.items.len);
+        return std.mem.dupe(allocator, u8, self.bytes.items[start..end]);
     }
 
-    pub fn insert(self: *Buffer, pos: usize, chars: []const u8) ! void {
-        try self.text.resize(self.text.items.len + chars.len);
-        std.mem.copyBackwards(u8, self.text.items[pos+chars.len..], self.text.items[pos..self.text.items.len-chars.len]);
-        std.mem.copy(u8, self.text.items[pos..], chars);
+    pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) ! void {
+        try self.bytes.resize(self.bytes.items.len + bytes.len);
+        std.mem.copyBackwards(u8, self.bytes.items[pos+bytes.len..], self.bytes.items[pos..self.bytes.items.len - bytes.len]);
+        std.mem.copy(u8, self.bytes.items[pos..], bytes);
     }
 
     pub fn delete(self: *Buffer, start: usize, end: usize) void {
         assert(start <= end);
-        assert(end <= self.text.items.len);
-        std.mem.copy(u8, self.text.items[start..], self.text.items[end..]);
-        self.text.shrink(self.text.items.len - (end - start));
+        assert(end <= self.bytes.items.len);
+        std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
+        self.bytes.shrink(self.bytes.items.len - (end - start));
     }
 };
 
@@ -220,15 +220,15 @@ pub const View = struct {
         self.goPos(cursor, self.buffer.getBufferEnd());
     }
 
-    pub fn insert(self: *View, cursor: *Cursor, chars: []const u8) ! void {
+    pub fn insert(self: *View, cursor: *Cursor, bytes: []const u8) ! void {
         self.deleteSelection(cursor);
-        try self.buffer.insert(cursor.head.pos, chars);
+        try self.buffer.insert(cursor.head.pos, bytes);
         const insert_at = cursor.head.pos;
         for (self.cursors.items) |*other_cursor| {
             for (&[2]*Point{&other_cursor.head, &other_cursor.tail}) |point| {
                 // ptr compare is because we want paste to leave each cursor after its own insert
                 if (point.pos > insert_at or (point.pos == insert_at and @ptrToInt(other_cursor) >= @ptrToInt(cursor))) {
-                    point.pos += chars.len;
+                    point.pos += bytes.len;
                     self.updateCol(point);
                 }
             }
@@ -294,10 +294,13 @@ pub const View = struct {
     }
 
     pub fn getSelection(self: *View, cursor: *Cursor) [2]usize {
-        assert(self.marked);
-        const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
-        const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
-        return [2]usize{selection_start_pos, selection_end_pos};
+        if (self.marked) {
+            const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
+            const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
+            return [2]usize{selection_start_pos, selection_end_pos};
+        } else {
+            return [2]usize{cursor.head.pos, cursor.head.pos};
+        }
     }
 
     pub fn dupeSelection(self: *View, cursor: *Cursor) ! []const u8 {
@@ -344,117 +347,122 @@ pub const View = struct {
     }
 
     pub fn frame(self: *View, ui: *UI, rect: UI.Rect) ! void {
-        // TODO rctrl/ralt?
-        const ctrl = 224;
-        const alt = 226;
-
-        // handle keys
-        // TODO handle shift?
-        for (ui.key_went_down.items) |key| {
-            if (ui.key_is_down[ctrl]) {
-                switch (key) {
-                    ' ' => self.toggleMark(),
-                    'c' => {
-                        for (self.cursors.items) |*cursor| try self.copy(cursor);
-                        self.clearMark();
-                    },
-                    'x' => {
-                        for (self.cursors.items) |*cursor| try self.cut(cursor);
-                        self.clearMark();
-                    },
-                    'v' => {
-                        for (self.cursors.items) |*cursor| try self.paste(cursor);
-                        self.clearMark();
-                    },
-                    'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
-                    'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                    'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
-                    'i' => for (self.cursors.items) |*cursor| self.goUp(cursor),
-                    else => {},
-                }
-            } else if (ui.key_is_down[alt]) {
-                switch (key) {
-                    ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
-                    'j' => for (self.cursors.items) |*cursor| self.goLineStart(cursor),
-                    'l' => for (self.cursors.items) |*cursor| self.goLineEnd(cursor),
-                    'k' => for (self.cursors.items) |*cursor| self.goPageEnd(cursor),
-                    'i' => for (self.cursors.items) |*cursor| self.goPageStart(cursor),
-                    else => {},
-                }
-            } else {
-                switch (key) {
-                    8 => {
-                        for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
-                        self.clearMark();
-                    },
-                    13 => {
-                        for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'});
-                        self.clearMark();
-                    },
-                    27 => {
-                        try self.collapseCursors();
-                        self.clearMark();
-                    },
-                    79 => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                    80 => for (self.cursors.items) |*cursor| self.goLeft(cursor),
-                    81 => for (self.cursors.items) |*cursor| self.goDown(cursor),
-                    82 => for (self.cursors.items) |*cursor| self.goUp(cursor),
-                    127 => {
-                        for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
-                        self.clearMark();
-                    },
-                    else => if (key >= 32 and key <= 126) {
-                        for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{key});
-                        self.clearMark();
-                    },
-                }
+        // handle events
+        for (ui.events.items) |event| {
+            switch (event.type) {
+                c.SDL_KEYDOWN => {
+                    const sym = event.key.keysym;
+                    if (sym.mod & @intCast(u16, c.KMOD_CTRL) != 0) {
+                        switch (sym.sym) {
+                            ' ' => self.toggleMark(),
+                            'c' => {
+                                for (self.cursors.items) |*cursor| try self.copy(cursor);
+                                self.clearMark();
+                            },
+                            'x' => {
+                                for (self.cursors.items) |*cursor| try self.cut(cursor);
+                                self.clearMark();
+                            },
+                            'v' => {
+                                for (self.cursors.items) |*cursor| try self.paste(cursor);
+                                self.clearMark();
+                            },
+                            'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
+                            'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
+                            'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goUp(cursor),
+                            else => {},
+                        }
+                    } else if (sym.mod & @intCast(u16, c.KMOD_ALT) != 0) {
+                        switch (sym.sym) {
+                            ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
+                            'j' => for (self.cursors.items) |*cursor| self.goLineStart(cursor),
+                            'l' => for (self.cursors.items) |*cursor| self.goLineEnd(cursor),
+                            'k' => for (self.cursors.items) |*cursor| self.goPageEnd(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goPageStart(cursor),
+                            else => {},
+                        }
+                    } else {
+                        switch (sym.sym) {
+                            c.SDLK_BACKSPACE => {
+                                for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
+                                self.clearMark();
+                            },
+                            c.SDLK_RETURN => {
+                                for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'});
+                                self.clearMark();
+                            },
+                            c.SDLK_ESCAPE => {
+                                try self.collapseCursors();
+                                self.clearMark();
+                            },
+                            c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
+                            c.SDLK_LEFT => for (self.cursors.items) |*cursor| self.goLeft(cursor),
+                            c.SDLK_DOWN => for (self.cursors.items) |*cursor| self.goDown(cursor),
+                            c.SDLK_UP => for (self.cursors.items) |*cursor| self.goUp(cursor),
+                            c.SDLK_DELETE => {
+                                for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
+                                self.clearMark();
+                            },
+                            else => {},
+                        }
+                    }
+                },
+                c.SDL_TEXTINPUT => {
+                    const text = event.text.text[0..std.mem.indexOfScalar(u8, &event.text.text, 0).?];
+                    for (self.cursors.items) |*cursor| try self.insert(cursor, text);
+                    self.clearMark();
+                },
+                c.SDL_MOUSEBUTTONDOWN => {
+                    const button = event.button;
+                    if (button.button == c.SDL_BUTTON_LEFT) {
+                        const line = @divTrunc(@intCast(u16, button.y) - rect.y, atlas.text_height);
+                        const col = @divTrunc(@intCast(u16, button.x) - rect.x, atlas.max_char_width);
+                        const pos = self.buffer.getPosForLineCol(line, col);
+                        if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
+                            var cursor = try self.newCursor();
+                            self.updatePos(&cursor.head, pos);
+                            self.updatePos(&cursor.tail, pos);
+                        } else {
+                            for (self.cursors.items) |*cursor| {
+                                self.updatePos(&cursor.head, pos);
+                                self.updatePos(&cursor.tail, pos);
+                            }
+                            self.clearMark();
+                        }
+                    }
+                },
+                c.SDL_MOUSEMOTION => {
+                    const motion = event.motion;
+                    if (motion.state & c.SDL_BUTTON_LMASK != 0) {
+                        const line = @divTrunc(@intCast(u16, motion.y) - rect.y, atlas.text_height);
+                        const col = @divTrunc(@intCast(u16, motion.x) - rect.x, atlas.max_char_width);
+                        const pos = self.buffer.getPosForLineCol(line, col);
+                        if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
+                            var cursor = &self.cursors.items[self.cursors.items.len-1];
+                            if (cursor.tail.pos != pos and !self.marked) {
+                                self.setMark();
+                            }
+                            self.updatePos(&cursor.head, pos);
+                        } else {
+                            for (self.cursors.items) |*cursor| {
+                                if (cursor.tail.pos != pos and !self.marked) {
+                                    self.setMark();
+                                }
+                                self.updatePos(&cursor.head, pos);
+                            }
+                        }
+                    }
+                },
+                else => {},
             }
         }
 
-        // handle mouse
-        // TODO change mouse_is_down to event list like keys
-        if (ui.mouse_is_down[0]) {
-            const line = @divTrunc(ui.mouse_pos.y - rect.y, atlas.text_height);
-            const col = @divTrunc(ui.mouse_pos.x - rect.x, atlas.max_char_width);
-            const pos = self.buffer.getPosForLineCol(line, col);
-
-            if (ui.mouse_went_down[0]) {
-                // on mouse down
-                if (ui.key_is_down[ctrl]) {
-                    var cursor = try self.newCursor();
-                    self.updatePos(&cursor.head, pos);
-                    self.updatePos(&cursor.tail, pos);
-                } else {
-                    for (self.cursors.items) |*cursor| {
-                        self.updatePos(&cursor.head, pos);
-                        self.updatePos(&cursor.tail, pos);
-                    }
-                    self.clearMark();
-                }
-            } else {
-                // on mouse drag
-                if (ui.key_is_down[ctrl]) {
-                    var cursor = &self.cursors.items[self.cursors.items.len-1];
-                    if (cursor.tail.pos != pos and !self.marked) {
-                        self.setMark();
-                    }
-                    self.updatePos(&cursor.head, pos);
-                } else {
-                    for (self.cursors.items) |*cursor| {
-                        if (cursor.tail.pos != pos and !self.marked) {
-                            self.setMark();
-                        }
-                        self.updatePos(&cursor.head, pos);
-                    }
-                }
-            }
-        } 
-
         // draw
-        const text_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+        const bytes_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
         const multi_cursor_color = UI.Color{ .r = 0, .g = 0, .b = 255, .a = 255 };
         const highlight_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 100 };
-        var lines = std.mem.split(self.buffer.text.items, "\n");
+        var lines = std.mem.split(self.buffer.bytes.items, "\n");
         var line_ix: u16 = 0;
         var line_start_pos: usize = 0;
         while (lines.next()) |line| : (line_ix += 1) {
@@ -469,7 +477,7 @@ pub const View = struct {
                     const x = rect.x + ((cursor.head.pos - line_start_pos) * atlas.max_char_width);
                     try ui.queueRect(
                         .{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height},
-                        if (self.cursors.items.len > 1) multi_cursor_color else text_color,
+                        if (self.cursors.items.len > 1) multi_cursor_color else bytes_color,
                     );
                 }
 
@@ -490,8 +498,8 @@ pub const View = struct {
                 }
             }
             
-            // draw text
-            try ui.queueText(.{.x = rect.x, .y = y}, text_color, line);
+            // draw bytes
+            try ui.queueText(.{.x = rect.x, .y = y}, bytes_color, line);
             
             line_start_pos = line_end_pos + 1; // + 1 for '\n'
         }
