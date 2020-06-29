@@ -77,10 +77,6 @@ pub const Buffer = struct {
         std.mem.copy(u8, self.text.items[start..], self.text.items[end..]);
         self.text.shrink(self.text.items.len - (end - start));
     }
-
-    pub fn and_cursor(self: *Buffer, cursor: *Cursor) BufferAndCursor {
-        return BufferAndCursor{.buffer = self, .cursor = cursor};
-    }
 };
 
 pub const Point = struct {
@@ -105,9 +101,10 @@ pub const Cursor = struct {
 pub const View = struct {
     allocator: *Allocator,
     buffer: *Buffer,
+    // cursors.len > 0
     cursors: ArrayList(Cursor),
     marked: bool,
-    mouse_cursor: ?Cursor,
+    mouse_was_down: bool,
 
     pub fn init(allocator: *Allocator, buffer: *Buffer) ! View {
         var cursors = ArrayList(Cursor).init(allocator);
@@ -121,7 +118,7 @@ pub const View = struct {
             .buffer = buffer,
             .cursors = cursors,
             .marked = false,
-            .mouse_cursor = null,
+            .mouse_was_down = false,
         };
     }
 
@@ -152,8 +149,13 @@ pub const View = struct {
         point.col = point.pos - self.getLineStart(point.*);
     }
 
+    pub fn updatePos(self: *View, point: *Point, pos: usize) void {
+        point.pos = pos;
+        self.updateCol(point);
+    }
+
     pub fn goPos(self: *View, cursor: *Cursor, pos: usize) void {
-        cursor.head.pos = pos;
+        self.updatePos(&cursor.head, pos);
     }
 
     pub fn goCol(self: *View, cursor: *Cursor, col: usize) void {
@@ -224,6 +226,7 @@ pub const View = struct {
         const insert_at = cursor.head.pos;
         for (self.cursors.items) |*other_cursor| {
             for (&[2]*Point{&other_cursor.head, &other_cursor.tail}) |point| {
+                // TODO want paste to leave each cursor after its own insert
                 if (point.pos >= insert_at) point.pos += chars.len;
                 self.updateCol(point);
             }
@@ -271,8 +274,8 @@ pub const View = struct {
 
     pub fn setMark(self: *View) void {
         self.marked = true;
-        for (self.cursors.items) |*other_cursor| {
-            other_cursor.tail = other_cursor.head;
+        for (self.cursors.items) |*cursor| {
+            cursor.tail = cursor.head;
         }
     }
 
@@ -313,6 +316,29 @@ pub const View = struct {
 
     pub fn paste(self: *View, cursor: *Cursor) ! void {
         try self.insert(cursor, cursor.clipboard);
+    }
+
+    pub fn newCursor(self: *View) ! *Cursor {
+        try self.cursors.append(.{
+            .head = .{.pos=0, .col=0},
+            .tail = .{.pos=0, .col=0},
+            .clipboard="",
+        });
+        return &self.cursors.items[self.cursors.items.len-1];
+    }
+
+    pub fn collapseCursors(self: *View) ! void {
+        var size: usize = 0;
+        for (self.cursors.items) |cursor| {
+            size += cursor.clipboard.len;
+        }
+        var clipboard = try ArrayList(u8).initCapacity(self.allocator, size);
+        for (self.cursors.items) |cursor| {
+            clipboard.appendSlice(cursor.clipboard) catch unreachable;
+            self.allocator.free(cursor.clipboard);
+        }
+        self.cursors.shrink(1);
+        self.cursors.items[0].clipboard = clipboard.toOwnedSlice();
     }
 
     const text_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
@@ -365,6 +391,10 @@ pub const View = struct {
                         for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'});
                         self.clearMark();
                     },
+                    27 => {
+                        try self.collapseCursors();
+                        self.clearMark();
+                    },
                     79 => for (self.cursors.items) |*cursor| self.goRight(cursor),
                     80 => for (self.cursors.items) |*cursor| self.goLeft(cursor),
                     81 => for (self.cursors.items) |*cursor| self.goDown(cursor),
@@ -382,10 +412,7 @@ pub const View = struct {
         }
 
         // handle mouse
-        // if !ctrl and !drag, set a single cursor and clear mark
-        // if !ctrl and drag, set a single cursor and reset mark
-        // if ctrl and !drag, add a single cursor and leave mark as is
-        // if ctrl and drag, add a single cursor and reset mark
+        // TODO change mouse_is_down to event list like keys
         if (ui.mouse_is_down[0]) {
             const line = @divTrunc(ui.mouse_pos.y - rect.y, atlas.text_height);
             const col = @divTrunc(ui.mouse_pos.x - rect.x, atlas.max_char_width);
@@ -393,31 +420,35 @@ pub const View = struct {
 
             if (ui.mouse_went_down[0]) {
                 // on mouse down
-                self.mouse_cursor = .{
-                    .head = .{.pos=pos, .col=0},
-                    .tail = .{.pos=pos, .col=0},
-                    .clipboard="",
-                };
-                self.updateCol(&self.mouse_cursor.?.head);
-                self.updateCol(&self.mouse_cursor.?.tail);
-                if (!ui.key_is_down[ctrl]) {
-                    self.mouse_cursor.?.clipboard = self.cursors.items[0].clipboard;
-                    self.cursors.shrink(0); // TODO free clipboards
+                if (ui.key_is_down[ctrl]) {
+                    var cursor = try self.newCursor();
+                    self.updatePos(&cursor.head, pos);
+                    self.updatePos(&cursor.tail, pos);
+                } else {
+                    for (self.cursors.items) |*cursor| {
+                        self.updatePos(&cursor.head, pos);
+                        self.updatePos(&cursor.tail, pos);
+                    }
                     self.clearMark();
-                } 
+                }
             } else {
                 // on mouse drag
-                self.mouse_cursor.?.head.pos = pos;
-                self.updateCol(&self.mouse_cursor.?.head);
+                if (ui.key_is_down[ctrl]) {
+                    var cursor = &self.cursors.items[self.cursors.items.len-1];
+                    if (cursor.tail.pos != pos and !self.marked) {
+                        self.setMark();
+                    }
+                    self.updatePos(&cursor.head, pos);
+                } else {
+                    for (self.cursors.items) |*cursor| {
+                        if (cursor.tail.pos != pos and !self.marked) {
+                            self.setMark();
+                        }
+                        self.updatePos(&cursor.head, pos);
+                    }
+                }
             }
-        } else if (self.mouse_cursor) |mouse_cursor| {
-            // on mouse up
-            if (self.mouse_cursor.?.tail.pos != self.mouse_cursor.?.head.pos and !self.marked) {
-                self.setMark();
-            }
-            try self.cursors.append(mouse_cursor);
-            self.mouse_cursor = null;
-        }
+        } 
 
         // draw
         var lines = std.mem.split(self.buffer.text.items, "\n");
@@ -430,40 +461,33 @@ pub const View = struct {
             const line_end_pos = line_start_pos + line.len;
 
             for (self.cursors.items) |cursor| {
-                try self.drawCursor(ui, rect, y, line_ix, line_start_pos, line_end_pos, cursor, false);
-            }
-            if (self.mouse_cursor) |cursor| {
-                try self.drawCursor(ui, rect, y, line_ix, line_start_pos, line_end_pos, cursor, true);
+                // draw cursor
+                if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
+                    const x = rect.x + ((cursor.head.pos - line_start_pos) * atlas.max_char_width);
+                    try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height}, text_color);
+                }
+
+                // draw selection
+                if (self.marked) {
+                    const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
+                    const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
+                    const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
+                    const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
+                    if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_end_pos and selection_end_pos > line_end_pos)) {
+                        const x = rect.x + ((highlight_start_pos - line_start_pos) * atlas.max_char_width);
+                        const w = if (selection_end_pos > line_end_pos)
+                            rect.x + rect.w - x
+                            else
+                            (highlight_end_pos - highlight_start_pos) * atlas.max_char_width;
+                        try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=atlas.text_height}, highlight_color);
+                    }
+                }
             }
             
             // draw text
             try ui.queueText(.{.x = rect.x, .y = y}, text_color, line);
             
             line_start_pos = line_end_pos + 1; // + 1 for '\n'
-        }
-    }
-
-    fn drawCursor(self: *View, ui: *UI, rect: UI.Rect, y: u16, line_ix: usize, line_start_pos: usize, line_end_pos: usize, cursor: Cursor, is_mouse_cursor: bool) ! void {
-        // draw cursor
-        if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
-            const x = rect.x + ((cursor.head.pos - line_start_pos) * atlas.max_char_width);
-            try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height}, text_color);
-        }
-
-        // draw selection
-        if (self.marked or is_mouse_cursor) {
-            const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
-            const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
-            const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
-            const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
-            if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_end_pos and selection_end_pos > line_end_pos)) {
-                const x = rect.x + ((highlight_start_pos - line_start_pos) * atlas.max_char_width);
-                const w = if (selection_end_pos > line_end_pos)
-                    rect.x + rect.w - x
-                    else
-                    (highlight_end_pos - highlight_start_pos) * atlas.max_char_width;
-                try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=atlas.text_height}, highlight_color);
-            }
         }
     }
 };
