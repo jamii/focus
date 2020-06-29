@@ -243,9 +243,10 @@ pub const View = struct {
     }
 
     pub fn deleteSelection(self: *View, cursor: *Cursor) void {
-        assert(self.marked);
-        const selection = self.getSelection(cursor);
-        self.delete(selection[0], selection[1]);
+        if (self.marked) {
+            const selection = self.getSelection(cursor);
+            self.delete(selection[0], selection[1]);
+        }
     }
 
     pub fn deleteBackwards(self: *View, cursor: *Cursor) void {
@@ -327,9 +328,18 @@ pub const View = struct {
             if (ui.key_is_down[ctrl]) {
                 switch (key) {
                     ' ' => self.toggleMark(),
-                    'c' => for (self.cursors.items) |*cursor| { try self.copy(cursor); self.clearMark(); },
-                    'x' => for (self.cursors.items) |*cursor| { try self.cut(cursor); self.clearMark(); },
-                    'v' => for (self.cursors.items) |*cursor| { try self.paste(cursor); self.clearMark(); },
+                    'c' => {
+                        for (self.cursors.items) |*cursor| try self.copy(cursor);
+                        self.clearMark();
+                    },
+                    'x' => {
+                        for (self.cursors.items) |*cursor| try self.cut(cursor);
+                        self.clearMark();
+                    },
+                    'v' => {
+                        for (self.cursors.items) |*cursor| try self.paste(cursor);
+                        self.clearMark();
+                    },
                     'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
                     'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
                     'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
@@ -347,16 +357,26 @@ pub const View = struct {
                 }
             } else {
                 switch (key) {
-                    8 => for (self.cursors.items) |*cursor| { self.deleteBackwards(cursor); self.clearMark(); },
-                    13 => for (self.cursors.items) |*cursor| { try self.insert(cursor, &[1]u8{'\n'}); self.clearMark(); },
+                    8 => {
+                        for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
+                        self.clearMark();
+                    },
+                    13 => {
+                        for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'});
+                        self.clearMark();
+                    },
                     79 => for (self.cursors.items) |*cursor| self.goRight(cursor),
                     80 => for (self.cursors.items) |*cursor| self.goLeft(cursor),
                     81 => for (self.cursors.items) |*cursor| self.goDown(cursor),
                     82 => for (self.cursors.items) |*cursor| self.goUp(cursor),
-                    127 => for (self.cursors.items) |*cursor| { self.deleteForwards(cursor); self.clearMark(); },
+                    127 => {
+                        for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
+                        self.clearMark();
+                    },
                     else => if (key >= 32 and key <= 126) {
-                        for (self.cursors.items) |*cursor| { try self.insert(cursor, &[1]u8{key}); self.clearMark(); }
-                    }
+                        for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{key});
+                        self.clearMark();
+                    },
                 }
             }
         }
@@ -373,19 +393,18 @@ pub const View = struct {
 
             if (ui.mouse_went_down[0]) {
                 // on mouse down
+                self.mouse_cursor = .{
+                    .head = .{.pos=pos, .col=0},
+                    .tail = .{.pos=pos, .col=0},
+                    .clipboard="",
+                };
+                self.updateCol(&self.mouse_cursor.?.head);
+                self.updateCol(&self.mouse_cursor.?.tail);
                 if (!ui.key_is_down[ctrl]) {
-                    self.mouse_cursor = self.cursors.items[0];
-                    self.cursors.shrink(0);
+                    self.mouse_cursor.?.clipboard = self.cursors.items[0].clipboard;
+                    self.cursors.shrink(0); // TODO free clipboards
                     self.clearMark();
-                } else {
-                    self.mouse_cursor = .{
-                        .head = .{.pos=pos, .col=0},
-                        .tail = .{.pos=pos, .col=0},
-                        .clipboard="",
-                    };
-                    self.updateCol(&self.mouse_cursor.?.head);
-                    self.updateCol(&self.mouse_cursor.?.tail);
-                }
+                } 
             } else {
                 // on mouse drag
                 self.mouse_cursor.?.head.pos = pos;
