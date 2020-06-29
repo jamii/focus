@@ -226,9 +226,11 @@ pub const View = struct {
         const insert_at = cursor.head.pos;
         for (self.cursors.items) |*other_cursor| {
             for (&[2]*Point{&other_cursor.head, &other_cursor.tail}) |point| {
-                // TODO want paste to leave each cursor after its own insert
-                if (point.pos >= insert_at) point.pos += chars.len;
-                self.updateCol(point);
+                // ptr compare is because we want paste to leave each cursor after its own insert
+                if (point.pos > insert_at or (point.pos == insert_at and @ptrToInt(other_cursor) >= @ptrToInt(cursor))) {
+                    point.pos += chars.len;
+                    self.updateCol(point);
+                }
             }
         }
     }
@@ -341,15 +343,13 @@ pub const View = struct {
         self.cursors.items[0].clipboard = clipboard.toOwnedSlice();
     }
 
-    const text_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
-    const highlight_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 100 };
-
     pub fn frame(self: *View, ui: *UI, rect: UI.Rect) ! void {
         // TODO rctrl/ralt?
         const ctrl = 224;
         const alt = 226;
 
         // handle keys
+        // TODO handle shift?
         for (ui.key_went_down.items) |key| {
             if (ui.key_is_down[ctrl]) {
                 switch (key) {
@@ -451,6 +451,9 @@ pub const View = struct {
         } 
 
         // draw
+        const text_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+        const multi_cursor_color = UI.Color{ .r = 0, .g = 0, .b = 255, .a = 255 };
+        const highlight_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 100 };
         var lines = std.mem.split(self.buffer.text.items, "\n");
         var line_ix: u16 = 0;
         var line_start_pos: usize = 0;
@@ -464,7 +467,10 @@ pub const View = struct {
                 // draw cursor
                 if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
                     const x = rect.x + ((cursor.head.pos - line_start_pos) * atlas.max_char_width);
-                    try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height}, text_color);
+                    try ui.queueRect(
+                        .{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height},
+                        if (self.cursors.items.len > 1) multi_cursor_color else text_color,
+                    );
                 }
 
                 // draw selection
