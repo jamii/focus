@@ -1,10 +1,11 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
-const atlas = focus.atlas;
 const draw = focus.draw;
+const Atlas = focus.Atlas;
 
 pub const UI = struct {
     allocator: *Allocator,
+    atlas: *Atlas,
     events: ArrayList(c.SDL_Event),
     commands: ArrayList(Command),
 
@@ -25,9 +26,10 @@ pub const UI = struct {
         },
     };
 
-    pub fn init(allocator: *Allocator) UI {
+    pub fn init(allocator: *Allocator, atlas: *Atlas) UI {
         return UI{
             .allocator = allocator,
+            .atlas = atlas,
             .events = ArrayList(c.SDL_Event).init(allocator),
             .commands = ArrayList(Command).init(allocator),
         };
@@ -58,8 +60,8 @@ pub const UI = struct {
         draw.clear(.{ .r = 0, .g = 0, .b = 0, .a = 255 });
         for (self.commands.items) |command| {
             switch (command) {
-                .Rect => |data| draw.rect(data.rect, data.color),
-                .Text => |data| draw.text(data.chars, data.pos, data.color),
+                .Rect => |data| draw.rect(self.atlas, data.rect, data.color),
+                .Text => |data| draw.text(self.atlas, data.chars, data.pos, data.color),
             }
         }
         draw.swap();
@@ -86,47 +88,47 @@ pub const UI = struct {
         });
     }
 
-    pub fn text(self: *UI, rect: Rect, color: Color, chars: []const u8) !void {
-        var h: Coord = 0;
-        var line_begin: usize = 0;
-        while (true) {
-            var line_end = line_begin;
-            {
-                var w: Coord = 0;
-                var i: usize = line_end;
-                while (true) {
-                    if (i >= chars.len) {
-                        line_end = i;
-                        break;
-                    }
-                    const char = chars[i];
-                    w += @intCast(Coord, atlas.max_char_width);
-                    if (w > rect.w) {
-                        // if haven't soft wrapped yet, hard wrap before this char
-                        if (line_end == line_begin) {
-                            line_end = i;
-                        }
-                        break;
-                    }
-                    if (char == '\n') {
-                        // commit to drawing this char and wrap here
-                        line_end = i + 1;
-                        break;
-                    }
-                    if (char == ' ') {
-                        // commit to drawing this char
-                        line_end = i + 1;
-                    }
-                    // otherwise keep looking ahead
-                    i += 1;
-                }
-            }
-            try self.queueText(.{ .x = rect.x, .y = rect.y + h }, color, chars[line_begin..line_end]);
-            line_begin = line_end;
-            h += atlas.text_height;
-            if (line_begin >= chars.len or h > rect.h) {
-                break;
-            }
-        }
-    }
+    // pub fn text(self: *UI, rect: Rect, color: Color, chars: []const u8) !void {
+    //     var h: Coord = 0;
+    //     var line_begin: usize = 0;
+    //     while (true) {
+    //         var line_end = line_begin;
+    //         {
+    //             var w: Coord = 0;
+    //             var i: usize = line_end;
+    //             while (true) {
+    //                 if (i >= chars.len) {
+    //                     line_end = i;
+    //                     break;
+    //                 }
+    //                 const char = chars[i];
+    //                 w += @intCast(Coord, atlas.max_char_width);
+    //                 if (w > rect.w) {
+    //                     // if haven't soft wrapped yet, hard wrap before this char
+    //                     if (line_end == line_begin) {
+    //                         line_end = i;
+    //                     }
+    //                     break;
+    //                 }
+    //                 if (char == '\n') {
+    //                     // commit to drawing this char and wrap here
+    //                     line_end = i + 1;
+    //                     break;
+    //                 }
+    //                 if (char == ' ') {
+    //                     // commit to drawing this char
+    //                     line_end = i + 1;
+    //                 }
+    //                 // otherwise keep looking ahead
+    //                 i += 1;
+    //             }
+    //         }
+    //         try self.queueText(.{ .x = rect.x, .y = rect.y + h }, color, chars[line_begin..line_end]);
+    //         line_begin = line_end;
+    //         h += atlas.text_height;
+    //         if (line_begin >= chars.len or h > rect.h) {
+    //             break;
+    //         }
+    //     }
+    // }
 };

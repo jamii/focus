@@ -1,7 +1,7 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
 usingnamespace focus.common.c;
-const atlas = focus.atlas;
+const Atlas = focus.Atlas; 
 
 pub const Coord = u16;
 
@@ -44,12 +44,12 @@ pub const Color = packed struct {
     a: u8,
 };
 
-const Vec2f = packed struct {
+pub const Vec2f = packed struct {
     x: f32,
     y: f32,
 };
 
-fn Tri(comptime t: type) type {
+pub fn Tri(comptime t: type) type {
     // TODO which direction?
     return packed struct {
         a: t,
@@ -58,7 +58,7 @@ fn Tri(comptime t: type) type {
     };
 }
 
-fn Quad(comptime t: type) type {
+pub fn Quad(comptime t: type) type {
     return packed struct {
         tl: t,
         tr: t,
@@ -67,6 +67,7 @@ fn Quad(comptime t: type) type {
     };
 }
 
+// TODO get rid off these globals
 const buffer_size = 2 ^ 14;
 var texture_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
 var vertex_buffer = std.mem.zeroes([buffer_size]Quad(Vec2f));
@@ -82,7 +83,7 @@ var buffer_ix: usize = 0;
 
 var window: *c.SDL_Window = undefined;
 
-pub fn init() void {
+pub fn init(atlas: *Atlas) void {
     // init SDL
     _ = SDL_Init(SDL_INIT_EVERYTHING);
     const window_o = SDL_CreateWindow("focus", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, @as(c_int, @divTrunc(screen_width, scale)), @as(c_int, @divTrunc(screen_height, scale)), SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI);
@@ -110,7 +111,7 @@ pub fn init() void {
     var id: u32 = undefined;
     glGenTextures(1, &id);
     glBindTexture(GL_TEXTURE_2D, id);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.width, atlas.height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, &atlas.texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, atlas.texture.ptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     assert(glGetError() == 0);
@@ -149,15 +150,15 @@ fn flush() void {
     buffer_ix = 0;
 }
 
-fn quad(dst: Rect, src: Rect, color: Color) void {
+fn quad(atlas: *Atlas, dst: Rect, src: Rect, color: Color) void {
     if (buffer_ix == buffer_size) {
         flush();
     }
 
-    const tx = @intToFloat(f32, src.x) / @intToFloat(f32, atlas.width);
-    const ty = @intToFloat(f32, src.y) / @intToFloat(f32, atlas.height);
-    const tw = @intToFloat(f32, src.w) / @intToFloat(f32, atlas.width);
-    const th = @intToFloat(f32, src.h) / @intToFloat(f32, atlas.height);
+    const tx = @intToFloat(f32, src.x) / @intToFloat(f32, atlas.texture_dims.x);
+    const ty = @intToFloat(f32, src.y) / @intToFloat(f32, atlas.texture_dims.y);
+    const tw = @intToFloat(f32, src.w) / @intToFloat(f32, atlas.texture_dims.x);
+    const th = @intToFloat(f32, src.h) / @intToFloat(f32, atlas.texture_dims.y);
     texture_buffer[buffer_ix] = .{
         .tl = .{ .x = tx, .y = ty },
         .tr = .{ .x = tx + tw, .y = ty },
@@ -200,19 +201,19 @@ fn quad(dst: Rect, src: Rect, color: Color) void {
     buffer_ix += 1;
 }
 
-pub fn rect(dst: Rect, color: Color) void {
-    quad(dst, atlas.white, color);
+pub fn rect(atlas: *Atlas, dst: Rect, color: Color) void {
+    quad(atlas, dst, atlas.white_rect, color);
 }
 
 // TODO going to need to be able to clip text
-pub fn text(chars: []const u8, pos: Vec2, color: Color) void {
+pub fn text(atlas: *Atlas, chars: []const u8, pos: Vec2, color: Color) void {
     var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
     for (chars) |char| {
-        const src = atlas.chars[min(char, 127)];
-        dst.w = src.w * atlas.scale;
-        dst.h = src.h * atlas.scale;
-        quad(dst, src, color);
-        dst.x += @intCast(u16, atlas.max_char_width);
+        const src = atlas.char_to_rect[char];
+        dst.w = src.w;
+        dst.h = src.h;
+        quad(atlas, dst, src, color);
+        dst.x += src.w;
     }
 }
 

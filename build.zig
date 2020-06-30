@@ -41,8 +41,8 @@ fn includeCommon(exe: *std.build.LibExeObjStep) !void {
     exe.linkSystemLibrary("GL");
     try includeNix(exe, "NIX_SDL2_DEV");
     exe.linkSystemLibrary("SDL2");
-    try includeNix(exe, "NIX_SDL_TTF_DEV");
-    exe.linkSystemLibrary("SDL_ttf");
+    try includeNix(exe, "NIX_SDL2_TTF_DEV");
+    exe.linkSystemLibrary("SDL2_ttf");
     exe.setOutputDir("./zig-cache");
 }
 

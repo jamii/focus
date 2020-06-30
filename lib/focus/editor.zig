@@ -1,6 +1,5 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
-const atlas = focus.atlas;
 const UI = focus.UI;
 
 pub const Buffer = struct {
@@ -424,8 +423,8 @@ pub const View = struct {
                 c.SDL_MOUSEBUTTONDOWN => {
                     const button = event.button;
                     if (button.button == c.SDL_BUTTON_LEFT) {
-                        const line = @divTrunc(@intCast(u16, button.y) - rect.y, atlas.text_height);
-                        const col = @divTrunc(@intCast(u16, button.x) - rect.x, atlas.max_char_width);
+                        const line = @divTrunc(@intCast(u16, button.y) - rect.y, ui.atlas.char_height);
+                        const col = @divTrunc(@intCast(u16, button.x) - rect.x, ui.atlas.char_width);
                         const pos = self.buffer.getPosForLineCol(line, col);
                         if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
                             var cursor = try self.newCursor();
@@ -443,8 +442,8 @@ pub const View = struct {
                 c.SDL_MOUSEMOTION => {
                     const motion = event.motion;
                     if (motion.state & c.SDL_BUTTON_LMASK != 0) {
-                        const line = @divTrunc(@intCast(u16, motion.y) - rect.y, atlas.text_height);
-                        const col = @divTrunc(@intCast(u16, motion.x) - rect.x, atlas.max_char_width);
+                        const line = @divTrunc(@intCast(u16, motion.y) - rect.y, ui.atlas.char_height);
+                        const col = @divTrunc(@intCast(u16, motion.x) - rect.x, ui.atlas.char_width);
                         const pos = self.buffer.getPosForLineCol(line, col);
                         if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
                             var cursor = &self.cursors.items[self.cursors.items.len-1];
@@ -474,17 +473,17 @@ pub const View = struct {
         var line_ix: u16 = 0;
         var line_start_pos: usize = 0;
         while (lines.next()) |line| : (line_ix += 1) {
-            if ((line_ix * atlas.text_height) > rect.h) break;
+            if ((line_ix * ui.atlas.char_height) > rect.h) break;
             
-            const y = rect.y + (line_ix * atlas.text_height);
+            const y = rect.y + (line_ix * ui.atlas.char_height);
             const line_end_pos = line_start_pos + line.len;
 
             for (self.cursors.items) |cursor| {
                 // draw cursor
                 if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
-                    const x = rect.x + ((cursor.head.pos - line_start_pos) * atlas.max_char_width);
+                    const x = rect.x + ((cursor.head.pos - line_start_pos) * ui.atlas.char_width);
                     try ui.queueRect(
-                        .{.x = @intCast(u16, x), .y = y, .w=1, .h=atlas.text_height},
+                        .{.x = @intCast(u16, x), .y = y, .w=1, .h=ui.atlas.char_height},
                         if (self.cursors.items.len > 1) multi_cursor_color else bytes_color,
                     );
                 }
@@ -496,12 +495,12 @@ pub const View = struct {
                     const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
                     const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
                     if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_end_pos and selection_end_pos > line_end_pos)) {
-                        const x = rect.x + ((highlight_start_pos - line_start_pos) * atlas.max_char_width);
+                        const x = rect.x + ((highlight_start_pos - line_start_pos) * ui.atlas.char_width);
                         const w = if (selection_end_pos > line_end_pos)
                             rect.x + rect.w - x
                             else
-                            (highlight_end_pos - highlight_start_pos) * atlas.max_char_width;
-                        try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=atlas.text_height}, highlight_color);
+                            (highlight_end_pos - highlight_start_pos) * ui.atlas.char_width;
+                        try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=ui.atlas.char_height}, highlight_color);
                     }
                 }
             }

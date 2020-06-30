@@ -37,15 +37,15 @@ hostPkgs.mkShell rec {
     hostPkgs.patchelf
     targetPkgs.libGL.all
     targetPkgs.SDL2.all
-    targetPkgs.SDL_ttf.all
+    targetPkgs.SDL2_ttf.all
     # zig # tracking master instead
   ];
   FOCUS="nixos@192.168.1.83";
   NIX_GCC=targetPkgs.gcc;
   NIX_LIBGL_LIB=targetPkgs.libGL;
   NIX_SDL2_LIB=targetPkgs.SDL2;
-  NIX_SDL_TTF_LIB=targetPkgs.SDL_ttf;
+  NIX_SDL2_TTF_LIB=targetPkgs.SDL2_ttf;
   NIX_LIBGL_DEV=targetPkgs.libGL.dev;
   NIX_SDL2_DEV=targetPkgs.SDL2.dev;
-  NIX_SDL_TTF_DEV=targetPkgs.SDL_ttf; # no .dev
+  NIX_SDL2_TTF_DEV=targetPkgs.SDL2_ttf; # no .dev
 }
