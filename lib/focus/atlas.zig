@@ -47,25 +47,9 @@ pub const Atlas = struct {
             orelse panic("Atlas render failed: {s}", .{c.TTF_GetError()});
         defer c.SDL_FreeSurface(surface);
 
-        // turn sdl surface into gl texture
+        // copy the texture
         assert(surface.*.format.*.format == c.SDL_PIXELFORMAT_ARGB8888);
-        const Pixel = packed struct {
-            a: u8,
-            r: u8,
-            g: u8,
-            b: u8,
-        };
-        const pixels = @ptrCast([*]Pixel, surface.*.pixels);
-        const surface_len = @intCast(usize, surface.*.w * surface.*.h);
-        var texture = try allocator.alloc(draw.Color, surface_len);
-        errdefer allocator.free(texture);
-        {
-            var i: usize = 0;
-            while (i < surface_len) : (i += 1) {
-                const pixel = pixels[i];
-                texture[i] = draw.Color{.r=pixel.r, .g=pixel.g, .b=pixel.b, .a=pixel.a};
-            }
-        }
+        const texture = try std.mem.dupe(allocator, draw.Color, @ptrCast([*]draw.Color, surface.*.pixels)[0..@intCast(usize, surface.*.w * surface.*.h)]);
 
         // make a white pixel
         texture[0] = draw.Color{.r=255, .g=255, .b=255, .a=255};
@@ -84,13 +68,13 @@ pub const Atlas = struct {
             var char: usize = 1;
             while (char < 128) : (char += 1) {
                 char_to_rect[char] = .{
-                    .x = @intCast(u16, char-1) * char_width,
+                    .x = @intCast(u16, char) * char_width,
                     .y = 0,
                     .w = char_width,
                     .h = char_height,
                 };
             }
-        }  
+        }
 
         return Atlas{
             .allocator = allocator,

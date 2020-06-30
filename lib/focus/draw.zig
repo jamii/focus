@@ -111,7 +111,7 @@ pub fn init(atlas: *Atlas) void {
     var id: u32 = undefined;
     glGenTextures(1, &id);
     glBindTexture(GL_TEXTURE_2D, id);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, atlas.texture.ptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlas.texture.ptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     assert(glGetError() == 0);
