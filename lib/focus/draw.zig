@@ -76,7 +76,7 @@ var index_buffer = std.mem.zeroes([buffer_size][2]Tri(u32));
 pub const scale = 1;
 
 pub const screen_width = 720;
-pub const screen_height = 1440;
+pub const screen_height = 720;
 
 var buffer_ix: usize = 0;
 

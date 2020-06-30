@@ -4,6 +4,7 @@ const meta = focus.meta;
 pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
     @cInclude("SDL2/SDL_opengl.h");
+    @cInclude("SDL/SDL_ttf.h");
 });
 
 pub const std = @import("std");
