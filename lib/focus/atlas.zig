@@ -36,10 +36,10 @@ pub const Atlas = struct {
         // render all ascii chars
         var text = try allocator.allocSentinel(u8, 128, 0);
         defer allocator.free(text);
-        text[0] = ' '; // going to overwrite this with pure white in final texture
+        text[0] = ' '; // going to overwrite this with a white block in final texture
         {
             var char: usize = 1;
-            while (char <= 128) : (char += 1) {
+            while (char < text.len) : (char += 1) {
                 text[char] = @intCast(u8, char);
             }
         }
@@ -57,16 +57,16 @@ pub const Atlas = struct {
 
         // calculate char sizes
         // assume monospaced font
-        const char_width = @intCast(u16, @divTrunc(surface.*.w, 127));
+        const char_width = @intCast(u16, @divTrunc(@intCast(usize, surface.*.w), text.len));
         const char_height = @intCast(u16, surface.*.h);
 
         // calculate location of each char
-        var char_to_rect = try allocator.alloc(draw.Rect, 128);
+        var char_to_rect = try allocator.alloc(draw.Rect, text.len);
         errdefer allocator.free(char_to_rect);
         char_to_rect[0] = .{.x=0, .y=0, .w=0, .h=0};
         {
             var char: usize = 1;
-            while (char < 128) : (char += 1) {
+            while (char < text.len) : (char += 1) {
                 char_to_rect[char] = .{
                     .x = @intCast(u16, char) * char_width,
                     .y = 0,
