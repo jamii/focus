@@ -424,7 +424,7 @@ pub const View = struct {
                     const button = event.button;
                     if (button.button == c.SDL_BUTTON_LEFT) {
                         const line = @divTrunc(@intCast(u16, button.y) - rect.y, ui.atlas.char_height);
-                        const col = @divTrunc(@intCast(u16, button.x) - rect.x, ui.atlas.char_width);
+                        const col = @divTrunc(@intCast(u16, button.x) - rect.x + @divTrunc(ui.atlas.char_width, 2), ui.atlas.char_width);
                         const pos = self.buffer.getPosForLineCol(line, col);
                         if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
                             var cursor = try self.newCursor();

@@ -23,10 +23,12 @@ pub fn run(allocator: *Allocator) !void {
     var view = try editor.View.init(allocator, &buffer);
 
     while (true) {
+        // var timer = try std.time.Timer.start();
         _ = try ui.handleInput();
         const screen = try ui.begin();
         // try memory.frame(&ui, screen);
         try view.frame(&ui, screen);
         try ui.end();
+        // warn("frame time: {}ns\n", .{timer.read()});
     }
 }
