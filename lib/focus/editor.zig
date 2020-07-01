@@ -466,9 +466,11 @@ pub const View = struct {
         }
 
         // draw
-        const bytes_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
-        const multi_cursor_color = UI.Color{ .r = 0, .g = 0, .b = 255, .a = 255 };
-        const highlight_color = UI.Color{ .r = 255, .g = 255, .b = 255, .a = 100 };
+        const background_color = UI.Color{ .r = 0x2e, .g=0x34, .b=0x36, .a=255 };
+        try ui.queueRect(rect, background_color);
+        const text_color = UI.Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 255 };
+        const multi_cursor_color = UI.Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 255 };
+        var highlight_color = text_color; highlight_color.a = 100;
         var lines = std.mem.split(self.buffer.bytes.items, "\n");
         var line_ix: u16 = 0;
         var line_start_pos: usize = 0;
@@ -480,11 +482,12 @@ pub const View = struct {
 
             for (self.cursors.items) |cursor| {
                 // draw cursor
+                // TODO want to draw fatter cursor, but need ability to draw off screen edge first
                 if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
                     const x = rect.x + ((cursor.head.pos - line_start_pos) * ui.atlas.char_width);
                     try ui.queueRect(
                         .{.x = @intCast(u16, x), .y = y, .w=1, .h=ui.atlas.char_height},
-                        if (self.cursors.items.len > 1) multi_cursor_color else bytes_color,
+                        if (self.cursors.items.len > 1) multi_cursor_color else text_color,
                     );
                 }
 
@@ -506,7 +509,7 @@ pub const View = struct {
             }
             
             // draw bytes
-            try ui.queueText(.{.x = rect.x, .y = y}, bytes_color, line);
+            try ui.queueText(.{.x = rect.x, .y = y}, text_color, line);
             
             line_start_pos = line_end_pos + 1; // + 1 for '\n'
         }
