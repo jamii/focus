@@ -25,7 +25,7 @@ pub const Atlas = struct {
 
         // load font
         var reader = c.SDL_RWFromConstMem(fira_code, @intCast(c_int, fira_code.len))
-            orelse panic("SDL_RWFromMem failed: {s}", .{c.SDL_GetError()});
+            orelse panic("Font reader failed: {s}", .{c.SDL_GetError()});
         const font = c.TTF_OpenFontRW(
             reader,
             1, // automatically close reader
