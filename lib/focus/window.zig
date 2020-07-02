@@ -5,17 +5,18 @@ const Atlas = focus.Atlas;
 pub const Window = struct {
     allocator: *Allocator,
     atlas: *Atlas, // borrowed
+    
     sdl_window: *c.SDL_Window,
-    gl_context: c.SDL_GLContext,
+    window_width: Coord,
+    window_height: Coord,
     events: ArrayList(c.SDL_Event),
     commands: ArrayList(Command),
+    
+    gl_context: c.SDL_GLContext,
     texture_buffer: ArrayList(Quad(Vec2f)),
     vertex_buffer: ArrayList(Quad(Vec2f)),
     color_buffer: ArrayList(Quad(Color)),
     index_buffer: ArrayList([2]Tri(u32)),
-
-    pub const screen_width = 720;
-    pub const screen_height = 720;
 
     pub const Command = union(enum) {
         Rect: struct {
@@ -30,13 +31,18 @@ pub const Window = struct {
     };
 
     pub fn init(allocator: *Allocator, atlas: *Atlas) Window {
+        // pretty arbitrary
+        const init_window_width: usize = 1920;
+        const init_window_height: usize = 1080;
+
+        // init window
         const sdl_window = c.SDL_CreateWindow(
             "focus",
             c.SDL_WINDOWPOS_UNDEFINED,
             c.SDL_WINDOWPOS_UNDEFINED,
-            @as(c_int, screen_width),
-            @as(c_int, screen_height),
-            c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_BORDERLESS | c.SDL_WINDOW_ALLOW_HIGHDPI,
+            @as(c_int, init_window_width),
+            @as(c_int, init_window_height),
+            c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_BORDERLESS | c.SDL_WINDOW_ALLOW_HIGHDPI | c.SDL_WINDOW_RESIZABLE,
         ) orelse panic("SDL window creation failed: {s}", .{c.SDL_GetError()});
         // on pinephone, fullscreen
         // if (std.Target.current.cpu.arch == .aarch64) {
@@ -74,10 +80,14 @@ pub const Window = struct {
         return Window{
             .allocator = allocator,
             .atlas = atlas,
+            
             .sdl_window = sdl_window,
-            .gl_context = gl_context,
+            .window_width = init_window_width,
+            .window_height = init_window_height,
             .events = ArrayList(c.SDL_Event).init(allocator),
             .commands = ArrayList(Command).init(allocator),
+            
+            .gl_context = gl_context,
             .texture_buffer = ArrayList(Quad(Vec2f)).init(allocator),
             .vertex_buffer = ArrayList(Quad(Vec2f)).init(allocator),
             .color_buffer = ArrayList(Quad(Color)).init(allocator),
@@ -90,20 +100,25 @@ pub const Window = struct {
         self.color_buffer.deinit();
         self.vertex_buffer.deinit();
         self.texture_buffer.deinit();
+        c.SDL_GL_DeleteContext(self.gl_context);
+        
         self.commands.deinit();
         self.events.deinit();
-        c.SDL_GL_DeleteContext(self.gl_context);
         c.SDL_DestroyWindow(self.window);
+        
         // atlas doesn't belong to us
     }
 
     pub fn begin(self: *Window) ! Rect {
-        // TODO go through events, update screen size
-        return Rect{ .x = 0, .y = 0, .w = screen_width, .h = screen_height };
+        var w: c_int = undefined;
+        var h: c_int = undefined;
+        c.SDL_GL_GetDrawableSize(self.sdl_window, &w, &h);
+        self.window_width = @intCast(Coord, w);
+        self.window_height = @intCast(Coord, h);
+        return Rect{ .x = 0, .y = 0, .w = self.window_width, .h = self.window_height };
     }
 
     pub fn end(self: *Window) ! void {
-
         // convert draw commands into quads
         for (self.commands.items) |command| {
             switch (command) {
@@ -132,11 +147,11 @@ pub const Window = struct {
         c.glClearColor(0, 0, 0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
 
-        c.glViewport(0, 0, screen_width, screen_height);
+        c.glViewport(0, 0, self.window_width, self.window_height);
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPushMatrix();
         c.glLoadIdentity();
-        c.glOrtho(0.0, @intToFloat(f32, screen_width), @intToFloat(f32, screen_height), 0.0, -1.0, 1.0);
+        c.glOrtho(0.0, @intToFloat(f32, self.window_width), @intToFloat(f32, self.window_height), 0.0, -1.0, 1.0);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPushMatrix();
         c.glLoadIdentity();
