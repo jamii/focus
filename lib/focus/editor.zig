@@ -272,11 +272,16 @@ pub const View = struct {
 
             for (self.cursors.items) |cursor| {
                 // draw cursor
-                // TODO want to draw fatter cursor, but need ability to draw off screen edge first
                 if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
                     const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * window.atlas.char_width);
+                    const w = @divTrunc(window.atlas.char_width, 8);
                     try window.queueRect(
-                        .{.x = @intCast(Coord, x), .y = y, .w=1, .h=window.atlas.char_height},
+                        .{
+                            .x = @intCast(Coord, x) - @divTrunc(w, 2),
+                            .y = y,
+                            .w=w,
+                            .h=window.atlas.char_height
+                        },
                         if (self.cursors.items.len > 1) multi_cursor_color else text_color,
                     );
                 }
