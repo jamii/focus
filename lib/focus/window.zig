@@ -72,7 +72,8 @@ pub const Window = struct {
         assert(c.glGetError() == 0);
 
         // sync with monitor - causes input lag
-        const _old_interval = c.SDL_GL_SetSwapInterval(1);
+        if (c.SDL_GL_SetSwapInterval(1) != 0)
+            panic("Setting swap interval failed: {}",  .{c.SDL_GetError()});
 
         // accept unicode input
         c.SDL_StartTextInput();
@@ -167,6 +168,7 @@ pub const Window = struct {
         c.glPopMatrix();
 
         // TODO is this going to be a problem with multiple windows?
+        // looks like it - https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
         c.SDL_GL_SwapWindow(self.sdl_window);
 
         // reset
