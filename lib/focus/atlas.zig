@@ -1,18 +1,18 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
-pub const draw = focus.draw;
+pub const ui = focus.ui;
 
 const fira_code = @embedFile("../../fonts/Fira_Code_v5.2/ttf/FiraCode-Regular.ttf");
 
 pub const Atlas = struct {
     allocator: *Allocator,
     font: *c.TTF_Font,
-    texture: []draw.Color,
-    texture_dims: draw.Vec2,
+    texture: []Color,
+    texture_dims: Vec2,
     char_width: u16,
     char_height: u16,
-    char_to_rect: []draw.Rect,
-    white_rect: draw.Rect,
+    char_to_rect: []Rect,
+    white_rect: Rect,
 
     pub const point_size = 10;
     
@@ -49,11 +49,11 @@ pub const Atlas = struct {
 
         // copy the texture
         assert(surface.*.format.*.format == c.SDL_PIXELFORMAT_ARGB8888);
-        const texture = try std.mem.dupe(allocator, draw.Color, @ptrCast([*]draw.Color, surface.*.pixels)[0..@intCast(usize, surface.*.w * surface.*.h)]);
+        const texture = try std.mem.dupe(allocator, Color, @ptrCast([*]Color, surface.*.pixels)[0..@intCast(usize, surface.*.w * surface.*.h)]);
 
         // make a white pixel
-        texture[0] = draw.Color{.r=255, .g=255, .b=255, .a=255};
-        const white_rect = draw.Rect{.x=0, .y=0, .w=1, .h=1};
+        texture[0] = Color{.r=255, .g=255, .b=255, .a=255};
+        const white_rect = Rect{.x=0, .y=0, .w=1, .h=1};
 
         // calculate char sizes
         // assume monospaced font
@@ -61,7 +61,7 @@ pub const Atlas = struct {
         const char_height = @intCast(u16, surface.*.h);
 
         // calculate location of each char
-        var char_to_rect = try allocator.alloc(draw.Rect, text.len);
+        var char_to_rect = try allocator.alloc(Rect, text.len);
         errdefer allocator.free(char_to_rect);
         char_to_rect[0] = .{.x=0, .y=0, .w=0, .h=0};
         {

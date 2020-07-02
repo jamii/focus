@@ -1,6 +1,6 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
-const UI = focus.UI;
+const Window = focus.Window;
 
 pub const Buffer = struct {
     allocator: *Allocator,
@@ -126,6 +126,177 @@ pub const View = struct {
             self.allocator.free(cursor.clipboard);
         }
         self.cursors.deinit();
+    }
+
+    pub fn frame(self: *View, window: *Window, rect: Rect) ! void {
+        // handle events
+        // if we get textinput, we'll also get the keydown first
+        // if the keydown is mapped to a command, we'll do that and ignore the textinput
+        // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
+        var accept_textinput = false;
+        for (window.events.items) |event| {
+            switch (event.type) {
+                c.SDL_KEYDOWN => {
+                    const sym = event.key.keysym;
+                    if (sym.mod & @intCast(u16, c.KMOD_CTRL) != 0) {
+                        switch (sym.sym) {
+                            ' ' => self.toggleMark(),
+                            'c' => {
+                                for (self.cursors.items) |*cursor| try self.copy(cursor);
+                                self.clearMark();
+                            },
+                            'x' => {
+                                for (self.cursors.items) |*cursor| try self.cut(cursor);
+                                self.clearMark();
+                            },
+                            'v' => {
+                                for (self.cursors.items) |*cursor| try self.paste(cursor);
+                                self.clearMark();
+                            },
+                            'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
+                            'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
+                            'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goUp(cursor),
+                            else => accept_textinput = true,
+                        }
+                    } else if (sym.mod & @intCast(u16, c.KMOD_ALT) != 0) {
+                        switch (sym.sym) {
+                            ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
+                            'j' => for (self.cursors.items) |*cursor| self.goLineStart(cursor),
+                            'l' => for (self.cursors.items) |*cursor| self.goLineEnd(cursor),
+                            'k' => for (self.cursors.items) |*cursor| self.goPageEnd(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goPageStart(cursor),
+                            else => accept_textinput = true,
+                        }
+                    } else {
+                        switch (sym.sym) {
+                            c.SDLK_BACKSPACE => {
+                                for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
+                                self.clearMark();
+                            },
+                            c.SDLK_RETURN => {
+                                for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'});
+                                self.clearMark();
+                            },
+                            c.SDLK_ESCAPE => {
+                                try self.collapseCursors();
+                                self.clearMark();
+                            },
+                            c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
+                            c.SDLK_LEFT => for (self.cursors.items) |*cursor| self.goLeft(cursor),
+                            c.SDLK_DOWN => for (self.cursors.items) |*cursor| self.goDown(cursor),
+                            c.SDLK_UP => for (self.cursors.items) |*cursor| self.goUp(cursor),
+                            c.SDLK_DELETE => {
+                                for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
+                                self.clearMark();
+                            },
+                            else => accept_textinput = true,
+                        }
+                    }
+                },
+                c.SDL_TEXTINPUT => {
+                    if (accept_textinput) {
+                        const text = event.text.text[0..std.mem.indexOfScalar(u8, &event.text.text, 0).?];
+                        for (self.cursors.items) |*cursor| try self.insert(cursor, text);
+                        self.clearMark();
+                    }
+                },
+                c.SDL_MOUSEBUTTONDOWN => {
+                    const button = event.button;
+                    if (button.button == c.SDL_BUTTON_LEFT) {
+                        const line = @divTrunc(@intCast(u16, button.y) - rect.y, window.atlas.char_height);
+                        const col = @divTrunc(@intCast(u16, button.x) - rect.x + @divTrunc(window.atlas.char_width, 2), window.atlas.char_width);
+                        const pos = self.buffer.getPosForLineCol(line, col);
+                        if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
+                            var cursor = try self.newCursor();
+                            self.updatePos(&cursor.head, pos);
+                            self.updatePos(&cursor.tail, pos);
+                        } else {
+                            for (self.cursors.items) |*cursor| {
+                                self.updatePos(&cursor.head, pos);
+                                self.updatePos(&cursor.tail, pos);
+                            }
+                            self.clearMark();
+                        }
+                    }
+                },
+                c.SDL_MOUSEMOTION => {
+                    const motion = event.motion;
+                    if (motion.state & c.SDL_BUTTON_LMASK != 0) {
+                        const line = @divTrunc(@intCast(u16, motion.y) - rect.y, window.atlas.char_height);
+                        const col = @divTrunc(@intCast(u16, motion.x) - rect.x, window.atlas.char_width);
+                        const pos = self.buffer.getPosForLineCol(line, col);
+                        if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
+                            var cursor = &self.cursors.items[self.cursors.items.len-1];
+                            if (cursor.tail.pos != pos and !self.marked) {
+                                self.setMark();
+                            }
+                            self.updatePos(&cursor.head, pos);
+                        } else {
+                            for (self.cursors.items) |*cursor| {
+                                if (cursor.tail.pos != pos and !self.marked) {
+                                    self.setMark();
+                                }
+                                self.updatePos(&cursor.head, pos);
+                            }
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+
+        // draw
+        const background_color = Color{ .r = 0x2e, .g=0x34, .b=0x36, .a=255 };
+        try window.queueRect(rect, background_color);
+        const text_color = Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 255 };
+        const multi_cursor_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 255 };
+        var highlight_color = text_color; highlight_color.a = 100;
+        var lines = std.mem.split(self.buffer.bytes.items, "\n");
+        var line_ix: u16 = 0;
+        var line_start_pos: usize = 0;
+        while (lines.next()) |line| : (line_ix += 1) {
+            if ((line_ix * window.atlas.char_height) > rect.h) break;
+            
+            const y = rect.y + (line_ix * window.atlas.char_height);
+            const line_end_pos = line_start_pos + line.len;
+
+            for (self.cursors.items) |cursor| {
+                // draw cursor
+                // TODO want to draw fatter cursor, but need ability to draw off screen edge first
+                if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
+                    const x = rect.x + ((cursor.head.pos - line_start_pos) * window.atlas.char_width);
+                    try window.queueRect(
+                        .{.x = @intCast(u16, x), .y = y, .w=1, .h=window.atlas.char_height},
+                        if (self.cursors.items.len > 1) multi_cursor_color else text_color,
+                    );
+                }
+
+                // draw selection
+                if (self.marked) {
+                    const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
+                    const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
+                    const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
+                    const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
+                    if ((highlight_start_pos < highlight_end_pos)
+                            or (selection_start_pos <= line_end_pos
+                                    and selection_end_pos > line_end_pos)) {
+                        const x = rect.x + ((highlight_start_pos - line_start_pos) * window.atlas.char_width);
+                        const w = if (selection_end_pos > line_end_pos)
+                            rect.x + rect.w - x
+                            else
+                            (highlight_end_pos - highlight_start_pos) * window.atlas.char_width;
+                        try window.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=window.atlas.char_height}, highlight_color);
+                    }
+                }
+            }
+            
+            // draw text
+            // TODO need to ensure this text lives long enough - buffer might get changed in another window
+            try window.queueText(.{.x = rect.x, .y = y}, text_color, line);
+            
+            line_start_pos = line_end_pos + 1; // + 1 for '\n'
+        }
     }
 
     pub fn searchBackwards(self: *View, point: Point, needle: []const u8) ?usize {
@@ -345,173 +516,5 @@ pub const View = struct {
         }
         self.cursors.shrink(1);
         self.cursors.items[0].clipboard = clipboard.toOwnedSlice();
-    }
-
-    pub fn frame(self: *View, ui: *UI, rect: UI.Rect) ! void {
-        // handle events
-        // if we get textinput, we'll also get the keydown first
-        // if the keydown is mapped to a command, we'll do that and ignore the textinput
-        // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
-        var accept_textinput = false;
-        for (ui.events.items) |event| {
-            switch (event.type) {
-                c.SDL_KEYDOWN => {
-                    const sym = event.key.keysym;
-                    if (sym.mod & @intCast(u16, c.KMOD_CTRL) != 0) {
-                        switch (sym.sym) {
-                            ' ' => self.toggleMark(),
-                            'c' => {
-                                for (self.cursors.items) |*cursor| try self.copy(cursor);
-                                self.clearMark();
-                            },
-                            'x' => {
-                                for (self.cursors.items) |*cursor| try self.cut(cursor);
-                                self.clearMark();
-                            },
-                            'v' => {
-                                for (self.cursors.items) |*cursor| try self.paste(cursor);
-                                self.clearMark();
-                            },
-                            'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
-                            'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                            'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
-                            'i' => for (self.cursors.items) |*cursor| self.goUp(cursor),
-                            else => accept_textinput = true,
-                        }
-                    } else if (sym.mod & @intCast(u16, c.KMOD_ALT) != 0) {
-                        switch (sym.sym) {
-                            ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
-                            'j' => for (self.cursors.items) |*cursor| self.goLineStart(cursor),
-                            'l' => for (self.cursors.items) |*cursor| self.goLineEnd(cursor),
-                            'k' => for (self.cursors.items) |*cursor| self.goPageEnd(cursor),
-                            'i' => for (self.cursors.items) |*cursor| self.goPageStart(cursor),
-                            else => accept_textinput = true,
-                        }
-                    } else {
-                        switch (sym.sym) {
-                            c.SDLK_BACKSPACE => {
-                                for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
-                                self.clearMark();
-                            },
-                            c.SDLK_RETURN => {
-                                for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'});
-                                self.clearMark();
-                            },
-                            c.SDLK_ESCAPE => {
-                                try self.collapseCursors();
-                                self.clearMark();
-                            },
-                            c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                            c.SDLK_LEFT => for (self.cursors.items) |*cursor| self.goLeft(cursor),
-                            c.SDLK_DOWN => for (self.cursors.items) |*cursor| self.goDown(cursor),
-                            c.SDLK_UP => for (self.cursors.items) |*cursor| self.goUp(cursor),
-                            c.SDLK_DELETE => {
-                                for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
-                                self.clearMark();
-                            },
-                            else => accept_textinput = true,
-                        }
-                    }
-                },
-                c.SDL_TEXTINPUT => {
-                    if (accept_textinput) {
-                        const text = event.text.text[0..std.mem.indexOfScalar(u8, &event.text.text, 0).?];
-                        for (self.cursors.items) |*cursor| try self.insert(cursor, text);
-                        self.clearMark();
-                    }
-                },
-                c.SDL_MOUSEBUTTONDOWN => {
-                    const button = event.button;
-                    if (button.button == c.SDL_BUTTON_LEFT) {
-                        const line = @divTrunc(@intCast(u16, button.y) - rect.y, ui.atlas.char_height);
-                        const col = @divTrunc(@intCast(u16, button.x) - rect.x + @divTrunc(ui.atlas.char_width, 2), ui.atlas.char_width);
-                        const pos = self.buffer.getPosForLineCol(line, col);
-                        if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
-                            var cursor = try self.newCursor();
-                            self.updatePos(&cursor.head, pos);
-                            self.updatePos(&cursor.tail, pos);
-                        } else {
-                            for (self.cursors.items) |*cursor| {
-                                self.updatePos(&cursor.head, pos);
-                                self.updatePos(&cursor.tail, pos);
-                            }
-                            self.clearMark();
-                        }
-                    }
-                },
-                c.SDL_MOUSEMOTION => {
-                    const motion = event.motion;
-                    if (motion.state & c.SDL_BUTTON_LMASK != 0) {
-                        const line = @divTrunc(@intCast(u16, motion.y) - rect.y, ui.atlas.char_height);
-                        const col = @divTrunc(@intCast(u16, motion.x) - rect.x, ui.atlas.char_width);
-                        const pos = self.buffer.getPosForLineCol(line, col);
-                        if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
-                            var cursor = &self.cursors.items[self.cursors.items.len-1];
-                            if (cursor.tail.pos != pos and !self.marked) {
-                                self.setMark();
-                            }
-                            self.updatePos(&cursor.head, pos);
-                        } else {
-                            for (self.cursors.items) |*cursor| {
-                                if (cursor.tail.pos != pos and !self.marked) {
-                                    self.setMark();
-                                }
-                                self.updatePos(&cursor.head, pos);
-                            }
-                        }
-                    }
-                },
-                else => {},
-            }
-        }
-
-        // draw
-        const background_color = UI.Color{ .r = 0x2e, .g=0x34, .b=0x36, .a=255 };
-        try ui.queueRect(rect, background_color);
-        const text_color = UI.Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 255 };
-        const multi_cursor_color = UI.Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 255 };
-        var highlight_color = text_color; highlight_color.a = 100;
-        var lines = std.mem.split(self.buffer.bytes.items, "\n");
-        var line_ix: u16 = 0;
-        var line_start_pos: usize = 0;
-        while (lines.next()) |line| : (line_ix += 1) {
-            if ((line_ix * ui.atlas.char_height) > rect.h) break;
-            
-            const y = rect.y + (line_ix * ui.atlas.char_height);
-            const line_end_pos = line_start_pos + line.len;
-
-            for (self.cursors.items) |cursor| {
-                // draw cursor
-                // TODO want to draw fatter cursor, but need ability to draw off screen edge first
-                if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
-                    const x = rect.x + ((cursor.head.pos - line_start_pos) * ui.atlas.char_width);
-                    try ui.queueRect(
-                        .{.x = @intCast(u16, x), .y = y, .w=1, .h=ui.atlas.char_height},
-                        if (self.cursors.items.len > 1) multi_cursor_color else text_color,
-                    );
-                }
-
-                // draw selection
-                if (self.marked) {
-                    const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
-                    const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
-                    const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
-                    const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
-                    if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_end_pos and selection_end_pos > line_end_pos)) {
-                        const x = rect.x + ((highlight_start_pos - line_start_pos) * ui.atlas.char_width);
-                        const w = if (selection_end_pos > line_end_pos)
-                            rect.x + rect.w - x
-                            else
-                            (highlight_end_pos - highlight_start_pos) * ui.atlas.char_width;
-                        try ui.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=ui.atlas.char_height}, highlight_color);
-                    }
-                }
-            }
-            
-            // draw bytes
-            try ui.queueText(.{.x = rect.x, .y = y}, text_color, line);
-            
-            line_start_pos = line_end_pos + 1; // + 1 for '\n'
-        }
     }
 };

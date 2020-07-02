@@ -151,3 +151,70 @@ pub fn subSaturating(comptime T: type, a: T, b: T) T {
         return a - b;
     }
 }
+
+// --------------------------------------------------------------------------------
+// drawing stuff
+
+pub const Coord = u16;
+
+pub const Rect = struct {
+    x: Coord,
+    y: Coord,
+    w: Coord,
+    h: Coord,
+
+    pub fn shrink(self: *const Rect, margin: Coord) Rect {
+        assert(self.w >= 2 * margin);
+        assert(self.h >= 2 * margin);
+        return Rect{.x=self.x+margin, .y=self.y+margin, .w=self.w-(2*margin), .h=self.h-(2*margin)};
+    }
+
+    pub fn splitRight(self: *Rect, w: Coord, margin: Coord) Rect {
+        assert(self.w >= w);
+        const split = Rect{.x=self.x+self.w-w, .y=self.y, .w=w, .h=self.h};
+        self.w -= w + margin;
+        return split;
+    }
+
+    pub fn splitBottom(self: *Rect, h: Coord, margin: Coord) Rect {
+        assert(self.h >= h);
+        const split = Rect{.x=self.x, .y=self.y+self.h-h, .w=self.w, .h=h};
+        self.h -= h + margin;
+        return split;
+    }
+};
+
+pub const Vec2 = struct {
+    x: Coord,
+    y: Coord,
+};
+
+pub const Color = packed struct {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+};
+
+pub const Vec2f = packed struct {
+    x: f32,
+    y: f32,
+};
+
+pub fn Tri(comptime t: type) type {
+    // TODO which direction?
+    return packed struct {
+        a: t,
+        b: t,
+        c: t,
+    };
+}
+
+pub fn Quad(comptime t: type) type {
+    return packed struct {
+        tl: t,
+        tr: t,
+        bl: t,
+        br: t,
+    };
+}
