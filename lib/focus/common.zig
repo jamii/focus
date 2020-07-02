@@ -155,7 +155,7 @@ pub fn subSaturating(comptime T: type, a: T, b: T) T {
 // --------------------------------------------------------------------------------
 // drawing stuff
 
-pub const Coord = u16;
+pub const Coord = i16;
 
 pub const Rect = struct {
     x: Coord,

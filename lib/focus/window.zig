@@ -7,8 +7,8 @@ pub const Window = struct {
     atlas: *Atlas, // borrowed
     
     sdl_window: *c.SDL_Window,
-    window_width: Coord,
-    window_height: Coord,
+    width: Coord,
+    height: Coord,
     events: ArrayList(c.SDL_Event),
     commands: ArrayList(Command),
     
@@ -32,16 +32,16 @@ pub const Window = struct {
 
     pub fn init(allocator: *Allocator, atlas: *Atlas) Window {
         // pretty arbitrary
-        const init_window_width: usize = 1920;
-        const init_window_height: usize = 1080;
+        const init_width: usize = 1920;
+        const init_height: usize = 1080;
 
         // init window
         const sdl_window = c.SDL_CreateWindow(
             "focus",
             c.SDL_WINDOWPOS_UNDEFINED,
             c.SDL_WINDOWPOS_UNDEFINED,
-            @as(c_int, init_window_width),
-            @as(c_int, init_window_height),
+            @as(c_int, init_width),
+            @as(c_int, init_height),
             c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_BORDERLESS | c.SDL_WINDOW_ALLOW_HIGHDPI | c.SDL_WINDOW_RESIZABLE,
         ) orelse panic("SDL window creation failed: {s}", .{c.SDL_GetError()});
         // on pinephone, fullscreen
@@ -83,8 +83,8 @@ pub const Window = struct {
             .atlas = atlas,
             
             .sdl_window = sdl_window,
-            .window_width = init_window_width,
-            .window_height = init_window_height,
+            .width = init_width,
+            .height = init_height,
             .events = ArrayList(c.SDL_Event).init(allocator),
             .commands = ArrayList(Command).init(allocator),
             
@@ -114,9 +114,9 @@ pub const Window = struct {
         var w: c_int = undefined;
         var h: c_int = undefined;
         c.SDL_GL_GetDrawableSize(self.sdl_window, &w, &h);
-        self.window_width = @intCast(Coord, w);
-        self.window_height = @intCast(Coord, h);
-        return Rect{ .x = 0, .y = 0, .w = self.window_width, .h = self.window_height };
+        self.width = @intCast(Coord, w);
+        self.height = @intCast(Coord, h);
+        return Rect{ .x = 0, .y = 0, .w = self.width, .h = self.height };
     }
 
     pub fn end(self: *Window) ! void {
@@ -148,11 +148,11 @@ pub const Window = struct {
         c.glClearColor(0, 0, 0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
 
-        c.glViewport(0, 0, self.window_width, self.window_height);
+        c.glViewport(0, 0, self.width, self.height);
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPushMatrix();
         c.glLoadIdentity();
-        c.glOrtho(0.0, @intToFloat(f32, self.window_width), @intToFloat(f32, self.window_height), 0.0, -1.0, 1.0);
+        c.glOrtho(0.0, @intToFloat(f32, self.width), @intToFloat(f32, self.height), 0.0, -1.0, 1.0);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPushMatrix();
         c.glLoadIdentity();

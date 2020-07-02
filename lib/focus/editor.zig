@@ -103,7 +103,7 @@ pub const View = struct {
     // cursors.len > 0
     cursors: ArrayList(Cursor),
     marked: bool,
-    mouse_was_down: bool,
+    mid_pixel: Coord,
 
     pub fn init(allocator: *Allocator, buffer: *Buffer) ! View {
         var cursors = ArrayList(Cursor).init(allocator);
@@ -117,7 +117,7 @@ pub const View = struct {
             .buffer = buffer,
             .cursors = cursors,
             .marked = false,
-            .mouse_was_down = false,
+            .mid_pixel = 0,
         };
     }
 
@@ -204,9 +204,9 @@ pub const View = struct {
                 c.SDL_MOUSEBUTTONDOWN => {
                     const button = event.button;
                     if (button.button == c.SDL_BUTTON_LEFT) {
-                        const line = @divTrunc(@intCast(u16, button.y) - rect.y, window.atlas.char_height);
-                        const col = @divTrunc(@intCast(u16, button.x) - rect.x + @divTrunc(window.atlas.char_width, 2), window.atlas.char_width);
-                        const pos = self.buffer.getPosForLineCol(line, col);
+                        const line = @divTrunc(@intCast(Coord, button.y) - rect.y, window.atlas.char_height);
+                        const col = @divTrunc(@intCast(Coord, button.x) - rect.x + @divTrunc(window.atlas.char_width, 2), window.atlas.char_width);
+                        const pos = self.buffer.getPosForLineCol(@intCast(usize, line), @intCast(usize, col));
                         if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
                             var cursor = try self.newCursor();
                             self.updatePos(&cursor.head, pos);
@@ -223,9 +223,9 @@ pub const View = struct {
                 c.SDL_MOUSEMOTION => {
                     const motion = event.motion;
                     if (motion.state & c.SDL_BUTTON_LMASK != 0) {
-                        const line = @divTrunc(@intCast(u16, motion.y) - rect.y, window.atlas.char_height);
-                        const col = @divTrunc(@intCast(u16, motion.x) - rect.x, window.atlas.char_width);
-                        const pos = self.buffer.getPosForLineCol(line, col);
+                        const line = @divTrunc(@intCast(Coord, motion.y) - rect.y, window.atlas.char_height);
+                        const col = @divTrunc(@intCast(Coord, motion.x) - rect.x, window.atlas.char_width);
+                        const pos = self.buffer.getPosForLineCol(@intCast(usize, line), @intCast(usize, col));
                         if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
                             var cursor = &self.cursors.items[self.cursors.items.len-1];
                             if (cursor.tail.pos != pos and !self.marked) {
@@ -242,9 +242,18 @@ pub const View = struct {
                         }
                     }
                 },
+                c.SDL_MOUSEWHEEL => {
+                    
+                },
                 else => {},
             }
         }
+
+        // ensure we don't scroll off the top of the screen
+        if (self.mid_pixel < @divTrunc(rect.h, 2)) self.mid_pixel = @divTrunc(rect.h, 2);
+        const num_visible_lines = @divTrunc(rect.h, window.atlas.char_height) + @rem(@rem(rect.h, window.atlas.char_height), 1); // round up
+        const visible_start_line = @divTrunc(self.mid_pixel - @divTrunc(rect.h, 2), window.atlas.char_height); // round down
+        const visible_end_line = visible_start_line + num_visible_lines;
 
         // draw
         const background_color = Color{ .r = 0x2e, .g=0x34, .b=0x36, .a=255 };
@@ -253,21 +262,21 @@ pub const View = struct {
         const multi_cursor_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 255 };
         var highlight_color = text_color; highlight_color.a = 100;
         var lines = std.mem.split(self.buffer.bytes.items, "\n");
-        var line_ix: u16 = 0;
+        var line_ix = visible_start_line;
         var line_start_pos: usize = 0;
         while (lines.next()) |line| : (line_ix += 1) {
-            if ((line_ix * window.atlas.char_height) > rect.h) break;
+            if (line_ix > visible_end_line) break;
             
-            const y = rect.y + (line_ix * window.atlas.char_height);
+            const y = rect.y + (@intCast(Coord, line_ix) * window.atlas.char_height);
             const line_end_pos = line_start_pos + line.len;
 
             for (self.cursors.items) |cursor| {
                 // draw cursor
                 // TODO want to draw fatter cursor, but need ability to draw off screen edge first
                 if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
-                    const x = rect.x + ((cursor.head.pos - line_start_pos) * window.atlas.char_width);
+                    const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * window.atlas.char_width);
                     try window.queueRect(
-                        .{.x = @intCast(u16, x), .y = y, .w=1, .h=window.atlas.char_height},
+                        .{.x = @intCast(Coord, x), .y = y, .w=1, .h=window.atlas.char_height},
                         if (self.cursors.items.len > 1) multi_cursor_color else text_color,
                     );
                 }
@@ -281,12 +290,12 @@ pub const View = struct {
                     if ((highlight_start_pos < highlight_end_pos)
                             or (selection_start_pos <= line_end_pos
                                     and selection_end_pos > line_end_pos)) {
-                        const x = rect.x + ((highlight_start_pos - line_start_pos) * window.atlas.char_width);
+                        const x = rect.x + (@intCast(Coord, (highlight_start_pos - line_start_pos)) * window.atlas.char_width);
                         const w = if (selection_end_pos > line_end_pos)
                             rect.x + rect.w - x
                             else
-                            (highlight_end_pos - highlight_start_pos) * window.atlas.char_width;
-                        try window.queueRect(.{.x = @intCast(u16, x), .y = y, .w=@intCast(u16, w), .h=window.atlas.char_height}, highlight_color);
+                            @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * window.atlas.char_width;
+                        try window.queueRect(.{.x = @intCast(Coord, x), .y = y, .w=@intCast(Coord, w), .h=window.atlas.char_height}, highlight_color);
                     }
                 }
             }

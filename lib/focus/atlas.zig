@@ -9,8 +9,8 @@ pub const Atlas = struct {
     font: *c.TTF_Font,
     texture: []Color,
     texture_dims: Vec2,
-    char_width: u16,
-    char_height: u16,
+    char_width: Coord,
+    char_height: Coord,
     char_to_rect: []Rect,
     white_rect: Rect,
 
@@ -57,8 +57,8 @@ pub const Atlas = struct {
 
         // calculate char sizes
         // assume monospaced font
-        const char_width = @intCast(u16, @divTrunc(@intCast(usize, surface.*.w), text.len));
-        const char_height = @intCast(u16, surface.*.h);
+        const char_width = @intCast(Coord, @divTrunc(@intCast(usize, surface.*.w), text.len));
+        const char_height = @intCast(Coord, surface.*.h);
 
         // calculate location of each char
         var char_to_rect = try allocator.alloc(Rect, text.len);
@@ -68,7 +68,7 @@ pub const Atlas = struct {
             var char: usize = 1;
             while (char < text.len) : (char += 1) {
                 char_to_rect[char] = .{
-                    .x = @intCast(u16, char) * char_width,
+                    .x = @intCast(Coord, char) * char_width,
                     .y = 0,
                     .w = char_width,
                     .h = char_height,
@@ -81,8 +81,8 @@ pub const Atlas = struct {
             .font = font,
             .texture = texture,
             .texture_dims = .{
-                .x = @intCast(u16, surface.*.w),
-                .y = @intCast(u16, surface.*.h),
+                .x = @intCast(Coord, surface.*.w),
+                .y = @intCast(Coord, surface.*.h),
             },
             .char_width = char_width,
             .char_height = char_height,
