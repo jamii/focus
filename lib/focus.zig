@@ -2,7 +2,7 @@ pub const common = @import("./focus/common.zig");
 pub const meta = @import("./focus/meta.zig");
 pub const Atlas = @import("./focus/atlas.zig").Atlas;
 pub const Buffer = @import("./focus/buffer.zig").Buffer;
-pub const View = @import("./focus/view.zig").View;
+pub const Editor = @import("./focus/editor.zig").Editor;
 pub const Window = @import("./focus/window.zig").Window;
 
 usingnamespace common;
@@ -13,6 +13,10 @@ pub fn run(allocator: *Allocator) !void {
         try app.frame();
     }
 }
+
+pub const View = union(enum) {
+    Editor: Editor,
+};
 
 pub const App = struct {
     allocator: *Allocator,
@@ -32,20 +36,20 @@ pub const App = struct {
         var buffer = try allocator.create(Buffer);
         buffer.* = Buffer.init(allocator);
         try buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n"**20000));
-        var view = try View.init(allocator, buffer);
+        var editor = try Editor.init(allocator, buffer);
         
         return App{
             .allocator = allocator,
             .atlas = atlas,
             .window = window,
             .buffer = buffer,
-            .view = view,
+            .view = .{.Editor = editor},
         };
     }
 
     pub fn deinit(self: *App) void {
-        self.view.deinit();
-        self.allocator.destroy(self.view);
+        self.editor.deinit();
+        self.allocator.destroy(self.editor);
         self.buffer.deinit();
         self.allocator.destroy(self.buffer);
         self.window.deinit();
@@ -68,7 +72,9 @@ pub const App = struct {
 
         // run editor frame
         const screen_rect = try self.window.begin();
-        try self.view.frame(self.window, screen_rect);
+        switch (self.view) {
+            .Editor => |*editor| try editor.frame(self.window, screen_rect),
+        }
         try self.window.end();
         
         // warn("frame time: {}ns\n", .{timer.read()});

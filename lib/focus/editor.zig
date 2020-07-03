@@ -16,9 +16,9 @@ pub const Point = struct {
 pub const Cursor = struct {
     // the actual cursor
     head: Point,
-    // the other end of the selection, if view.marked
+    // the other end of the selection, if editor.marked
     tail: Point,
-    // allocated by view.allocator
+    // allocated by editor.allocator
     clipboard: []const u8,
 };
 
@@ -28,26 +28,26 @@ pub const Dragging = enum {
     CtrlDragging,
 };
 
-pub const View = struct {
+pub const Editor = struct {
     allocator: *Allocator,
     buffer: *Buffer,
     // cursors.len > 0
     cursors: ArrayList(Cursor),
     marked: bool,
     dragging: Dragging,
-    // which pixel of the buffer is at the top of the scrolled view
+    // which pixel of the buffer is at the top of the viewport
     top_pixel: isize,
 
     const scroll_amount = 16;
 
-    pub fn init(allocator: *Allocator, buffer: *Buffer) ! View {
+    pub fn init(allocator: *Allocator, buffer: *Buffer) ! Editor {
         var cursors = ArrayList(Cursor).init(allocator);
         try cursors.append(.{
             .head = .{.pos=0, .col=0},
             .tail = .{.pos=0, .col=0},
             .clipboard="",
         });
-        return View{
+        return Editor{
             .allocator = allocator,
             .buffer = buffer,
             .cursors = cursors,
@@ -57,14 +57,14 @@ pub const View = struct {
         };
     }
 
-    pub fn deinit(self: *View) void {
+    pub fn deinit(self: *Editor) void {
         for (self.cursors.items) |cursor| {
             self.allocator.free(cursor.clipboard);
         }
         self.cursors.deinit();
     }
 
-    pub fn frame(self: *View, window: *Window, rect: Rect) ! void {
+    pub fn frame(self: *Editor, window: *Window, rect: Rect) ! void {
         const main_cursor_pos = self.getMainCursor().head.pos;
         
         // handle events
@@ -211,7 +211,7 @@ pub const View = struct {
             if (mouse_y >= rect.y + rect.h) self.top_pixel += scroll_amount;
         }
 
-        // if cursor moved, scroll it into view
+        // if cursor moved, scroll it into editor
         if (self.getMainCursor().head.pos != main_cursor_pos) {
             const bottom_pixel = self.top_pixel + rect.h;
             const cursor_top_pixel = @intCast(isize, self.buffer.getLineColForPos(self.getMainCursor().head.pos)[0]) * @intCast(isize, window.atlas.char_height);
@@ -310,46 +310,46 @@ pub const View = struct {
         }
     }
 
-    pub fn updateCol(self: *View, point: *Point) void {
+    pub fn updateCol(self: *Editor, point: *Point) void {
         point.col = point.pos - self.buffer.getLineStart(point.*.pos);
     }
 
-    pub fn updatePos(self: *View, point: *Point, pos: usize) void {
+    pub fn updatePos(self: *Editor, point: *Point, pos: usize) void {
         point.pos = pos;
         self.updateCol(point);
     }
 
-    pub fn goPos(self: *View, cursor: *Cursor, pos: usize) void {
+    pub fn goPos(self: *Editor, cursor: *Cursor, pos: usize) void {
         self.updatePos(&cursor.head, pos);
     }
 
-    pub fn goCol(self: *View, cursor: *Cursor, col: usize) void {
+    pub fn goCol(self: *Editor, cursor: *Cursor, col: usize) void {
         const line_start = self.buffer.getLineStart(cursor.head.pos);
         cursor.head.col = min(col, self.buffer.getLineEnd(cursor.head.pos) - line_start);
         cursor.head.pos = line_start + cursor.head.col;
     }
 
-    pub fn goLine(self: *View, cursor: *Cursor, line: usize) void {
+    pub fn goLine(self: *Editor, cursor: *Cursor, line: usize) void {
         cursor.head.pos = self.buffer.getPosForLine(line);
         // leave head.col intact
     }
 
-    pub fn goLineCol(self: *View, cursor: *Cursor, line: usize, col: usize) void {
+    pub fn goLineCol(self: *Editor, cursor: *Cursor, line: usize, col: usize) void {
         self.goLine(cursor, line);
         self.goCol(cursor, col);
     }
 
-    pub fn goLeft(self: *View, cursor: *Cursor) void {
+    pub fn goLeft(self: *Editor, cursor: *Cursor) void {
         cursor.head.pos -= @as(usize, if (cursor.head.pos == 0) 0 else 1);
         self.updateCol(&cursor.head);
     }
 
-    pub fn goRight(self: *View, cursor: *Cursor) void {
+    pub fn goRight(self: *Editor, cursor: *Cursor) void {
         cursor.head.pos += @as(usize, if (cursor.head.pos >= self.buffer.getBufferEnd()) 0 else 1);
         self.updateCol(&cursor.head);
     }
 
-    pub fn goDown(self: *View, cursor: *Cursor) void {
+    pub fn goDown(self: *Editor, cursor: *Cursor) void {
         if (self.buffer.searchForwards(cursor.head.pos, "\n")) |line_end| {
             const col = cursor.head.col;
             cursor.head.pos = line_end + 1;
@@ -358,7 +358,7 @@ pub const View = struct {
         }
     }
 
-    pub fn goUp(self: *View, cursor: *Cursor) void {
+    pub fn goUp(self: *Editor, cursor: *Cursor) void {
         if (self.buffer.searchBackwards(cursor.head.pos, "\n")) |line_start| {
             const col = cursor.head.col;
             cursor.head.pos = line_start - 1;
@@ -367,25 +367,25 @@ pub const View = struct {
         }
     }
 
-    pub fn goLineStart(self: *View, cursor: *Cursor) void {
+    pub fn goLineStart(self: *Editor, cursor: *Cursor) void {
         cursor.head.pos = self.buffer.getLineStart(cursor.head.pos);
         cursor.head.col = 0;
     }
 
-    pub fn goLineEnd(self: *View, cursor: *Cursor) void {
+    pub fn goLineEnd(self: *Editor, cursor: *Cursor) void {
         cursor.head.pos = self.buffer.getLineEnd(cursor.head.pos);
         self.updateCol(&cursor.head);
     }
 
-    pub fn goPageStart(self: *View, cursor: *Cursor) void {
+    pub fn goPageStart(self: *Editor, cursor: *Cursor) void {
         self.goPos(cursor, 0);
     }
 
-    pub fn goPageEnd(self: *View, cursor: *Cursor) void {
+    pub fn goPageEnd(self: *Editor, cursor: *Cursor) void {
         self.goPos(cursor, self.buffer.getBufferEnd());
     }
 
-    pub fn insert(self: *View, cursor: *Cursor, bytes: []const u8) ! void {
+    pub fn insert(self: *Editor, cursor: *Cursor, bytes: []const u8) ! void {
         self.deleteSelection(cursor);
         try self.buffer.insert(cursor.head.pos, bytes);
         const insert_at = cursor.head.pos;
@@ -400,7 +400,7 @@ pub const View = struct {
         }
     }
 
-    pub fn delete(self: *View, start: usize, end: usize) void {
+    pub fn delete(self: *Editor, start: usize, end: usize) void {
         assert(start <= end);
         self.buffer.delete(start, end);
         for (self.cursors.items) |*other_cursor| {
@@ -412,14 +412,14 @@ pub const View = struct {
         }
     }
 
-    pub fn deleteSelection(self: *View, cursor: *Cursor) void {
+    pub fn deleteSelection(self: *Editor, cursor: *Cursor) void {
         if (self.marked) {
             const range = self.getSelectionRange(cursor);
             self.delete(range[0], range[1]);
         }
     }
 
-    pub fn deleteBackwards(self: *View, cursor: *Cursor) void {
+    pub fn deleteBackwards(self: *Editor, cursor: *Cursor) void {
         if (self.marked) {
             self.deleteSelection(cursor);
         } else if (cursor.head.pos > 0) {
@@ -427,7 +427,7 @@ pub const View = struct {
         }
     }
 
-    pub fn deleteForwards(self: *View, cursor: *Cursor) void {
+    pub fn deleteForwards(self: *Editor, cursor: *Cursor) void {
         if (self.marked) {
             self.deleteSelection(cursor);
         } else if (cursor.head.pos < self.buffer.getBufferEnd()) {
@@ -435,18 +435,18 @@ pub const View = struct {
         }
     }
 
-    pub fn clearMark(self: *View) void {
+    pub fn clearMark(self: *Editor) void {
         self.marked = false;
     }
 
-    pub fn setMark(self: *View) void {
+    pub fn setMark(self: *Editor) void {
         self.marked = true;
         for (self.cursors.items) |*cursor| {
             cursor.tail = cursor.head;
         }
     }
 
-    pub fn toggleMark(self: *View) void {
+    pub fn toggleMark(self: *Editor) void {
         if (self.marked) {
             self.clearMark();
         } else {
@@ -454,13 +454,13 @@ pub const View = struct {
         }
     }
 
-    pub fn swapHead(self: *View, cursor: *Cursor) void {
+    pub fn swapHead(self: *Editor, cursor: *Cursor) void {
         if (self.marked) {
             std.mem.swap(Point, &cursor.head, &cursor.tail);
         }
     }
 
-    pub fn getSelectionRange(self: *View, cursor: *Cursor) [2]usize {
+    pub fn getSelectionRange(self: *Editor, cursor: *Cursor) [2]usize {
         if (self.marked) {
             const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
             const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
@@ -470,27 +470,27 @@ pub const View = struct {
         }
     }
 
-    pub fn dupeSelection(self: *View, cursor: *Cursor) ! []const u8 {
+    pub fn dupeSelection(self: *Editor, cursor: *Cursor) ! []const u8 {
         const range = self.getSelectionRange(cursor);
         return self.buffer.dupe(self.allocator, range[0], range[1]);
     }
 
-    pub fn copy(self: *View, cursor: *Cursor) ! void {
+    pub fn copy(self: *Editor, cursor: *Cursor) ! void {
         self.allocator.free(cursor.clipboard);
         cursor.clipboard = try self.dupeSelection(cursor);
     }
 
-    pub fn cut(self: *View, cursor: *Cursor) ! void {
+    pub fn cut(self: *Editor, cursor: *Cursor) ! void {
         self.allocator.free(cursor.clipboard);
         cursor.clipboard = try self.dupeSelection(cursor);
         self.deleteSelection(cursor);
     }
 
-    pub fn paste(self: *View, cursor: *Cursor) ! void {
+    pub fn paste(self: *Editor, cursor: *Cursor) ! void {
         try self.insert(cursor, cursor.clipboard);
     }
 
-    pub fn newCursor(self: *View) ! *Cursor {
+    pub fn newCursor(self: *Editor) ! *Cursor {
         try self.cursors.append(.{
             .head = .{.pos=0, .col=0},
             .tail = .{.pos=0, .col=0},
@@ -499,7 +499,7 @@ pub const View = struct {
         return &self.cursors.items[self.cursors.items.len-1];
     }
 
-    pub fn collapseCursors(self: *View) ! void {
+    pub fn collapseCursors(self: *Editor) ! void {
         var size: usize = 0;
         for (self.cursors.items) |cursor| {
             size += cursor.clipboard.len;
@@ -513,11 +513,11 @@ pub const View = struct {
         self.cursors.items[0].clipboard = clipboard.toOwnedSlice();
     }
 
-    pub fn getMainCursor(self: *View) *Cursor {
+    pub fn getMainCursor(self: *Editor) *Cursor {
         return &self.cursors.items[self.cursors.items.len-1];
     }
 
-    pub fn addNextMatch(self: *View) ! void {
+    pub fn addNextMatch(self: *Editor) ! void {
         const main_cursor = self.getMainCursor();
         const selection = try self.dupeSelection(main_cursor);
         defer self.allocator.free(selection);
