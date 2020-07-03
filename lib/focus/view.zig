@@ -1,97 +1,7 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
+const Buffer = focus.Buffer;
 const Window = focus.Window;
-
-pub const Buffer = struct {
-    allocator: *Allocator,
-    bytes: ArrayList(u8),
-
-    pub fn init(allocator: *Allocator) Buffer {
-        return Buffer{
-            .allocator = allocator,
-            .bytes = ArrayList(u8).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Buffer) void {
-        self.bytes.deinit();
-    }
-
-    pub fn getBufferEnd(self: *Buffer) usize {
-        return self.bytes.items.len;
-    }
-
-    pub fn getPosForLine(self: *Buffer, line: usize) usize {
-        var pos: usize = 0;
-        var lines_remaining = line;
-        while (lines_remaining > 0) : (lines_remaining -= 1) {
-            pos = if (self.searchForwards(pos, "\n")) |next_pos| next_pos + 1 else self.bytes.items.len;
-        }
-        return pos;
-    }
-
-    pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
-        var pos = self.getPosForLine(line);
-        const end = if (self.searchForwards(pos, "\n")) |line_end| line_end else self.bytes.items.len;
-        pos += min(col, end - pos);
-        return pos;
-    }
-
-    pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
-        var line: usize = 0;
-        const col = pos - (self.searchBackwards(pos, "\n") orelse 0);
-        var pos_remaining = pos;
-        while (self.searchBackwards(pos_remaining, "\n")) |line_start| {
-            pos_remaining = line_start - 1;
-            line += 1;
-        }
-        return .{line, col};
-    }
-
-    pub fn searchBackwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
-        const bytes = self.bytes.items[0..pos];
-        return if (std.mem.lastIndexOf(u8, bytes, needle)) |result_pos| result_pos + needle.len else null;
-    }
-
-    pub fn searchForwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
-        const bytes = self.bytes.items[pos..];
-        return if (std.mem.indexOf(u8, bytes, needle)) |result_pos| result_pos + pos else null;
-    }
-
-    pub fn getLineStart(self: *Buffer, pos: usize) usize {
-        return self.searchBackwards(pos, "\n") orelse 0;
-    }
-
-    pub fn getLineEnd(self: *Buffer, pos: usize) usize {
-        return self.searchForwards(pos, "\n") orelse self.getBufferEnd();
-    }
-
-    pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) ! []const u8 {
-        assert(start <= end);
-        assert(end <= self.bytes.items.len);
-        return std.mem.dupe(allocator, u8, self.bytes.items[start..end]);
-    }
-
-    pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) ! void {
-        try self.bytes.resize(self.bytes.items.len + bytes.len);
-        std.mem.copyBackwards(u8, self.bytes.items[pos+bytes.len..], self.bytes.items[pos..self.bytes.items.len - bytes.len]);
-        std.mem.copy(u8, self.bytes.items[pos..], bytes);
-    }
-
-    pub fn delete(self: *Buffer, start: usize, end: usize) void {
-        assert(start <= end);
-        assert(end <= self.bytes.items.len);
-        std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
-        self.bytes.shrink(self.bytes.items.len - (end - start));
-    }
-
-    pub fn countLines(self: *Buffer) usize {
-        var lines: usize = 0;
-        var iter = std.mem.split(self.bytes.items, "\n");
-        while (iter.next()) |_| lines += 1;
-        return lines;
-    }
-};
 
 pub const Point = struct {
     // what char we're at
@@ -112,14 +22,20 @@ pub const Cursor = struct {
     clipboard: []const u8,
 };
 
+pub const Dragging = enum {
+    NotDragging,
+    Dragging,
+    CtrlDragging,
+};
+
 pub const View = struct {
     allocator: *Allocator,
     buffer: *Buffer,
     // cursors.len > 0
     cursors: ArrayList(Cursor),
     marked: bool,
-    dragging: bool,
-    ctrl_dragging: bool,
+    dragging: Dragging,
+    // which pixel of the buffer is at the top of the scrolled view
     top_pixel: isize,
 
     const scroll_amount = 16;
@@ -136,8 +52,7 @@ pub const View = struct {
             .buffer = buffer,
             .cursors = cursors,
             .marked = false,
-            .dragging = false,
-            .ctrl_dragging = false,
+            .dragging = .NotDragging,
             .top_pixel = 0,
         };
     }
@@ -234,12 +149,12 @@ pub const View = struct {
                         const col = @divTrunc(@intCast(Coord, button.x) - rect.x + @divTrunc(window.atlas.char_width, 2), window.atlas.char_width);
                         const pos = self.buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
                         if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
-                            self.ctrl_dragging = true;
+                            self.dragging = .CtrlDragging;
                             var cursor = try self.newCursor();
                             self.updatePos(&cursor.head, pos);
                             self.updatePos(&cursor.tail, pos);
                         } else {
-                            self.dragging = true;
+                            self.dragging = .Dragging;
                             for (self.cursors.items) |*cursor| {
                                 self.updatePos(&cursor.head, pos);
                                 self.updatePos(&cursor.tail, pos);
@@ -251,8 +166,7 @@ pub const View = struct {
                 c.SDL_MOUSEBUTTONUP => {
                     const button = event.button;
                     if (button.button == c.SDL_BUTTON_LEFT) {
-                        self.dragging = false;
-                        self.ctrl_dragging = false;
+                        self.dragging = .NotDragging;
                     }
                 },
                 c.SDL_MOUSEWHEEL => {
@@ -262,7 +176,7 @@ pub const View = struct {
             }
         }
 
-        if (self.dragging or self.ctrl_dragging) {
+        if (self.dragging != .NotDragging) {
             // get mouse state
             var global_mouse_x: c_int = undefined;
             var global_mouse_y: c_int = undefined;
@@ -277,7 +191,7 @@ pub const View = struct {
             const line = @divTrunc(self.top_pixel + mouse_y - rect.y, window.atlas.char_height);
             const col = @divTrunc(mouse_x - rect.x + @divTrunc(window.atlas.char_width, 2), window.atlas.char_width);
             const pos = self.buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
-            if (self.ctrl_dragging) {
+            if (self.dragging == .CtrlDragging) {
                 var cursor = &self.cursors.items[self.cursors.items.len-1];
                 if (cursor.tail.pos != pos and !self.marked) {
                     self.setMark();

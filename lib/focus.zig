@@ -1,9 +1,9 @@
 pub const common = @import("./focus/common.zig");
 pub const meta = @import("./focus/meta.zig");
 pub const Atlas = @import("./focus/atlas.zig").Atlas;
+pub const Buffer = @import("./focus/buffer.zig").Buffer;
+pub const View = @import("./focus/view.zig").View;
 pub const Window = @import("./focus/window.zig").Window;
-pub const Memory = @import("./focus/memory.zig").Memory;
-pub const editor = @import("./focus/editor.zig");
 
 usingnamespace common;
 
@@ -18,8 +18,8 @@ pub const App = struct {
     allocator: *Allocator,
     atlas: *Atlas,
     window: *Window,
-    buffer: *editor.Buffer,
-    view: editor.View,
+    buffer: *Buffer,
+    view: View,
 
     pub fn init(allocator: *Allocator) ! App {
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
@@ -29,10 +29,10 @@ pub const App = struct {
         atlas.* = try Atlas.init(allocator);
         var window = try allocator.create(Window);
         window.* = Window.init(allocator, atlas);
-        var buffer = try allocator.create(editor.Buffer);
-        buffer.* = editor.Buffer.init(allocator);
+        var buffer = try allocator.create(Buffer);
+        buffer.* = Buffer.init(allocator);
         try buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n"**20000));
-        var view = try editor.View.init(allocator, buffer);
+        var view = try View.init(allocator, buffer);
         
         return App{
             .allocator = allocator,
