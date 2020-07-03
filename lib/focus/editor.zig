@@ -76,6 +76,13 @@ pub const Buffer = struct {
         std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
         self.bytes.shrink(self.bytes.items.len - (end - start));
     }
+
+    pub fn countLines(self: *Buffer) usize {
+        var lines: usize = 0;
+        var iter = std.mem.split(self.bytes.items, "\n");
+        while (iter.next()) |_| lines += 1;
+        return lines;
+    }
 };
 
 pub const Point = struct {
@@ -103,7 +110,11 @@ pub const View = struct {
     // cursors.len > 0
     cursors: ArrayList(Cursor),
     marked: bool,
-    mid_pixel: Coord,
+    dragging: bool,
+    ctrl_dragging: bool,
+    top_pixel: isize,
+
+    const scroll_amount = 16;
 
     pub fn init(allocator: *Allocator, buffer: *Buffer) ! View {
         var cursors = ArrayList(Cursor).init(allocator);
@@ -117,7 +128,9 @@ pub const View = struct {
             .buffer = buffer,
             .cursors = cursors,
             .marked = false,
-            .mid_pixel = 0,
+            .dragging = false,
+            .ctrl_dragging = false,
+            .top_pixel = 0,
         };
     }
 
@@ -204,14 +217,16 @@ pub const View = struct {
                 c.SDL_MOUSEBUTTONDOWN => {
                     const button = event.button;
                     if (button.button == c.SDL_BUTTON_LEFT) {
-                        const line = @divTrunc(@intCast(Coord, button.y) - rect.y, window.atlas.char_height);
+                        const line = @divTrunc(self.top_pixel + @intCast(Coord, button.y) - rect.y, window.atlas.char_height);
                         const col = @divTrunc(@intCast(Coord, button.x) - rect.x + @divTrunc(window.atlas.char_width, 2), window.atlas.char_width);
-                        const pos = self.buffer.getPosForLineCol(@intCast(usize, line), @intCast(usize, col));
+                        const pos = self.buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
                         if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
+                            self.ctrl_dragging = true;
                             var cursor = try self.newCursor();
                             self.updatePos(&cursor.head, pos);
                             self.updatePos(&cursor.tail, pos);
                         } else {
+                            self.dragging = true;
                             for (self.cursors.items) |*cursor| {
                                 self.updatePos(&cursor.head, pos);
                                 self.updatePos(&cursor.tail, pos);
@@ -220,96 +235,140 @@ pub const View = struct {
                         }
                     }
                 },
-                c.SDL_MOUSEMOTION => {
-                    const motion = event.motion;
-                    if (motion.state & c.SDL_BUTTON_LMASK != 0) {
-                        const line = @divTrunc(@intCast(Coord, motion.y) - rect.y, window.atlas.char_height);
-                        const col = @divTrunc(@intCast(Coord, motion.x) - rect.x, window.atlas.char_width);
-                        const pos = self.buffer.getPosForLineCol(@intCast(usize, line), @intCast(usize, col));
-                        if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
-                            var cursor = &self.cursors.items[self.cursors.items.len-1];
-                            if (cursor.tail.pos != pos and !self.marked) {
-                                self.setMark();
-                            }
-                            self.updatePos(&cursor.head, pos);
-                        } else {
-                            for (self.cursors.items) |*cursor| {
-                                if (cursor.tail.pos != pos and !self.marked) {
-                                    self.setMark();
-                                }
-                                self.updatePos(&cursor.head, pos);
-                            }
-                        }
+                c.SDL_MOUSEBUTTONUP => {
+                    const button = event.button;
+                    if (button.button == c.SDL_BUTTON_LEFT) {
+                        self.dragging = false;
+                        self.ctrl_dragging = false;
                     }
                 },
                 c.SDL_MOUSEWHEEL => {
-                    
+                    self.top_pixel -= scroll_amount * @intCast(i16, event.wheel.y);
                 },
                 else => {},
             }
         }
 
-        // ensure we don't scroll off the top of the screen
-        if (self.mid_pixel < @divTrunc(rect.h, 2)) self.mid_pixel = @divTrunc(rect.h, 2);
+        if (self.dragging or self.ctrl_dragging) {
+            // get mouse state
+            var global_mouse_x: c_int = undefined;
+            var global_mouse_y: c_int = undefined;
+            const mouse_state = c.SDL_GetGlobalMouseState(&global_mouse_x, &global_mouse_y);
+            var window_x: c_int = undefined;
+            var window_y: c_int = undefined;
+            c.SDL_GetWindowPosition(window.sdl_window, &window_x, &window_y);
+            const mouse_x = @intCast(Coord, global_mouse_x - window_x);
+            const mouse_y = @intCast(Coord, global_mouse_y - window_y);
+
+            // update selection of dragged cursor
+            const line = @divTrunc(self.top_pixel + mouse_y - rect.y, window.atlas.char_height);
+            const col = @divTrunc(mouse_x - rect.x + @divTrunc(window.atlas.char_width, 2), window.atlas.char_width);
+            const pos = self.buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
+            if (self.ctrl_dragging) {
+                var cursor = &self.cursors.items[self.cursors.items.len-1];
+                if (cursor.tail.pos != pos and !self.marked) {
+                    self.setMark();
+                }
+                self.updatePos(&cursor.head, pos);
+            } else {
+                for (self.cursors.items) |*cursor| {
+                    if (cursor.tail.pos != pos and !self.marked) {
+                        self.setMark();
+                    }
+                    self.updatePos(&cursor.head, pos);
+                }
+            }
+            
+            // if dragging outside window, scroll
+            if (mouse_y <= rect.y) self.top_pixel -= scroll_amount;
+            if (mouse_y >= rect.y + rect.h) self.top_pixel += scroll_amount;
+        }
+
+        // calculate visible range
+        // ensure we don't scroll off the top or bottom of the buffer
+        const max_pixels = @intCast(isize, self.buffer.countLines()) * @intCast(isize, window.atlas.char_height);
+        if (self.top_pixel < 0) self.top_pixel = 0;
+        if (self.top_pixel > max_pixels) self.top_pixel = max_pixels;
         const num_visible_lines = @divTrunc(rect.h, window.atlas.char_height) + @rem(@rem(rect.h, window.atlas.char_height), 1); // round up
-        const visible_start_line = @divTrunc(self.mid_pixel - @divTrunc(rect.h, 2), window.atlas.char_height); // round down
+        const visible_start_line = @divTrunc(self.top_pixel, window.atlas.char_height); // round down
         const visible_end_line = visible_start_line + num_visible_lines;
 
-        // draw
+        // draw background
         const background_color = Color{ .r = 0x2e, .g=0x34, .b=0x36, .a=255 };
         try window.queueRect(rect, background_color);
+
+        // draw cursors, selections, text
         const text_color = Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 255 };
         const multi_cursor_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 255 };
         var highlight_color = text_color; highlight_color.a = 100;
         var lines = std.mem.split(self.buffer.bytes.items, "\n");
-        var line_ix = visible_start_line;
+        var line_ix: usize = 0;
         var line_start_pos: usize = 0;
         while (lines.next()) |line| : (line_ix += 1) {
             if (line_ix > visible_end_line) break;
-            
-            const y = rect.y + (@intCast(Coord, line_ix) * window.atlas.char_height);
+
             const line_end_pos = line_start_pos + line.len;
+            
+            if (line_ix >= visible_start_line) {
+                const y = rect.y - @rem(self.top_pixel+1, window.atlas.char_height) + ((@intCast(Coord, line_ix) - visible_start_line) * window.atlas.char_height);
 
-            for (self.cursors.items) |cursor| {
-                // draw cursor
-                if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
-                    const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * window.atlas.char_width);
-                    const w = @divTrunc(window.atlas.char_width, 8);
-                    try window.queueRect(
-                        .{
-                            .x = @intCast(Coord, x) - @divTrunc(w, 2),
-                            .y = y,
-                            .w=w,
-                            .h=window.atlas.char_height
-                        },
-                        if (self.cursors.items.len > 1) multi_cursor_color else text_color,
-                    );
-                }
+                for (self.cursors.items) |cursor| {
+                    // draw cursor
+                    if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
+                        const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * window.atlas.char_width);
+                        const w = @divTrunc(window.atlas.char_width, 8);
+                        try window.queueRect(
+                            .{
+                                .x = @intCast(Coord, x) - @divTrunc(w, 2),
+                                .y = @intCast(Coord, y),
+                                .w=w,
+                                .h=window.atlas.char_height
+                            },
+                            if (self.cursors.items.len > 1) multi_cursor_color else text_color,
+                        );
+                    }
 
-                // draw selection
-                if (self.marked) {
-                    const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
-                    const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
-                    const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
-                    const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
-                    if ((highlight_start_pos < highlight_end_pos)
-                            or (selection_start_pos <= line_end_pos
-                                    and selection_end_pos > line_end_pos)) {
-                        const x = rect.x + (@intCast(Coord, (highlight_start_pos - line_start_pos)) * window.atlas.char_width);
-                        const w = if (selection_end_pos > line_end_pos)
-                            rect.x + rect.w - x
-                            else
-                            @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * window.atlas.char_width;
-                        try window.queueRect(.{.x = @intCast(Coord, x), .y = y, .w=@intCast(Coord, w), .h=window.atlas.char_height}, highlight_color);
+                    // draw selection
+                    if (self.marked) {
+                        const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
+                        const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
+                        const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
+                        const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
+                        if ((highlight_start_pos < highlight_end_pos)
+                                or (selection_start_pos <= line_end_pos
+                                        and selection_end_pos > line_end_pos)) {
+                            const x = rect.x + (@intCast(Coord, (highlight_start_pos - line_start_pos)) * window.atlas.char_width);
+                            const w = if (selection_end_pos > line_end_pos)
+                                rect.x + rect.w - x
+                                else
+                                @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * window.atlas.char_width;
+                            try window.queueRect(
+                                .{
+                                    .x = @intCast(Coord, x),
+                                    .y = @intCast(Coord, y),
+                                    .w = @intCast(Coord, w),
+                                    .h = window.atlas.char_height,
+                                },
+                                highlight_color
+                            );
+                        }
                     }
                 }
+                
+                // draw text
+                // TODO need to ensure this text lives long enough - buffer might get changed in another window
+                try window.queueText(.{.x = rect.x, .y = @intCast(Coord, y)}, text_color, line);
             }
             
-            // draw text
-            // TODO need to ensure this text lives long enough - buffer might get changed in another window
-            try window.queueText(.{.x = rect.x, .y = y}, text_color, line);
-            
             line_start_pos = line_end_pos + 1; // + 1 for '\n'
+        }
+
+        // draw scrollbar
+        {
+            const ratio = @intToFloat(f64, self.top_pixel) / @intToFloat(f64, max_pixels);
+            const y = rect.y + min(@floatToInt(Coord, @intToFloat(f64, rect.h) * ratio), rect.h - window.atlas.char_height);
+            const x = rect.x + rect.w - window.atlas.char_width;
+            try window.queueText(.{.x = x, .y = y}, highlight_color, "<");
         }
     }
 

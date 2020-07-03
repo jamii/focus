@@ -31,7 +31,7 @@ pub const App = struct {
         window.* = Window.init(allocator, atlas);
         var buffer = try allocator.create(editor.Buffer);
         buffer.* = editor.Buffer.init(allocator);
-        try buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long");
+        try buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n"**20000));
         var view = try editor.View.init(allocator, buffer);
         
         return App{
