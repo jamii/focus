@@ -39,7 +39,7 @@ pub const Buffer = struct {
 
     pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
         var line: usize = 0;
-        const col = pos - self.lineStart();
+        const col = pos - (self.searchBackwards(pos, "\n") orelse 0);
         var pos_remaining = pos;
         while (self.searchBackwards(pos_remaining, "\n")) |line_start| {
             pos_remaining = line_start - 1;
@@ -142,6 +142,8 @@ pub const View = struct {
     }
 
     pub fn frame(self: *View, window: *Window, rect: Rect) ! void {
+        const main_cursor_pos = self.getMainCursor().head.pos;
+        
         // handle events
         // if we get textinput, we'll also get the keydown first
         // if the keydown is mapped to a command, we'll do that and ignore the textinput
@@ -282,6 +284,17 @@ pub const View = struct {
             // if dragging outside window, scroll
             if (mouse_y <= rect.y) self.top_pixel -= scroll_amount;
             if (mouse_y >= rect.y + rect.h) self.top_pixel += scroll_amount;
+        }
+
+        // if cursor moved, scroll it into view
+        if (self.getMainCursor().head.pos != main_cursor_pos) {
+            const bottom_pixel = self.top_pixel + rect.h;
+            const cursor_top_pixel = @intCast(isize, self.buffer.getLineColForPos(self.getMainCursor().head.pos)[0]) * @intCast(isize, window.atlas.char_height);
+            const cursor_bottom_pixel = cursor_top_pixel + @intCast(isize, window.atlas.char_height);
+            if (cursor_top_pixel > bottom_pixel - @intCast(isize, window.atlas.char_height))
+                self.top_pixel = cursor_top_pixel - @intCast(isize, rect.h) + @intCast(isize, window.atlas.char_height);
+            if (cursor_bottom_pixel <= self.top_pixel + @intCast(isize, window.atlas.char_height))
+                self.top_pixel = cursor_top_pixel;
         }
 
         // calculate visible range
@@ -589,5 +602,9 @@ pub const View = struct {
         }
         self.cursors.shrink(1);
         self.cursors.items[0].clipboard = clipboard.toOwnedSlice();
+    }
+
+    pub fn getMainCursor(self: *View) *Cursor {
+        return &self.cursors.items[self.cursors.items.len-1];
     }
 };
