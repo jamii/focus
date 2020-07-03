@@ -170,6 +170,10 @@ pub const View = struct {
                             'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
                             'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
                             'i' => for (self.cursors.items) |*cursor| self.goUp(cursor),
+                            'q' => {
+                                try self.collapseCursors();
+                                self.clearMark();
+                            },
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod & @intCast(u16, c.KMOD_ALT) != 0) {
@@ -189,10 +193,6 @@ pub const View = struct {
                             },
                             c.SDLK_RETURN => {
                                 for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'});
-                                self.clearMark();
-                            },
-                            c.SDLK_ESCAPE => {
-                                try self.collapseCursors();
                                 self.clearMark();
                             },
                             c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
