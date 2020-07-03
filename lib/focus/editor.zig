@@ -58,6 +58,14 @@ pub const Buffer = struct {
         return if (std.mem.indexOf(u8, bytes, needle)) |result_pos| result_pos + pos else null;
     }
 
+    pub fn getLineStart(self: *Buffer, pos: usize) usize {
+        return self.searchBackwards(pos, "\n") orelse 0;
+    }
+
+    pub fn getLineEnd(self: *Buffer, pos: usize) usize {
+        return self.searchForwards(pos, "\n") orelse self.getBufferEnd();
+    }
+
     pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) ! []const u8 {
         assert(start <= end);
         assert(end <= self.bytes.items.len);
@@ -175,6 +183,9 @@ pub const View = struct {
                             'q' => {
                                 try self.collapseCursors();
                                 self.clearMark();
+                            },
+                            'd' => {
+                                try self.addNextMatch();
                             },
                             else => accept_textinput = true,
                         }
@@ -385,24 +396,8 @@ pub const View = struct {
         }
     }
 
-    pub fn searchBackwards(self: *View, point: Point, needle: []const u8) ?usize {
-        return self.buffer.searchBackwards(point.pos, needle);
-    }
-
-    pub fn searchForwards(self: *View, point: Point, needle: []const u8) ?usize {
-        return self.buffer.searchForwards(point.pos, needle);
-    }
-
-    pub fn getLineStart(self: *View, point: Point) usize {
-        return self.searchBackwards(point, "\n") orelse 0;
-    }
-
-    pub fn getLineEnd(self: *View, point: Point) usize {
-        return self.searchForwards(point, "\n") orelse self.buffer.getBufferEnd();
-    }
-
     pub fn updateCol(self: *View, point: *Point) void {
-        point.col = point.pos - self.getLineStart(point.*);
+        point.col = point.pos - self.buffer.getLineStart(point.*.pos);
     }
 
     pub fn updatePos(self: *View, point: *Point, pos: usize) void {
@@ -415,8 +410,8 @@ pub const View = struct {
     }
 
     pub fn goCol(self: *View, cursor: *Cursor, col: usize) void {
-        const line_start = self.getLineStart(cursor.head);
-        cursor.head.col = min(col, self.getLineEnd(cursor.head) - line_start);
+        const line_start = self.buffer.getLineStart(cursor.head.pos);
+        cursor.head.col = min(col, self.buffer.getLineEnd(cursor.head.pos) - line_start);
         cursor.head.pos = line_start + cursor.head.col;
     }
 
@@ -441,7 +436,7 @@ pub const View = struct {
     }
 
     pub fn goDown(self: *View, cursor: *Cursor) void {
-        if (self.searchForwards(cursor.head, "\n")) |line_end| {
+        if (self.buffer.searchForwards(cursor.head.pos, "\n")) |line_end| {
             const col = cursor.head.col;
             cursor.head.pos = line_end + 1;
             self.goCol(cursor, col);
@@ -450,7 +445,7 @@ pub const View = struct {
     }
 
     pub fn goUp(self: *View, cursor: *Cursor) void {
-        if (self.searchBackwards(cursor.head, "\n")) |line_start| {
+        if (self.buffer.searchBackwards(cursor.head.pos, "\n")) |line_start| {
             const col = cursor.head.col;
             cursor.head.pos = line_start - 1;
             self.goCol(cursor, col);
@@ -459,12 +454,12 @@ pub const View = struct {
     }
 
     pub fn goLineStart(self: *View, cursor: *Cursor) void {
-        cursor.head.pos = self.getLineStart(cursor.head);
+        cursor.head.pos = self.buffer.getLineStart(cursor.head.pos);
         cursor.head.col = 0;
     }
 
     pub fn goLineEnd(self: *View, cursor: *Cursor) void {
-        cursor.head.pos = self.searchForwards(cursor.head, "\n") orelse self.buffer.getBufferEnd();
+        cursor.head.pos = self.buffer.getLineEnd(cursor.head.pos);
         self.updateCol(&cursor.head);
     }
 
@@ -505,8 +500,8 @@ pub const View = struct {
 
     pub fn deleteSelection(self: *View, cursor: *Cursor) void {
         if (self.marked) {
-            const selection = self.getSelection(cursor);
-            self.delete(selection[0], selection[1]);
+            const range = self.getSelectionRange(cursor);
+            self.delete(range[0], range[1]);
         }
     }
 
@@ -551,7 +546,7 @@ pub const View = struct {
         }
     }
 
-    pub fn getSelection(self: *View, cursor: *Cursor) [2]usize {
+    pub fn getSelectionRange(self: *View, cursor: *Cursor) [2]usize {
         if (self.marked) {
             const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
             const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
@@ -562,8 +557,8 @@ pub const View = struct {
     }
 
     pub fn dupeSelection(self: *View, cursor: *Cursor) ! []const u8 {
-        const selection = self.getSelection(cursor);
-        return self.buffer.dupe(self.allocator, selection[0], selection[1]);
+        const range = self.getSelectionRange(cursor);
+        return self.buffer.dupe(self.allocator, range[0], range[1]);
     }
 
     pub fn copy(self: *View, cursor: *Cursor) ! void {
@@ -606,5 +601,21 @@ pub const View = struct {
 
     pub fn getMainCursor(self: *View) *Cursor {
         return &self.cursors.items[self.cursors.items.len-1];
+    }
+
+    pub fn addNextMatch(self: *View) ! void {
+        const main_cursor = self.getMainCursor();
+        const selection = try self.dupeSelection(main_cursor);
+        defer self.allocator.free(selection);
+        if (self.buffer.searchForwards(max(main_cursor.head.pos, main_cursor.tail.pos), selection)) |pos| {
+            var cursor = Cursor{
+                .head = .{.pos = pos + selection.len, .col = 0},
+                .tail = .{.pos = pos, .col = 0},
+                .clipboard = "",
+            };
+            self.updateCol(&cursor.head);
+            self.updateCol(&cursor.tail);
+            try self.cursors.append(cursor);
+        }
     }
 };
