@@ -3,6 +3,7 @@ pub const meta = @import("./focus/meta.zig");
 pub const Atlas = @import("./focus/atlas.zig").Atlas;
 pub const Buffer = @import("./focus/buffer.zig").Buffer;
 pub const Editor = @import("./focus/editor.zig").Editor;
+pub const FileOpener = @import("./focus/file_opener.zig").FileOpener;
 pub const Window = @import("./focus/window.zig").Window;
 
 usingnamespace common;
@@ -14,16 +15,10 @@ pub fn run(allocator: *Allocator) !void {
     }
 }
 
-pub const View = union(enum) {
-    Editor: Editor,
-};
-
 pub const App = struct {
     allocator: *Allocator,
     atlas: *Atlas,
     window: *Window,
-    buffer: *Buffer,
-    view: View,
 
     pub fn init(allocator: *Allocator) ! App {
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
@@ -31,20 +26,21 @@ pub const App = struct {
         
         var atlas = try allocator.create(Atlas);
         atlas.* = try Atlas.init(allocator);
-        var window = try allocator.create(Window);
-        window.* = Window.init(allocator, atlas);
         var buffer = try allocator.create(Buffer);
         buffer.* = Buffer.init(allocator);
         try buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n"**20000));
         var editor = try Editor.init(allocator, buffer);
-        
-        return App{
+        var window = try allocator.create(Window);
+
+        var self = App{
             .allocator = allocator,
             .atlas = atlas,
             .window = window,
-            .buffer = buffer,
-            .view = .{.Editor = editor},
         };
+        
+        self.window.* = try Window.init(allocator, &self, .{.Editor = editor});
+        
+        return self;
     }
 
     pub fn deinit(self: *App) void {
@@ -61,21 +57,18 @@ pub const App = struct {
         // var timer = try std.time.Timer.start();
 
         // fetch events
+        var events = ArrayList(c.SDL_Event).init(self.allocator);
+        defer events.deinit();
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event) != 0) {
             if (event.type == c.SDL_QUIT) {
                 std.os.exit(0);
             }
-            // TODO only one window for now
-            try self.window.events.append(event);
+            try events.append(event);
         }
 
-        // run editor frame
-        const screen_rect = try self.window.begin();
-        switch (self.view) {
-            .Editor => |*editor| try editor.frame(self.window, screen_rect),
-        }
-        try self.window.end();
+        // run window frame
+        try self.window.frame(self, events.items);
         
         // warn("frame time: {}ns\n", .{timer.read()});
     }

@@ -1,15 +1,23 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
+const Editor = focus.Editor;
+const FileOpener = focus.FileOpener;
+const App = focus.App;
 const Atlas = focus.Atlas;
+
+pub const View = union(enum) {
+    Editor: Editor,
+    FileOpener: FileOpener,
+};
 
 pub const Window = struct {
     allocator: *Allocator,
-    atlas: *Atlas, // borrowed
+    // views.len > 0
+    views: ArrayList(View),
     
     sdl_window: *c.SDL_Window,
     width: Coord,
     height: Coord,
-    events: ArrayList(c.SDL_Event),
     commands: ArrayList(Command),
     
     gl_context: c.SDL_GLContext,
@@ -30,7 +38,10 @@ pub const Window = struct {
         },
     };
 
-    pub fn init(allocator: *Allocator, atlas: *Atlas) Window {
+    pub fn init(allocator: *Allocator, app: *App, view: View) ! Window {
+        var views = ArrayList(View).init(allocator);
+        try views.append(view);
+        
         // pretty arbitrary
         const init_width: usize = 1920;
         const init_height: usize = 1080;
@@ -44,10 +55,6 @@ pub const Window = struct {
             @as(c_int, init_height),
             c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_BORDERLESS | c.SDL_WINDOW_ALLOW_HIGHDPI | c.SDL_WINDOW_RESIZABLE,
         ) orelse panic("SDL window creation failed: {s}", .{c.SDL_GetError()});
-        // on pinephone, fullscreen
-        // if (std.Target.current.cpu.arch == .aarch64) {
-        //     _ = SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
-        // }
 
         // init gl
         const gl_context = c.SDL_GL_CreateContext(sdl_window);
@@ -63,10 +70,11 @@ pub const Window = struct {
         c.glEnableClientState(c.GL_COLOR_ARRAY);
 
         // init texture
+        // TODO should this be per-window or per-app?
         var id: u32 = undefined;
         c.glGenTextures(1, &id);
         c.glBindTexture(c.GL_TEXTURE_2D, id);
-        c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, atlas.texture.ptr);
+        c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_ALPHA, app.atlas.texture_dims.x, app.atlas.texture_dims.y, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, app.atlas.texture.ptr);
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
         assert(c.glGetError() == 0);
@@ -77,15 +85,17 @@ pub const Window = struct {
 
         // accept unicode input
         c.SDL_StartTextInput();
+
+        // ignore MOUSEMOTION since we just look at current state
+        // c.SDL_EventState( c.SDL_MOUSEMOTION, c.SDL_IGNORE );
         
         return Window{
             .allocator = allocator,
-            .atlas = atlas,
+            .views = views,
             
             .sdl_window = sdl_window,
             .width = init_width,
             .height = init_height,
-            .events = ArrayList(c.SDL_Event).init(allocator),
             .commands = ArrayList(Command).init(allocator),
             
             .gl_context = gl_context,
@@ -104,36 +114,64 @@ pub const Window = struct {
         c.SDL_GL_DeleteContext(self.gl_context);
         
         self.commands.deinit();
-        self.events.deinit();
         c.SDL_DestroyWindow(self.window);
-        
-        // atlas doesn't belong to us
     }
 
-    pub fn begin(self: *Window) ! Rect {
+    pub fn frame(self: *Window, app: *App, events: []const c.SDL_Event) ! void {
+        // figure out window size
         var w: c_int = undefined;
         var h: c_int = undefined;
         c.SDL_GL_GetDrawableSize(self.sdl_window, &w, &h);
         self.width = @intCast(Coord, w);
         self.height = @intCast(Coord, h);
-        return Rect{ .x = 0, .y = 0, .w = self.width, .h = self.height };
-    }
+        const window_rect = Rect{ .x = 0, .y = 0, .w = self.width, .h = self.height };
 
-    pub fn end(self: *Window) ! void {
+        var view_events = ArrayList(c.SDL_Event).init(self.allocator);
+        defer view_events.deinit();
+        
+        // handle events
+        for (events) |event| {
+            var handled = false;
+            switch (event.type) {
+                c.SDL_KEYDOWN => {
+                    const sym = event.key.keysym;
+                    if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
+                        switch (sym.sym) {
+                            'o' => {
+                                var file_opener = try FileOpener.init(self.allocator, "/home/jamie/");
+                                try self.pushView(.{.FileOpener = file_opener});
+                                handled = true;
+                            },
+                            else => {},
+                        }
+                    }
+                },
+                else => {},
+            }
+            // delegate other events to editor
+            if (!handled) try view_events.append(event);
+        }
+
+        // run view frame
+        switch (self.views.items[self.views.items.len-1]) {
+            .Editor => |*editor| try editor.frame(app, self, window_rect, view_events.items),
+            .FileOpener => |*file_opener| try file_opener.frame(app, self, window_rect, view_events.items),
+        }
+        
         // convert draw commands into quads
         for (self.commands.items) |command| {
             switch (command) {
                 .Rect => |rect| {
-                    try self.renderQuad(rect.rect, self.atlas.white_rect, rect.color);
+                    try self.renderQuad(app.atlas, rect.rect, app.atlas.white_rect, rect.color);
                 },
                 .Text => |text| {
                     // TODO going to need to be able to clip text
                     var dst: Rect = .{ .x = text.pos.x, .y = text.pos.y, .w = 0, .h = 0 };
                     for (text.chars) |char| {
-                        const src = self.atlas.char_to_rect[char];
+                        const src = app.atlas.char_to_rect[char];
                         dst.w = src.w;
                         dst.h = src.h;
-                        try self.renderQuad(dst, src, text.color);
+                        try self.renderQuad(app.atlas, dst, src, text.color);
                         dst.x += src.w;
                     }
                 }
@@ -172,7 +210,6 @@ pub const Window = struct {
         c.SDL_GL_SwapWindow(self.sdl_window);
 
         // reset
-        try self.events.resize(0);
         try self.commands.resize(0);
         try self.texture_buffer.resize(0);
         try self.vertex_buffer.resize(0);
@@ -180,11 +217,11 @@ pub const Window = struct {
         try self.index_buffer.resize(0);
     }
 
-    fn renderQuad(self: *Window, dst: Rect, src: Rect, color: Color) ! void {
-        const tx = @intToFloat(f32, src.x) / @intToFloat(f32, self.atlas.texture_dims.x);
-        const ty = @intToFloat(f32, src.y) / @intToFloat(f32, self.atlas.texture_dims.y);
-        const tw = @intToFloat(f32, src.w) / @intToFloat(f32, self.atlas.texture_dims.x);
-        const th = @intToFloat(f32, src.h) / @intToFloat(f32, self.atlas.texture_dims.y);
+    fn renderQuad(self: *Window, atlas: *Atlas, dst: Rect, src: Rect, color: Color) ! void {
+        const tx = @intToFloat(f32, src.x) / @intToFloat(f32, atlas.texture_dims.x);
+        const ty = @intToFloat(f32, src.y) / @intToFloat(f32, atlas.texture_dims.y);
+        const tw = @intToFloat(f32, src.w) / @intToFloat(f32, atlas.texture_dims.x);
+        const th = @intToFloat(f32, src.h) / @intToFloat(f32, atlas.texture_dims.y);
         try self.texture_buffer.append(.{
             .tl = .{ .x = tx, .y = ty },
             .tr = .{ .x = tx + tw, .y = ty },
@@ -225,6 +262,18 @@ pub const Window = struct {
         });
     }
 
+    // view api
+
+    pub fn pushView(self: *Window, view: View) ! void {
+        try self.views.append(view);
+    }
+
+    pub fn popView(self: *Window) void {
+        _ = self.views.pop();
+        // TODO probably better to gc buffers/views etc
+        // view.deinit();
+    }  
+
     // drawing api
 
     pub fn queueRect(self: *Window, rect: Rect, color: Color) !void {
@@ -260,7 +309,7 @@ pub const Window = struct {
     //                     break;
     //                 }
     //                 const char = chars[i];
-    //                 w += @intCast(Coord, self.atlas.max_char_width);
+    //                 w += @intCast(Coord, app.atlas.max_char_width);
     //                 if (w > rect.w) {
     //                     // if haven't soft wrapped yet, hard wrap before this char
     //                     if (line_end == line_begin) {

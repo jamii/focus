@@ -2,6 +2,7 @@ const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const Buffer = focus.Buffer;
 const Window = focus.Window;
+const App = focus.App;
 
 pub const Point = struct {
     // what char we're at
@@ -62,9 +63,10 @@ pub const Editor = struct {
             self.allocator.free(cursor.clipboard);
         }
         self.cursors.deinit();
+        self.buffer.deinit();
     }
 
-    pub fn frame(self: *Editor, window: *Window, rect: Rect) ! void {
+    pub fn frame(self: *Editor, app: *App, window: *Window, rect: Rect, events: []const c.SDL_Event) ! void {
         const main_cursor_pos = self.getMainCursor().head.pos;
         
         // handle events
@@ -72,11 +74,11 @@ pub const Editor = struct {
         // if the keydown is mapped to a command, we'll do that and ignore the textinput
         // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
         var accept_textinput = false;
-        for (window.events.items) |event| {
+        for (events) |event| {
             switch (event.type) {
                 c.SDL_KEYDOWN => {
                     const sym = event.key.keysym;
-                    if (sym.mod & @intCast(u16, c.KMOD_CTRL) != 0) {
+                    if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
                             ' ' => self.toggleMark(),
                             'c' => {
@@ -104,16 +106,16 @@ pub const Editor = struct {
                             },
                             else => accept_textinput = true,
                         }
-                    } else if (sym.mod & @intCast(u16, c.KMOD_ALT) != 0) {
+                    } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
                         switch (sym.sym) {
                             ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
                             'j' => for (self.cursors.items) |*cursor| self.goLineStart(cursor),
                             'l' => for (self.cursors.items) |*cursor| self.goLineEnd(cursor),
-                            'k' => for (self.cursors.items) |*cursor| self.goPageEnd(cursor),
-                            'i' => for (self.cursors.items) |*cursor| self.goPageStart(cursor),
+                            'k' => for (self.cursors.items) |*cursor| self.goBufferEnd(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goBufferStart(cursor),
                             else => accept_textinput = true,
                         }
-                    } else {
+                    } else if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_BACKSPACE => {
                                 for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
@@ -145,10 +147,11 @@ pub const Editor = struct {
                 c.SDL_MOUSEBUTTONDOWN => {
                     const button = event.button;
                     if (button.button == c.SDL_BUTTON_LEFT) {
-                        const line = @divTrunc(self.top_pixel + @intCast(Coord, button.y) - rect.y, window.atlas.char_height);
-                        const col = @divTrunc(@intCast(Coord, button.x) - rect.x + @divTrunc(window.atlas.char_width, 2), window.atlas.char_width);
+                        const line = @divTrunc(self.top_pixel + @intCast(Coord, button.y) - rect.y, app.atlas.char_height);
+                        const col = @divTrunc(@intCast(Coord, button.x) - rect.x + @divTrunc(app.atlas.char_width, 2), app.atlas.char_width);
                         const pos = self.buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
-                        if (@enumToInt(c.SDL_GetModState()) & c.KMOD_CTRL != 0) {
+                        const mod = @enumToInt(c.SDL_GetModState());
+                        if (mod == c.KMOD_LCTRL or mod == c.KMOD_RCTRL) {
                             self.dragging = .CtrlDragging;
                             var cursor = try self.newCursor();
                             self.updatePos(&cursor.head, pos);
@@ -176,6 +179,8 @@ pub const Editor = struct {
             }
         }
 
+        // handle mouse drag
+        // (might be dragging outside window, so can't rely on SDL_MOUSEMOTION
         if (self.dragging != .NotDragging) {
             // get mouse state
             var global_mouse_x: c_int = undefined;
@@ -188,8 +193,8 @@ pub const Editor = struct {
             const mouse_y = @intCast(Coord, global_mouse_y - window_y);
 
             // update selection of dragged cursor
-            const line = @divTrunc(self.top_pixel + mouse_y - rect.y, window.atlas.char_height);
-            const col = @divTrunc(mouse_x - rect.x + @divTrunc(window.atlas.char_width, 2), window.atlas.char_width);
+            const line = @divTrunc(self.top_pixel + mouse_y - rect.y, app.atlas.char_height);
+            const col = @divTrunc(mouse_x - rect.x + @divTrunc(app.atlas.char_width, 2), app.atlas.char_width);
             const pos = self.buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
             if (self.dragging == .CtrlDragging) {
                 var cursor = &self.cursors.items[self.cursors.items.len-1];
@@ -214,21 +219,21 @@ pub const Editor = struct {
         // if cursor moved, scroll it into editor
         if (self.getMainCursor().head.pos != main_cursor_pos) {
             const bottom_pixel = self.top_pixel + rect.h;
-            const cursor_top_pixel = @intCast(isize, self.buffer.getLineColForPos(self.getMainCursor().head.pos)[0]) * @intCast(isize, window.atlas.char_height);
-            const cursor_bottom_pixel = cursor_top_pixel + @intCast(isize, window.atlas.char_height);
-            if (cursor_top_pixel > bottom_pixel - @intCast(isize, window.atlas.char_height))
-                self.top_pixel = cursor_top_pixel - @intCast(isize, rect.h) + @intCast(isize, window.atlas.char_height);
-            if (cursor_bottom_pixel <= self.top_pixel + @intCast(isize, window.atlas.char_height))
+            const cursor_top_pixel = @intCast(isize, self.buffer.getLineColForPos(self.getMainCursor().head.pos)[0]) * @intCast(isize, app.atlas.char_height);
+            const cursor_bottom_pixel = cursor_top_pixel + @intCast(isize, app.atlas.char_height);
+            if (cursor_top_pixel > bottom_pixel - @intCast(isize, app.atlas.char_height))
+                self.top_pixel = cursor_top_pixel - @intCast(isize, rect.h) + @intCast(isize, app.atlas.char_height);
+            if (cursor_bottom_pixel <= self.top_pixel + @intCast(isize, app.atlas.char_height))
                 self.top_pixel = cursor_top_pixel;
         }
 
         // calculate visible range
         // ensure we don't scroll off the top or bottom of the buffer
-        const max_pixels = @intCast(isize, self.buffer.countLines()) * @intCast(isize, window.atlas.char_height);
+        const max_pixels = @intCast(isize, self.buffer.countLines()) * @intCast(isize, app.atlas.char_height);
         if (self.top_pixel < 0) self.top_pixel = 0;
         if (self.top_pixel > max_pixels) self.top_pixel = max_pixels;
-        const num_visible_lines = @divTrunc(rect.h, window.atlas.char_height) + @rem(@rem(rect.h, window.atlas.char_height), 1); // round up
-        const visible_start_line = @divTrunc(self.top_pixel, window.atlas.char_height); // round down
+        const num_visible_lines = @divTrunc(rect.h, app.atlas.char_height) + @rem(@rem(rect.h, app.atlas.char_height), 1); // round up
+        const visible_start_line = @divTrunc(self.top_pixel, app.atlas.char_height); // round down
         const visible_end_line = visible_start_line + num_visible_lines;
 
         // draw background
@@ -248,19 +253,19 @@ pub const Editor = struct {
             const line_end_pos = line_start_pos + line.len;
             
             if (line_ix >= visible_start_line) {
-                const y = rect.y - @rem(self.top_pixel+1, window.atlas.char_height) + ((@intCast(Coord, line_ix) - visible_start_line) * window.atlas.char_height);
+                const y = rect.y - @rem(self.top_pixel+1, app.atlas.char_height) + ((@intCast(Coord, line_ix) - visible_start_line) * app.atlas.char_height);
 
                 for (self.cursors.items) |cursor| {
                     // draw cursor
                     if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
-                        const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * window.atlas.char_width);
-                        const w = @divTrunc(window.atlas.char_width, 8);
+                        const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * app.atlas.char_width);
+                        const w = @divTrunc(app.atlas.char_width, 8);
                         try window.queueRect(
                             .{
                                 .x = @intCast(Coord, x) - @divTrunc(w, 2),
                                 .y = @intCast(Coord, y),
                                 .w=w,
-                                .h=window.atlas.char_height
+                                .h=app.atlas.char_height
                             },
                             if (self.cursors.items.len > 1) multi_cursor_color else text_color,
                         );
@@ -275,17 +280,17 @@ pub const Editor = struct {
                         if ((highlight_start_pos < highlight_end_pos)
                                 or (selection_start_pos <= line_end_pos
                                         and selection_end_pos > line_end_pos)) {
-                            const x = rect.x + (@intCast(Coord, (highlight_start_pos - line_start_pos)) * window.atlas.char_width);
+                            const x = rect.x + (@intCast(Coord, (highlight_start_pos - line_start_pos)) * app.atlas.char_width);
                             const w = if (selection_end_pos > line_end_pos)
                                 rect.x + rect.w - x
                                 else
-                                @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * window.atlas.char_width;
+                                @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * app.atlas.char_width;
                             try window.queueRect(
                                 .{
                                     .x = @intCast(Coord, x),
                                     .y = @intCast(Coord, y),
                                     .w = @intCast(Coord, w),
-                                    .h = window.atlas.char_height,
+                                    .h = app.atlas.char_height,
                                 },
                                 highlight_color
                             );
@@ -304,8 +309,8 @@ pub const Editor = struct {
         // draw scrollbar
         {
             const ratio = @intToFloat(f64, self.top_pixel) / @intToFloat(f64, max_pixels);
-            const y = rect.y + min(@floatToInt(Coord, @intToFloat(f64, rect.h) * ratio), rect.h - window.atlas.char_height);
-            const x = rect.x + rect.w - window.atlas.char_width;
+            const y = rect.y + min(@floatToInt(Coord, @intToFloat(f64, rect.h) * ratio), rect.h - app.atlas.char_height);
+            const x = rect.x + rect.w - app.atlas.char_width;
             try window.queueText(.{.x = x, .y = y}, highlight_color, "<");
         }
     }
@@ -377,11 +382,11 @@ pub const Editor = struct {
         self.updateCol(&cursor.head);
     }
 
-    pub fn goPageStart(self: *Editor, cursor: *Cursor) void {
+    pub fn goBufferStart(self: *Editor, cursor: *Cursor) void {
         self.goPos(cursor, 0);
     }
 
-    pub fn goPageEnd(self: *Editor, cursor: *Cursor) void {
+    pub fn goBufferEnd(self: *Editor, cursor: *Cursor) void {
         self.goPos(cursor, self.buffer.getBufferEnd());
     }
 
