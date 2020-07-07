@@ -139,6 +139,8 @@ pub const Editor = struct {
                             },
                             else => accept_textinput = true,
                         }
+                    } else {
+                        accept_textinput = true;
                     }
                 },
                 c.SDL_TEXTINPUT => {

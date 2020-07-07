@@ -121,8 +121,6 @@ pub const App = struct {
     }
 
     pub fn frame(self: *App) ! void {
-        // var timer = try std.time.Timer.start();
-
         // fetch events
         var events = ArrayList(c.SDL_Event).init(self.allocator);
         defer events.deinit();
@@ -145,7 +143,7 @@ pub const App = struct {
         for (windows.items) |window| {
             try window.frame(events.items);
         }
-        
-        // warn("frame time: {}ns\n", .{timer.read()});
+
+        // TODO separate frame from vsync. if vsync takes more than, say, 1s/120 then we must have missed a frame
     }
 };
