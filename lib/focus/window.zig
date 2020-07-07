@@ -1,19 +1,14 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
-const Editor = focus.Editor;
-const FileOpener = focus.FileOpener;
-const App = focus.App;
 const Atlas = focus.Atlas;
-
-pub const View = union(enum) {
-    Editor: Editor,
-    FileOpener: FileOpener,
-};
+const App = focus.App;
+const Id = focus.Id;
+const FileOpener = focus.FileOpener;
 
 pub const Window = struct {
-    allocator: *Allocator,
+    app: *App,
     // views.len > 0
-    views: ArrayList(View),
+    views: ArrayList(Id),
     
     sdl_window: *c.SDL_Window,
     width: Coord,
@@ -38,8 +33,8 @@ pub const Window = struct {
         },
     };
 
-    pub fn init(allocator: *Allocator, app: *App, view: View) ! Window {
-        var views = ArrayList(View).init(allocator);
+    pub fn init(app: *App, view: Id) ! Id {
+        var views = ArrayList(Id).init(app.allocator);
         try views.append(view);
         
         // pretty arbitrary
@@ -89,21 +84,21 @@ pub const Window = struct {
         // ignore MOUSEMOTION since we just look at current state
         // c.SDL_EventState( c.SDL_MOUSEMOTION, c.SDL_IGNORE );
         
-        return Window{
-            .allocator = allocator,
+        return app.putThing(Window{
+            .app = app,
             .views = views,
             
             .sdl_window = sdl_window,
             .width = init_width,
             .height = init_height,
-            .commands = ArrayList(Command).init(allocator),
+            .commands = ArrayList(Command).init(app.allocator),
             
             .gl_context = gl_context,
-            .texture_buffer = ArrayList(Quad(Vec2f)).init(allocator),
-            .vertex_buffer = ArrayList(Quad(Vec2f)).init(allocator),
-            .color_buffer = ArrayList(Quad(Color)).init(allocator),
-            .index_buffer = ArrayList([2]Tri(u32)).init(allocator),
-        };
+            .texture_buffer = ArrayList(Quad(Vec2f)).init(app.allocator),
+            .vertex_buffer = ArrayList(Quad(Vec2f)).init(app.allocator),
+            .color_buffer = ArrayList(Quad(Color)).init(app.allocator),
+            .index_buffer = ArrayList([2]Tri(u32)).init(app.allocator),
+        });
     }
 
     pub fn deinit(self: *Window) void {
@@ -117,7 +112,7 @@ pub const Window = struct {
         c.SDL_DestroyWindow(self.window);
     }
 
-    pub fn frame(self: *Window, app: *App, events: []const c.SDL_Event) ! void {
+    pub fn frame(self: *Window, events: []const c.SDL_Event) ! void {
         // figure out window size
         var w: c_int = undefined;
         var h: c_int = undefined;
@@ -126,7 +121,7 @@ pub const Window = struct {
         self.height = @intCast(Coord, h);
         const window_rect = Rect{ .x = 0, .y = 0, .w = self.width, .h = self.height };
 
-        var view_events = ArrayList(c.SDL_Event).init(self.allocator);
+        var view_events = ArrayList(c.SDL_Event).init(self.app.allocator);
         defer view_events.deinit();
         
         // handle events
@@ -138,8 +133,8 @@ pub const Window = struct {
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
                             'o' => {
-                                var file_opener = try FileOpener.init(self.allocator, "/home/jamie/");
-                                try self.pushView(.{.FileOpener = file_opener});
+                                const file_opener_id = try FileOpener.init(self.app, "/home/jamie/");
+                                try self.pushView(file_opener_id);
                                 handled = true;
                             },
                             else => {},
@@ -153,25 +148,27 @@ pub const Window = struct {
         }
 
         // run view frame
-        switch (self.views.items[self.views.items.len-1]) {
-            .Editor => |*editor| try editor.frame(app, self, window_rect, view_events.items),
-            .FileOpener => |*file_opener| try file_opener.frame(app, self, window_rect, view_events.items),
+        var view = self.app.getThing(self.views.items[self.views.items.len-1]);
+        switch (view) {
+            .Editor => |editor| try editor.frame(self, window_rect, view_events.items),
+            .FileOpener => |file_opener| try file_opener.frame(self, window_rect, view_events.items),
+            else => panic("Not a view: {}", .{view}),
         }
         
         // convert draw commands into quads
         for (self.commands.items) |command| {
             switch (command) {
                 .Rect => |rect| {
-                    try self.renderQuad(app.atlas, rect.rect, app.atlas.white_rect, rect.color);
+                    try self.renderQuad(self.app.atlas, rect.rect, self.app.atlas.white_rect, rect.color);
                 },
                 .Text => |text| {
                     // TODO going to need to be able to clip text
                     var dst: Rect = .{ .x = text.pos.x, .y = text.pos.y, .w = 0, .h = 0 };
                     for (text.chars) |char| {
-                        const src = app.atlas.char_to_rect[char];
+                        const src = self.app.atlas.char_to_rect[char];
                         dst.w = src.w;
                         dst.h = src.h;
-                        try self.renderQuad(app.atlas, dst, src, text.color);
+                        try self.renderQuad(self.app.atlas, dst, src, text.color);
                         dst.x += src.w;
                     }
                 }
@@ -264,14 +261,12 @@ pub const Window = struct {
 
     // view api
 
-    pub fn pushView(self: *Window, view: View) ! void {
+    pub fn pushView(self: *Window, view: Id) ! void {
         try self.views.append(view);
     }
 
     pub fn popView(self: *Window) void {
         _ = self.views.pop();
-        // TODO probably better to gc buffers/views etc
-        // view.deinit();
     }  
 
     // drawing api

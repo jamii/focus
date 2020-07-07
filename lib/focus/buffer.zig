@@ -1,15 +1,17 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
+const App = focus.App;
+const Id = focus.Id;
 
 pub const Buffer = struct {
-    allocator: *Allocator,
+    app: *App,
     bytes: ArrayList(u8),
 
-    pub fn init(allocator: *Allocator) Buffer {
-        return Buffer{
-            .allocator = allocator,
-            .bytes = ArrayList(u8).init(allocator),
-        };
+    pub fn init(app: *App) ! Id {
+        return app.putThing(Buffer{
+            .app = app,
+            .bytes = ArrayList(u8).init(app.allocator),
+        });
     }
 
     pub fn deinit(self: *Buffer) void {

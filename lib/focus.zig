@@ -15,42 +15,109 @@ pub fn run(allocator: *Allocator) !void {
     }
 }
 
+pub const Tag = packed enum(u8) {
+    Buffer,
+    Editor,
+    FileOpener,
+    Window,
+
+    comptime {
+        assert(@sizeOf(@This()) == 1);
+    }
+};
+
+pub fn tagOf(comptime thing_type: type) Tag {
+    return std.meta.stringToEnum(Tag, @typeName(thing_type)).?;
+}
+
+pub const Id = packed struct {
+    id: u56,
+    tag: Tag,
+
+    comptime {
+        assert(@sizeOf(@This()) == 8);
+    }
+};
+
+pub const Thing = union(Tag) {
+    Buffer: *Buffer,
+    Editor: *Editor,
+    FileOpener: *FileOpener,
+    Window: *Window,
+
+    pub fn deinit(self: *Thing) void {
+        inline for (@typeInfo(self).Union.fields) |field| {
+            if (@enumToInt(std.meta.tag(Thing)) == field.enum_field.?.value) {
+                @field(self, field.name).deinit();
+            }
+        }
+    }
+};
+
 pub const App = struct {
     allocator: *Allocator,
     atlas: *Atlas,
-    window: *Window,
+    next_id: u56,
+    things: DeepHashMap(Id, Thing),
 
-    pub fn init(allocator: *Allocator) ! App {
+    pub fn init(allocator: *Allocator) ! *App {
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
             panic("SDL init failed: {s}", .{c.SDL_GetError()});
         
         var atlas = try allocator.create(Atlas);
         atlas.* = try Atlas.init(allocator);
-        var buffer = try allocator.create(Buffer);
-        buffer.* = Buffer.init(allocator);
-        try buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n"**20000));
-        var editor = try Editor.init(allocator, buffer);
-        var window = try allocator.create(Window);
 
-        var self = App{
+        var self = try allocator.create(App);
+        self.* = App{
             .allocator = allocator,
             .atlas = atlas,
-            .window = window,
+            .next_id = 0,
+            .things = DeepHashMap(Id, Thing).init(allocator),
         };
-        
-        self.window.* = try Window.init(allocator, &self, .{.Editor = editor});
+
+        const buffer_id = try Buffer.init(self);
+        const editor_id = try Editor.init(self, buffer_id);
+        const window_id = try Window.init(self, editor_id);
+
+        try self.getThing(buffer_id).Buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n"**20000));
         
         return self;
     }
 
     pub fn deinit(self: *App) void {
-        self.editor.deinit();
-        self.allocator.destroy(self.editor);
-        self.buffer.deinit();
-        self.allocator.destroy(self.buffer);
-        self.window.deinit();
-        self.allocator.destroy(self.window);
+        var thing_iter = self.things.iterator();
+        while (thing_iter.next()) |kv| {
+            kv.value.deinit();
+            self.allocator.destroy(kv.value);
+        }
         self.atlas.deinit();
+        self.allocator.destroy(self.atlas);
+
+        self.allocator.destroy(self);
+    }
+
+    // TODO entity gc
+    
+    pub fn putThing(self: *App, thing: var) ! Id {
+        const id = Id{
+            .tag = comptime tagOf(@TypeOf(thing)),
+            .id = self.next_id,
+        };
+        self.next_id += 1;
+        const thing_ptr = try self.allocator.create(@TypeOf(thing));
+        thing_ptr.* = thing;
+        _ = try self.things.put(id, @unionInit(Thing, @typeName(@TypeOf(thing)), thing_ptr));
+        return id;
+    }
+
+    pub fn getThing(self: *App, id: Id) Thing {
+        _ = self.things.getValue(id); // TODO this is a workaround for some kind of codegen bug where the first call to getValue is sometimes null
+        if (self.things.getValue(id)) |thing| {
+            assert(std.meta.activeTag(thing) == id.tag);
+            return thing;
+        } else {
+            panic("Missing thing: {}", .{id});
+        }
     }
 
     pub fn frame(self: *App) ! void {
@@ -67,8 +134,17 @@ pub const App = struct {
             try events.append(event);
         }
 
-        // run window frame
-        try self.window.frame(self, events.items);
+        // run window frames
+        // collect all windows up front, because the list might change during frame
+        var windows = ArrayList(*Window).init(self.allocator);
+        defer windows.deinit();
+        var entity_iter = self.things.iterator();
+        while (entity_iter.next()) |kv| {
+            if (kv.value == .Window) try windows.append(kv.value.Window);
+        }
+        for (windows.items) |window| {
+            try window.frame(events.items);
+        }
         
         // warn("frame time: {}ns\n", .{timer.read()});
     }

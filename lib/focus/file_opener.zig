@@ -1,36 +1,42 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
+const App = focus.App;
+const Id = focus.Id;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
 const Window = focus.Window;
-const App = focus.App;
 
 pub const FileOpener = struct {
-    allocator: *Allocator,
-    buffer: *Buffer,
-    editor: Editor,
+    app: *App,
+    buffer_id: Id,
+    editor_id: Id,
 
-    pub fn init(allocator: *Allocator, current_directory: []const u8) ! FileOpener {
-        var buffer = try allocator.create(Buffer);
-        buffer.* = Buffer.init(allocator);
-        try buffer.insert(0, current_directory);
-        var editor = try Editor.init(allocator, buffer);
-        editor.goBufferEnd(editor.getMainCursor());
-        return FileOpener{
-            .allocator = allocator,
-            .buffer = buffer,
-            .editor = editor,
+    pub fn init(app: *App, current_directory: []const u8) ! Id {
+        const buffer_id = try Buffer.init(app);
+        const editor_id = try Editor.init(app, buffer_id);
+        var self = FileOpener{
+            .app = app,
+            .buffer_id = buffer_id,
+            .editor_id = editor_id,
         };
+        try self.buffer().insert(0, current_directory);
+        self.editor().goBufferEnd(self.editor().getMainCursor());
+        return app.putThing(self);
     }
 
     pub fn deinit(self: *FileOpener) void {
-        self.editor.deinit();
-        self.buffer.deinit();
-        try self.allocator.destroy(self.buffer);
     }
 
-    pub fn frame(self: *FileOpener, app: *App, window: *Window, rect: Rect, events: []const c.SDL_Event) ! void {
-        var editor_events = ArrayList(c.SDL_Event).init(self.allocator);
+    pub fn buffer(self: *FileOpener) *Buffer {
+        return self.app.getThing(self.buffer_id).Buffer;
+    }
+
+    pub fn editor(self: *FileOpener) *Editor {
+        return self.app.getThing(self.editor_id).Editor;
+    }
+
+    pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) ! void {
+        var editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
         defer editor_events.deinit();
 
         // handle events
@@ -51,9 +57,9 @@ pub const FileOpener = struct {
                     if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_RETURN => {
-                                // TODO actually open file :)
                                 window.popView();
-                                try window.pushView(.{.Editor = self.editor});
+                                // TODO actually open file :)
+                                try window.pushView(self.editor_id);
                                 handled = true;
                             },
                             else => {},
@@ -72,16 +78,16 @@ pub const FileOpener = struct {
             .x = rect.x,
             .y = rect.y,
             .w = rect.w,
-            .h = app.atlas.char_height,
+            .h = self.app.atlas.char_height,
         };
-        try self.editor.frame(app, window, editor_rect, editor_events.items);
+        try self.editor().frame(window, editor_rect, editor_events.items);
 
         // remove any sneaky newlines
         {
             var pos: usize = 0;
-            while (self.buffer.searchForwards(pos, "\n")) |new_pos| {
+            while (self.buffer().searchForwards(pos, "\n")) |new_pos| {
                 pos = new_pos;
-                self.buffer.delete(pos, pos+1);
+                self.buffer().delete(pos, pos+1);
             }
         }
 
