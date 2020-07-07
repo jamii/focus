@@ -105,9 +105,8 @@ pub const Editor = struct {
                                 try self.collapseCursors();
                                 self.clearMark();
                             },
-                            'd' => {
-                                try self.addNextMatch();
-                            },
+                            'd' => try self.addNextMatch(),
+                            's' => try self.buffer().save(),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {

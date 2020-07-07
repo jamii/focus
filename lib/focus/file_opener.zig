@@ -12,7 +12,7 @@ pub const FileOpener = struct {
     editor_id: Id,
 
     pub fn init(app: *App, current_directory: []const u8) ! Id {
-        const buffer_id = try Buffer.init(app);
+        const buffer_id = try Buffer.initEmpty(app);
         const editor_id = try Editor.init(app, buffer_id);
         var self = FileOpener{
             .app = app,
@@ -57,25 +57,12 @@ pub const FileOpener = struct {
                     if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_RETURN => {
-                                const new_buffer_id = try Buffer.init(self.app);
-                                const new_editor_id = try Editor.init(self.app, new_buffer_id);
-                                var new_buffer = self.app.getThing(new_buffer_id).Buffer;
-                                
                                 const filename = try self.buffer().dupe(self.app.allocator, 0, self.buffer().getBufferEnd());
-                                defer self.app.allocator.free(filename);
-                                const file = try std.fs.cwd().createFile(filename, .{.read=true, .truncate=false});
-                                const chunk_size = 1024;
-                                var buf = try self.app.allocator.alloc(u8, chunk_size);
-                                defer self.app.allocator.free(buf);
-                                while (true) {
-                                    const len = try file.readAll(buf);
-                                    try new_buffer.bytes.appendSlice(buf[0..len]);
-                                    if (len < chunk_size) break;
-                                }
-                                    
+                                errdefer self.app.allocator.free(filename);
+                                const new_buffer_id = try Buffer.initFromFilename(self.app, filename);
+                                const new_editor_id = try Editor.init(self.app, new_buffer_id);
                                 window.popView();
                                 try window.pushView(new_editor_id);
-                                
                                 handled = true;
                             },
                             else => {},

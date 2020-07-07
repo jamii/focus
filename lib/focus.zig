@@ -75,7 +75,7 @@ pub const App = struct {
             .things = DeepHashMap(Id, Thing).init(allocator),
         };
 
-        const buffer_id = try Buffer.init(self);
+        const buffer_id = try Buffer.initEmpty(self);
         const editor_id = try Editor.init(self, buffer_id);
         const window_id = try Window.init(self, editor_id);
 

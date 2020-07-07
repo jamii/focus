@@ -3,19 +3,65 @@ usingnamespace focus.common;
 const App = focus.App;
 const Id = focus.Id;
 
+pub const BufferSource = union(enum) {
+    None,
+    Filename: []const u8,
+};
+
 pub const Buffer = struct {
     app: *App,
+    source: BufferSource,
     bytes: ArrayList(u8),
 
-    pub fn init(app: *App) ! Id {
+    pub fn initEmpty(app: *App) ! Id {
         return app.putThing(Buffer{
             .app = app,
+            .source = .None,
             .bytes = ArrayList(u8).init(app.allocator),
+        });
+    }
+
+    pub fn initFromFilename(app: *App, filename: []const u8) ! Id {
+        var bytes = ArrayList(u8).init(app.allocator);
+        errdefer bytes.deinit();
+        
+        const file = try std.fs.cwd().createFile(filename, .{.read=true, .truncate=false});
+        defer file.close();
+        
+        const chunk_size = 1024;
+        var buf = try app.allocator.alloc(u8, chunk_size);
+        defer app.allocator.free(buf);
+        
+        while (true) {
+            const len = try file.readAll(buf);
+            try bytes.appendSlice(buf[0..len]);
+            if (len < chunk_size) break;
+        }
+        
+         return app.putThing(Buffer{
+             .app = app,
+             .source = .{.Filename = filename},
+             .bytes = bytes,
         });
     }
 
     pub fn deinit(self: *Buffer) void {
         self.bytes.deinit();
+        switch (self.source) {
+            .None => {},
+            .Filename => |filename| self.app.allocator.free(filename),
+        }
+    }
+
+    pub fn save(self: *Buffer) ! void {
+        switch (self.source) {
+            .None => {},
+            .Filename => |filename| {
+                const file = try std.fs.cwd().createFile(filename, .{.read=false, .truncate=true});
+                defer file.close();
+                try file.writeAll(self.bytes.items);
+            }
+        }
     }
 
     pub fn getBufferEnd(self: *Buffer) usize {
