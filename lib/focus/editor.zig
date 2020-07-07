@@ -129,10 +129,10 @@ pub const Editor = struct {
                                 for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'});
                                 self.clearMark();
                             },
-                            c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                            c.SDLK_LEFT => for (self.cursors.items) |*cursor| self.goLeft(cursor),
-                            c.SDLK_DOWN => for (self.cursors.items) |*cursor| self.goDown(cursor),
-                            c.SDLK_UP => for (self.cursors.items) |*cursor| self.goUp(cursor),
+                            // c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
+                            // c.SDLK_LEFT => for (self.cursors.items) |*cursor| self.goLeft(cursor),
+                            // c.SDLK_DOWN => for (self.cursors.items) |*cursor| self.goDown(cursor),
+                            // c.SDLK_UP => for (self.cursors.items) |*cursor| self.goUp(cursor),
                             c.SDLK_DELETE => {
                                 for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
                                 self.clearMark();
