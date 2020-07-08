@@ -19,23 +19,26 @@ pub const FileOpener = struct {
             .buffer_id = buffer_id,
             .editor_id = editor_id,
         };
-        try self.buffer().insert(0, current_directory);
-        self.editor().goBufferEnd(self.editor().getMainCursor());
+        try self.getBuffer().insert(0, current_directory);
+        self.getEditor().goBufferEnd(self.getEditor().getMainCursor());
         return app.putThing(self);
     }
 
     pub fn deinit(self: *FileOpener) void {
     }
 
-    pub fn buffer(self: *FileOpener) *Buffer {
+    pub fn getBuffer(self: *FileOpener) *Buffer {
         return self.app.getThing(self.buffer_id).Buffer;
     }
 
-    pub fn editor(self: *FileOpener) *Editor {
+    pub fn getEditor(self: *FileOpener) *Editor {
         return self.app.getThing(self.editor_id).Editor;
     }
 
     pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) ! void {
+        var completions_rect = rect;
+        const editor_rect = completions_rect.splitTop(self.app.atlas.char_height, 0);
+        
         var editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
         defer editor_events.deinit();
 
@@ -57,7 +60,7 @@ pub const FileOpener = struct {
                     if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_RETURN => {
-                                const filename = try self.buffer().dupe(self.app.allocator, 0, self.buffer().getBufferEnd());
+                                const filename = try self.getBuffer().dupe(self.app.allocator, 0, self.getBuffer().getBufferEnd());
                                 errdefer self.app.allocator.free(filename);
                                 const new_buffer_id = try Buffer.initFromFilename(self.app, filename);
                                 const new_editor_id = try Editor.init(self.app, new_buffer_id);
@@ -77,23 +80,53 @@ pub const FileOpener = struct {
         }
 
         // run editor frame
-        const editor_rect = Rect{
-            .x = rect.x,
-            .y = rect.y,
-            .w = rect.w,
-            .h = self.app.atlas.char_height,
-        };
-        try self.editor().frame(window, editor_rect, editor_events.items);
+        try self.getEditor().frame(window, editor_rect, editor_events.items);
 
         // remove any sneaky newlines
         {
             var pos: usize = 0;
-            while (self.buffer().searchForwards(pos, "\n")) |new_pos| {
+            while (self.getBuffer().searchForwards(pos, "\n")) |new_pos| {
                 pos = new_pos;
-                self.buffer().delete(pos, pos+1);
+                self.getBuffer().delete(pos, pos+1);
             }
         }
 
-        // TODO render autocomplete
+        // get completions
+        var completions = ArrayList([]const u8).init(self.app.allocator);
+        // TODO need to figure out lifetimes for rendered text - probably do atlas lookup at queue time
+        // defer {
+        //     for (completions.items) |completion| {
+        //         self.app.allocator.free(completion);
+        //     }
+        //     completions.deinit();
+        // }
+        {
+            const path = self.getBuffer().bytes.items;
+            const dirname_o = if (path.len > 0 and std.fs.path.isSep(path[path.len-1]))
+                path
+                else
+                std.fs.path.dirname(path);
+            if (dirname_o) |dirname| {
+                var dir = try std.fs.cwd().openDir(dirname, .{.iterate=true});
+                defer dir.close();
+                var dir_iter = dir.iterate();
+                while (try dir_iter.next()) |entry| {
+                    try completions.append(try std.mem.dupe(self.app.allocator, u8, entry.name));
+                }
+            }
+        }
+
+        // render autocomplete
+        const text_color = Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 255 };
+        for (completions.items) |completion, i| {
+            try window.queueText(
+                .{
+                    .x = completions_rect.x,
+                    .y = completions_rect.y + (@intCast(Coord, i) * self.app.atlas.char_height),
+                },
+                text_color,
+                completion,
+            );
+        }
     }
 };

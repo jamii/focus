@@ -182,6 +182,14 @@ pub const Rect = struct {
         self.h -= h + margin;
         return split;
     }
+
+    pub fn splitTop(self: *Rect, h: Coord, margin: Coord) Rect {
+        assert(self.h >= h);
+        const split = Rect{.x=self.x, .y=self.y, .w=self.w, .h=h};
+        self.y += h + margin;
+        self.h -= h + margin;
+        return split;
+    }
 };
 
 pub const Vec2 = struct {
