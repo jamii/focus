@@ -102,16 +102,23 @@ pub const FileOpener = struct {
         // }
         {
             const path = self.getBuffer().bytes.items;
-            const dirname_o = if (path.len > 0 and std.fs.path.isSep(path[path.len-1]))
-                path
-                else
-                std.fs.path.dirname(path);
+            var dirname_o: ?[]const u8 = null;
+            var basename: []const u8 = "";
+            if (path.len > 0 and std.fs.path.isSep(path[path.len-1])) {
+                dirname_o = path;
+                basename = "";
+            } else {
+                dirname_o = std.fs.path.dirname(path);
+                basename = std.fs.path.basename(path);
+            }
             if (dirname_o) |dirname| {
                 var dir = try std.fs.cwd().openDir(dirname, .{.iterate=true});
                 defer dir.close();
                 var dir_iter = dir.iterate();
                 while (try dir_iter.next()) |entry| {
-                    try completions.append(try std.mem.dupe(self.app.allocator, u8, entry.name));
+                    if (std.mem.startsWith(u8, entry.name, basename)) {
+                        try completions.append(try std.mem.dupe(self.app.allocator, u8, entry.name));
+                    }
                 }
             }
         }
