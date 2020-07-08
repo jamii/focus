@@ -72,7 +72,7 @@ pub const FileOpener = struct {
                             else => {},
                         }
                     }
-                     if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
+                    if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
                         switch (sym.sym) {
                             'k' => {
                                 self.selected = completions_buffer.countLines() - 1;
