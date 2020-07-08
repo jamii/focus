@@ -43,6 +43,7 @@ pub const FileOpener = struct {
 
     pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) ! void {
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
+        var input_editor = self.app.getThing(self.input_editor_id).Editor;
         var completions_buffer = self.app.getThing(self.completions_buffer_id).Buffer;
         var completions_editor = self.app.getThing(self.completions_editor_id).Editor;
         
@@ -89,8 +90,16 @@ pub const FileOpener = struct {
                             c.SDLK_RETURN => {
                                 var filename = ArrayList(u8).init(self.app.allocator);
                                 errdefer filename.deinit();
-                                try filename.appendSlice(input_buffer.bytes.items);
-                                if (self.selected > 0) {
+                                if (self.selected == 0) {
+                                    try filename.appendSlice(input_buffer.bytes.items);
+                                } else {
+                                    const path = input_buffer.bytes.items;
+                                    const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len-1]))
+                                        path[0..path.len-1]
+                                        else
+                                        std.fs.path.dirname(path) orelse "";
+                                    try filename.appendSlice(dirname);
+                                    try filename.append('/');
                                     const selection = try completions_editor.dupeSelection(completions_editor.getMainCursor());
                                     defer self.app.allocator.free(selection);
                                     try filename.appendSlice(selection);
@@ -100,6 +109,33 @@ pub const FileOpener = struct {
                                 window.popView();
                                 try window.pushView(new_editor_id);
                                 handled = true;
+                            },
+                            c.SDLK_TAB => {
+                                var min_common_prefix_o: ?[]const u8 = null;
+                                var lines_iter = std.mem.split(completions_buffer.bytes.items, "\n");
+                                while (lines_iter.next()) |line| {
+                                    if (line.len != 0) {
+                                        if (min_common_prefix_o) |min_common_prefix| {
+                                            var i: usize = 0;
+                                            while (i < min(min_common_prefix.len, line.len) and min_common_prefix[i] == line[i]) i += 1;
+                                            min_common_prefix_o = line[0..i];
+                                        } else {
+                                            min_common_prefix_o = line;
+                                        }
+                                    }
+                                }
+                                if (min_common_prefix_o) |min_common_prefix| {
+                                    const path = input_buffer.bytes.items;
+                                    const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len-1]))
+                                        path[0..path.len-1]
+                                        else
+                                        std.fs.path.dirname(path) orelse "";
+                                    // TODO is dirname always a prefix of path?
+                                    input_buffer.delete(dirname.len, input_buffer.getBufferEnd());
+                                    try input_buffer.insert(input_buffer.getBufferEnd(), "/");
+                                    try input_buffer.insert(input_buffer.getBufferEnd(), min_common_prefix);
+                                    input_editor.goPos(input_editor.getMainCursor(), input_buffer.getBufferEnd());
+                                }
                             },
                             else => {},
                         }
@@ -128,7 +164,7 @@ pub const FileOpener = struct {
             var dirname_o: ?[]const u8 = null;
             var basename: []const u8 = "";
             if (path.len > 0 and std.fs.path.isSep(path[path.len-1])) {
-                dirname_o = path;
+                dirname_o = path[0..path.len-1];
                 basename = "";
             } else {
                 dirname_o = std.fs.path.dirname(path);
@@ -162,7 +198,7 @@ pub const FileOpener = struct {
         // run editor frames
         var completions_rect = rect;
         const input_rect = completions_rect.splitTop(self.app.atlas.char_height, self.app.atlas.char_height);
-        try self.app.getThing(self.input_editor_id).Editor.frame(window, input_rect, input_editor_events.items);
-        try self.app.getThing(self.completions_editor_id).Editor.frame(window, completions_rect, &[0]c.SDL_Event{});
+        try input_editor.frame(window, input_rect, input_editor_events.items);
+        try completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
     }
 };
