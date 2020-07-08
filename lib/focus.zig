@@ -15,28 +15,20 @@ pub fn run(allocator: *Allocator) !void {
     }
 }
 
-pub const Tag = packed enum(u8) {
+pub const Tag = enum(u8) {
     Buffer,
     Editor,
     FileOpener,
     Window,
-
-    comptime {
-        assert(@sizeOf(@This()) == 1);
-    }
 };
 
 pub fn tagOf(comptime thing_type: type) Tag {
     return std.meta.stringToEnum(Tag, @typeName(thing_type)).?;
 }
 
-pub const Id = packed struct {
-    id: u56,
+pub const Id = struct {
     tag: Tag,
-
-    comptime {
-        assert(@sizeOf(@This()) == 8);
-    }
+    id: u64,
 };
 
 pub const Thing = union(Tag) {
@@ -56,8 +48,9 @@ pub const Thing = union(Tag) {
 
 pub const App = struct {
     allocator: *Allocator,
+    // TODO add per-frame arena allocator?
     atlas: *Atlas,
-    next_id: u56,
+    next_id: u64,
     things: DeepHashMap(Id, Thing),
 
     pub fn init(allocator: *Allocator) ! *App {
@@ -111,11 +104,14 @@ pub const App = struct {
     }
 
     pub fn getThing(self: *App, id: Id) Thing {
-        _ = self.things.getValue(id); // TODO this is a workaround for some kind of codegen bug where the first call to getValue is sometimes null
         if (self.things.getValue(id)) |thing| {
             assert(std.meta.activeTag(thing) == id.tag);
             return thing;
         } else {
+            var things_iter = self.things.iterator();
+            while (things_iter.next())|kv| {
+                dump(kv.key);
+            }
             panic("Missing thing: {}", .{id});
         }
     }

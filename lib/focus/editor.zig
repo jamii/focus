@@ -35,6 +35,7 @@ pub const Editor = struct {
     buffer_id: Id,
     // cursors.len > 0
     cursors: ArrayList(Cursor),
+    prev_main_cursor_head_pos: usize,
     marked: bool,
     dragging: Dragging,
     // which pixel of the buffer is at the top of the viewport
@@ -53,6 +54,7 @@ pub const Editor = struct {
             .app = app,
             .buffer_id = buffer_id,
             .cursors = cursors,
+            .prev_main_cursor_head_pos = 0,
             .marked = false,
             .dragging = .NotDragging,
             .top_pixel = 0,
@@ -71,8 +73,6 @@ pub const Editor = struct {
     }
 
     pub fn frame(self: *Editor, window: *Window, rect: Rect, events: []const c.SDL_Event) ! void {
-        const main_cursor_pos = self.getMainCursor().head.pos;
-        
         // handle events
         // if we get textinput, we'll also get the keydown first
         // if the keydown is mapped to a command, we'll do that and ignore the textinput
@@ -222,7 +222,8 @@ pub const Editor = struct {
         }
 
         // if cursor moved, scroll it into editor
-        if (self.getMainCursor().head.pos != main_cursor_pos) {
+        if (self.getMainCursor().head.pos != self.prev_main_cursor_head_pos) {
+            self.prev_main_cursor_head_pos = self.getMainCursor().head.pos;
             const bottom_pixel = self.top_pixel + rect.h;
             const cursor_top_pixel = @intCast(isize, self.buffer().getLineColForPos(self.getMainCursor().head.pos)[0]) * @intCast(isize, self.app.atlas.char_height);
             const cursor_bottom_pixel = cursor_top_pixel + @intCast(isize, self.app.atlas.char_height);

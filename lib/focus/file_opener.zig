@@ -8,41 +8,47 @@ const Window = focus.Window;
 
 pub const FileOpener = struct {
     app: *App,
-    buffer_id: Id,
-    editor_id: Id,
+    input_buffer_id: Id,
+    input_editor_id: Id,
+    completions_buffer_id: Id,
+    completions_editor_id: Id,
+    selected: usize, // 0 for nothing selected, i-1 for line i
 
     pub fn init(app: *App, current_directory: []const u8) ! Id {
-        const buffer_id = try Buffer.initEmpty(app);
-        const editor_id = try Editor.init(app, buffer_id);
+        const input_buffer_id = try Buffer.initEmpty(app);
+        const input_editor_id = try Editor.init(app, input_buffer_id);
+        const completions_buffer_id = try Buffer.initEmpty(app);
+        const completions_editor_id = try Editor.init(app, completions_buffer_id);
         var self = FileOpener{
             .app = app,
-            .buffer_id = buffer_id,
-            .editor_id = editor_id,
+            .input_buffer_id = input_buffer_id,
+            .input_editor_id = input_editor_id,
+            .completions_buffer_id = completions_buffer_id,
+            .completions_editor_id = completions_editor_id,
+            .selected = 0,
         };
-        try self.getBuffer().insert(0, current_directory);
-        self.getEditor().goBufferEnd(self.getEditor().getMainCursor());
+
+        // default to current directory
+        try self.app.getThing(self.input_buffer_id).Buffer.insert(0, current_directory);
+        
+        // start cursor at end
+        var input_editor = self.app.getThing(self.input_editor_id).Editor;
+        input_editor.goBufferEnd(input_editor.getMainCursor());
+        
         return app.putThing(self);
     }
 
     pub fn deinit(self: *FileOpener) void {
     }
 
-    pub fn getBuffer(self: *FileOpener) *Buffer {
-        return self.app.getThing(self.buffer_id).Buffer;
-    }
-
-    pub fn getEditor(self: *FileOpener) *Editor {
-        return self.app.getThing(self.editor_id).Editor;
-    }
-
     pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) ! void {
-        var completions_rect = rect;
-        const editor_rect = completions_rect.splitTop(self.app.atlas.char_height, 0);
+        var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
+        var completions_buffer = self.app.getThing(self.completions_buffer_id).Buffer;
+        var completions_editor = self.app.getThing(self.completions_editor_id).Editor;
         
-        var editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
-        defer editor_events.deinit();
-
         // handle events
+        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
+        defer input_editor_events.deinit();
         for (events) |event| {
             var handled = false;
             switch (event.type) {
@@ -54,15 +60,42 @@ pub const FileOpener = struct {
                                 window.popView();
                                 handled = true;
                             },
+                            'k' => {
+                                self.selected += 1;
+                                handled = true;
+                            },
+                            'i' => {
+                                if (self.selected != 0) self.selected -= 1;
+                                handled = true;
+                            },
+                            else => {},
+                        }
+                    }
+                     if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
+                        switch (sym.sym) {
+                            'k' => {
+                                self.selected = completions_buffer.countLines() - 1;
+                                handled = true;
+                            },
+                            'i' => {
+                                self.selected = 1;
+                                handled = true;
+                            },
                             else => {},
                         }
                     }
                     if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_RETURN => {
-                                const filename = try self.getBuffer().dupe(self.app.allocator, 0, self.getBuffer().getBufferEnd());
-                                errdefer self.app.allocator.free(filename);
-                                const new_buffer_id = try Buffer.initFromFilename(self.app, filename);
+                                var filename = ArrayList(u8).init(self.app.allocator);
+                                errdefer filename.deinit();
+                                try filename.appendSlice(input_buffer.bytes.items);
+                                if (self.selected > 0) {
+                                    const selection = try completions_editor.dupeSelection(completions_editor.getMainCursor());
+                                    defer self.app.allocator.free(selection);
+                                    try filename.appendSlice(selection);
+                                }
+                                const new_buffer_id = try Buffer.initFromFilename(self.app, filename.toOwnedSlice());
                                 const new_editor_id = try Editor.init(self.app, new_buffer_id);
                                 window.popView();
                                 try window.pushView(new_editor_id);
@@ -75,33 +108,23 @@ pub const FileOpener = struct {
                 c.SDL_MOUSEWHEEL => handled = true,
                 else => {},
             }
-            // delegate other events to editor
-            if (!handled) try editor_events.append(event);
+            // delegate other events to input editor
+            if (!handled) try input_editor_events.append(event);
         }
-
-        // run editor frame
-        try self.getEditor().frame(window, editor_rect, editor_events.items);
 
         // remove any sneaky newlines
         {
             var pos: usize = 0;
-            while (self.getBuffer().searchForwards(pos, "\n")) |new_pos| {
+            while (input_buffer.searchForwards(pos, "\n")) |new_pos| {
                 pos = new_pos;
-                self.getBuffer().delete(pos, pos+1);
+                input_buffer.delete(pos, pos+1);
             }
         }
 
         // get completions
-        var completions = ArrayList([]const u8).init(self.app.allocator);
-        // TODO need to figure out lifetimes for rendered text - probably do atlas lookup at queue time
-        // defer {
-        //     for (completions.items) |completion| {
-        //         self.app.allocator.free(completion);
-        //     }
-        //     completions.deinit();
-        // }
         {
-            const path = self.getBuffer().bytes.items;
+            completions_buffer.bytes.shrink(0);
+            const path = input_buffer.bytes.items;
             var dirname_o: ?[]const u8 = null;
             var basename: []const u8 = "";
             if (path.len > 0 and std.fs.path.isSep(path[path.len-1])) {
@@ -117,23 +140,29 @@ pub const FileOpener = struct {
                 var dir_iter = dir.iterate();
                 while (try dir_iter.next()) |entry| {
                     if (std.mem.startsWith(u8, entry.name, basename)) {
-                        try completions.append(try std.mem.dupe(self.app.allocator, u8, entry.name));
+                        try completions_buffer.bytes.appendSlice(entry.name);
+                        try completions_buffer.bytes.append('\n');
                     }
                 }
             }
         }
 
-        // render autocomplete
-        const text_color = Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 255 };
-        for (completions.items) |completion, i| {
-            try window.queueText(
-                .{
-                    .x = completions_rect.x,
-                    .y = completions_rect.y + (@intCast(Coord, i) * self.app.atlas.char_height),
-                },
-                text_color,
-                completion,
-            );
+        // set selection
+        self.selected = min(self.selected, completions_buffer.countLines());
+        var cursor = completions_editor.getMainCursor();
+        if (self.selected != 0) {
+            completions_editor.goPos(cursor, completions_buffer.getPosForLineCol(self.selected - 1, 0));
+            completions_editor.setMark();
+            completions_editor.goLineEnd(cursor);
+        } else {
+            completions_editor.clearMark();
+            completions_editor.goBufferStart(cursor);
         }
+        
+        // run editor frames
+        var completions_rect = rect;
+        const input_rect = completions_rect.splitTop(self.app.atlas.char_height, self.app.atlas.char_height);
+        try self.app.getThing(self.input_editor_id).Editor.frame(window, input_rect, input_editor_events.items);
+        try self.app.getThing(self.completions_editor_id).Editor.frame(window, completions_rect, &[0]c.SDL_Event{});
     }
 };
