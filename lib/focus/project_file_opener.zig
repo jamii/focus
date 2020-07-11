@@ -7,13 +7,23 @@ const Editor = focus.Editor;
 const Window = focus.Window;
 const style = focus.style;
 
-pub const FileOpener = struct {
+const projects = [6][]const u8{
+    "/home/jamie/exo/",
+    "/home/jamie/exo-secret/",
+    "/home/jamie/imp/",
+    "/home/jamie/focus/",
+    "/home/jamie/tower/",
+    "/home/jamie/zig/",
+};
+
+pub const ProjectFileOpener = struct {
     app: *App,
     input_buffer_id: Id,
     input_editor_id: Id,
     completions_buffer_id: Id,
     completions_editor_id: Id,
     selected: usize, // 0 for nothing selected, i-1 for line i
+    completions: []const []const u8,
 
     pub fn init(app: *App, current_directory: []const u8) !Id {
         // TODO don't directly mutate buffer - messes up multiple cursors - go via editor instead
@@ -21,28 +31,43 @@ pub const FileOpener = struct {
         const input_editor_id = try Editor.init(app, input_buffer_id);
         const completions_buffer_id = try Buffer.initEmpty(app);
         const completions_editor_id = try Editor.init(app, completions_buffer_id);
-        var self = FileOpener{
+
+        var completions = ArrayList([]const u8).init(app.allocator);
+        for (projects) |project| {
+            const result = try std.ChildProcess.exec(.{
+                .allocator = app.allocator,
+                .argv = &[3][]const u8{"rg", "--files", "-0"},
+                .cwd = project,
+                .max_output_bytes = 128 * 1024 * 1024,
+            });
+            defer app.allocator.free(result.stdout);
+            defer app.allocator.free(result.stderr);
+            assert(result.term == .Exited and result.term.Exited == 0);
+            var lines = std.mem.split(result.stdout, &[1]u8{0});
+            while (lines.next()) |line| {
+                const completion = try std.fs.path.join(app.allocator, &[2][]const u8{project, line});
+                try completions.append(completion);
+            }
+        }
+
+        var self = ProjectFileOpener{
             .app = app,
             .input_buffer_id = input_buffer_id,
             .input_editor_id = input_editor_id,
             .completions_buffer_id = completions_buffer_id,
             .completions_editor_id = completions_editor_id,
             .selected = 0,
+            .completions = completions.toOwnedSlice(),
         };
-
-        // default to current directory
-        try self.app.getThing(self.input_buffer_id).Buffer.insert(0, current_directory);
-
-        // start cursor at end
-        var input_editor = self.app.getThing(self.input_editor_id).Editor;
-        input_editor.goBufferEnd(input_editor.getMainCursor());
 
         return app.putThing(self);
     }
 
-    pub fn deinit(self: *FileOpener) void {}
+    pub fn deinit(self: *ProjectFileOpener) void {
+        self.completions.deinit();
+    }
 
-    pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
+    pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
         var input_editor = self.app.getThing(self.input_editor_id).Editor;
         var completions_buffer = self.app.getThing(self.completions_buffer_id).Buffer;
@@ -79,13 +104,6 @@ pub const FileOpener = struct {
                                 if (self.selected == 0) {
                                     try filename.appendSlice(input_buffer.bytes.items);
                                 } else {
-                                    const path = input_buffer.bytes.items;
-                                    const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
-                                        path[0 .. path.len - 1]
-                                    else
-                                        std.fs.path.dirname(path) orelse "";
-                                    try filename.appendSlice(dirname);
-                                    try filename.append('/');
                                     const selection = try completions_editor.dupeSelection(completions_editor.getMainCursor());
                                     defer self.app.allocator.free(selection);
                                     try filename.appendSlice(selection);
@@ -118,13 +136,7 @@ pub const FileOpener = struct {
                                 }
                                 if (min_common_prefix_o) |min_common_prefix| {
                                     const path = input_buffer.bytes.items;
-                                    const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
-                                        path[0 .. path.len - 1]
-                                    else
-                                        std.fs.path.dirname(path) orelse "";
-                                    // TODO is dirname always a prefix of path?
-                                    input_buffer.delete(dirname.len, input_buffer.getBufferEnd());
-                                    try input_buffer.insert(input_buffer.getBufferEnd(), "/");
+                                    input_buffer.delete(0, input_buffer.getBufferEnd());
                                     try input_buffer.insert(input_buffer.getBufferEnd(), min_common_prefix);
                                     input_editor.goPos(input_editor.getMainCursor(), input_buffer.getBufferEnd());
                                 }
@@ -151,29 +163,13 @@ pub const FileOpener = struct {
             }
         }
 
-        // get and filter completions
+        // filter completions
         {
             completions_buffer.bytes.shrink(0);
-            const path = input_buffer.bytes.items;
-            var dirname_o: ?[]const u8 = null;
-            var basename: []const u8 = "";
-            if (path.len > 0 and std.fs.path.isSep(path[path.len - 1])) {
-                dirname_o = path[0 .. path.len - 1];
-                basename = "";
-            } else {
-                dirname_o = std.fs.path.dirname(path);
-                basename = std.fs.path.basename(path);
-            }
-            if (dirname_o) |dirname| {
-                var dir = try std.fs.cwd().openDir(dirname, .{ .iterate = true });
-                defer dir.close();
-                var dir_iter = dir.iterate();
-                while (try dir_iter.next()) |entry| {
-                    if (std.mem.startsWith(u8, entry.name, basename)) {
-                        try completions_buffer.bytes.appendSlice(entry.name);
-                        if (entry.kind == .Directory) try completions_buffer.bytes.append('/');
-                        try completions_buffer.bytes.append('\n');
-                    }
+            for (self.completions) |completion| {
+                if (std.mem.startsWith(u8, completion, input_buffer.bytes.items)) {
+                    try completions_buffer.bytes.appendSlice(completion);
+                    try completions_buffer.bytes.append('\n');
                 }
             }
         }

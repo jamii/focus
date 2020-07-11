@@ -4,6 +4,7 @@ const Atlas = focus.Atlas;
 const App = focus.App;
 const Id = focus.Id;
 const FileOpener = focus.FileOpener;
+const ProjectFileOpener = focus.ProjectFileOpener;
 
 pub const Window = struct {
     app: *App,
@@ -137,6 +138,11 @@ pub const Window = struct {
                                 try self.pushView(file_opener_id);
                                 handled = true;
                             },
+                            'p' => {
+                                const project_file_opener_id = try ProjectFileOpener.init(self.app, "/home/jamie/");
+                                try self.pushView(project_file_opener_id);
+                                handled = true;
+                            },
                             else => {},
                         }
                     }
@@ -152,6 +158,7 @@ pub const Window = struct {
         switch (view) {
             .Editor => |editor| try editor.frame(self, window_rect, view_events.items),
             .FileOpener => |file_opener| try file_opener.frame(self, window_rect, view_events.items),
+            .ProjectFileOpener => |project_file_opener| try project_file_opener.frame(self, window_rect, view_events.items),
             else => panic("Not a view: {}", .{view}),
         }
 

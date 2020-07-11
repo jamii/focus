@@ -4,6 +4,7 @@ pub const Atlas = @import("./focus/atlas.zig").Atlas;
 pub const Buffer = @import("./focus/buffer.zig").Buffer;
 pub const Editor = @import("./focus/editor.zig").Editor;
 pub const FileOpener = @import("./focus/file_opener.zig").FileOpener;
+pub const ProjectFileOpener = @import("./focus/project_file_opener.zig").ProjectFileOpener;
 pub const Window = @import("./focus/window.zig").Window;
 pub const style = @import("./focus/style.zig");
 
@@ -20,6 +21,7 @@ pub const Tag = enum(u8) {
     Buffer,
     Editor,
     FileOpener,
+    ProjectFileOpener,
     Window,
 };
 
@@ -36,6 +38,7 @@ pub const Thing = union(Tag) {
     Buffer: *Buffer,
     Editor: *Editor,
     FileOpener: *FileOpener,
+    ProjectFileOpener: *ProjectFileOpener,
     Window: *Window,
 
     pub fn deinit(self: *Thing) void {
