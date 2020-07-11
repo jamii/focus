@@ -1,5 +1,6 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
+const meta = focus.meta;
 const App = focus.App;
 const Id = focus.Id;
 const Buffer = focus.Buffer;
@@ -15,6 +16,10 @@ const projects = [6][]const u8{
     "/home/jamie/tower/",
     "/home/jamie/zig/",
 };
+
+// TODO arena allocator for lifespan of opener
+
+// TODO always have a selection, open first match on enter (reject if no match), open raw text on ctrl-enter
 
 pub const ProjectFileOpener = struct {
     app: *App,
@@ -165,12 +170,44 @@ pub const ProjectFileOpener = struct {
 
         // filter completions
         {
-            completions_buffer.bytes.shrink(0);
+            const filter = input_buffer.bytes.items;
+            const ScoredCompletion = struct {score: ?usize, completion: []const u8};
+            var scored_completions = ArrayList(ScoredCompletion).init(self.app.allocator);
+            defer scored_completions.deinit();
             for (self.completions) |completion| {
-                if (std.mem.startsWith(u8, completion, input_buffer.bytes.items)) {
-                    try completions_buffer.bytes.appendSlice(completion);
-                    try completions_buffer.bytes.append('\n');
+                if (filter.len > 0) {
+                    if (std.mem.indexOfScalar(u8, completion, filter[0])) |start| {
+                        var is_match = true;
+                        var end = start;
+                        for (filter[1..]) |char| {
+                            if (std.mem.indexOfScalarPos(u8, completion, end, char)) |new_end| {
+                                end = new_end;
+                            } else {
+                                is_match = false;
+                                break;
+                            }
+                        }
+                        if (is_match) {
+                            const score = end - start;
+                            try scored_completions.append(.{.score = score, .completion = completion});
+                        }
+                    }
+                } else {
+                    const score = 0;
+                    try scored_completions.append(.{.score = score, .completion = completion});
                 }
+            }
+            std.sort.sort(ScoredCompletion, scored_completions.items,
+                          struct {
+                              fn lessThan(a: ScoredCompletion, b: ScoredCompletion) bool {
+                                  return meta.deepCompare(a,b) == .LessThan;
+                              }
+                }.lessThan
+                          );
+            completions_buffer.bytes.shrink(0);
+            for (scored_completions.items) |scored_completion| {
+                try completions_buffer.bytes.appendSlice(scored_completion.completion);
+                try completions_buffer.bytes.append('\n');
             }
         }
 
