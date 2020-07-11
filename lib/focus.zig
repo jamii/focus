@@ -5,6 +5,7 @@ pub const Buffer = @import("./focus/buffer.zig").Buffer;
 pub const Editor = @import("./focus/editor.zig").Editor;
 pub const FileOpener = @import("./focus/file_opener.zig").FileOpener;
 pub const Window = @import("./focus/window.zig").Window;
+pub const style = @import("./focus/style.zig");
 
 usingnamespace common;
 

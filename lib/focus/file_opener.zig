@@ -5,6 +5,7 @@ const Id = focus.Id;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
 const Window = focus.Window;
+const style = focus.style;
 
 pub const FileOpener = struct {
     app: *App,
@@ -191,8 +192,10 @@ pub const FileOpener = struct {
 
         // run editor frames
         var completions_rect = rect;
-        const input_rect = completions_rect.splitTop(self.app.atlas.char_height, self.app.atlas.char_height);
+        const input_rect = completions_rect.splitTop(self.app.atlas.char_height, 0);
+        const border_rect = completions_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
         try input_editor.frame(window, input_rect, input_editor_events.items);
+        try window.queueRect(border_rect, style.text_color);
         try completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
     }
 };

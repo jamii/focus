@@ -4,6 +4,7 @@ const App = focus.App;
 const Id = focus.Id;
 const Buffer = focus.Buffer;
 const Window = focus.Window;
+const style = focus.style;
 
 pub const Point = struct {
     // what char we're at
@@ -243,14 +244,9 @@ pub const Editor = struct {
         const visible_end_line = visible_start_line + num_visible_lines;
 
         // draw background
-        const background_color = Color{ .r = 0x2e, .g = 0x34, .b = 0x36, .a = 255 };
-        try window.queueRect(rect, background_color);
+        try window.queueRect(rect, style.background_color);
 
         // draw cursors, selections, text
-        const text_color = Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 255 };
-        const multi_cursor_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 255 };
-        var highlight_color = text_color;
-        highlight_color.a = 100;
         var lines = std.mem.split(self.buffer().bytes.items, "\n");
         var line_ix: usize = 0;
         var line_start_pos: usize = 0;
@@ -274,7 +270,7 @@ pub const Editor = struct {
                                 .w = w,
                                 .h = self.app.atlas.char_height,
                             },
-                            if (self.cursors.items.len > 1) multi_cursor_color else text_color,
+                            if (self.cursors.items.len > 1) style.multi_cursor_color else style.text_color,
                         );
                     }
 
@@ -295,14 +291,14 @@ pub const Editor = struct {
                                 .y = @intCast(Coord, y),
                                 .w = @intCast(Coord, w),
                                 .h = self.app.atlas.char_height,
-                            }, highlight_color);
+                            }, style.highlight_color);
                         }
                     }
                 }
 
                 // draw text
                 // TODO need to ensure this text lives long enough - buffer might get changed in another window
-                try window.queueText(.{ .x = rect.x, .y = @intCast(Coord, y) }, text_color, line);
+                try window.queueText(.{ .x = rect.x, .y = @intCast(Coord, y) }, style.text_color, line);
             }
 
             line_start_pos = line_end_pos + 1; // + 1 for '\n'
@@ -313,7 +309,7 @@ pub const Editor = struct {
             const ratio = @intToFloat(f64, self.top_pixel) / @intToFloat(f64, max_pixels);
             const y = rect.y + min(@floatToInt(Coord, @intToFloat(f64, rect.h) * ratio), rect.h - self.app.atlas.char_height);
             const x = rect.x + rect.w - self.app.atlas.char_width;
-            try window.queueText(.{ .x = x, .y = y }, highlight_color, "<");
+            try window.queueText(.{ .x = x, .y = y }, style.highlight_color, "<");
         }
     }
 
