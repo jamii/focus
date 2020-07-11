@@ -14,7 +14,8 @@ pub const FileOpener = struct {
     completions_editor_id: Id,
     selected: usize, // 0 for nothing selected, i-1 for line i
 
-    pub fn init(app: *App, current_directory: []const u8) ! Id {
+    pub fn init(app: *App, current_directory: []const u8) !Id {
+        // TODO don't directly mutate buffer - messes up multiple cursors - go via editor instead
         const input_buffer_id = try Buffer.initEmpty(app);
         const input_editor_id = try Editor.init(app, input_buffer_id);
         const completions_buffer_id = try Buffer.initEmpty(app);
@@ -30,62 +31,46 @@ pub const FileOpener = struct {
 
         // default to current directory
         try self.app.getThing(self.input_buffer_id).Buffer.insert(0, current_directory);
-        
+
         // start cursor at end
         var input_editor = self.app.getThing(self.input_editor_id).Editor;
         input_editor.goBufferEnd(input_editor.getMainCursor());
-        
+
         return app.putThing(self);
     }
 
-    pub fn deinit(self: *FileOpener) void {
-    }
+    pub fn deinit(self: *FileOpener) void {}
 
-    pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) ! void {
+    pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
         var input_editor = self.app.getThing(self.input_editor_id).Editor;
         var completions_buffer = self.app.getThing(self.completions_buffer_id).Buffer;
         var completions_editor = self.app.getThing(self.completions_editor_id).Editor;
-        
+
         // handle events
         var input_editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
         defer input_editor_events.deinit();
         for (events) |event| {
-            var handled = false;
+            var delegate = false;
             switch (event.type) {
                 c.SDL_KEYDOWN => {
                     const sym = event.key.keysym;
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
-                            'q' => {
-                                window.popView();
-                                handled = true;
+                            'q' => window.popView(),
+                            'k' => self.selected += 1,
+                            'i' => if (self.selected != 0) {
+                                self.selected -= 1;
                             },
-                            'k' => {
-                                self.selected += 1;
-                                handled = true;
-                            },
-                            'i' => {
-                                if (self.selected != 0) self.selected -= 1;
-                                handled = true;
-                            },
-                            else => {},
+                            else => delegate = true,
                         }
-                    }
-                    if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
+                    } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
                         switch (sym.sym) {
-                            'k' => {
-                                self.selected = completions_buffer.countLines() - 1;
-                                handled = true;
-                            },
-                            'i' => {
-                                self.selected = 1;
-                                handled = true;
-                            },
-                            else => {},
+                            'k' => self.selected = completions_buffer.countLines() - 1,
+                            'i' => self.selected = 1,
+                            else => delegate = true,
                         }
-                    }
-                    if (sym.mod == 0) {
+                    } else if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_RETURN => {
                                 var filename = ArrayList(u8).init(self.app.allocator);
@@ -94,9 +79,9 @@ pub const FileOpener = struct {
                                     try filename.appendSlice(input_buffer.bytes.items);
                                 } else {
                                     const path = input_buffer.bytes.items;
-                                    const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len-1]))
-                                        path[0..path.len-1]
-                                        else
+                                    const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
+                                        path[0 .. path.len - 1]
+                                    else
                                         std.fs.path.dirname(path) orelse "";
                                     try filename.appendSlice(dirname);
                                     try filename.append('/');
@@ -104,11 +89,17 @@ pub const FileOpener = struct {
                                     defer self.app.allocator.free(selection);
                                     try filename.appendSlice(selection);
                                 }
-                                const new_buffer_id = try Buffer.initFromFilename(self.app, filename.toOwnedSlice());
-                                const new_editor_id = try Editor.init(self.app, new_buffer_id);
-                                window.popView();
-                                try window.pushView(new_editor_id);
-                                handled = true;
+                                if (filename.items.len > 0 and std.fs.path.isSep(filename.items[filename.items.len - 1])) {
+                                    input_buffer.bytes.shrink(0);
+                                    try input_buffer.bytes.appendSlice(filename.items);
+                                    input_editor.goBufferEnd(input_editor.getMainCursor());
+                                    filename.deinit();
+                                } else {
+                                    const new_buffer_id = try Buffer.initFromFilename(self.app, filename.toOwnedSlice());
+                                    const new_editor_id = try Editor.init(self.app, new_buffer_id);
+                                    window.popView();
+                                    try window.pushView(new_editor_id);
+                                }
                             },
                             c.SDLK_TAB => {
                                 var min_common_prefix_o: ?[]const u8 = null;
@@ -126,9 +117,9 @@ pub const FileOpener = struct {
                                 }
                                 if (min_common_prefix_o) |min_common_prefix| {
                                     const path = input_buffer.bytes.items;
-                                    const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len-1]))
-                                        path[0..path.len-1]
-                                        else
+                                    const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
+                                        path[0 .. path.len - 1]
+                                    else
                                         std.fs.path.dirname(path) orelse "";
                                     // TODO is dirname always a prefix of path?
                                     input_buffer.delete(dirname.len, input_buffer.getBufferEnd());
@@ -137,15 +128,17 @@ pub const FileOpener = struct {
                                     input_editor.goPos(input_editor.getMainCursor(), input_buffer.getBufferEnd());
                                 }
                             },
-                            else => {},
+                            else => delegate = true,
                         }
+                    } else {
+                        delegate = true;
                     }
                 },
-                c.SDL_MOUSEWHEEL => handled = true,
-                else => {},
+                c.SDL_MOUSEWHEEL => {},
+                else => delegate = true,
             }
             // delegate other events to input editor
-            if (!handled) try input_editor_events.append(event);
+            if (delegate) try input_editor_events.append(event);
         }
 
         // remove any sneaky newlines
@@ -153,7 +146,7 @@ pub const FileOpener = struct {
             var pos: usize = 0;
             while (input_buffer.searchForwards(pos, "\n")) |new_pos| {
                 pos = new_pos;
-                input_buffer.delete(pos, pos+1);
+                input_editor.delete(pos, pos + 1);
             }
         }
 
@@ -163,20 +156,21 @@ pub const FileOpener = struct {
             const path = input_buffer.bytes.items;
             var dirname_o: ?[]const u8 = null;
             var basename: []const u8 = "";
-            if (path.len > 0 and std.fs.path.isSep(path[path.len-1])) {
-                dirname_o = path[0..path.len-1];
+            if (path.len > 0 and std.fs.path.isSep(path[path.len - 1])) {
+                dirname_o = path[0 .. path.len - 1];
                 basename = "";
             } else {
                 dirname_o = std.fs.path.dirname(path);
                 basename = std.fs.path.basename(path);
             }
             if (dirname_o) |dirname| {
-                var dir = try std.fs.cwd().openDir(dirname, .{.iterate=true});
+                var dir = try std.fs.cwd().openDir(dirname, .{ .iterate = true });
                 defer dir.close();
                 var dir_iter = dir.iterate();
                 while (try dir_iter.next()) |entry| {
                     if (std.mem.startsWith(u8, entry.name, basename)) {
                         try completions_buffer.bytes.appendSlice(entry.name);
+                        if (entry.kind == .Directory) try completions_buffer.bytes.append('/');
                         try completions_buffer.bytes.append('\n');
                     }
                 }
@@ -194,7 +188,7 @@ pub const FileOpener = struct {
             completions_editor.clearMark();
             completions_editor.goBufferStart(cursor);
         }
-        
+
         // run editor frames
         var completions_rect = rect;
         const input_rect = completions_rect.splitTop(self.app.atlas.char_height, self.app.atlas.char_height);

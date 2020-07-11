@@ -53,10 +53,10 @@ pub const App = struct {
     next_id: u64,
     things: DeepHashMap(Id, Thing),
 
-    pub fn init(allocator: *Allocator) ! *App {
+    pub fn init(allocator: *Allocator) !*App {
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
             panic("SDL init failed: {s}", .{c.SDL_GetError()});
-        
+
         var atlas = try allocator.create(Atlas);
         atlas.* = try Atlas.init(allocator);
 
@@ -72,8 +72,8 @@ pub const App = struct {
         const editor_id = try Editor.init(self, buffer_id);
         const window_id = try Window.init(self, editor_id);
 
-        try self.getThing(buffer_id).Buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n"**20000));
-        
+        try self.getThing(buffer_id).Buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n" ** 20000));
+
         return self;
     }
 
@@ -90,8 +90,8 @@ pub const App = struct {
     }
 
     // TODO entity gc
-    
-    pub fn putThing(self: *App, thing: var) ! Id {
+
+    pub fn putThing(self: *App, thing: var) !Id {
         const id = Id{
             .tag = comptime tagOf(@TypeOf(thing)),
             .id = self.next_id,
@@ -109,14 +109,14 @@ pub const App = struct {
             return thing;
         } else {
             var things_iter = self.things.iterator();
-            while (things_iter.next())|kv| {
+            while (things_iter.next()) |kv| {
                 dump(kv.key);
             }
             panic("Missing thing: {}", .{id});
         }
     }
 
-    pub fn frame(self: *App) ! void {
+    pub fn frame(self: *App) !void {
         // fetch events
         var events = ArrayList(c.SDL_Event).init(self.allocator);
         defer events.deinit();

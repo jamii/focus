@@ -17,7 +17,7 @@ pub fn deepCompare(a: var, b: @TypeOf(a)) Ordering {
     switch (ti) {
         .Struct, .Enum, .Union => {
             if (@hasDecl(T, "deepCompare")) {
-                return T.deepCompare(a,b);
+                return T.deepCompare(a, b);
             }
         },
         else => {},

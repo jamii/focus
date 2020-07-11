@@ -28,19 +28,15 @@ pub fn panic(comptime fmt: []const u8, args: var) noreturn {
 }
 
 pub fn DeepHashMap(comptime K: type, comptime V: type) type {
-    return std.HashMap(
-        K, V,
-        struct {
-            fn hash(key: K) u32 {
-                return @truncate(u32, meta.deepHash(key));
-            }
-        }.hash,
-        struct {
-            fn equal(a: K, b: K) bool {
-                return meta.deepEqual(a,b);
-            }
-        }.equal
-    );
+    return std.HashMap(K, V, struct {
+        fn hash(key: K) u32 {
+            return @truncate(u32, meta.deepHash(key));
+        }
+    }.hash, struct {
+        fn equal(a: K, b: K) bool {
+            return meta.deepEqual(a, b);
+        }
+    }.equal);
 }
 
 pub fn dump(thing: var) void {
@@ -166,26 +162,26 @@ pub const Rect = struct {
     pub fn shrink(self: *const Rect, margin: Coord) Rect {
         assert(self.w >= 2 * margin);
         assert(self.h >= 2 * margin);
-        return Rect{.x=self.x+margin, .y=self.y+margin, .w=self.w-(2*margin), .h=self.h-(2*margin)};
+        return Rect{ .x = self.x + margin, .y = self.y + margin, .w = self.w - (2 * margin), .h = self.h - (2 * margin) };
     }
 
     pub fn splitRight(self: *Rect, w: Coord, margin: Coord) Rect {
         assert(self.w >= w);
-        const split = Rect{.x=self.x+self.w-w, .y=self.y, .w=w, .h=self.h};
+        const split = Rect{ .x = self.x + self.w - w, .y = self.y, .w = w, .h = self.h };
         self.w -= w + margin;
         return split;
     }
 
     pub fn splitBottom(self: *Rect, h: Coord, margin: Coord) Rect {
         assert(self.h >= h);
-        const split = Rect{.x=self.x, .y=self.y+self.h-h, .w=self.w, .h=h};
+        const split = Rect{ .x = self.x, .y = self.y + self.h - h, .w = self.w, .h = h };
         self.h -= h + margin;
         return split;
     }
 
     pub fn splitTop(self: *Rect, h: Coord, margin: Coord) Rect {
         assert(self.h >= h);
-        const split = Rect{.x=self.x, .y=self.y, .w=self.w, .h=h};
+        const split = Rect{ .x = self.x, .y = self.y, .w = self.w, .h = h };
         self.y += h + margin;
         self.h -= h + margin;
         return split;

@@ -15,17 +15,16 @@ pub const Atlas = struct {
     white_rect: Rect,
 
     pub const point_size = 10;
-    
-    pub fn init(allocator: *Allocator) ! Atlas {
+
+    pub fn init(allocator: *Allocator) !Atlas {
 
         // init SDL2_ttf
         if (c.TTF_Init() != 0)
             panic("TTF_Init failed: {s}", .{c.TTF_GetError()});
-        errdefer(c.TTF_Quit());
+        errdefer (c.TTF_Quit());
 
         // load font
-        var reader = c.SDL_RWFromConstMem(fira_code, @intCast(c_int, fira_code.len))
-            orelse panic("Font reader failed: {s}", .{c.SDL_GetError()});
+        var reader = c.SDL_RWFromConstMem(fira_code, @intCast(c_int, fira_code.len)) orelse panic("Font reader failed: {s}", .{c.SDL_GetError()});
         const font = c.TTF_OpenFontRW(
             reader,
             1, // automatically close reader
@@ -43,8 +42,7 @@ pub const Atlas = struct {
                 text[char] = @intCast(u8, char);
             }
         }
-        const surface = c.TTF_RenderUTF8_Blended(font, text, c.SDL_Color{.r=255, .g=255, .b=255, .a=255})
-            orelse panic("Atlas render failed: {s}", .{c.TTF_GetError()});
+        const surface = c.TTF_RenderUTF8_Blended(font, text, c.SDL_Color{ .r = 255, .g = 255, .b = 255, .a = 255 }) orelse panic("Atlas render failed: {s}", .{c.TTF_GetError()});
         defer c.SDL_FreeSurface(surface);
 
         // copy the texture
@@ -52,8 +50,8 @@ pub const Atlas = struct {
         const texture = try std.mem.dupe(allocator, Color, @ptrCast([*]Color, surface.*.pixels)[0..@intCast(usize, surface.*.w * surface.*.h)]);
 
         // make a white pixel
-        texture[0] = Color{.r=255, .g=255, .b=255, .a=255};
-        const white_rect = Rect{.x=0, .y=0, .w=1, .h=1};
+        texture[0] = Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+        const white_rect = Rect{ .x = 0, .y = 0, .w = 1, .h = 1 };
 
         // calculate char sizes
         // assume monospaced font
@@ -63,7 +61,7 @@ pub const Atlas = struct {
         // calculate location of each char
         var char_to_rect = try allocator.alloc(Rect, text.len);
         errdefer allocator.free(char_to_rect);
-        char_to_rect[0] = .{.x=0, .y=0, .w=0, .h=0};
+        char_to_rect[0] = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
         {
             var char: usize = 1;
             while (char < text.len) : (char += 1) {
@@ -96,5 +94,5 @@ pub const Atlas = struct {
         self.allocator.free(self.texture);
         c.TTF_CloseFont(self.font);
         c.TTF_Quit();
-    }    
+    }
 };

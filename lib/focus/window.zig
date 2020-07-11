@@ -9,12 +9,12 @@ pub const Window = struct {
     app: *App,
     // views.len > 0
     views: ArrayList(Id),
-    
+
     sdl_window: *c.SDL_Window,
     width: Coord,
     height: Coord,
     commands: ArrayList(Command),
-    
+
     gl_context: c.SDL_GLContext,
     texture_buffer: ArrayList(Quad(Vec2f)),
     vertex_buffer: ArrayList(Quad(Vec2f)),
@@ -33,10 +33,10 @@ pub const Window = struct {
         },
     };
 
-    pub fn init(app: *App, view: Id) ! Id {
+    pub fn init(app: *App, view: Id) !Id {
         var views = ArrayList(Id).init(app.allocator);
         try views.append(view);
-        
+
         // pretty arbitrary
         const init_width: usize = 1920;
         const init_height: usize = 1080;
@@ -54,7 +54,7 @@ pub const Window = struct {
         // init gl
         const gl_context = c.SDL_GL_CreateContext(sdl_window);
         if (c.SDL_GL_MakeCurrent(sdl_window, gl_context) != 0)
-            panic("Switching to GL context failed: {s}",  .{c.SDL_GetError()});
+            panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
         c.glEnable(c.GL_BLEND);
         c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
         c.glDisable(c.GL_CULL_FACE);
@@ -76,23 +76,23 @@ pub const Window = struct {
 
         // sync with monitor - causes input lag
         if (c.SDL_GL_SetSwapInterval(1) != 0)
-            panic("Setting swap interval failed: {}",  .{c.SDL_GetError()});
+            panic("Setting swap interval failed: {}", .{c.SDL_GetError()});
 
         // accept unicode input
         c.SDL_StartTextInput();
 
         // ignore MOUSEMOTION since we just look at current state
         // c.SDL_EventState( c.SDL_MOUSEMOTION, c.SDL_IGNORE );
-        
+
         return app.putThing(Window{
             .app = app,
             .views = views,
-            
+
             .sdl_window = sdl_window,
             .width = init_width,
             .height = init_height,
             .commands = ArrayList(Command).init(app.allocator),
-            
+
             .gl_context = gl_context,
             .texture_buffer = ArrayList(Quad(Vec2f)).init(app.allocator),
             .vertex_buffer = ArrayList(Quad(Vec2f)).init(app.allocator),
@@ -107,12 +107,12 @@ pub const Window = struct {
         self.vertex_buffer.deinit();
         self.texture_buffer.deinit();
         c.SDL_GL_DeleteContext(self.gl_context);
-        
+
         self.commands.deinit();
         c.SDL_DestroyWindow(self.window);
     }
 
-    pub fn frame(self: *Window, events: []const c.SDL_Event) ! void {
+    pub fn frame(self: *Window, events: []const c.SDL_Event) !void {
         // figure out window size
         var w: c_int = undefined;
         var h: c_int = undefined;
@@ -123,7 +123,7 @@ pub const Window = struct {
 
         var view_events = ArrayList(c.SDL_Event).init(self.app.allocator);
         defer view_events.deinit();
-        
+
         // handle events
         for (events) |event| {
             var handled = false;
@@ -148,13 +148,13 @@ pub const Window = struct {
         }
 
         // run view frame
-        var view = self.app.getThing(self.views.items[self.views.items.len-1]);
+        var view = self.app.getThing(self.views.items[self.views.items.len - 1]);
         switch (view) {
             .Editor => |editor| try editor.frame(self, window_rect, view_events.items),
             .FileOpener => |file_opener| try file_opener.frame(self, window_rect, view_events.items),
             else => panic("Not a view: {}", .{view}),
         }
-        
+
         // convert draw commands into quads
         for (self.commands.items) |command| {
             switch (command) {
@@ -171,15 +171,15 @@ pub const Window = struct {
                         try self.renderQuad(self.app.atlas, dst, src, text.color);
                         dst.x += src.w;
                     }
-                }
+                },
             }
         }
 
         // actual rendering
-        
+
         if (c.SDL_GL_MakeCurrent(self.sdl_window, self.gl_context) != 0)
-            panic("Switching to GL context failed: {s}",  .{c.SDL_GetError()});
-        
+            panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
+
         c.glClearColor(0, 0, 0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
 
@@ -214,7 +214,7 @@ pub const Window = struct {
         try self.index_buffer.resize(0);
     }
 
-    fn renderQuad(self: *Window, atlas: *Atlas, dst: Rect, src: Rect, color: Color) ! void {
+    fn renderQuad(self: *Window, atlas: *Atlas, dst: Rect, src: Rect, color: Color) !void {
         const tx = @intToFloat(f32, src.x) / @intToFloat(f32, atlas.texture_dims.x);
         const ty = @intToFloat(f32, src.y) / @intToFloat(f32, atlas.texture_dims.y);
         const tw = @intToFloat(f32, src.w) / @intToFloat(f32, atlas.texture_dims.x);
@@ -261,13 +261,13 @@ pub const Window = struct {
 
     // view api
 
-    pub fn pushView(self: *Window, view: Id) ! void {
+    pub fn pushView(self: *Window, view: Id) !void {
         try self.views.append(view);
     }
 
     pub fn popView(self: *Window) void {
         _ = self.views.pop();
-    }  
+    }
 
     // drawing api
 

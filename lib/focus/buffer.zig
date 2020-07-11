@@ -13,7 +13,7 @@ pub const Buffer = struct {
     source: BufferSource,
     bytes: ArrayList(u8),
 
-    pub fn initEmpty(app: *App) ! Id {
+    pub fn initEmpty(app: *App) !Id {
         return app.putThing(Buffer{
             .app = app,
             .source = .None,
@@ -21,27 +21,27 @@ pub const Buffer = struct {
         });
     }
 
-    pub fn initFromFilename(app: *App, filename: []const u8) ! Id {
+    pub fn initFromFilename(app: *App, filename: []const u8) !Id {
         var bytes = ArrayList(u8).init(app.allocator);
         errdefer bytes.deinit();
-        
-        const file = try std.fs.cwd().createFile(filename, .{.read=true, .truncate=false});
+
+        const file = try std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false });
         defer file.close();
-        
+
         const chunk_size = 1024;
         var buf = try app.allocator.alloc(u8, chunk_size);
         defer app.allocator.free(buf);
-        
+
         while (true) {
             const len = try file.readAll(buf);
             try bytes.appendSlice(buf[0..len]);
             if (len < chunk_size) break;
         }
-        
-         return app.putThing(Buffer{
-             .app = app,
-             .source = .{.Filename = filename},
-             .bytes = bytes,
+
+        return app.putThing(Buffer{
+            .app = app,
+            .source = .{ .Filename = filename },
+            .bytes = bytes,
         });
     }
 
@@ -53,14 +53,14 @@ pub const Buffer = struct {
         }
     }
 
-    pub fn save(self: *Buffer) ! void {
+    pub fn save(self: *Buffer) !void {
         switch (self.source) {
             .None => {},
             .Filename => |filename| {
-                const file = try std.fs.cwd().createFile(filename, .{.read=false, .truncate=true});
+                const file = try std.fs.cwd().createFile(filename, .{ .read = false, .truncate = true });
                 defer file.close();
                 try file.writeAll(self.bytes.items);
-            }
+            },
         }
     }
 
@@ -92,7 +92,7 @@ pub const Buffer = struct {
             pos_remaining = line_start - 1;
             line += 1;
         }
-        return .{line, col};
+        return .{ line, col };
     }
 
     pub fn searchBackwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
@@ -113,15 +113,15 @@ pub const Buffer = struct {
         return self.searchForwards(pos, "\n") orelse self.getBufferEnd();
     }
 
-    pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) ! []const u8 {
+    pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) ![]const u8 {
         assert(start <= end);
         assert(end <= self.bytes.items.len);
         return std.mem.dupe(allocator, u8, self.bytes.items[start..end]);
     }
 
-    pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) ! void {
+    pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) !void {
         try self.bytes.resize(self.bytes.items.len + bytes.len);
-        std.mem.copyBackwards(u8, self.bytes.items[pos+bytes.len..], self.bytes.items[pos..self.bytes.items.len - bytes.len]);
+        std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
     }
 
