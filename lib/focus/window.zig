@@ -14,25 +14,12 @@ pub const Window = struct {
     sdl_window: *c.SDL_Window,
     width: Coord,
     height: Coord,
-    commands: ArrayList(Command),
 
     gl_context: c.SDL_GLContext,
     texture_buffer: ArrayList(Quad(Vec2f)),
     vertex_buffer: ArrayList(Quad(Vec2f)),
     color_buffer: ArrayList(Quad(Color)),
     index_buffer: ArrayList([2]Tri(u32)),
-
-    pub const Command = union(enum) {
-        Rect: struct {
-            rect: Rect,
-            color: Color,
-        },
-        Text: struct {
-            pos: Vec2,
-            color: Color,
-            chars: []const u8,
-        },
-    };
 
     pub fn init(app: *App, view: Id) !Id {
         var views = ArrayList(Id).init(app.allocator);
@@ -92,7 +79,6 @@ pub const Window = struct {
             .sdl_window = sdl_window,
             .width = init_width,
             .height = init_height,
-            .commands = ArrayList(Command).init(app.allocator),
 
             .gl_context = gl_context,
             .texture_buffer = ArrayList(Quad(Vec2f)).init(app.allocator),
@@ -108,8 +94,6 @@ pub const Window = struct {
         self.vertex_buffer.deinit();
         self.texture_buffer.deinit();
         c.SDL_GL_DeleteContext(self.gl_context);
-
-        self.commands.deinit();
         c.SDL_DestroyWindow(self.window);
     }
 
@@ -162,28 +146,7 @@ pub const Window = struct {
             else => panic("Not a view: {}", .{view}),
         }
 
-        // convert draw commands into quads
-        for (self.commands.items) |command| {
-            switch (command) {
-                .Rect => |rect| {
-                    try self.renderQuad(self.app.atlas, rect.rect, self.app.atlas.white_rect, rect.color);
-                },
-                .Text => |text| {
-                    // TODO going to need to be able to clip text
-                    var dst: Rect = .{ .x = text.pos.x, .y = text.pos.y, .w = 0, .h = 0 };
-                    for (text.chars) |char| {
-                        const src = self.app.atlas.char_to_rect[char];
-                        dst.w = src.w;
-                        dst.h = src.h;
-                        try self.renderQuad(self.app.atlas, dst, src, text.color);
-                        dst.x += src.w;
-                    }
-                },
-            }
-        }
-
-        // actual rendering
-
+        // render
         if (c.SDL_GL_MakeCurrent(self.sdl_window, self.gl_context) != 0)
             panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
 
@@ -214,18 +177,17 @@ pub const Window = struct {
         c.SDL_GL_SwapWindow(self.sdl_window);
 
         // reset
-        try self.commands.resize(0);
         try self.texture_buffer.resize(0);
         try self.vertex_buffer.resize(0);
         try self.color_buffer.resize(0);
         try self.index_buffer.resize(0);
     }
 
-    fn renderQuad(self: *Window, atlas: *Atlas, dst: Rect, src: Rect, color: Color) !void {
-        const tx = @intToFloat(f32, src.x) / @intToFloat(f32, atlas.texture_dims.x);
-        const ty = @intToFloat(f32, src.y) / @intToFloat(f32, atlas.texture_dims.y);
-        const tw = @intToFloat(f32, src.w) / @intToFloat(f32, atlas.texture_dims.x);
-        const th = @intToFloat(f32, src.h) / @intToFloat(f32, atlas.texture_dims.y);
+    fn queueQuad(self: *Window, dst: Rect, src: Rect, color: Color) !void {
+        const tx = @intToFloat(f32, src.x) / @intToFloat(f32, self.app.atlas.texture_dims.x);
+        const ty = @intToFloat(f32, src.y) / @intToFloat(f32, self.app.atlas.texture_dims.y);
+        const tw = @intToFloat(f32, src.w) / @intToFloat(f32, self.app.atlas.texture_dims.x);
+        const th = @intToFloat(f32, src.h) / @intToFloat(f32, self.app.atlas.texture_dims.y);
         try self.texture_buffer.append(.{
             .tl = .{ .x = tx, .y = ty },
             .tr = .{ .x = tx + tw, .y = ty },
@@ -279,22 +241,19 @@ pub const Window = struct {
     // drawing api
 
     pub fn queueRect(self: *Window, rect: Rect, color: Color) !void {
-        try self.commands.append(.{
-            .Rect = .{
-                .rect = rect,
-                .color = color,
-            },
-        });
+        try self.queueQuad(rect, self.app.atlas.white_rect, color);
     }
 
     pub fn queueText(self: *Window, pos: Vec2, color: Color, chars: []const u8) !void {
-        try self.commands.append(.{
-            .Text = .{
-                .pos = pos,
-                .color = color,
-                .chars = chars,
-            },
-        });
+        // TODO going to need to be able to clip text
+        var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
+        for (chars) |char| {
+            const src = self.app.atlas.char_to_rect[char];
+            dst.w = src.w;
+            dst.h = src.h;
+            try self.queueQuad(dst, src, color);
+            dst.x += src.w;
+        }
     }
 
     // pub fn text(self: *Window, rect: Rect, color: Color, chars: []const u8) !void {
