@@ -3,6 +3,7 @@ usingnamespace focus.common;
 const App = focus.App;
 const Id = focus.Id;
 const Buffer = focus.Buffer;
+const BufferSearcher = focus.BufferSearcher;
 const Window = focus.Window;
 const style = focus.style;
 
@@ -108,6 +109,13 @@ pub const Editor = struct {
                             },
                             'd' => try self.addNextMatch(),
                             's' => try self.buffer().save(),
+                            'f' => {
+                                const self_id = self.app.getId(self);
+                                const selection = try self.dupeSelection(self.getMainCursor());
+                                defer self.app.allocator.free(selection);
+                                const buffer_searcher_id = try BufferSearcher.init(self.app, self.buffer_id, self_id, selection);
+                                try window.pushView(buffer_searcher_id);
+                            },
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {

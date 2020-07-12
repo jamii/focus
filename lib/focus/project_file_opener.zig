@@ -30,7 +30,7 @@ pub const ProjectFileOpener = struct {
     selected: usize, // 0 for nothing selected, i-1 for line i
     completions: []const []const u8,
 
-    pub fn init(app: *App, current_directory: []const u8) !Id {
+    pub fn init(app: *App) !Id {
         // TODO don't directly mutate buffer - messes up multiple cursors - go via editor instead
         const input_buffer_id = try Buffer.initEmpty(app);
         const input_editor_id = try Editor.init(app, input_buffer_id);

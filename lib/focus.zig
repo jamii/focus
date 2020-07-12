@@ -5,6 +5,7 @@ pub const Buffer = @import("./focus/buffer.zig").Buffer;
 pub const Editor = @import("./focus/editor.zig").Editor;
 pub const FileOpener = @import("./focus/file_opener.zig").FileOpener;
 pub const ProjectFileOpener = @import("./focus/project_file_opener.zig").ProjectFileOpener;
+pub const BufferSearcher = @import("./focus/buffer_searcher.zig").BufferSearcher;
 pub const Window = @import("./focus/window.zig").Window;
 pub const style = @import("./focus/style.zig");
 
@@ -22,6 +23,7 @@ pub const Tag = enum(u8) {
     Editor,
     FileOpener,
     ProjectFileOpener,
+    BufferSearcher,
     Window,
 };
 
@@ -39,6 +41,7 @@ pub const Thing = union(Tag) {
     Editor: *Editor,
     FileOpener: *FileOpener,
     ProjectFileOpener: *ProjectFileOpener,
+    BufferSearcher: *BufferSearcher,
     Window: *Window,
 
     pub fn deinit(self: *Thing) void {
@@ -56,6 +59,7 @@ pub const App = struct {
     atlas: *Atlas,
     next_id: u64,
     things: DeepHashMap(Id, Thing),
+    ids: AutoHashMap(Thing, Id),
 
     pub fn init(allocator: *Allocator) !*App {
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
@@ -70,6 +74,7 @@ pub const App = struct {
             .atlas = atlas,
             .next_id = 0,
             .things = DeepHashMap(Id, Thing).init(allocator),
+            .ids = AutoHashMap(Thing, Id).init(allocator),
         };
 
         const buffer_id = try Buffer.initEmpty(self);
@@ -93,17 +98,19 @@ pub const App = struct {
         self.allocator.destroy(self);
     }
 
-    // TODO entity gc
+    // TODO thing gc
 
-    pub fn putThing(self: *App, thing: var) !Id {
+    pub fn putThing(self: *App, thing_inner: var) !Id {
         const id = Id{
-            .tag = comptime tagOf(@TypeOf(thing)),
+            .tag = comptime tagOf(@TypeOf(thing_inner)),
             .id = self.next_id,
         };
         self.next_id += 1;
-        const thing_ptr = try self.allocator.create(@TypeOf(thing));
-        thing_ptr.* = thing;
-        _ = try self.things.put(id, @unionInit(Thing, @typeName(@TypeOf(thing)), thing_ptr));
+        const thing_ptr = try self.allocator.create(@TypeOf(thing_inner));
+        thing_ptr.* = thing_inner;
+        const thing = @unionInit(Thing, @typeName(@TypeOf(thing_inner)), thing_ptr);
+        _ = try self.things.put(id, thing);
+        _ = try self.ids.put(thing, id);
         return id;
     }
 
@@ -112,11 +119,21 @@ pub const App = struct {
             assert(std.meta.activeTag(thing) == id.tag);
             return thing;
         } else {
-            var things_iter = self.things.iterator();
-            while (things_iter.next()) |kv| {
-                dump(kv.key);
-            }
             panic("Missing thing: {}", .{id});
+        }
+    }
+
+    pub fn getId(self: *App, thing_ptr: var) Id {
+        const thing = @unionInit(Thing, @typeName(@typeInfo(@TypeOf(thing_ptr)).Pointer.child), thing_ptr);
+        if (self.ids.getValue(thing)) |id| {
+            assert(std.meta.activeTag(thing) == id.tag);
+            return id;
+        } else {
+            var ids_iter = self.ids.iterator();
+            while (ids_iter.next()) |kv| {
+                warn("{}\n", .{kv.key});
+            }
+            panic("Missing id: {}", .{thing});
         }
     }
 

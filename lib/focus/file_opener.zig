@@ -21,23 +21,22 @@ pub const FileOpener = struct {
         const input_editor_id = try Editor.init(app, input_buffer_id);
         const completions_buffer_id = try Buffer.initEmpty(app);
         const completions_editor_id = try Editor.init(app, completions_buffer_id);
-        var self = FileOpener{
+
+        // default to current directory
+        try app.getThing(input_buffer_id).Buffer.insert(0, current_directory);
+
+        // start cursor at end
+        var input_editor = app.getThing(input_editor_id).Editor;
+        input_editor.goBufferEnd(input_editor.getMainCursor());
+
+        return app.putThing(FileOpener{
             .app = app,
             .input_buffer_id = input_buffer_id,
             .input_editor_id = input_editor_id,
             .completions_buffer_id = completions_buffer_id,
             .completions_editor_id = completions_editor_id,
             .selected = 0,
-        };
-
-        // default to current directory
-        try self.app.getThing(self.input_buffer_id).Buffer.insert(0, current_directory);
-
-        // start cursor at end
-        var input_editor = self.app.getThing(self.input_editor_id).Editor;
-        input_editor.goBufferEnd(input_editor.getMainCursor());
-
-        return app.putThing(self);
+        });
     }
 
     pub fn deinit(self: *FileOpener) void {}

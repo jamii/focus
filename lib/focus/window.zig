@@ -123,7 +123,7 @@ pub const Window = struct {
                                 handled = true;
                             },
                             'p' => {
-                                const project_file_opener_id = try ProjectFileOpener.init(self.app, "/home/jamie/");
+                                const project_file_opener_id = try ProjectFileOpener.init(self.app);
                                 try self.pushView(project_file_opener_id);
                                 handled = true;
                             },
@@ -143,6 +143,7 @@ pub const Window = struct {
             .Editor => |editor| try editor.frame(self, window_rect, view_events.items),
             .FileOpener => |file_opener| try file_opener.frame(self, window_rect, view_events.items),
             .ProjectFileOpener => |project_file_opener| try project_file_opener.frame(self, window_rect, view_events.items),
+            .BufferSearcher => |buffer_searcher| try buffer_searcher.frame(self, window_rect, view_events.items),
             else => panic("Not a view: {}", .{view}),
         }
 
