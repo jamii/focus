@@ -297,7 +297,6 @@ pub const Editor = struct {
                 }
 
                 // draw text
-                // TODO need to ensure this text lives long enough - buffer might get changed in another window
                 try window.queueText(.{ .x = rect.x, .y = @intCast(Coord, y) }, style.text_color, line);
             }
 
