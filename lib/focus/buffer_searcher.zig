@@ -36,6 +36,8 @@ pub const BufferSearcher = struct {
         var input_editor = app.getThing(input_editor_id).Editor;
         input_editor.goBufferEnd(input_editor.getMainCursor());
 
+        // TODO set default selection after point at which we started the search from?
+
         return app.putThing(BufferSearcher{
             .app = app,
             .target_buffer_id = target_buffer_id,
@@ -60,6 +62,13 @@ pub const BufferSearcher = struct {
         var completions_buffer = self.app.getThing(self.completions_buffer_id).Buffer;
         var completions_editor = self.app.getThing(self.completions_editor_id).Editor;
 
+        const Action = enum {
+            None,
+            SelectOne,
+            SelectAll,
+        };
+        var action: Action = .None;
+
         // handle events
         var input_editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
         defer input_editor_events.deinit();
@@ -82,14 +91,14 @@ pub const BufferSearcher = struct {
                             'k' => self.selected = completions_buffer.countLines() - 1,
                             'i' => self.selected = 1,
                             c.SDLK_RETURN => {
-                                // TODO select all
+                                action = .SelectAll;
                             },
                             else => delegate = true,
                         }
                     } else if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_RETURN => {
-                                // TODO select
+                                action = .SelectOne;
                             },
                             else => delegate = true,
                         }
@@ -119,7 +128,13 @@ pub const BufferSearcher = struct {
             defer self.app.allocator.free(max_line_string);
             const filter = input_buffer.bytes.items;
             var pos: usize = 0;
+            var i: usize = 0;
             completions_buffer.bytes.shrink(0);
+            if (action != .None) {
+                try target_editor.collapseCursors();
+                target_editor.setMark();
+                window.popView();
+            }
             if (filter.len > 0) {
                 while (target_buffer.searchForwards(pos, filter)) |found_pos| {
                     const start = target_buffer.getLineStart(found_pos);
@@ -127,6 +142,23 @@ pub const BufferSearcher = struct {
                     const selection = try target_buffer.dupe(self.app.allocator, start, end);
                     defer self.app.allocator.free(selection);
                     assert(selection[0] != '\n' and selection[selection.len-1] != '\n');
+
+                    switch (action) {
+                        .None => {},
+                        .SelectOne => {
+                            if (i + 1 == self.selected) {
+                                var cursor = target_editor.getMainCursor();
+                                target_editor.goPos(cursor, found_pos);
+                                target_editor.updatePos(&cursor.tail, found_pos + filter.len);
+                            }
+                        },
+                        .SelectAll => {
+                            var cursor = if (i == 0) target_editor.getMainCursor() else try target_editor.newCursor();
+                            target_editor.goPos(cursor, found_pos);
+                            target_editor.updatePos(&cursor.tail, found_pos + filter.len);
+                        }
+                    }
+
                     // TODO highlight found area
                     const line = target_buffer.getLineColForPos(found_pos)[0];
                     const line_string = try format(self.app.allocator, "{}", .{line});
@@ -136,6 +168,7 @@ pub const BufferSearcher = struct {
                     try completions_buffer.bytes.appendSlice(selection);
                     try completions_buffer.bytes.append('\n');
                     pos = found_pos + filter.len;
+                    i += 1;
                 }
             }
         }
