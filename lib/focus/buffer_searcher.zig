@@ -130,9 +130,9 @@ pub const BufferSearcher = struct {
             var pos: usize = 0;
             var i: usize = 0;
             completions_buffer.bytes.shrink(0);
+            try target_editor.collapseCursors();
+            target_editor.setMark();
             if (action != .None) {
-                try target_editor.collapseCursors();
-                target_editor.setMark();
                 window.popView();
             }
             if (filter.len > 0) {
@@ -144,8 +144,7 @@ pub const BufferSearcher = struct {
                     assert(selection[0] != '\n' and selection[selection.len-1] != '\n');
 
                     switch (action) {
-                        .None => {},
-                        .SelectOne => {
+                        .None, .SelectOne => {
                             if (i + 1 == self.selected) {
                                 var cursor = target_editor.getMainCursor();
                                 target_editor.goPos(cursor, found_pos);
@@ -186,12 +185,16 @@ pub const BufferSearcher = struct {
         }
 
         // run editor frames
-        // TODO preview panel
-        var completions_rect = rect;
-        const input_rect = completions_rect.splitTop(self.app.atlas.char_height, 0);
-        const border_rect = completions_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
-        try input_editor.frame(window, input_rect, input_editor_events.items);
-        try window.queueRect(border_rect, style.text_color);
+        var all_rect = rect;
+        const target_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
+        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
+        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const completions_rect = all_rect;
+        try target_editor.frame(window, target_rect, &[0]c.SDL_Event{});
+        try window.queueRect(border1_rect, style.text_color);
         try completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
+        try window.queueRect(border2_rect, style.text_color);
+        try input_editor.frame(window, input_rect, input_editor_events.items);
     }
 };
