@@ -137,7 +137,7 @@ pub const ProjectSearcher = struct {
                 const result = try std.ChildProcess.exec(.{
                     .allocator = self.app.frame_allocator,
                     // TODO would prefer null separated but tricky to parse
-                    .argv = &[5][]const u8{"rg", "--line-number", "--sort", "path", filter},
+                    .argv = &[6][]const u8{"rg", "--line-number", "--sort", "path", "--fixed-strings", filter},
                     .cwd = self.project_dir,
                     .max_output_bytes = 128 * 1024 * 1024,
                 });
@@ -145,29 +145,30 @@ pub const ProjectSearcher = struct {
                 var lines = std.mem.split(result.stdout, "\n");
                 var i: usize = 0;
                 while (lines.next()) |line| {
-                    try completions_buffer.bytes.appendSlice(line);
-                    try completions_buffer.bytes.append('\n');
+                    if (line.len != 0) {
+                        try completions_buffer.bytes.appendSlice(line);
+                        try completions_buffer.bytes.append('\n');
 
-                    switch (action) {
-                        .None, .SelectOne => {
-                            if (i + 1 == self.selected) {
-                                var path_and_rest = std.mem.split(line, ":");
-                                const path_suffix = path_and_rest.next().?;
-                                var line_number_and_rest = std.mem.split(path_and_rest.next().?, ":");
-                                const line_number = try std.fmt.parseInt(usize, line_number_and_rest.next().?, 10);
+                        switch (action) {
+                            .None, .SelectOne => {
+                                if (i + 1 == self.selected) {
+                                    var parts = std.mem.split(line, ":");
+                                    const path_suffix = parts.next().?;
+                                    const line_number = try std.fmt.parseInt(usize, parts.next().?, 10);
 
-                                const path = try std.fs.path.join(self.app.frame_allocator, &[2][]const u8{self.project_dir, path_suffix});
-                                try target_buffer.load(path);
+                                    const path = try std.fs.path.join(self.app.frame_allocator, &[2][]const u8{self.project_dir, path_suffix});
+                                    try target_buffer.load(path);
 
-                                var cursor = target_editor.getMainCursor();
-                                target_editor.goLine(cursor, line_number - 1);
+                                    var cursor = target_editor.getMainCursor();
+                                    target_editor.goLine(cursor, line_number - 1);
 
-                                // TODO centre cursor
-                            }
-                        },
+                                    // TODO centre cursor
+                                }
+                            },
+                        }
+
+                        i += 1;
                     }
-
-                    i += 1;
                 }
             }
         }
