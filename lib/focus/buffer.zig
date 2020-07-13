@@ -22,27 +22,29 @@ pub const Buffer = struct {
     }
 
     pub fn initFromFilename(app: *App, filename: []const u8) !Id {
-        var bytes = ArrayList(u8).init(app.allocator);
-        errdefer bytes.deinit();
+        const self_id = try Buffer.initEmpty(app);
+        var self = app.getThing(self_id).Buffer;
+        try self.load(filename);
+        return self_id;
+    }
+
+    pub fn load(self: *Buffer, filename: []const u8) !void {
+        self.bytes.shrink(0);
 
         const file = try std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false });
         defer file.close();
 
         const chunk_size = 1024;
-        var buf = try app.allocator.alloc(u8, chunk_size);
-        defer app.allocator.free(buf);
+        var buf = try self.app.allocator.alloc(u8, chunk_size);
+        defer self.app.allocator.free(buf);
 
         while (true) {
             const len = try file.readAll(buf);
-            try bytes.appendSlice(buf[0..len]);
+            try self.bytes.appendSlice(buf[0..len]);
             if (len < chunk_size) break;
         }
 
-        return app.putThing(Buffer{
-            .app = app,
-            .source = .{ .Filename = filename },
-            .bytes = bytes,
-        });
+        self.source = .{ .Filename = filename };
     }
 
     pub fn deinit(self: *Buffer) void {

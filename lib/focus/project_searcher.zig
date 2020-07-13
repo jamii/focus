@@ -12,8 +12,9 @@ const style = focus.style;
 
 // TODO always have a selection, open first match on enter (reject if no match), open raw text on ctrl-enter
 
-pub const BufferSearcher = struct {
+pub const ProjectSearcher = struct {
     app: *App,
+    project_dir: []const u8,
     target_buffer_id: Id,
     target_editor_id: Id,
     input_buffer_id: Id,
@@ -22,8 +23,10 @@ pub const BufferSearcher = struct {
     completions_editor_id: Id,
     selected: usize, // 0 for nothing selected, i-1 for line i
 
-    pub fn init(app: *App, target_buffer_id: Id, target_editor_id: Id, init_filter: []const u8) !Id {
+    pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) !Id {
         // TODO don't directly mutate buffer - messes up multiple cursors - go via editor instead
+        const target_buffer_id = try Buffer.initEmpty(app);
+        const target_editor_id = try Editor.init(app, target_buffer_id);
         const input_buffer_id = try Buffer.initEmpty(app);
         const input_editor_id = try Editor.init(app, input_buffer_id);
         const completions_buffer_id = try Buffer.initEmpty(app);
@@ -36,10 +39,9 @@ pub const BufferSearcher = struct {
         var input_editor = app.getThing(input_editor_id).Editor;
         input_editor.goBufferEnd(input_editor.getMainCursor());
 
-        // TODO set default selection after point at which we started the search from?
-
-        return app.putThing(BufferSearcher{
+        return app.putThing(ProjectSearcher{
             .app = app,
+            .project_dir = project_dir,
             .target_buffer_id = target_buffer_id,
             .target_editor_id = target_editor_id,
             .input_buffer_id = input_buffer_id,
@@ -50,10 +52,10 @@ pub const BufferSearcher = struct {
         });
     }
 
-    pub fn deinit(self: *BufferSearcher) void {
+    pub fn deinit(self: *ProjectSearcher) void {
     }
 
-    pub fn frame(self: *BufferSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
+    pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
         var target_buffer = self.app.getThing(self.target_buffer_id).Buffer;
         var target_editor = self.app.getThing(self.target_editor_id).Editor;
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
@@ -64,7 +66,7 @@ pub const BufferSearcher = struct {
         const Action = enum {
             None,
             SelectOne,
-            SelectAll,
+            // SelectAll, // TODO needs some kind of multi-editor
         };
         var action: Action = .None;
 
@@ -89,9 +91,9 @@ pub const BufferSearcher = struct {
                         switch (sym.sym) {
                             'k' => self.selected = completions_buffer.countLines() - 1,
                             'i' => self.selected = 1,
-                            c.SDLK_RETURN => {
-                                action = .SelectAll;
-                            },
+                            // c.SDLK_RETURN => {
+                            //     action = .SelectAll;
+                            // },
                             else => delegate = true,
                         }
                     } else if (sym.mod == 0) {
@@ -128,45 +130,47 @@ pub const BufferSearcher = struct {
             const filter = input_buffer.bytes.items;
             completions_buffer.bytes.shrink(0);
             try target_editor.collapseCursors();
-            target_editor.setMark();
+            target_editor.clearMark();
             if (action != .None) {
                 window.popView();
+                try window.pushView(self.target_editor_id);
             }
             if (filter.len > 0) {
-                var pos: usize = 0;
+                const result = try std.ChildProcess.exec(.{
+                    .allocator = self.app.allocator,
+                    // TODO would prefer null separated but tricky to parse
+                    .argv = &[5][]const u8{"rg", "--line-number", "--sort", "path", filter},
+                    .cwd = self.project_dir,
+                    .max_output_bytes = 128 * 1024 * 1024,
+                });
+                defer self.app.allocator.free(result.stdout);
+                defer self.app.allocator.free(result.stderr);
+                assert(result.term == .Exited and result.term.Exited == 0);
+                var lines = std.mem.split(result.stdout, "\n");
                 var i: usize = 0;
-                while (target_buffer.searchForwards(pos, filter)) |found_pos| {
-                    const start = target_buffer.getLineStart(found_pos);
-                    const end = target_buffer.getLineEnd(found_pos + filter.len);
-                    const selection = try target_buffer.dupe(self.app.allocator, start, end);
-                    defer self.app.allocator.free(selection);
-                    assert(selection[0] != '\n' and selection[selection.len-1] != '\n');
+                while (lines.next()) |line| {
+                    try completions_buffer.bytes.appendSlice(line);
+                    try completions_buffer.bytes.append('\n');
 
                     switch (action) {
                         .None, .SelectOne => {
                             if (i + 1 == self.selected) {
+                                var path_and_rest = std.mem.split(line, ":");
+                                const path_suffix = path_and_rest.next().?;
+                                var line_number_and_rest = std.mem.split(path_and_rest.next().?, ":");
+                                const line_number = try std.fmt.parseInt(usize, line_number_and_rest.next().?, 10);
+
+                                const path = try std.fs.path.join(self.app.allocator, &[2][]const u8{self.project_dir, path_suffix});
+                                try target_buffer.load(path);
+
                                 var cursor = target_editor.getMainCursor();
-                                target_editor.goPos(cursor, found_pos);
-                                target_editor.updatePos(&cursor.tail, found_pos + filter.len);
+                                target_editor.goLine(cursor, line_number - 1);
+
+                                // TODO centre cursor
                             }
                         },
-                        .SelectAll => {
-                            var cursor = if (i == 0) target_editor.getMainCursor() else try target_editor.newCursor();
-                            target_editor.goPos(cursor, found_pos);
-                            target_editor.updatePos(&cursor.tail, found_pos + filter.len);
-                        }
                     }
-                    // TODO centre cursor
 
-                    // TODO highlight found area
-                    const line = target_buffer.getLineColForPos(found_pos)[0];
-                    const line_string = try format(self.app.allocator, "{}", .{line});
-                    defer self.app.allocator.free(line_string);
-                    try completions_buffer.bytes.appendSlice(line_string);
-                    try completions_buffer.bytes.appendNTimes(' ', max_line_string.len - line_string.len + 1);
-                    try completions_buffer.bytes.appendSlice(selection);
-                    try completions_buffer.bytes.append('\n');
-                    pos = found_pos + filter.len;
                     i += 1;
                 }
             }

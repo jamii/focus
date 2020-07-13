@@ -5,6 +5,7 @@ const App = focus.App;
 const Id = focus.Id;
 const FileOpener = focus.FileOpener;
 const ProjectFileOpener = focus.ProjectFileOpener;
+const ProjectSearcher = focus.ProjectSearcher;
 
 pub const Window = struct {
     app: *App,
@@ -130,6 +131,17 @@ pub const Window = struct {
                             else => {},
                         }
                     }
+                    if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
+                        switch (sym.sym) {
+                            'f' => {
+                                // TODO if top is editor, base on current file git root and selection
+                                const project_searcher_id = try ProjectSearcher.init(self.app, "/home/jamie/focus/", "");
+                                try self.pushView(project_searcher_id);
+                                handled = true;
+                            },
+                            else => {},
+                        }
+                    }
                 },
                 else => {},
             }
@@ -144,6 +156,7 @@ pub const Window = struct {
             .FileOpener => |file_opener| try file_opener.frame(self, window_rect, view_events.items),
             .ProjectFileOpener => |project_file_opener| try project_file_opener.frame(self, window_rect, view_events.items),
             .BufferSearcher => |buffer_searcher| try buffer_searcher.frame(self, window_rect, view_events.items),
+            .ProjectSearcher => |project_searcher| try project_searcher.frame(self, window_rect, view_events.items),
             else => panic("Not a view: {}", .{view}),
         }
 
@@ -249,7 +262,11 @@ pub const Window = struct {
         // TODO going to need to be able to clip text
         var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
         for (chars) |char| {
-            const src = self.app.atlas.char_to_rect[char];
+            const src = if (char < self.app.atlas.char_to_rect.len)
+                self.app.atlas.char_to_rect[char]
+                else
+                // TODO tofu
+                self.app.atlas.white_rect;
             dst.w = src.w;
             dst.h = src.h;
             try self.queueQuad(dst, src, color);

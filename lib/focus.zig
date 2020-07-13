@@ -6,6 +6,7 @@ pub const Editor = @import("./focus/editor.zig").Editor;
 pub const FileOpener = @import("./focus/file_opener.zig").FileOpener;
 pub const ProjectFileOpener = @import("./focus/project_file_opener.zig").ProjectFileOpener;
 pub const BufferSearcher = @import("./focus/buffer_searcher.zig").BufferSearcher;
+pub const ProjectSearcher = @import("./focus/project_searcher.zig").ProjectSearcher;
 pub const Window = @import("./focus/window.zig").Window;
 pub const style = @import("./focus/style.zig");
 
@@ -24,6 +25,7 @@ pub const Tag = enum(u8) {
     FileOpener,
     ProjectFileOpener,
     BufferSearcher,
+    ProjectSearcher,
     Window,
 };
 
@@ -42,6 +44,7 @@ pub const Thing = union(Tag) {
     FileOpener: *FileOpener,
     ProjectFileOpener: *ProjectFileOpener,
     BufferSearcher: *BufferSearcher,
+    ProjectSearcher: *ProjectSearcher,
     Window: *Window,
 
     pub fn deinit(self: *Thing) void {
