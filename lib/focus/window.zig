@@ -1,5 +1,6 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
+const meta = focus.meta;
 const Atlas = focus.Atlas;
 const App = focus.App;
 const Id = focus.Id;
@@ -134,8 +135,33 @@ pub const Window = struct {
                     if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
                         switch (sym.sym) {
                             'f' => {
-                                // TODO if top is editor, base on current file git root and selection
-                                const project_searcher_id = try ProjectSearcher.init(self.app, "/home/jamie/focus/", "");
+                                var project_dir: []const u8 = "/home/jamie";
+                                var filter: []const u8 = "";
+                                switch (self.app.getThing(self.views.items[self.views.items.len-1])) {
+                                    .Editor => |editor| {
+                                        const buffer = self.app.getThing(editor.buffer_id).Buffer;
+                                        switch (buffer.source) {
+                                            .None => {},
+                                            .AbsoluteFilename => |filename| {
+                                                const dirname = std.fs.path.dirname(filename).?;
+                                                var root = dirname;
+                                                while (!meta.deepEqual(root, "/")) {
+                                                    const git_path = try std.fs.path.join(self.app.allocator, &[2][]const u8{root, ".git"});
+                                                    defer self.app.allocator.free(git_path);
+                                                    if (std.fs.openFileAbsolute(git_path, .{})) |file| {
+                                                        file.close();
+                                                        break;
+                                                    } else |_| {}
+                                                    root = std.fs.path.dirname(root).?;
+                                                }
+                                                project_dir = if (meta.deepEqual(root, "/")) dirname else root;
+                                                filter = try editor.dupeSelection(editor.getMainCursor()); // TODO free?
+                                            },
+                                        }
+                                    },
+                                    else => {}
+                                }
+                                const project_searcher_id = try ProjectSearcher.init(self.app, project_dir, filter);
                                 try self.pushView(project_searcher_id);
                                 handled = true;
                             },

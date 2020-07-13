@@ -119,7 +119,7 @@ pub const ProjectFileOpener = struct {
                                     input_editor.goBufferEnd(input_editor.getMainCursor());
                                     filename.deinit();
                                 } else {
-                                    const new_buffer_id = try Buffer.initFromFilename(self.app, filename.toOwnedSlice());
+                                    const new_buffer_id = try Buffer.initFromAbsoluteFilename(self.app, filename.toOwnedSlice());
                                     const new_editor_id = try Editor.init(self.app, new_buffer_id);
                                     window.popView();
                                     try window.pushView(new_editor_id);

@@ -145,7 +145,7 @@ pub const ProjectSearcher = struct {
                 });
                 defer self.app.allocator.free(result.stdout);
                 defer self.app.allocator.free(result.stderr);
-                assert(result.term == .Exited and result.term.Exited == 0);
+                assert(result.term == .Exited); // exits with 1 if no search results
                 var lines = std.mem.split(result.stdout, "\n");
                 var i: usize = 0;
                 while (lines.next()) |line| {

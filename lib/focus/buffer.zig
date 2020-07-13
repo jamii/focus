@@ -5,7 +5,7 @@ const Id = focus.Id;
 
 pub const BufferSource = union(enum) {
     None,
-    Filename: []const u8,
+    AbsoluteFilename: []const u8,
 };
 
 pub const Buffer = struct {
@@ -21,7 +21,7 @@ pub const Buffer = struct {
         });
     }
 
-    pub fn initFromFilename(app: *App, filename: []const u8) !Id {
+    pub fn initFromAbsoluteFilename(app: *App, filename: []const u8) !Id {
         const self_id = try Buffer.initEmpty(app);
         var self = app.getThing(self_id).Buffer;
         try self.load(filename);
@@ -29,6 +29,8 @@ pub const Buffer = struct {
     }
 
     pub fn load(self: *Buffer, filename: []const u8) !void {
+        assert(std.fs.path.isAbsolute(filename));
+
         self.bytes.shrink(0);
 
         const file = try std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false });
@@ -44,21 +46,21 @@ pub const Buffer = struct {
             if (len < chunk_size) break;
         }
 
-        self.source = .{ .Filename = filename };
+        self.source = .{ .AbsoluteFilename = filename };
     }
 
     pub fn deinit(self: *Buffer) void {
         self.bytes.deinit();
         switch (self.source) {
             .None => {},
-            .Filename => |filename| self.app.allocator.free(filename),
+            .AbsoluteFilename => |filename| self.app.allocator.free(filename),
         }
     }
 
     pub fn save(self: *Buffer) !void {
         switch (self.source) {
             .None => {},
-            .Filename => |filename| {
+            .AbsoluteFilename => |filename| {
                 const file = try std.fs.cwd().createFile(filename, .{ .read = false, .truncate = true });
                 defer file.close();
                 try file.writeAll(self.bytes.items);

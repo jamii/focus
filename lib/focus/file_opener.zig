@@ -95,7 +95,7 @@ pub const FileOpener = struct {
                                     input_editor.goBufferEnd(input_editor.getMainCursor());
                                     filename.deinit();
                                 } else {
-                                    const new_buffer_id = try Buffer.initFromFilename(self.app, filename.toOwnedSlice());
+                                    const new_buffer_id = try Buffer.initFromAbsoluteFilename(self.app, filename.toOwnedSlice());
                                     const new_editor_id = try Editor.init(self.app, new_buffer_id);
                                     window.popView();
                                     try window.pushView(new_editor_id);
@@ -127,6 +127,7 @@ pub const FileOpener = struct {
                                     try input_buffer.insert(input_buffer.getBufferEnd(), min_common_prefix);
                                     input_editor.goPos(input_editor.getMainCursor(), input_buffer.getBufferEnd());
                                 }
+                                self.selected = 0;
                             },
                             else => delegate = true,
                         }
