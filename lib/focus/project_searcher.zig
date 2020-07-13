@@ -71,8 +71,7 @@ pub const ProjectSearcher = struct {
         var action: Action = .None;
 
         // handle events
-        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
-        defer input_editor_events.deinit();
+        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
         for (events) |event| {
             var delegate = false;
             switch (event.type) {
@@ -125,8 +124,7 @@ pub const ProjectSearcher = struct {
 
         // filter completions
         {
-            const max_line_string = try format(self.app.allocator, "{}", .{target_buffer.countLines()});
-            defer self.app.allocator.free(max_line_string);
+            const max_line_string = try format(self.app.frame_allocator, "{}", .{target_buffer.countLines()});
             const filter = input_buffer.bytes.items;
             completions_buffer.bytes.shrink(0);
             try target_editor.collapseCursors();
@@ -137,14 +135,12 @@ pub const ProjectSearcher = struct {
             }
             if (filter.len > 0) {
                 const result = try std.ChildProcess.exec(.{
-                    .allocator = self.app.allocator,
+                    .allocator = self.app.frame_allocator,
                     // TODO would prefer null separated but tricky to parse
                     .argv = &[5][]const u8{"rg", "--line-number", "--sort", "path", filter},
                     .cwd = self.project_dir,
                     .max_output_bytes = 128 * 1024 * 1024,
                 });
-                defer self.app.allocator.free(result.stdout);
-                defer self.app.allocator.free(result.stderr);
                 assert(result.term == .Exited); // exits with 1 if no search results
                 var lines = std.mem.split(result.stdout, "\n");
                 var i: usize = 0;
@@ -160,7 +156,7 @@ pub const ProjectSearcher = struct {
                                 var line_number_and_rest = std.mem.split(path_and_rest.next().?, ":");
                                 const line_number = try std.fmt.parseInt(usize, line_number_and_rest.next().?, 10);
 
-                                const path = try std.fs.path.join(self.app.allocator, &[2][]const u8{self.project_dir, path_suffix});
+                                const path = try std.fs.path.join(self.app.frame_allocator, &[2][]const u8{self.project_dir, path_suffix});
                                 try target_buffer.load(path);
 
                                 var cursor = target_editor.getMainCursor();

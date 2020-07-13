@@ -22,7 +22,7 @@ pub const Cursor = struct {
     head: Point,
     // the other end of the selection, if editor.marked
     tail: Point,
-    // allocated by editor.allocator
+    // allocated by app.allocator
     clipboard: []const u8,
 };
 
@@ -111,8 +111,7 @@ pub const Editor = struct {
                             's' => try self.buffer().save(),
                             'f' => {
                                 const self_id = self.app.getId(self);
-                                const selection = try self.dupeSelection(self.getMainCursor());
-                                defer self.app.allocator.free(selection);
+                                const selection = try self.dupeSelection(self.app.frame_allocator, self.getMainCursor());
                                 const buffer_searcher_id = try BufferSearcher.init(self.app, self.buffer_id, self_id, selection);
                                 try window.pushView(buffer_searcher_id);
                             },
@@ -480,19 +479,19 @@ pub const Editor = struct {
         }
     }
 
-    pub fn dupeSelection(self: *Editor, cursor: *Cursor) ![]const u8 {
+    pub fn dupeSelection(self: *Editor, allocator: *Allocator, cursor: *Cursor) ![]const u8 {
         const range = self.getSelectionRange(cursor);
-        return self.buffer().dupe(self.app.allocator, range[0], range[1]);
+        return self.buffer().dupe(allocator, range[0], range[1]);
     }
 
     pub fn copy(self: *Editor, cursor: *Cursor) !void {
         self.app.allocator.free(cursor.clipboard);
-        cursor.clipboard = try self.dupeSelection(cursor);
+        cursor.clipboard = try self.dupeSelection(self.app.allocator, cursor);
     }
 
     pub fn cut(self: *Editor, cursor: *Cursor) !void {
         self.app.allocator.free(cursor.clipboard);
-        cursor.clipboard = try self.dupeSelection(cursor);
+        cursor.clipboard = try self.dupeSelection(self.app.allocator, cursor);
         self.deleteSelection(cursor);
     }
 
@@ -529,8 +528,7 @@ pub const Editor = struct {
 
     pub fn addNextMatch(self: *Editor) !void {
         const main_cursor = self.getMainCursor();
-        const selection = try self.dupeSelection(main_cursor);
-        defer self.app.allocator.free(selection);
+        const selection = try self.dupeSelection(self.app.frame_allocator, main_cursor);
         if (self.buffer().searchForwards(max(main_cursor.head.pos, main_cursor.tail.pos), selection)) |pos| {
             var cursor = Cursor{
                 .head = .{ .pos = pos + selection.len, .col = 0 },

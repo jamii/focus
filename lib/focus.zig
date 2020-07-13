@@ -58,7 +58,8 @@ pub const Thing = union(Tag) {
 
 pub const App = struct {
     allocator: *Allocator,
-    // TODO add per-frame arena allocator?
+    frame_arena: ArenaAllocator,
+    frame_allocator: *Allocator,
     atlas: *Atlas,
     next_id: u64,
     things: DeepHashMap(Id, Thing),
@@ -74,11 +75,14 @@ pub const App = struct {
         var self = try allocator.create(App);
         self.* = App{
             .allocator = allocator,
+            .frame_arena = ArenaAllocator.init(allocator),
+            .frame_allocator = undefined,
             .atlas = atlas,
             .next_id = 0,
             .things = DeepHashMap(Id, Thing).init(allocator),
             .ids = AutoHashMap(Thing, Id).init(allocator),
         };
+        self.frame_allocator = &self.frame_arena.allocator;
 
         const buffer_id = try Buffer.initEmpty(self);
         const editor_id = try Editor.init(self, buffer_id);
@@ -97,7 +101,7 @@ pub const App = struct {
         }
         self.atlas.deinit();
         self.allocator.destroy(self.atlas);
-
+        self.frame_arena.deinit();
         self.allocator.destroy(self);
     }
 
@@ -141,6 +145,10 @@ pub const App = struct {
     }
 
     pub fn frame(self: *App) !void {
+        // reset arena
+        self.frame_arena.deinit();
+        self.frame_arena = ArenaAllocator.init(self.allocator);
+
         // fetch events
         var events = ArrayList(c.SDL_Event).init(self.allocator);
         defer events.deinit();

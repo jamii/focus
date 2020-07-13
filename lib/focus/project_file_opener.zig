@@ -40,13 +40,11 @@ pub const ProjectFileOpener = struct {
         var completions = ArrayList([]const u8).init(app.allocator);
         for (projects) |project| {
             const result = try std.ChildProcess.exec(.{
-                .allocator = app.allocator,
+                .allocator = app.frame_allocator,
                 .argv = &[3][]const u8{"rg", "--files", "-0"},
                 .cwd = project,
                 .max_output_bytes = 128 * 1024 * 1024,
             });
-            defer app.allocator.free(result.stdout);
-            defer app.allocator.free(result.stderr);
             assert(result.term == .Exited and result.term.Exited == 0);
             var lines = std.mem.split(result.stdout, &[1]u8{0});
             while (lines.next()) |line| {
@@ -69,7 +67,10 @@ pub const ProjectFileOpener = struct {
     }
 
     pub fn deinit(self: *ProjectFileOpener) void {
-        self.completions.deinit();
+        for (self.completions) |completion| {
+            self.app.allocator.free(completion);
+        }
+        self.app.allocator.free(self.completions);
     }
 
     pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
@@ -79,8 +80,7 @@ pub const ProjectFileOpener = struct {
         var completions_editor = self.app.getThing(self.completions_editor_id).Editor;
 
         // handle events
-        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
-        defer input_editor_events.deinit();
+        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
         for (events) |event| {
             var delegate = false;
             switch (event.type) {
@@ -104,13 +104,11 @@ pub const ProjectFileOpener = struct {
                     } else if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_RETURN => {
-                                var filename = ArrayList(u8).init(self.app.allocator);
-                                errdefer filename.deinit();
+                                var filename = ArrayList(u8).init(self.app.frame_allocator);
                                 if (self.selected == 0) {
                                     try filename.appendSlice(input_buffer.bytes.items);
                                 } else {
-                                    const selection = try completions_editor.dupeSelection(completions_editor.getMainCursor());
-                                    defer self.app.allocator.free(selection);
+                                    const selection = try completions_editor.dupeSelection(self.app.frame_allocator, completions_editor.getMainCursor());
                                     try filename.appendSlice(selection);
                                 }
                                 if (filename.items.len > 0 and std.fs.path.isSep(filename.items[filename.items.len - 1])) {
@@ -172,8 +170,7 @@ pub const ProjectFileOpener = struct {
         {
             const filter = input_buffer.bytes.items;
             const ScoredCompletion = struct {score: ?usize, completion: []const u8};
-            var scored_completions = ArrayList(ScoredCompletion).init(self.app.allocator);
-            defer scored_completions.deinit();
+            var scored_completions = ArrayList(ScoredCompletion).init(self.app.frame_allocator);
             for (self.completions) |completion| {
                 if (filter.len > 0) {
                     if (std.mem.indexOfScalar(u8, completion, filter[0])) |start| {

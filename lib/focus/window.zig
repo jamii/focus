@@ -108,8 +108,7 @@ pub const Window = struct {
         self.height = @intCast(Coord, h);
         const window_rect = Rect{ .x = 0, .y = 0, .w = self.width, .h = self.height };
 
-        var view_events = ArrayList(c.SDL_Event).init(self.app.allocator);
-        defer view_events.deinit();
+        var view_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
 
         // handle events
         for (events) |event| {
@@ -146,8 +145,7 @@ pub const Window = struct {
                                                 const dirname = std.fs.path.dirname(filename).?;
                                                 var root = dirname;
                                                 while (!meta.deepEqual(root, "/")) {
-                                                    const git_path = try std.fs.path.join(self.app.allocator, &[2][]const u8{root, ".git"});
-                                                    defer self.app.allocator.free(git_path);
+                                                    const git_path = try std.fs.path.join(self.app.frame_allocator, &[2][]const u8{root, ".git"});
                                                     if (std.fs.openFileAbsolute(git_path, .{})) |file| {
                                                         file.close();
                                                         break;
@@ -155,7 +153,7 @@ pub const Window = struct {
                                                     root = std.fs.path.dirname(root).?;
                                                 }
                                                 project_dir = if (meta.deepEqual(root, "/")) dirname else root;
-                                                filter = try editor.dupeSelection(editor.getMainCursor()); // TODO free?
+                                                filter = try editor.dupeSelection(self.app.frame_allocator, editor.getMainCursor());
                                             },
                                         }
                                     },

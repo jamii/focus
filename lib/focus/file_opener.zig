@@ -48,8 +48,7 @@ pub const FileOpener = struct {
         var completions_editor = self.app.getThing(self.completions_editor_id).Editor;
 
         // handle events
-        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
-        defer input_editor_events.deinit();
+        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
         for (events) |event| {
             var delegate = false;
             switch (event.type) {
@@ -73,8 +72,7 @@ pub const FileOpener = struct {
                     } else if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_RETURN => {
-                                var filename = ArrayList(u8).init(self.app.allocator);
-                                errdefer filename.deinit();
+                                var filename = ArrayList(u8).init(self.app.frame_allocator);
                                 if (self.selected == 0) {
                                     try filename.appendSlice(input_buffer.bytes.items);
                                 } else {
@@ -85,8 +83,7 @@ pub const FileOpener = struct {
                                         std.fs.path.dirname(path) orelse "";
                                     try filename.appendSlice(dirname);
                                     try filename.append('/');
-                                    const selection = try completions_editor.dupeSelection(completions_editor.getMainCursor());
-                                    defer self.app.allocator.free(selection);
+                                    const selection = try completions_editor.dupeSelection(self.app.frame_allocator, completions_editor.getMainCursor());
                                     try filename.appendSlice(selection);
                                 }
                                 if (filename.items.len > 0 and std.fs.path.isSep(filename.items[filename.items.len - 1])) {

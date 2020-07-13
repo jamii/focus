@@ -37,8 +37,7 @@ pub const Buffer = struct {
         defer file.close();
 
         const chunk_size = 1024;
-        var buf = try self.app.allocator.alloc(u8, chunk_size);
-        defer self.app.allocator.free(buf);
+        var buf = try self.app.frame_allocator.alloc(u8, chunk_size);
 
         while (true) {
             const len = try file.readAll(buf);
@@ -46,7 +45,7 @@ pub const Buffer = struct {
             if (len < chunk_size) break;
         }
 
-        self.source = .{ .AbsoluteFilename = filename };
+        self.source = .{ .AbsoluteFilename = try std.mem.dupe(self.app.allocator, u8, filename) };
     }
 
     pub fn deinit(self: *Buffer) void {

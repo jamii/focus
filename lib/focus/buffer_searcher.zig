@@ -69,8 +69,7 @@ pub const BufferSearcher = struct {
         var action: Action = .None;
 
         // handle events
-        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.allocator);
-        defer input_editor_events.deinit();
+        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
         for (events) |event| {
             var delegate = false;
             switch (event.type) {
@@ -123,8 +122,7 @@ pub const BufferSearcher = struct {
 
         // filter completions
         {
-            const max_line_string = try format(self.app.allocator, "{}", .{target_buffer.countLines()});
-            defer self.app.allocator.free(max_line_string);
+            const max_line_string = try format(self.app.frame_allocator, "{}", .{target_buffer.countLines()});
             const filter = input_buffer.bytes.items;
             completions_buffer.bytes.shrink(0);
             try target_editor.collapseCursors();
@@ -138,8 +136,7 @@ pub const BufferSearcher = struct {
                 while (target_buffer.searchForwards(pos, filter)) |found_pos| {
                     const start = target_buffer.getLineStart(found_pos);
                     const end = target_buffer.getLineEnd(found_pos + filter.len);
-                    const selection = try target_buffer.dupe(self.app.allocator, start, end);
-                    defer self.app.allocator.free(selection);
+                    const selection = try target_buffer.dupe(self.app.frame_allocator, start, end);
                     assert(selection[0] != '\n' and selection[selection.len-1] != '\n');
 
                     switch (action) {
@@ -160,8 +157,7 @@ pub const BufferSearcher = struct {
 
                     // TODO highlight found area
                     const line = target_buffer.getLineColForPos(found_pos)[0];
-                    const line_string = try format(self.app.allocator, "{}", .{line});
-                    defer self.app.allocator.free(line_string);
+                    const line_string = try format(self.app.frame_allocator, "{}", .{line});
                     try completions_buffer.bytes.appendSlice(line_string);
                     try completions_buffer.bytes.appendNTimes(' ', max_line_string.len - line_string.len + 1);
                     try completions_buffer.bytes.appendSlice(selection);
