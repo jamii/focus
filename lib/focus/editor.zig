@@ -45,13 +45,13 @@ pub const Editor = struct {
 
     const scroll_amount = 16;
 
-    pub fn init(app: *App, buffer_id: Id) !Id {
+    pub fn init(app: *App, buffer_id: Id) Id {
         var cursors = ArrayList(Cursor).init(app.allocator);
-        try cursors.append(.{
+        cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
             .clipboard = "",
-        });
+        }) catch oom();
         return app.putThing(Editor{
             .app = app,
             .buffer_id = buffer_id,
@@ -74,7 +74,7 @@ pub const Editor = struct {
         return self.app.getThing(self.buffer_id).Buffer;
     }
 
-    pub fn frame(self: *Editor, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
+    pub fn frame(self: *Editor, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         // handle events
         // if we get textinput, we'll also get the keydown first
         // if the keydown is mapped to a command, we'll do that and ignore the textinput
@@ -88,15 +88,15 @@ pub const Editor = struct {
                         switch (sym.sym) {
                             ' ' => self.toggleMark(),
                             'c' => {
-                                for (self.cursors.items) |*cursor| try self.copy(cursor);
+                                for (self.cursors.items) |*cursor| self.copy(cursor);
                                 self.clearMark();
                             },
                             'x' => {
-                                for (self.cursors.items) |*cursor| try self.cut(cursor);
+                                for (self.cursors.items) |*cursor| self.cut(cursor);
                                 self.clearMark();
                             },
                             'v' => {
-                                for (self.cursors.items) |*cursor| try self.paste(cursor);
+                                for (self.cursors.items) |*cursor| self.paste(cursor);
                                 self.clearMark();
                             },
                             'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
@@ -104,16 +104,16 @@ pub const Editor = struct {
                             'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
                             'i' => for (self.cursors.items) |*cursor| self.goUp(cursor),
                             'q' => {
-                                try self.collapseCursors();
+                                self.collapseCursors();
                                 self.clearMark();
                             },
-                            'd' => try self.addNextMatch(),
-                            's' => try self.buffer().save(),
+                            'd' => self.addNextMatch(),
+                            's' => self.buffer().save(),
                             'f' => {
                                 const self_id = self.app.getId(self);
-                                const selection = try self.dupeSelection(self.app.frame_allocator, self.getMainCursor());
-                                const buffer_searcher_id = try BufferSearcher.init(self.app, self.buffer_id, self_id, selection);
-                                try window.pushView(buffer_searcher_id);
+                                const selection = self.dupeSelection(self.app.frame_allocator, self.getMainCursor());
+                                const buffer_searcher_id = BufferSearcher.init(self.app, self.buffer_id, self_id, selection);
+                                window.pushView(buffer_searcher_id);
                             },
                             else => accept_textinput = true,
                         }
@@ -133,7 +133,7 @@ pub const Editor = struct {
                                 self.clearMark();
                             },
                             c.SDLK_RETURN => {
-                                for (self.cursors.items) |*cursor| try self.insert(cursor, &[1]u8{'\n'});
+                                for (self.cursors.items) |*cursor| self.insert(cursor, &[1]u8{'\n'});
                                 self.clearMark();
                             },
                             // c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
@@ -153,7 +153,7 @@ pub const Editor = struct {
                 c.SDL_TEXTINPUT => {
                     if (accept_textinput) {
                         const text = event.text.text[0..std.mem.indexOfScalar(u8, &event.text.text, 0).?];
-                        for (self.cursors.items) |*cursor| try self.insert(cursor, text);
+                        for (self.cursors.items) |*cursor| self.insert(cursor, text);
                         self.clearMark();
                     }
                 },
@@ -166,7 +166,7 @@ pub const Editor = struct {
                         const mod = @enumToInt(c.SDL_GetModState());
                         if (mod == c.KMOD_LCTRL or mod == c.KMOD_RCTRL) {
                             self.dragging = .CtrlDragging;
-                            var cursor = try self.newCursor();
+                            var cursor = self.newCursor();
                             self.updatePos(&cursor.head, pos);
                             self.updatePos(&cursor.tail, pos);
                         } else {
@@ -251,7 +251,7 @@ pub const Editor = struct {
         const visible_end_line = visible_start_line + num_visible_lines;
 
         // draw background
-        try window.queueRect(rect, style.background_color);
+        window.queueRect(rect, style.background_color);
 
         // draw cursors, selections, text
         var lines = std.mem.split(self.buffer().bytes.items, "\n");
@@ -270,7 +270,7 @@ pub const Editor = struct {
                     if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
                         const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * self.app.atlas.char_width);
                         const w = @divTrunc(self.app.atlas.char_width, 8);
-                        try window.queueRect(
+                        window.queueRect(
                             .{
                                 .x = @intCast(Coord, x) - @divTrunc(w, 2),
                                 .y = @intCast(Coord, y),
@@ -293,7 +293,7 @@ pub const Editor = struct {
                                 rect.x + rect.w - x
                             else
                                 @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
-                            try window.queueRect(.{
+                            window.queueRect(.{
                                 .x = @intCast(Coord, x),
                                 .y = @intCast(Coord, y),
                                 .w = @intCast(Coord, w),
@@ -304,7 +304,7 @@ pub const Editor = struct {
                 }
 
                 // draw text
-                try window.queueText(.{ .x = rect.x, .y = @intCast(Coord, y) }, style.text_color, line);
+                window.queueText(.{ .x = rect.x, .y = @intCast(Coord, y) }, style.text_color, line);
             }
 
             line_start_pos = line_end_pos + 1; // + 1 for '\n'
@@ -315,7 +315,7 @@ pub const Editor = struct {
             const ratio = @intToFloat(f64, self.top_pixel) / @intToFloat(f64, max_pixels);
             const y = rect.y + min(@floatToInt(Coord, @intToFloat(f64, rect.h) * ratio), rect.h - self.app.atlas.char_height);
             const x = rect.x + rect.w - self.app.atlas.char_width;
-            try window.queueText(.{ .x = x, .y = y }, style.highlight_color, "<");
+            window.queueText(.{ .x = x, .y = y }, style.highlight_color, "<");
         }
     }
 
@@ -394,9 +394,9 @@ pub const Editor = struct {
         self.goPos(cursor, self.buffer().getBufferEnd());
     }
 
-    pub fn insert(self: *Editor, cursor: *Cursor, bytes: []const u8) !void {
+    pub fn insert(self: *Editor, cursor: *Cursor, bytes: []const u8) void {
         self.deleteSelection(cursor);
-        try self.buffer().insert(cursor.head.pos, bytes);
+        self.buffer().insert(cursor.head.pos, bytes);
         const insert_at = cursor.head.pos;
         for (self.cursors.items) |*other_cursor| {
             for (&[2]*Point{ &other_cursor.head, &other_cursor.tail }) |point| {
@@ -479,41 +479,41 @@ pub const Editor = struct {
         }
     }
 
-    pub fn dupeSelection(self: *Editor, allocator: *Allocator, cursor: *Cursor) ![]const u8 {
+    pub fn dupeSelection(self: *Editor, allocator: *Allocator, cursor: *Cursor) []const u8 {
         const range = self.getSelectionRange(cursor);
         return self.buffer().dupe(allocator, range[0], range[1]);
     }
 
-    pub fn copy(self: *Editor, cursor: *Cursor) !void {
+    pub fn copy(self: *Editor, cursor: *Cursor) void {
         self.app.allocator.free(cursor.clipboard);
-        cursor.clipboard = try self.dupeSelection(self.app.allocator, cursor);
+        cursor.clipboard = self.dupeSelection(self.app.allocator, cursor);
     }
 
-    pub fn cut(self: *Editor, cursor: *Cursor) !void {
+    pub fn cut(self: *Editor, cursor: *Cursor) void {
         self.app.allocator.free(cursor.clipboard);
-        cursor.clipboard = try self.dupeSelection(self.app.allocator, cursor);
+        cursor.clipboard = self.dupeSelection(self.app.allocator, cursor);
         self.deleteSelection(cursor);
     }
 
-    pub fn paste(self: *Editor, cursor: *Cursor) !void {
-        try self.insert(cursor, cursor.clipboard);
+    pub fn paste(self: *Editor, cursor: *Cursor) void {
+        self.insert(cursor, cursor.clipboard);
     }
 
-    pub fn newCursor(self: *Editor) !*Cursor {
-        try self.cursors.append(.{
+    pub fn newCursor(self: *Editor) *Cursor {
+        self.cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
             .clipboard = "",
-        });
+        }) catch oom();
         return &self.cursors.items[self.cursors.items.len - 1];
     }
 
-    pub fn collapseCursors(self: *Editor) !void {
+    pub fn collapseCursors(self: *Editor) void {
         var size: usize = 0;
         for (self.cursors.items) |cursor| {
             size += cursor.clipboard.len;
         }
-        var clipboard = try ArrayList(u8).initCapacity(self.app.allocator, size);
+        var clipboard = ArrayList(u8).initCapacity(self.app.allocator, size) catch oom();
         for (self.cursors.items) |cursor| {
             clipboard.appendSlice(cursor.clipboard) catch unreachable;
             self.app.allocator.free(cursor.clipboard);
@@ -526,9 +526,9 @@ pub const Editor = struct {
         return &self.cursors.items[self.cursors.items.len - 1];
     }
 
-    pub fn addNextMatch(self: *Editor) !void {
+    pub fn addNextMatch(self: *Editor) void {
         const main_cursor = self.getMainCursor();
-        const selection = try self.dupeSelection(self.app.frame_allocator, main_cursor);
+        const selection = self.dupeSelection(self.app.frame_allocator, main_cursor);
         if (self.buffer().searchForwards(max(main_cursor.head.pos, main_cursor.tail.pos), selection)) |pos| {
             var cursor = Cursor{
                 .head = .{ .pos = pos + selection.len, .col = 0 },
@@ -537,7 +537,7 @@ pub const Editor = struct {
             };
             self.updateCol(&cursor.head);
             self.updateCol(&cursor.tail);
-            try self.cursors.append(cursor);
+            self.cursors.append(cursor) catch oom();
         }
     }
 };

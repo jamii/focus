@@ -16,12 +16,11 @@ pub const Atlas = struct {
 
     pub const point_size = 10;
 
-    pub fn init(allocator: *Allocator) !Atlas {
+    pub fn init(allocator: *Allocator) Atlas {
 
         // init SDL2_ttf
         if (c.TTF_Init() != 0)
             panic("TTF_Init failed: {s}", .{c.TTF_GetError()});
-        errdefer (c.TTF_Quit());
 
         // load font
         var reader = c.SDL_RWFromConstMem(fira_code, @intCast(c_int, fira_code.len)) orelse panic("Font reader failed: {s}", .{c.SDL_GetError()});
@@ -30,10 +29,9 @@ pub const Atlas = struct {
             1, // automatically close reader
             16, // point_size,
         ) orelse panic("Font load failed: {s}", .{c.TTF_GetError()});
-        errdefer c.TTF_CloseFont(font);
 
         // render all ascii chars
-        var text = try allocator.allocSentinel(u8, 128, 0);
+        var text = allocator.allocSentinel(u8, 128, 0) catch oom();
         defer allocator.free(text);
         text[0] = ' '; // going to overwrite this with a white block in final texture
         {
@@ -47,7 +45,7 @@ pub const Atlas = struct {
 
         // copy the texture
         assert(surface.*.format.*.format == c.SDL_PIXELFORMAT_ARGB8888);
-        const texture = try std.mem.dupe(allocator, Color, @ptrCast([*]Color, surface.*.pixels)[0..@intCast(usize, surface.*.w * surface.*.h)]);
+        const texture = std.mem.dupe(allocator, Color, @ptrCast([*]Color, surface.*.pixels)[0..@intCast(usize, surface.*.w * surface.*.h)]) catch oom();
 
         // make a white pixel
         texture[0] = Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
@@ -59,8 +57,7 @@ pub const Atlas = struct {
         const char_height = @intCast(Coord, surface.*.h);
 
         // calculate location of each char
-        var char_to_rect = try allocator.alloc(Rect, text.len);
-        errdefer allocator.free(char_to_rect);
+        var char_to_rect = allocator.alloc(Rect, text.len) catch oom();
         char_to_rect[0] = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
         {
             var char: usize = 1;

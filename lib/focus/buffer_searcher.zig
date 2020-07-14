@@ -22,15 +22,15 @@ pub const BufferSearcher = struct {
     completions_editor_id: Id,
     selected: usize, // 0 for nothing selected, i-1 for line i
 
-    pub fn init(app: *App, target_buffer_id: Id, target_editor_id: Id, init_filter: []const u8) !Id {
+    pub fn init(app: *App, target_buffer_id: Id, target_editor_id: Id, init_filter: []const u8) Id {
         // TODO don't directly mutate buffer - messes up multiple cursors - go via editor instead
-        const input_buffer_id = try Buffer.initEmpty(app);
-        const input_editor_id = try Editor.init(app, input_buffer_id);
-        const completions_buffer_id = try Buffer.initEmpty(app);
-        const completions_editor_id = try Editor.init(app, completions_buffer_id);
+        const input_buffer_id = Buffer.initEmpty(app);
+        const input_editor_id = Editor.init(app, input_buffer_id);
+        const completions_buffer_id = Buffer.initEmpty(app);
+        const completions_editor_id = Editor.init(app, completions_buffer_id);
 
         // set initial filter
-        try app.getThing(input_buffer_id).Buffer.insert(0, init_filter);
+        app.getThing(input_buffer_id).Buffer.insert(0, init_filter);
 
         // start cursor at end
         var input_editor = app.getThing(input_editor_id).Editor;
@@ -53,7 +53,7 @@ pub const BufferSearcher = struct {
     pub fn deinit(self: *BufferSearcher) void {
     }
 
-    pub fn frame(self: *BufferSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
+    pub fn frame(self: *BufferSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         var target_buffer = self.app.getThing(self.target_buffer_id).Buffer;
         var target_editor = self.app.getThing(self.target_editor_id).Editor;
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
@@ -108,7 +108,7 @@ pub const BufferSearcher = struct {
                 else => delegate = true,
             }
             // delegate other events to input editor
-            if (delegate) try input_editor_events.append(event);
+            if (delegate) input_editor_events.append(event) catch oom();
         }
 
         // remove any sneaky newlines
@@ -122,10 +122,10 @@ pub const BufferSearcher = struct {
 
         // filter completions
         {
-            const max_line_string = try format(self.app.frame_allocator, "{}", .{target_buffer.countLines()});
+            const max_line_string = format(self.app.frame_allocator, "{}", .{target_buffer.countLines()});
             const filter = input_buffer.bytes.items;
             completions_buffer.bytes.shrink(0);
-            try target_editor.collapseCursors();
+            target_editor.collapseCursors();
             target_editor.setMark();
             if (action != .None) {
                 window.popView();
@@ -136,7 +136,7 @@ pub const BufferSearcher = struct {
                 while (target_buffer.searchForwards(pos, filter)) |found_pos| {
                     const start = target_buffer.getLineStart(found_pos);
                     const end = target_buffer.getLineEnd(found_pos + filter.len);
-                    const selection = try target_buffer.dupe(self.app.frame_allocator, start, end);
+                    const selection = target_buffer.dupe(self.app.frame_allocator, start, end);
                     assert(selection[0] != '\n' and selection[selection.len-1] != '\n');
 
                     switch (action) {
@@ -148,7 +148,7 @@ pub const BufferSearcher = struct {
                             }
                         },
                         .SelectAll => {
-                            var cursor = if (i == 0) target_editor.getMainCursor() else try target_editor.newCursor();
+                            var cursor = if (i == 0) target_editor.getMainCursor() else target_editor.newCursor();
                             target_editor.goPos(cursor, found_pos);
                             target_editor.updatePos(&cursor.tail, found_pos + filter.len);
                         }
@@ -157,11 +157,11 @@ pub const BufferSearcher = struct {
 
                     // TODO highlight found area
                     const line = target_buffer.getLineColForPos(found_pos)[0];
-                    const line_string = try format(self.app.frame_allocator, "{}", .{line});
-                    try completions_buffer.bytes.appendSlice(line_string);
-                    try completions_buffer.bytes.appendNTimes(' ', max_line_string.len - line_string.len + 1);
-                    try completions_buffer.bytes.appendSlice(selection);
-                    try completions_buffer.bytes.append('\n');
+                    const line_string = format(self.app.frame_allocator, "{}", .{line});
+                    completions_buffer.bytes.appendSlice(line_string) catch oom();
+                    completions_buffer.bytes.appendNTimes(' ', max_line_string.len - line_string.len + 1) catch oom();
+                    completions_buffer.bytes.appendSlice(selection) catch oom();
+                    completions_buffer.bytes.append('\n') catch oom();
                     pos = found_pos + filter.len;
                     i += 1;
                 }
@@ -187,10 +187,10 @@ pub const BufferSearcher = struct {
         const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
         const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
         const completions_rect = all_rect;
-        try target_editor.frame(window, target_rect, &[0]c.SDL_Event{});
-        try window.queueRect(border1_rect, style.text_color);
-        try completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
-        try window.queueRect(border2_rect, style.text_color);
-        try input_editor.frame(window, input_rect, input_editor_events.items);
+        target_editor.frame(window, target_rect, &[0]c.SDL_Event{});
+        window.queueRect(border1_rect, style.text_color);
+        completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
+        window.queueRect(border2_rect, style.text_color);
+        input_editor.frame(window, input_rect, input_editor_events.items);
     }
 };

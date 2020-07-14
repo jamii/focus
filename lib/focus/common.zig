@@ -18,13 +18,23 @@ pub const ArrayList = std.ArrayList;
 pub const HashMap = std.HashMap;
 pub const AutoHashMap = std.AutoHashMap;
 
+// TODO should probably preallocate memory for panic message
 pub fn panic(comptime fmt: []const u8, args: var) noreturn {
-    const message = format(std.heap.c_allocator, fmt, args) catch |err| message: {
-        switch (err) {
-            error.OutOfMemory => break :message "OOM inside panic",
-        }
+    var buf = ArrayList(u8).init(std.heap.c_allocator);
+    var out = buf.outStream();
+    const message: []const u8 = message: {
+        std.fmt.format(out, fmt, args) catch |err| {
+            switch (err) {
+                error.OutOfMemory => break :message "OOM inside panic",
+            }
+        };
+        break :message buf.toOwnedSlice();
     };
     @panic(message);
+}
+
+pub fn oom() noreturn {
+    @panic("Out of memory");
 }
 
 pub fn DeepHashMap(comptime K: type, comptime V: type) type {
@@ -133,10 +143,10 @@ pub fn dumpInto(out_stream: var, indent: u32, thing: var) anyerror!void {
     }
 }
 
-pub fn format(allocator: *Allocator, comptime fmt: []const u8, args: var) ![]const u8 {
+pub fn format(allocator: *Allocator, comptime fmt: []const u8, args: var) []const u8 {
     var buf = ArrayList(u8).init(allocator);
     var out = buf.outStream();
-    try std.fmt.format(out, fmt, args);
+    std.fmt.format(out, fmt, args) catch oom();
     return buf.items;
 }
 

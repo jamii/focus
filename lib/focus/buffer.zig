@@ -13,7 +13,7 @@ pub const Buffer = struct {
     source: BufferSource,
     bytes: ArrayList(u8),
 
-    pub fn initEmpty(app: *App) !Id {
+    pub fn initEmpty(app: *App) Id {
         return app.putThing(Buffer{
             .app = app,
             .source = .None,
@@ -21,31 +21,11 @@ pub const Buffer = struct {
         });
     }
 
-    pub fn initFromAbsoluteFilename(app: *App, filename: []const u8) !Id {
-        const self_id = try Buffer.initEmpty(app);
+    pub fn initFromAbsoluteFilename(app: *App, filename: []const u8) Id {
+        const self_id = Buffer.initEmpty(app);
         var self = app.getThing(self_id).Buffer;
-        try self.load(filename);
+        self.load(filename);
         return self_id;
-    }
-
-    pub fn load(self: *Buffer, filename: []const u8) !void {
-        assert(std.fs.path.isAbsolute(filename));
-
-        self.bytes.shrink(0);
-
-        const file = try std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false });
-        defer file.close();
-
-        const chunk_size = 1024;
-        var buf = try self.app.frame_allocator.alloc(u8, chunk_size);
-
-        while (true) {
-            const len = try file.readAll(buf);
-            try self.bytes.appendSlice(buf[0..len]);
-            if (len < chunk_size) break;
-        }
-
-        self.source = .{ .AbsoluteFilename = try std.mem.dupe(self.app.allocator, u8, filename) };
     }
 
     pub fn deinit(self: *Buffer) void {
@@ -56,13 +36,39 @@ pub const Buffer = struct {
         }
     }
 
-    pub fn save(self: *Buffer) !void {
+    pub fn load(self: *Buffer, filename: []const u8) void {
+        assert(std.fs.path.isAbsolute(filename));
+
+        self.bytes.shrink(0);
+
+        const file = std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false })
+            catch |err| panic("{} while loading {s}", .{err, filename});
+        defer file.close();
+
+        const chunk_size = 1024;
+        var buf = self.app.frame_allocator.alloc(u8, chunk_size) catch oom();
+
+        while (true) {
+            const len = file.readAll(buf)
+                catch |err| panic("{} while loading {s}", .{err, filename});
+            // worth handling oom here for big files
+            self.bytes.appendSlice(buf[0..len])
+                catch |err| panic("{} while loading {s}", .{err, filename});
+            if (len < chunk_size) break;
+        }
+
+        self.source = .{ .AbsoluteFilename = std.mem.dupe(self.app.allocator, u8, filename) catch oom() };
+    }
+
+    pub fn save(self: *Buffer) void {
         switch (self.source) {
             .None => {},
             .AbsoluteFilename => |filename| {
-                const file = try std.fs.cwd().createFile(filename, .{ .read = false, .truncate = true });
+                const file = std.fs.cwd().createFile(filename, .{ .read = false, .truncate = true })
+                    catch |err| panic("{} while saving {s}", .{err, filename});
                 defer file.close();
-                try file.writeAll(self.bytes.items);
+                file.writeAll(self.bytes.items)
+                    catch |err| panic("{} while saving {s}", .{err, filename});
             },
         }
     }
@@ -116,14 +122,14 @@ pub const Buffer = struct {
         return self.searchForwards(pos, "\n") orelse self.getBufferEnd();
     }
 
-    pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) ![]const u8 {
+    pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) []const u8 {
         assert(start <= end);
         assert(end <= self.bytes.items.len);
-        return std.mem.dupe(allocator, u8, self.bytes.items[start..end]);
+        return std.mem.dupe(allocator, u8, self.bytes.items[start..end]) catch oom();
     }
 
-    pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) !void {
-        try self.bytes.resize(self.bytes.items.len + bytes.len);
+    pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) void {
+        self.bytes.resize(self.bytes.items.len + bytes.len) catch oom();
         std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
     }

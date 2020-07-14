@@ -23,17 +23,17 @@ pub const ProjectSearcher = struct {
     completions_editor_id: Id,
     selected: usize, // 0 for nothing selected, i-1 for line i
 
-    pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) !Id {
+    pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) Id {
         // TODO don't directly mutate buffer - messes up multiple cursors - go via editor instead
-        const target_buffer_id = try Buffer.initEmpty(app);
-        const target_editor_id = try Editor.init(app, target_buffer_id);
-        const input_buffer_id = try Buffer.initEmpty(app);
-        const input_editor_id = try Editor.init(app, input_buffer_id);
-        const completions_buffer_id = try Buffer.initEmpty(app);
-        const completions_editor_id = try Editor.init(app, completions_buffer_id);
+        const target_buffer_id = Buffer.initEmpty(app);
+        const target_editor_id = Editor.init(app, target_buffer_id);
+        const input_buffer_id = Buffer.initEmpty(app);
+        const input_editor_id = Editor.init(app, input_buffer_id);
+        const completions_buffer_id = Buffer.initEmpty(app);
+        const completions_editor_id = Editor.init(app, completions_buffer_id);
 
         // set initial filter
-        try app.getThing(input_buffer_id).Buffer.insert(0, init_filter);
+        app.getThing(input_buffer_id).Buffer.insert(0, init_filter);
 
         // start cursor at end
         var input_editor = app.getThing(input_editor_id).Editor;
@@ -55,7 +55,7 @@ pub const ProjectSearcher = struct {
     pub fn deinit(self: *ProjectSearcher) void {
     }
 
-    pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
+    pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         var target_buffer = self.app.getThing(self.target_buffer_id).Buffer;
         var target_editor = self.app.getThing(self.target_editor_id).Editor;
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
@@ -110,7 +110,7 @@ pub const ProjectSearcher = struct {
                 else => delegate = true,
             }
             // delegate other events to input editor
-            if (delegate) try input_editor_events.append(event);
+            if (delegate) input_editor_events.append(event) catch oom();
         }
 
         // remove any sneaky newlines
@@ -124,40 +124,42 @@ pub const ProjectSearcher = struct {
 
         // filter completions
         {
-            const max_line_string = try format(self.app.frame_allocator, "{}", .{target_buffer.countLines()});
+            const max_line_string = format(self.app.frame_allocator, "{}", .{target_buffer.countLines()});
             const filter = input_buffer.bytes.items;
             completions_buffer.bytes.shrink(0);
-            try target_editor.collapseCursors();
+            target_editor.collapseCursors();
             target_editor.clearMark();
             if (action != .None) {
                 window.popView();
-                try window.pushView(self.target_editor_id);
+                window.pushView(self.target_editor_id);
             }
             if (filter.len > 0) {
-                const result = try std.ChildProcess.exec(.{
+                const result = std.ChildProcess.exec(.{
                     .allocator = self.app.frame_allocator,
                     // TODO would prefer null separated but tricky to parse
                     .argv = &[6][]const u8{"rg", "--line-number", "--sort", "path", "--fixed-strings", filter},
                     .cwd = self.project_dir,
                     .max_output_bytes = 128 * 1024 * 1024,
-                });
+                }) catch |err| panic("{} while calling rg", .{err});
                 assert(result.term == .Exited); // exits with 1 if no search results
                 var lines = std.mem.split(result.stdout, "\n");
                 var i: usize = 0;
                 while (lines.next()) |line| {
                     if (line.len != 0) {
-                        try completions_buffer.bytes.appendSlice(line);
-                        try completions_buffer.bytes.append('\n');
+                        completions_buffer.bytes.appendSlice(line) catch oom();
+                        completions_buffer.bytes.append('\n') catch oom();
 
                         switch (action) {
                             .None, .SelectOne => {
                                 if (i + 1 == self.selected) {
                                     var parts = std.mem.split(line, ":");
                                     const path_suffix = parts.next().?;
-                                    const line_number = try std.fmt.parseInt(usize, parts.next().?, 10);
+                                    const line_number_string = parts.next().?;
+                                    const line_number = std.fmt.parseInt(usize, line_number_string, 10)
+                                        catch |err| panic("{} while parsing line number {s} from rg", .{err, line_number_string});
 
-                                    const path = try std.fs.path.join(self.app.frame_allocator, &[2][]const u8{self.project_dir, path_suffix});
-                                    try target_buffer.load(path);
+                                    const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{self.project_dir, path_suffix}) catch oom();
+                                    target_buffer.load(path);
 
                                     var cursor = target_editor.getMainCursor();
                                     target_editor.goLine(cursor, line_number - 1);
@@ -192,10 +194,10 @@ pub const ProjectSearcher = struct {
         const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
         const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
         const completions_rect = all_rect;
-        try target_editor.frame(window, target_rect, &[0]c.SDL_Event{});
-        try window.queueRect(border1_rect, style.text_color);
-        try completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
-        try window.queueRect(border2_rect, style.text_color);
-        try input_editor.frame(window, input_rect, input_editor_events.items);
+        target_editor.frame(window, target_rect, &[0]c.SDL_Event{});
+        window.queueRect(border1_rect, style.text_color);
+        completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
+        window.queueRect(border2_rect, style.text_color);
+        input_editor.frame(window, input_rect, input_editor_events.items);
     }
 };

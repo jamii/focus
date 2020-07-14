@@ -23,9 +23,9 @@ pub const Window = struct {
     color_buffer: ArrayList(Quad(Color)),
     index_buffer: ArrayList([2]Tri(u32)),
 
-    pub fn init(app: *App, view: Id) !Id {
+    pub fn init(app: *App, view: Id) Id {
         var views = ArrayList(Id).init(app.allocator);
-        try views.append(view);
+        views.append(view) catch oom();
 
         // pretty arbitrary
         const init_width: usize = 1920;
@@ -99,7 +99,7 @@ pub const Window = struct {
         c.SDL_DestroyWindow(self.window);
     }
 
-    pub fn frame(self: *Window, events: []const c.SDL_Event) !void {
+    pub fn frame(self: *Window, events: []const c.SDL_Event) void {
         // figure out window size
         var w: c_int = undefined;
         var h: c_int = undefined;
@@ -119,13 +119,13 @@ pub const Window = struct {
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
                             'o' => {
-                                const file_opener_id = try FileOpener.init(self.app, "/home/jamie/");
-                                try self.pushView(file_opener_id);
+                                const file_opener_id = FileOpener.init(self.app, "/home/jamie/");
+                                self.pushView(file_opener_id);
                                 handled = true;
                             },
                             'p' => {
-                                const project_file_opener_id = try ProjectFileOpener.init(self.app);
-                                try self.pushView(project_file_opener_id);
+                                const project_file_opener_id = ProjectFileOpener.init(self.app);
+                                self.pushView(project_file_opener_id);
                                 handled = true;
                             },
                             else => {},
@@ -145,7 +145,7 @@ pub const Window = struct {
                                                 const dirname = std.fs.path.dirname(filename).?;
                                                 var root = dirname;
                                                 while (!meta.deepEqual(root, "/")) {
-                                                    const git_path = try std.fs.path.join(self.app.frame_allocator, &[2][]const u8{root, ".git"});
+                                                    const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{root, ".git"}) catch oom();
                                                     if (std.fs.openFileAbsolute(git_path, .{})) |file| {
                                                         file.close();
                                                         break;
@@ -153,14 +153,14 @@ pub const Window = struct {
                                                     root = std.fs.path.dirname(root).?;
                                                 }
                                                 project_dir = if (meta.deepEqual(root, "/")) dirname else root;
-                                                filter = try editor.dupeSelection(self.app.frame_allocator, editor.getMainCursor());
+                                                filter = editor.dupeSelection(self.app.frame_allocator, editor.getMainCursor());
                                             },
                                         }
                                     },
                                     else => {}
                                 }
-                                const project_searcher_id = try ProjectSearcher.init(self.app, project_dir, filter);
-                                try self.pushView(project_searcher_id);
+                                const project_searcher_id = ProjectSearcher.init(self.app, project_dir, filter);
+                                self.pushView(project_searcher_id);
                                 handled = true;
                             },
                             else => {},
@@ -170,17 +170,17 @@ pub const Window = struct {
                 else => {},
             }
             // delegate other events to editor
-            if (!handled) try view_events.append(event);
+            if (!handled) view_events.append(event) catch oom();
         }
 
         // run view frame
         var view = self.app.getThing(self.views.items[self.views.items.len - 1]);
         switch (view) {
-            .Editor => |editor| try editor.frame(self, window_rect, view_events.items),
-            .FileOpener => |file_opener| try file_opener.frame(self, window_rect, view_events.items),
-            .ProjectFileOpener => |project_file_opener| try project_file_opener.frame(self, window_rect, view_events.items),
-            .BufferSearcher => |buffer_searcher| try buffer_searcher.frame(self, window_rect, view_events.items),
-            .ProjectSearcher => |project_searcher| try project_searcher.frame(self, window_rect, view_events.items),
+            .Editor => |editor| editor.frame(self, window_rect, view_events.items),
+            .FileOpener => |file_opener| file_opener.frame(self, window_rect, view_events.items),
+            .ProjectFileOpener => |project_file_opener| project_file_opener.frame(self, window_rect, view_events.items),
+            .BufferSearcher => |buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
+            .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
             else => panic("Not a view: {}", .{view}),
         }
 
@@ -215,44 +215,44 @@ pub const Window = struct {
         c.SDL_GL_SwapWindow(self.sdl_window);
 
         // reset
-        try self.texture_buffer.resize(0);
-        try self.vertex_buffer.resize(0);
-        try self.color_buffer.resize(0);
-        try self.index_buffer.resize(0);
+        self.texture_buffer.resize(0) catch oom();
+        self.vertex_buffer.resize(0) catch oom();
+        self.color_buffer.resize(0) catch oom();
+        self.index_buffer.resize(0) catch oom();
     }
 
-    fn queueQuad(self: *Window, dst: Rect, src: Rect, color: Color) !void {
+    fn queueQuad(self: *Window, dst: Rect, src: Rect, color: Color) void {
         const tx = @intToFloat(f32, src.x) / @intToFloat(f32, self.app.atlas.texture_dims.x);
         const ty = @intToFloat(f32, src.y) / @intToFloat(f32, self.app.atlas.texture_dims.y);
         const tw = @intToFloat(f32, src.w) / @intToFloat(f32, self.app.atlas.texture_dims.x);
         const th = @intToFloat(f32, src.h) / @intToFloat(f32, self.app.atlas.texture_dims.y);
-        try self.texture_buffer.append(.{
+        self.texture_buffer.append(.{
             .tl = .{ .x = tx, .y = ty },
             .tr = .{ .x = tx + tw, .y = ty },
             .bl = .{ .x = tx, .y = ty + th },
             .br = .{ .x = tx + tw, .y = ty + th },
-        });
+        }) catch oom();
 
         const vx = @intToFloat(f32, dst.x);
         const vy = @intToFloat(f32, dst.y);
         const vw = @intToFloat(f32, dst.w);
         const vh = @intToFloat(f32, dst.h);
-        try self.vertex_buffer.append(.{
+        self.vertex_buffer.append(.{
             .tl = .{ .x = vx, .y = vy },
             .tr = .{ .x = vx + vw, .y = vy },
             .bl = .{ .x = vx, .y = vy + vh },
             .br = .{ .x = vx + vw, .y = vy + vh },
-        });
+        }) catch oom();
 
-        try self.color_buffer.append(.{
+        self.color_buffer.append(.{
             .tl = color,
             .tr = color,
             .bl = color,
             .br = color,
-        });
+        }) catch oom();
 
         const vertex_ix = @intCast(u32, self.index_buffer.items.len * 4);
-        try self.index_buffer.append(.{
+        self.index_buffer.append(.{
             .{
                 .a = vertex_ix + 0,
                 .b = vertex_ix + 1,
@@ -263,13 +263,13 @@ pub const Window = struct {
                 .b = vertex_ix + 3,
                 .c = vertex_ix + 1,
             },
-        });
+        }) catch oom();
     }
 
     // view api
 
-    pub fn pushView(self: *Window, view: Id) !void {
-        try self.views.append(view);
+    pub fn pushView(self: *Window, view: Id) void {
+        self.views.append(view) catch oom();
     }
 
     pub fn popView(self: *Window) void {
@@ -278,11 +278,11 @@ pub const Window = struct {
 
     // drawing api
 
-    pub fn queueRect(self: *Window, rect: Rect, color: Color) !void {
-        try self.queueQuad(rect, self.app.atlas.white_rect, color);
+    pub fn queueRect(self: *Window, rect: Rect, color: Color) void {
+        self.queueQuad(rect, self.app.atlas.white_rect, color);
     }
 
-    pub fn queueText(self: *Window, pos: Vec2, color: Color, chars: []const u8) !void {
+    pub fn queueText(self: *Window, pos: Vec2, color: Color, chars: []const u8) void {
         // TODO going to need to be able to clip text
         var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
         for (chars) |char| {
@@ -293,12 +293,12 @@ pub const Window = struct {
                 self.app.atlas.white_rect;
             dst.w = src.w;
             dst.h = src.h;
-            try self.queueQuad(dst, src, color);
+            self.queueQuad(dst, src, color);
             dst.x += src.w;
         }
     }
 
-    // pub fn text(self: *Window, rect: Rect, color: Color, chars: []const u8) !void {
+    // pub fn text(self: *Window, rect: Rect, color: Color, chars: []const u8) void {
     //     var h: Coord = 0;
     //     var line_begin: usize = 0;
     //     while (true) {
@@ -333,7 +333,7 @@ pub const Window = struct {
     //                 i += 1;
     //             }
     //         }
-    //         try self.queueText(.{ .x = rect.x, .y = rect.y + h }, color, chars[line_begin..line_end]);
+    //         self.queueText(.{ .x = rect.x, .y = rect.y + h }, color, chars[line_begin..line_end]);
     //         line_begin = line_end;
     //         h += atlas.text_height;
     //         if (line_begin >= chars.len or h > rect.h) {

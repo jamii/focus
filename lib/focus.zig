@@ -13,9 +13,9 @@ pub const style = @import("./focus/style.zig");
 usingnamespace common;
 
 pub fn run(allocator: *Allocator) !void {
-    var app = try App.init(allocator);
+    var app = App.init(allocator);
     while (true) {
-        try app.frame();
+        app.frame();
     }
 }
 
@@ -65,14 +65,14 @@ pub const App = struct {
     things: DeepHashMap(Id, Thing),
     ids: AutoHashMap(Thing, Id),
 
-    pub fn init(allocator: *Allocator) !*App {
+    pub fn init(allocator: *Allocator) *App {
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
             panic("SDL init failed: {s}", .{c.SDL_GetError()});
 
-        var atlas = try allocator.create(Atlas);
-        atlas.* = try Atlas.init(allocator);
+        var atlas = allocator.create(Atlas) catch oom();
+        atlas.* = Atlas.init(allocator);
 
-        var self = try allocator.create(App);
+        var self = allocator.create(App) catch oom();
         self.* = App{
             .allocator = allocator,
             .frame_arena = ArenaAllocator.init(allocator),
@@ -84,11 +84,11 @@ pub const App = struct {
         };
         self.frame_allocator = &self.frame_arena.allocator;
 
-        const buffer_id = try Buffer.initEmpty(self);
-        const editor_id = try Editor.init(self, buffer_id);
-        const window_id = try Window.init(self, editor_id);
+        const buffer_id = Buffer.initEmpty(self);
+        const editor_id = Editor.init(self, buffer_id);
+        const window_id = Window.init(self, editor_id);
 
-        try self.getThing(buffer_id).Buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n" ** 20000));
+        self.getThing(buffer_id).Buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n" ** 20000));
 
         return self;
     }
@@ -107,17 +107,17 @@ pub const App = struct {
 
     // TODO thing gc
 
-    pub fn putThing(self: *App, thing_inner: var) !Id {
+    pub fn putThing(self: *App, thing_inner: var) Id {
         const id = Id{
             .tag = comptime tagOf(@TypeOf(thing_inner)),
             .id = self.next_id,
         };
         self.next_id += 1;
-        const thing_ptr = try self.allocator.create(@TypeOf(thing_inner));
+        const thing_ptr = self.allocator.create(@TypeOf(thing_inner)) catch oom();
         thing_ptr.* = thing_inner;
         const thing = @unionInit(Thing, @typeName(@TypeOf(thing_inner)), thing_ptr);
-        _ = try self.things.put(id, thing);
-        _ = try self.ids.put(thing, id);
+        _ = self.things.put(id, thing) catch oom();
+        _ = self.ids.put(thing, id) catch oom();
         return id;
     }
 
@@ -144,7 +144,7 @@ pub const App = struct {
         }
     }
 
-    pub fn frame(self: *App) !void {
+    pub fn frame(self: *App) void {
         // reset arena
         self.frame_arena.deinit();
         self.frame_arena = ArenaAllocator.init(self.allocator);
@@ -157,7 +157,7 @@ pub const App = struct {
             if (event.type == c.SDL_QUIT) {
                 std.os.exit(0);
             }
-            try events.append(event);
+            events.append(event) catch oom();
         }
 
         // run window frames
@@ -166,10 +166,10 @@ pub const App = struct {
         defer windows.deinit();
         var entity_iter = self.things.iterator();
         while (entity_iter.next()) |kv| {
-            if (kv.value == .Window) try windows.append(kv.value.Window);
+            if (kv.value == .Window) windows.append(kv.value.Window) catch oom();
         }
         for (windows.items) |window| {
-            try window.frame(events.items);
+            window.frame(events.items);
         }
 
         // TODO separate frame from vsync. if vsync takes more than, say, 1s/120 then we must have missed a frame

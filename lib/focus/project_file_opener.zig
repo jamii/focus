@@ -30,26 +30,26 @@ pub const ProjectFileOpener = struct {
     selected: usize, // 0 for nothing selected, i-1 for line i
     completions: []const []const u8,
 
-    pub fn init(app: *App) !Id {
+    pub fn init(app: *App) Id {
         // TODO don't directly mutate buffer - messes up multiple cursors - go via editor instead
-        const input_buffer_id = try Buffer.initEmpty(app);
-        const input_editor_id = try Editor.init(app, input_buffer_id);
-        const completions_buffer_id = try Buffer.initEmpty(app);
-        const completions_editor_id = try Editor.init(app, completions_buffer_id);
+        const input_buffer_id = Buffer.initEmpty(app);
+        const input_editor_id = Editor.init(app, input_buffer_id);
+        const completions_buffer_id = Buffer.initEmpty(app);
+        const completions_editor_id = Editor.init(app, completions_buffer_id);
 
         var completions = ArrayList([]const u8).init(app.allocator);
         for (projects) |project| {
-            const result = try std.ChildProcess.exec(.{
+            const result = std.ChildProcess.exec(.{
                 .allocator = app.frame_allocator,
                 .argv = &[3][]const u8{"rg", "--files", "-0"},
                 .cwd = project,
                 .max_output_bytes = 128 * 1024 * 1024,
-            });
+            }) catch |err| panic("{} while calling rg", .{err});
             assert(result.term == .Exited and result.term.Exited == 0);
             var lines = std.mem.split(result.stdout, &[1]u8{0});
             while (lines.next()) |line| {
-                const completion = try std.fs.path.join(app.allocator, &[2][]const u8{project, line});
-                try completions.append(completion);
+                const completion = std.fs.path.join(app.allocator, &[2][]const u8{project, line}) catch oom();
+                completions.append(completion) catch oom();
             }
         }
 
@@ -73,7 +73,7 @@ pub const ProjectFileOpener = struct {
         self.app.allocator.free(self.completions);
     }
 
-    pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) !void {
+    pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
         var input_editor = self.app.getThing(self.input_editor_id).Editor;
         var completions_buffer = self.app.getThing(self.completions_buffer_id).Buffer;
@@ -106,21 +106,21 @@ pub const ProjectFileOpener = struct {
                             c.SDLK_RETURN => {
                                 var filename = ArrayList(u8).init(self.app.frame_allocator);
                                 if (self.selected == 0) {
-                                    try filename.appendSlice(input_buffer.bytes.items);
+                                    filename.appendSlice(input_buffer.bytes.items) catch oom();
                                 } else {
-                                    const selection = try completions_editor.dupeSelection(self.app.frame_allocator, completions_editor.getMainCursor());
-                                    try filename.appendSlice(selection);
+                                    const selection = completions_editor.dupeSelection(self.app.frame_allocator, completions_editor.getMainCursor());
+                                    filename.appendSlice(selection) catch oom();
                                 }
                                 if (filename.items.len > 0 and std.fs.path.isSep(filename.items[filename.items.len - 1])) {
                                     input_buffer.bytes.shrink(0);
-                                    try input_buffer.bytes.appendSlice(filename.items);
+                                    input_buffer.bytes.appendSlice(filename.items) catch oom();
                                     input_editor.goBufferEnd(input_editor.getMainCursor());
                                     filename.deinit();
                                 } else {
-                                    const new_buffer_id = try Buffer.initFromAbsoluteFilename(self.app, filename.toOwnedSlice());
-                                    const new_editor_id = try Editor.init(self.app, new_buffer_id);
+                                    const new_buffer_id = Buffer.initFromAbsoluteFilename(self.app, filename.toOwnedSlice());
+                                    const new_editor_id = Editor.init(self.app, new_buffer_id);
                                     window.popView();
-                                    try window.pushView(new_editor_id);
+                                    window.pushView(new_editor_id);
                                 }
                             },
                             c.SDLK_TAB => {
@@ -140,7 +140,7 @@ pub const ProjectFileOpener = struct {
                                 if (min_common_prefix_o) |min_common_prefix| {
                                     const path = input_buffer.bytes.items;
                                     input_buffer.delete(0, input_buffer.getBufferEnd());
-                                    try input_buffer.insert(input_buffer.getBufferEnd(), min_common_prefix);
+                                    input_buffer.insert(input_buffer.getBufferEnd(), min_common_prefix);
                                     input_editor.goPos(input_editor.getMainCursor(), input_buffer.getBufferEnd());
                                 }
                             },
@@ -154,7 +154,7 @@ pub const ProjectFileOpener = struct {
                 else => delegate = true,
             }
             // delegate other events to input editor
-            if (delegate) try input_editor_events.append(event);
+            if (delegate) input_editor_events.append(event) catch oom();
         }
 
         // remove any sneaky newlines
@@ -186,12 +186,12 @@ pub const ProjectFileOpener = struct {
                         }
                         if (is_match) {
                             const score = end - start;
-                            try scored_completions.append(.{.score = score, .completion = completion});
+                            scored_completions.append(.{.score = score, .completion = completion}) catch oom();
                         }
                     }
                 } else {
                     const score = 0;
-                    try scored_completions.append(.{.score = score, .completion = completion});
+                    scored_completions.append(.{.score = score, .completion = completion}) catch oom();
                 }
             }
             std.sort.sort(ScoredCompletion, scored_completions.items,
@@ -203,8 +203,8 @@ pub const ProjectFileOpener = struct {
                           );
             completions_buffer.bytes.shrink(0);
             for (scored_completions.items) |scored_completion| {
-                try completions_buffer.bytes.appendSlice(scored_completion.completion);
-                try completions_buffer.bytes.append('\n');
+                completions_buffer.bytes.appendSlice(scored_completion.completion) catch oom();
+                completions_buffer.bytes.append('\n') catch oom();
             }
         }
 
@@ -224,8 +224,8 @@ pub const ProjectFileOpener = struct {
         var completions_rect = rect;
         const input_rect = completions_rect.splitTop(self.app.atlas.char_height, 0);
         const border_rect = completions_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
-        try input_editor.frame(window, input_rect, input_editor_events.items);
-        try window.queueRect(border_rect, style.text_color);
-        try completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
+        input_editor.frame(window, input_rect, input_editor_events.items);
+        window.queueRect(border_rect, style.text_color);
+        completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
     }
 };
