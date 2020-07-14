@@ -12,7 +12,7 @@ pub const style = @import("./focus/style.zig");
 
 usingnamespace common;
 
-pub fn run(allocator: *Allocator) !void {
+pub fn run(allocator: *Allocator) void {
     var app = App.init(allocator);
     while (true) {
         app.frame();
