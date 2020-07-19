@@ -135,7 +135,7 @@ pub const BufferSearcher = struct {
             .SelectOne, .SelectAll => window.popView(),
         }
 
-        // move target
+        // preview
         // TODO centre view on main cursor
         target_editor.collapseCursors();
         switch (action) {

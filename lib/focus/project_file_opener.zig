@@ -164,7 +164,7 @@ pub const ProjectFileOpener = struct {
         const action = self.selector.frame(window, selector_rect, selector_events.toOwnedSlice(), just_paths.items);
 
         // maybe open file
-        if (action == .SelectOne) {
+        if (action == .SelectOne and just_paths.items.len > 0) {
             const path = just_paths.items[self.selector.selected];
             if (path.len > 0 and std.fs.path.isSep(path[path.len - 1])) {
                 input_buffer.bytes.shrink(0);
