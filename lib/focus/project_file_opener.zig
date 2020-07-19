@@ -7,6 +7,7 @@ const Buffer = focus.Buffer;
 const Editor = focus.Editor;
 const Window = focus.Window;
 const style = focus.style;
+const Selector = focus.Selector;
 
 const projects = [6][]const u8{
     "/home/jamie/exo/",
@@ -17,27 +18,20 @@ const projects = [6][]const u8{
     "/home/jamie/zig/",
 };
 
-// TODO arena allocator for lifespan of opener
-
-// TODO always have a selection, open first match on enter (reject if no match), open raw text on ctrl-enter
-
 pub const ProjectFileOpener = struct {
     app: *App,
     input_buffer_id: Id,
     input_editor_id: Id,
-    completions_buffer_id: Id,
-    completions_editor_id: Id,
-    selected: usize, // 0 for nothing selected, i-1 for line i
-    completions: []const []const u8,
+    selector: Selector,
+    paths: []const []const u8,
 
     pub fn init(app: *App) Id {
-        // TODO don't directly mutate buffer - messes up multiple cursors - go via editor instead
         const input_buffer_id = Buffer.initEmpty(app);
         const input_editor_id = Editor.init(app, input_buffer_id);
-        const completions_buffer_id = Buffer.initEmpty(app);
-        const completions_editor_id = Editor.init(app, completions_buffer_id);
 
-        var completions = ArrayList([]const u8).init(app.allocator);
+        const selector = Selector.init(app);
+
+        var paths = ArrayList([]const u8).init(app.allocator);
         for (projects) |project| {
             const result = std.ChildProcess.exec(.{
                 .allocator = app.frame_allocator,
@@ -48,8 +42,8 @@ pub const ProjectFileOpener = struct {
             assert(result.term == .Exited and result.term.Exited == 0);
             var lines = std.mem.split(result.stdout, &[1]u8{0});
             while (lines.next()) |line| {
-                const completion = std.fs.path.join(app.allocator, &[2][]const u8{project, line}) catch oom();
-                completions.append(completion) catch oom();
+                const path = std.fs.path.join(app.allocator, &[2][]const u8{project, line}) catch oom();
+                paths.append(path) catch oom();
             }
         }
 
@@ -57,104 +51,55 @@ pub const ProjectFileOpener = struct {
             .app = app,
             .input_buffer_id = input_buffer_id,
             .input_editor_id = input_editor_id,
-            .completions_buffer_id = completions_buffer_id,
-            .completions_editor_id = completions_editor_id,
-            .selected = 0,
-            .completions = completions.toOwnedSlice(),
+            .selector = selector,
+            .paths = paths.toOwnedSlice(),
         };
 
         return app.putThing(self);
     }
 
     pub fn deinit(self: *ProjectFileOpener) void {
-        for (self.completions) |completion| {
+        for (self.paths) |completion| {
             self.app.allocator.free(completion);
         }
-        self.app.allocator.free(self.completions);
+        self.app.allocator.free(self.paths);
     }
 
     pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
         var input_editor = self.app.getThing(self.input_editor_id).Editor;
-        var completions_buffer = self.app.getThing(self.completions_buffer_id).Buffer;
-        var completions_editor = self.app.getThing(self.completions_editor_id).Editor;
 
         // handle events
-        var input_editor_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
+        var input_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
+        var selector_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
         for (events) |event| {
-            var delegate = false;
             switch (event.type) {
                 c.SDL_KEYDOWN => {
                     const sym = event.key.keysym;
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
                             'q' => window.popView(),
-                            'k' => self.selected += 1,
-                            'i' => if (self.selected != 0) {
-                                self.selected -= 1;
-                            },
-                            else => delegate = true,
+                            'k', 'i', c.SDLK_RETURN => selector_events.append(event) catch oom(),
+                            else => input_events.append(event) catch oom(),
                         }
                     } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
                         switch (sym.sym) {
-                            'k' => self.selected = completions_buffer.countLines() - 1,
-                            'i' => self.selected = 1,
-                            else => delegate = true,
+                            'k', 'i', c.SDLK_RETURN => selector_events.append(event) catch oom(),
+                            else => input_events.append(event) catch oom(),
                         }
                     } else if (sym.mod == 0) {
                         switch (sym.sym) {
-                            c.SDLK_RETURN => {
-                                var filename = ArrayList(u8).init(self.app.frame_allocator);
-                                if (self.selected == 0) {
-                                    filename.appendSlice(input_buffer.bytes.items) catch oom();
-                                } else {
-                                    const selection = completions_editor.dupeSelection(self.app.frame_allocator, completions_editor.getMainCursor());
-                                    filename.appendSlice(selection) catch oom();
-                                }
-                                if (filename.items.len > 0 and std.fs.path.isSep(filename.items[filename.items.len - 1])) {
-                                    input_buffer.bytes.shrink(0);
-                                    input_buffer.bytes.appendSlice(filename.items) catch oom();
-                                    input_editor.goBufferEnd(input_editor.getMainCursor());
-                                    filename.deinit();
-                                } else {
-                                    const new_buffer_id = Buffer.initFromAbsoluteFilename(self.app, filename.toOwnedSlice());
-                                    const new_editor_id = Editor.init(self.app, new_buffer_id);
-                                    window.popView();
-                                    window.pushView(new_editor_id);
-                                }
-                            },
-                            c.SDLK_TAB => {
-                                var min_common_prefix_o: ?[]const u8 = null;
-                                var lines_iter = std.mem.split(completions_buffer.bytes.items, "\n");
-                                while (lines_iter.next()) |line| {
-                                    if (line.len != 0) {
-                                        if (min_common_prefix_o) |min_common_prefix| {
-                                            var i: usize = 0;
-                                            while (i < min(min_common_prefix.len, line.len) and min_common_prefix[i] == line[i]) i += 1;
-                                            min_common_prefix_o = line[0..i];
-                                        } else {
-                                            min_common_prefix_o = line;
-                                        }
-                                    }
-                                }
-                                if (min_common_prefix_o) |min_common_prefix| {
-                                    const path = input_buffer.bytes.items;
-                                    input_buffer.delete(0, input_buffer.getBufferEnd());
-                                    input_buffer.insert(input_buffer.getBufferEnd(), min_common_prefix);
-                                    input_editor.goPos(input_editor.getMainCursor(), input_buffer.getBufferEnd());
-                                }
-                            },
-                            else => delegate = true,
+                            // TODO c.SDLK_TAB => complete prefix
+                            c.SDLK_RETURN => selector_events.append(event) catch oom(),
+                            else => input_events.append(event) catch oom(),
                         }
                     } else {
-                        delegate = true;
+                        input_events.append(event) catch oom();
                     }
                 },
                 c.SDL_MOUSEWHEEL => {},
-                else => delegate = true,
+                else => input_events.append(event) catch oom(),
             }
-            // delegate other events to input editor
-            if (delegate) input_editor_events.append(event) catch oom();
         }
 
         // remove any sneaky newlines
@@ -166,19 +111,19 @@ pub const ProjectFileOpener = struct {
             }
         }
 
-        // filter completions
+        // filter paths
+        const ScoredPath = struct {score: ?usize, path: []const u8};
+        var scored_paths = ArrayList(ScoredPath).init(self.app.frame_allocator);
         {
             const filter = input_buffer.bytes.items;
-            const ScoredCompletion = struct {score: ?usize, completion: []const u8};
-            var scored_completions = ArrayList(ScoredCompletion).init(self.app.frame_allocator);
-            for (self.completions) |completion| {
+            for (self.paths) |path| {
                 if (filter.len > 0) {
-                    if (std.mem.indexOfScalar(u8, completion, filter[0])) |start| {
+                    if (std.mem.indexOfScalar(u8, path, filter[0])) |start| {
                         var is_match = true;
                         var end = start;
                         for (filter[1..]) |char| {
-                            if (std.mem.indexOfScalarPos(u8, completion, end, char)) |new_end| {
-                                end = new_end;
+                            if (std.mem.indexOfScalarPos(u8, path, end, char)) |new_end| {
+                                end = new_end + 1;
                             } else {
                                 is_match = false;
                                 break;
@@ -186,46 +131,54 @@ pub const ProjectFileOpener = struct {
                         }
                         if (is_match) {
                             const score = end - start;
-                            scored_completions.append(.{.score = score, .completion = completion}) catch oom();
+                            scored_paths.append(.{.score = score, .path = path}) catch oom();
                         }
                     }
                 } else {
                     const score = 0;
-                    scored_completions.append(.{.score = score, .completion = completion}) catch oom();
+                    scored_paths.append(.{.score = score, .path = path}) catch oom();
                 }
             }
-            std.sort.sort(ScoredCompletion, scored_completions.items,
+            std.sort.sort(ScoredPath, scored_paths.items,
                           struct {
-                              fn lessThan(a: ScoredCompletion, b: ScoredCompletion) bool {
+                              fn lessThan(a: ScoredPath, b: ScoredPath) bool {
                                   return meta.deepCompare(a,b) == .LessThan;
                               }
                 }.lessThan
                           );
-            completions_buffer.bytes.shrink(0);
-            for (scored_completions.items) |scored_completion| {
-                completions_buffer.bytes.appendSlice(scored_completion.completion) catch oom();
-                completions_buffer.bytes.append('\n') catch oom();
+        }
+
+        // split rect
+        var all_rect = rect;
+        const target_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
+        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
+        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const selector_rect = all_rect;
+        window.queueRect(border1_rect, style.text_color);
+        window.queueRect(border2_rect, style.text_color);
+
+        // run selector frame
+        var just_paths = ArrayList([]const u8).init(self.app.frame_allocator);
+        for (scored_paths.items) |scored_path| just_paths.append(scored_path.path) catch oom();
+        const action = self.selector.frame(window, selector_rect, selector_events.toOwnedSlice(), just_paths.items);
+
+        // maybe open file
+        if (action == .SelectOne) {
+            const path = just_paths.items[self.selector.selected];
+            if (path.len > 0 and std.fs.path.isSep(path[path.len - 1])) {
+                input_buffer.bytes.shrink(0);
+                input_buffer.bytes.appendSlice(path) catch oom();
+                input_editor.goBufferEnd(input_editor.getMainCursor());
+            } else {
+                const new_buffer_id = Buffer.initFromAbsoluteFilename(self.app, path);
+                const new_editor_id = Editor.init(self.app, new_buffer_id);
+                window.popView();
+                window.pushView(new_editor_id);
             }
         }
 
-        // set selection
-        self.selected = min(self.selected, completions_buffer.countLines());
-        var cursor = completions_editor.getMainCursor();
-        if (self.selected != 0) {
-            completions_editor.goPos(cursor, completions_buffer.getPosForLineCol(self.selected - 1, 0));
-            completions_editor.setMark();
-            completions_editor.goLineEnd(cursor);
-        } else {
-            completions_editor.clearMark();
-            completions_editor.goBufferStart(cursor);
-        }
-
-        // run editor frames
-        var completions_rect = rect;
-        const input_rect = completions_rect.splitTop(self.app.atlas.char_height, 0);
-        const border_rect = completions_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
-        input_editor.frame(window, input_rect, input_editor_events.items);
-        window.queueRect(border_rect, style.text_color);
-        completions_editor.frame(window, completions_rect, &[0]c.SDL_Event{});
+        // run other editor frames
+        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
     }
 };

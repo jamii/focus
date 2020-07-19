@@ -268,6 +268,8 @@ pub const Window = struct {
 
     // view api
 
+    // TODO instead of ids, put popped views onto a todo list and free at the end of the frame
+
     pub fn pushView(self: *Window, view: Id) void {
         self.views.append(view) catch oom();
     }

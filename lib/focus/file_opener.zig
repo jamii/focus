@@ -57,6 +57,7 @@ pub const FileOpener = struct {
                         }
                     } else if (sym.mod == 0) {
                         switch (sym.sym) {
+                            // TODO c.SDLK_TAB => complete prefix
                             c.SDLK_RETURN => selector_events.append(event) catch oom(),
                             else => input_events.append(event) catch oom(),
                         }
