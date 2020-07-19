@@ -129,7 +129,7 @@ pub const BufferSearcher = struct {
         window.queueRect(border2_rect, style.text_color);
 
         // run selector frame
-        const action = self.selector.frame(window, selector_rect, selector_events.toOwnedSlice(), results.toOwnedSlice());
+        const action = self.selector.frame(window, selector_rect, selector_events.toOwnedSlice(), results.items);
         switch (action) {
             .None, .SelectRaw => {},
             .SelectOne, .SelectAll => window.popView(),
