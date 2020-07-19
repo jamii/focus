@@ -3,6 +3,7 @@ pub const meta = @import("./focus/meta.zig");
 pub const Atlas = @import("./focus/atlas.zig").Atlas;
 pub const Buffer = @import("./focus/buffer.zig").Buffer;
 pub const Editor = @import("./focus/editor.zig").Editor;
+pub const Selector = @import("./focus/selector.zig").Selector;
 pub const FileOpener = @import("./focus/file_opener.zig").FileOpener;
 pub const ProjectFileOpener = @import("./focus/project_file_opener.zig").ProjectFileOpener;
 pub const BufferSearcher = @import("./focus/buffer_searcher.zig").BufferSearcher;
@@ -37,6 +38,8 @@ pub const Id = struct {
     tag: Tag,
     id: u64,
 };
+
+// TODO get rid off Thing, gc buffers and make View for window
 
 pub const Thing = union(Tag) {
     Buffer: *Buffer,
