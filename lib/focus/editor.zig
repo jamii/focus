@@ -43,7 +43,7 @@ pub const Editor = struct {
     // which pixel of the buffer is at the top of the viewport
     top_pixel: isize,
 
-    const scroll_amount = 16;
+    const scroll_amount = 32;
 
     pub fn init(app: *App, buffer_id: Id) Id {
         var cursors = ArrayList(Cursor).init(app.allocator);

@@ -14,7 +14,7 @@ pub const Atlas = struct {
     char_to_rect: []Rect,
     white_rect: Rect,
 
-    pub const point_size = 10;
+    pub const point_size = 16;
 
     pub fn init(allocator: *Allocator) Atlas {
 
@@ -27,7 +27,7 @@ pub const Atlas = struct {
         const font = c.TTF_OpenFontRW(
             reader,
             1, // automatically close reader
-            16, // point_size,
+            point_size,
         ) orelse panic("Font load failed: {s}", .{c.TTF_GetError()});
 
         // render all ascii chars
