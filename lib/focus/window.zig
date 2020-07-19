@@ -7,6 +7,7 @@ const Id = focus.Id;
 const FileOpener = focus.FileOpener;
 const ProjectFileOpener = focus.ProjectFileOpener;
 const ProjectSearcher = focus.ProjectSearcher;
+const style = focus.style;
 
 pub const Window = struct {
     app: *App,
@@ -118,6 +119,12 @@ pub const Window = struct {
                     const sym = event.key.keysym;
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
+                            'q' => {
+                                switch (self.app.getThing(self.views.items[self.views.items.len-1])) {
+                                    .Editor => {},
+                                    else => self.popView(),
+                                }
+                            },
                             'o' => {
                                 var init_path: []const u8 = "/home/jamie/";
                                 switch (self.app.getThing(self.views.items[self.views.items.len-1])) {
@@ -356,4 +363,24 @@ pub const Window = struct {
     //         }
     //     }
     // }
+
+    // util
+
+    pub const SearcherLayout = struct {
+        preview: Rect,
+        selector: Rect,
+        input: Rect,
+    };
+
+    pub fn layoutSearcher(self: *Window, rect: Rect) SearcherLayout {
+        var all_rect = rect;
+        const preview_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
+        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
+        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const selector_rect = all_rect;
+        self.queueRect(border1_rect, style.text_color);
+        self.queueRect(border2_rect, style.text_color);
+        return .{.preview=preview_rect, .selector=selector_rect, .input=input_rect};
+    }
 };

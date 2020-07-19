@@ -3,6 +3,7 @@ pub const meta = @import("./focus/meta.zig");
 pub const Atlas = @import("./focus/atlas.zig").Atlas;
 pub const Buffer = @import("./focus/buffer.zig").Buffer;
 pub const Editor = @import("./focus/editor.zig").Editor;
+pub const SingleLineEditor = @import("./focus/single_line_editor.zig").SingleLineEditor;
 pub const Selector = @import("./focus/selector.zig").Selector;
 pub const FileOpener = @import("./focus/file_opener.zig").FileOpener;
 pub const ProjectFileOpener = @import("./focus/project_file_opener.zig").ProjectFileOpener;

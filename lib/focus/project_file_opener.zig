@@ -5,6 +5,7 @@ const App = focus.App;
 const Id = focus.Id;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
+const SingleLineEditor = focus.SingleLineEditor;
 const Window = focus.Window;
 const style = focus.style;
 const Selector = focus.Selector;
@@ -20,15 +21,12 @@ const projects = [6][]const u8{
 
 pub const ProjectFileOpener = struct {
     app: *App,
-    input_buffer_id: Id,
-    input_editor_id: Id,
+    input: SingleLineEditor,
     selector: Selector,
     paths: []const []const u8,
 
     pub fn init(app: *App) Id {
-        const input_buffer_id = Buffer.initEmpty(app);
-        const input_editor_id = Editor.init(app, input_buffer_id);
-
+        const input = SingleLineEditor.init(app, "");
         const selector = Selector.init(app);
 
         var paths = ArrayList([]const u8).init(app.allocator);
@@ -49,8 +47,7 @@ pub const ProjectFileOpener = struct {
 
         var self = ProjectFileOpener{
             .app = app,
-            .input_buffer_id = input_buffer_id,
-            .input_editor_id = input_editor_id,
+            .input = input,
             .selector = selector,
             .paths = paths.toOwnedSlice(),
         };
@@ -66,69 +63,16 @@ pub const ProjectFileOpener = struct {
     }
 
     pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
-        var input_editor = self.app.getThing(self.input_editor_id).Editor;
-
-        // handle events
-        var input_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
-        var selector_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
-        for (events) |event| {
-            switch (event.type) {
-                c.SDL_KEYDOWN => {
-                    const sym = event.key.keysym;
-                    if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
-                        switch (sym.sym) {
-                            'q' => window.popView(),
-                            'k', 'i', c.SDLK_RETURN => selector_events.append(event) catch oom(),
-                            else => input_events.append(event) catch oom(),
-                        }
-                    } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
-                        switch (sym.sym) {
-                            'k', 'i', c.SDLK_RETURN => selector_events.append(event) catch oom(),
-                            else => input_events.append(event) catch oom(),
-                        }
-                    } else if (sym.mod == 0) {
-                        switch (sym.sym) {
-                            // TODO c.SDLK_TAB => complete prefix
-                            c.SDLK_RETURN => selector_events.append(event) catch oom(),
-                            else => input_events.append(event) catch oom(),
-                        }
-                    } else {
-                        input_events.append(event) catch oom();
-                    }
-                },
-                c.SDL_MOUSEWHEEL => {},
-                else => input_events.append(event) catch oom(),
-            }
-        }
-
-        // split rect
-        var all_rect = rect;
-        const preview_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
-        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
-        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const selector_rect = all_rect;
-        window.queueRect(border1_rect, style.text_color);
-        window.queueRect(border2_rect, style.text_color);
+        const layout = window.layoutSearcher(rect);
 
         // run input frame
-        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
-
-        // remove any sneaky newlines
-        {
-            var pos: usize = 0;
-            while (input_buffer.searchForwards(pos, "\n")) |new_pos| {
-                pos = new_pos;
-                input_editor.delete(pos, pos + 1);
-            }
-        }
+        self.input.frame(window, layout.input, events);
 
         // filter paths
         const ScoredPath = struct {score: ?usize, path: []const u8};
         var scored_paths = ArrayList(ScoredPath).init(self.app.frame_allocator);
         {
-            const filter = input_buffer.bytes.items;
+            const filter = self.input.getText();
             for (self.paths) |path| {
                 if (filter.len > 0) {
                     if (std.mem.indexOfScalar(u8, path, filter[0])) |start| {
@@ -164,15 +108,13 @@ pub const ProjectFileOpener = struct {
         // run selector frame
         var just_paths = ArrayList([]const u8).init(self.app.frame_allocator);
         for (scored_paths.items) |scored_path| just_paths.append(scored_path.path) catch oom();
-        const action = self.selector.frame(window, selector_rect, selector_events.toOwnedSlice(), just_paths.items);
+        const action = self.selector.frame(window, layout.selector, events, just_paths.items);
 
         // maybe open file
         if (action == .SelectOne and just_paths.items.len > 0) {
             const path = just_paths.items[self.selector.selected];
             if (path.len > 0 and std.fs.path.isSep(path[path.len - 1])) {
-                input_buffer.bytes.shrink(0);
-                input_buffer.bytes.appendSlice(path) catch oom();
-                input_editor.goBufferEnd(input_editor.getMainCursor());
+                self.input.setText(path);
             } else {
                 const new_buffer_id = Buffer.initFromAbsoluteFilename(self.app, path);
                 const new_editor_id = Editor.init(self.app, new_buffer_id);
