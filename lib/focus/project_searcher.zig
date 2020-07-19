@@ -52,7 +52,7 @@ pub const ProjectSearcher = struct {
                 const result = std.ChildProcess.exec(.{
                     .allocator = self.app.frame_allocator,
                     // TODO would prefer null separated but tricky to parse
-                    .argv = &[6][]const u8{"rg", "--line-number", "--sort", "path", "--fixed-strings", filter},
+                    .argv = &[6][]const u8{ "rg", "--line-number", "--sort", "path", "--fixed-strings", filter },
                     .cwd = self.project_dir,
                     .max_output_bytes = 128 * 1024 * 1024,
                 }) catch |err| panic("{} while calling rg", .{err});
@@ -75,10 +75,9 @@ pub const ProjectSearcher = struct {
             var parts = std.mem.split(line, ":");
             const path_suffix = parts.next().?;
             const line_number_string = parts.next().?;
-            const line_number = std.fmt.parseInt(usize, line_number_string, 10)
-                catch |err| panic("{} while parsing line number {s} from rg", .{err, line_number_string});
+            const line_number = std.fmt.parseInt(usize, line_number_string, 10) catch |err| panic("{} while parsing line number {s} from rg", .{ err, line_number_string });
 
-            const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{self.project_dir, path_suffix}) catch oom();
+            const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch oom();
             preview_buffer.load(path);
 
             var cursor = preview_editor.getMainCursor();

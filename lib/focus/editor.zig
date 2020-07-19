@@ -118,15 +118,15 @@ pub const Editor = struct {
                             'z' => self.buffer().undo(),
                             else => accept_textinput = true,
                         }
-                    } else if (
-                       sym.mod == c.KMOD_LCTRL | c.KMOD_LSHIFT or 
-                       sym.mod == c.KMOD_LCTRL | c.KMOD_RSHIFT or
-                       sym.mod == c.KMOD_RCTRL | c.KMOD_LSHIFT or 
-                       sym.mod == c.KMOD_RCTRL | c.KMOD_RSHIFT) {
-                       switch (sym.sym) {
-                           'z' => self.buffer().redo(),
-                           else => accept_textinput = true,
-                       }
+                    } else if (sym.mod == c.KMOD_LCTRL | c.KMOD_LSHIFT or
+                        sym.mod == c.KMOD_LCTRL | c.KMOD_RSHIFT or
+                        sym.mod == c.KMOD_RCTRL | c.KMOD_LSHIFT or
+                        sym.mod == c.KMOD_RCTRL | c.KMOD_RSHIFT)
+                    {
+                        switch (sym.sym) {
+                            'z' => self.buffer().redo(),
+                            else => accept_textinput = true,
+                        }
                     } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
                         switch (sym.sym) {
                             ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
@@ -139,7 +139,6 @@ pub const Editor = struct {
                     } else if (sym.mod == 0) {
                         switch (sym.sym) {
                             c.SDLK_BACKSPACE => {
-   dump("backspace");
                                 for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
                                 self.clearMark();
                             },

@@ -35,11 +35,11 @@ pub const FileOpener = struct {
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
                             'q' => window.popView(),
-                            else => {}
+                            else => {},
                         }
                     }
                 },
-                else => {}
+                else => {},
             }
         }
 
@@ -60,24 +60,21 @@ pub const FileOpener = struct {
                 basename = std.fs.path.basename(path);
             }
             if (dirname_o) |dirname| {
-                var dir = std.fs.cwd().openDir(dirname, .{ .iterate = true })
-                    catch |err| panic("{} while opening dir {s}", .{err, dirname});
+                var dir = std.fs.cwd().openDir(dirname, .{ .iterate = true }) catch |err| panic("{} while opening dir {s}", .{ err, dirname });
                 defer dir.close();
                 var dir_iter = dir.iterate();
-                while (dir_iter.next()
-                           catch |err| panic("{} while iterating dir {s}", .{err, dirname}))
-                    |entry| {
-                        if (std.mem.startsWith(u8, entry.name, basename)) {
-                            var result = ArrayList(u8).init(self.app.frame_allocator);
-                            result.appendSlice(entry.name) catch oom();
-                            if (entry.kind == .Directory) result.append('/') catch oom();
-                            results.append(result.toOwnedSlice()) catch oom();
+                while (dir_iter.next() catch |err| panic("{} while iterating dir {s}", .{ err, dirname })) |entry| {
+                    if (std.mem.startsWith(u8, entry.name, basename)) {
+                        var result = ArrayList(u8).init(self.app.frame_allocator);
+                        result.appendSlice(entry.name) catch oom();
+                        if (entry.kind == .Directory) result.append('/') catch oom();
+                        results.append(result.toOwnedSlice()) catch oom();
                     }
                 }
             }
         }
 
-         // run selector frame
+        // run selector frame
         const action = self.selector.frame(window, layout.selector, events, results.items);
 
         // maybe open file
@@ -89,7 +86,7 @@ pub const FileOpener = struct {
                 const path = self.input.getText();
                 const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
                     path[0 .. path.len - 1]
-                    else
+                else
                     std.fs.path.dirname(path) orelse "";
                 filename.appendSlice(dirname) catch oom();
                 filename.append('/') catch oom();

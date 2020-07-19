@@ -120,24 +120,24 @@ pub const Window = struct {
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
                             'q' => {
-                                switch (self.app.getThing(self.views.items[self.views.items.len-1])) {
+                                switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
                                     .Editor => {},
                                     else => self.popView(),
                                 }
                             },
                             'o' => {
                                 var init_path: []const u8 = "/home/jamie/";
-                                switch (self.app.getThing(self.views.items[self.views.items.len-1])) {
+                                switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
                                     .Editor => |editor| {
                                         const buffer = self.app.getThing(editor.buffer_id).Buffer;
                                         switch (buffer.source) {
                                             .None => {},
                                             .AbsoluteFilename => |filename| {
-                                                init_path = std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{std.fs.path.dirname(filename).?, "/"}) catch oom();
+                                                init_path = std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch oom();
                                             },
                                         }
                                     },
-                                    else => {}
+                                    else => {},
                                 }
                                 const file_opener_id = FileOpener.init(self.app, init_path);
                                 self.pushView(file_opener_id);
@@ -156,7 +156,7 @@ pub const Window = struct {
                             'f' => {
                                 var project_dir: []const u8 = "/home/jamie";
                                 var filter: []const u8 = "";
-                                switch (self.app.getThing(self.views.items[self.views.items.len-1])) {
+                                switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
                                     .Editor => |editor| {
                                         const buffer = self.app.getThing(editor.buffer_id).Buffer;
                                         switch (buffer.source) {
@@ -165,7 +165,7 @@ pub const Window = struct {
                                                 const dirname = std.fs.path.dirname(filename).?;
                                                 var root = dirname;
                                                 while (!meta.deepEqual(root, "/")) {
-                                                    const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{root, ".git"}) catch oom();
+                                                    const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch oom();
                                                     if (std.fs.openFileAbsolute(git_path, .{})) |file| {
                                                         file.close();
                                                         break;
@@ -177,7 +177,7 @@ pub const Window = struct {
                                             },
                                         }
                                     },
-                                    else => {}
+                                    else => {},
                                 }
                                 const project_searcher_id = ProjectSearcher.init(self.app, project_dir, filter);
                                 self.pushView(project_searcher_id);
@@ -310,8 +310,8 @@ pub const Window = struct {
         for (chars) |char| {
             const src = if (char < self.app.atlas.char_to_rect.len)
                 self.app.atlas.char_to_rect[char]
-                else
-                // TODO tofu
+            else
+            // TODO tofu
                 self.app.atlas.white_rect;
             dst.w = src.w;
             dst.h = src.h;
@@ -381,6 +381,6 @@ pub const Window = struct {
         const selector_rect = all_rect;
         self.queueRect(border1_rect, style.text_color);
         self.queueRect(border2_rect, style.text_color);
-        return .{.preview=preview_rect, .selector=selector_rect, .input=input_rect};
+        return .{ .preview = preview_rect, .selector = selector_rect, .input = input_rect };
     }
 };

@@ -31,8 +31,7 @@ pub const Selector = struct {
         };
     }
 
-    pub fn deinit(self: *Selector) void {
-    }
+    pub fn deinit(self: *Selector) void {}
 
     pub fn frame(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event, items: []const []const u8) Action {
         var buffer = self.app.getThing(self.buffer_id).Buffer;

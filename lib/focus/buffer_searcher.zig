@@ -29,8 +29,7 @@ pub const BufferSearcher = struct {
         });
     }
 
-    pub fn deinit(self: *BufferSearcher) void {
-    }
+    pub fn deinit(self: *BufferSearcher) void {}
 
     pub fn frame(self: *BufferSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
@@ -56,7 +55,7 @@ pub const BufferSearcher = struct {
                     const start = preview_buffer.getLineStart(found_pos);
                     const end = preview_buffer.getLineEnd(found_pos + filter.len);
                     const selection = preview_buffer.dupe(self.app.frame_allocator, start, end);
-                    assert(selection[0] != '\n' and selection[selection.len-1] != '\n');
+                    assert(selection[0] != '\n' and selection[selection.len - 1] != '\n');
 
                     var result = ArrayList(u8).init(self.app.frame_allocator);
                     const line = preview_buffer.getLineColForPos(found_pos)[0];
@@ -99,7 +98,7 @@ pub const BufferSearcher = struct {
                     preview_editor.goPos(cursor, pos);
                     preview_editor.updatePos(&cursor.tail, pos + filter.len);
                 }
-            }
+            },
         }
 
         // run preview frame

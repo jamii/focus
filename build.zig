@@ -14,13 +14,11 @@ pub fn build(b: *Builder) !void {
     const cross = b.addExecutable("focus-cross", "./bin/focus.zig");
     try includeCommon(cross);
     cross.setBuildMode(mode);
-    cross.setTarget(
-        std.zig.CrossTarget{
-            .cpu_arch = .aarch64,
-            .os_tag = .linux,
-            .abi = .gnu,
-        }
-    );
+    cross.setTarget(std.zig.CrossTarget{
+        .cpu_arch = .aarch64,
+        .os_tag = .linux,
+        .abi = .gnu,
+    });
     cross.install();
 
     const local_step = b.step("local", "Build for local");

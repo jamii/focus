@@ -10,8 +10,7 @@ pub const BufferSource = union(enum) {
 
 const Edit = struct {
     tag: enum {
-        Insert,
-        Delete
+        Insert, Delete
     },
     data: struct {
         start: usize,
@@ -59,19 +58,16 @@ pub const Buffer = struct {
 
         self.bytes.shrink(0);
 
-        const file = std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false })
-            catch |err| panic("{} while loading {s}", .{err, filename});
+        const file = std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false }) catch |err| panic("{} while loading {s}", .{ err, filename });
         defer file.close();
 
         const chunk_size = 1024;
         var buf = self.app.frame_allocator.alloc(u8, chunk_size) catch oom();
 
         while (true) {
-            const len = file.readAll(buf)
-                catch |err| panic("{} while loading {s}", .{err, filename});
+            const len = file.readAll(buf) catch |err| panic("{} while loading {s}", .{ err, filename });
             // worth handling oom here for big files
-            self.bytes.appendSlice(buf[0..len])
-                catch |err| panic("{} while loading {s}", .{err, filename});
+            self.bytes.appendSlice(buf[0..len]) catch |err| panic("{} while loading {s}", .{ err, filename });
             if (len < chunk_size) break;
         }
 
@@ -82,11 +78,9 @@ pub const Buffer = struct {
         switch (self.source) {
             .None => {},
             .AbsoluteFilename => |filename| {
-                const file = std.fs.cwd().createFile(filename, .{ .read = false, .truncate = true })
-                    catch |err| panic("{} while saving {s}", .{err, filename});
+                const file = std.fs.cwd().createFile(filename, .{ .read = false, .truncate = true }) catch |err| panic("{} while saving {s}", .{ err, filename });
                 defer file.close();
-                file.writeAll(self.bytes.items)
-                    catch |err| panic("{} while saving {s}", .{err, filename});
+                file.writeAll(self.bytes.items) catch |err| panic("{} while saving {s}", .{ err, filename });
             },
         }
     }
@@ -167,7 +161,7 @@ pub const Buffer = struct {
                 .end = pos + bytes.len,
                 .bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch oom(),
             },
-        }) catch oom(); 
+        }) catch oom();
         self.rawInsert(pos, bytes);
     }
 
@@ -179,7 +173,7 @@ pub const Buffer = struct {
                 .end = end,
                 .bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch oom(),
             },
-        }) catch oom(); 
+        }) catch oom();
         self.rawDelete(start, end);
     }
 

@@ -33,14 +33,14 @@ pub const ProjectFileOpener = struct {
         for (projects) |project| {
             const result = std.ChildProcess.exec(.{
                 .allocator = app.frame_allocator,
-                .argv = &[3][]const u8{"rg", "--files", "-0"},
+                .argv = &[3][]const u8{ "rg", "--files", "-0" },
                 .cwd = project,
                 .max_output_bytes = 128 * 1024 * 1024,
             }) catch |err| panic("{} while calling rg", .{err});
             assert(result.term == .Exited and result.term.Exited == 0);
             var lines = std.mem.split(result.stdout, &[1]u8{0});
             while (lines.next()) |line| {
-                const path = std.fs.path.join(app.allocator, &[2][]const u8{project, line}) catch oom();
+                const path = std.fs.path.join(app.allocator, &[2][]const u8{ project, line }) catch oom();
                 paths.append(path) catch oom();
             }
         }
@@ -69,7 +69,7 @@ pub const ProjectFileOpener = struct {
         self.input.frame(window, layout.input, events);
 
         // filter paths
-        const ScoredPath = struct {score: ?usize, path: []const u8};
+        const ScoredPath = struct { score: ?usize, path: []const u8 };
         var scored_paths = ArrayList(ScoredPath).init(self.app.frame_allocator);
         {
             const filter = self.input.getText();
@@ -88,21 +88,19 @@ pub const ProjectFileOpener = struct {
                         }
                         if (is_match) {
                             const score = end - start;
-                            scored_paths.append(.{.score = score, .path = path}) catch oom();
+                            scored_paths.append(.{ .score = score, .path = path }) catch oom();
                         }
                     }
                 } else {
                     const score = 0;
-                    scored_paths.append(.{.score = score, .path = path}) catch oom();
+                    scored_paths.append(.{ .score = score, .path = path }) catch oom();
                 }
             }
-            std.sort.sort(ScoredPath, scored_paths.items,
-                          struct {
-                              fn lessThan(a: ScoredPath, b: ScoredPath) bool {
-                                  return meta.deepCompare(a,b) == .LessThan;
-                              }
-                }.lessThan
-                          );
+            std.sort.sort(ScoredPath, scored_paths.items, struct {
+                fn lessThan(a: ScoredPath, b: ScoredPath) bool {
+                    return meta.deepCompare(a, b) == .LessThan;
+                }
+            }.lessThan);
         }
 
         // run selector frame
