@@ -102,6 +102,19 @@ pub const ProjectFileOpener = struct {
             }
         }
 
+        // split rect
+        var all_rect = rect;
+        const preview_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
+        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
+        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const selector_rect = all_rect;
+        window.queueRect(border1_rect, style.text_color);
+        window.queueRect(border2_rect, style.text_color);
+
+        // run input frame
+        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
+
         // remove any sneaky newlines
         {
             var pos: usize = 0;
@@ -148,16 +161,6 @@ pub const ProjectFileOpener = struct {
                           );
         }
 
-        // split rect
-        var all_rect = rect;
-        const target_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
-        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
-        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const selector_rect = all_rect;
-        window.queueRect(border1_rect, style.text_color);
-        window.queueRect(border2_rect, style.text_color);
-
         // run selector frame
         var just_paths = ArrayList([]const u8).init(self.app.frame_allocator);
         for (scored_paths.items) |scored_path| just_paths.append(scored_path.path) catch oom();
@@ -177,8 +180,5 @@ pub const ProjectFileOpener = struct {
                 window.pushView(new_editor_id);
             }
         }
-
-        // run other editor frames
-        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
     }
 };

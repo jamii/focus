@@ -119,7 +119,20 @@ pub const Window = struct {
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
                             'o' => {
-                                const file_opener_id = FileOpener.init(self.app, "/home/jamie/");
+                                var init_path: []const u8 = "/home/jamie/";
+                                switch (self.app.getThing(self.views.items[self.views.items.len-1])) {
+                                    .Editor => |editor| {
+                                        const buffer = self.app.getThing(editor.buffer_id).Buffer;
+                                        switch (buffer.source) {
+                                            .None => {},
+                                            .AbsoluteFilename => |filename| {
+                                                init_path = std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{std.fs.path.dirname(filename).?, "/"}) catch oom();
+                                            },
+                                        }
+                                    },
+                                    else => {}
+                                }
+                                const file_opener_id = FileOpener.init(self.app, init_path);
                                 self.pushView(file_opener_id);
                                 handled = true;
                             },

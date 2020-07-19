@@ -14,11 +14,11 @@ pub const FileOpener = struct {
     input_editor_id: Id,
     selector: Selector,
 
-    pub fn init(app: *App, current_directory: []const u8) Id {
+    pub fn init(app: *App, init_path: []const u8) Id {
         const input_buffer_id = Buffer.initEmpty(app);
         const input_editor_id = Editor.init(app, input_buffer_id);
         var input_editor = app.getThing(input_editor_id).Editor;
-        input_editor.insert(input_editor.getMainCursor(), current_directory);
+        input_editor.insert(input_editor.getMainCursor(), init_path);
         input_editor.goBufferEnd(input_editor.getMainCursor());
 
         const selector = Selector.init(app);
@@ -70,6 +70,19 @@ pub const FileOpener = struct {
             }
         }
 
+        // split rect
+        var all_rect = rect;
+        const preview_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
+        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
+        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const selector_rect = all_rect;
+        window.queueRect(border1_rect, style.text_color);
+        window.queueRect(border2_rect, style.text_color);
+
+        // run input frame
+        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
+
         // remove any sneaky newlines
         {
             var pos: usize = 0;
@@ -110,16 +123,6 @@ pub const FileOpener = struct {
             }
         }
 
-        // split rect
-        var all_rect = rect;
-        const target_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
-        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
-        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const selector_rect = all_rect;
-        window.queueRect(border1_rect, style.text_color);
-        window.queueRect(border2_rect, style.text_color);
-
          // run selector frame
         const action = self.selector.frame(window, selector_rect, selector_events.toOwnedSlice(), results.items);
 
@@ -151,8 +154,5 @@ pub const FileOpener = struct {
                 window.pushView(new_editor_id);
             }
         }
-
-        // run other editor frames
-        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
     }
 };

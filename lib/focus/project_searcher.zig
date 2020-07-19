@@ -12,16 +12,16 @@ const Selector = focus.Selector;
 pub const ProjectSearcher = struct {
     app: *App,
     project_dir: []const u8,
-    target_buffer_id: Id,
-    target_editor_id: Id,
+    preview_buffer_id: Id,
+    preview_editor_id: Id,
     input_buffer_id: Id,
     input_editor_id: Id,
     selector: Selector,
 
     pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) Id {
         // TODO don't directly mutate buffer - messes up multiple cursors - go via editor instead
-        const target_buffer_id = Buffer.initEmpty(app);
-        const target_editor_id = Editor.init(app, target_buffer_id);
+        const preview_buffer_id = Buffer.initEmpty(app);
+        const preview_editor_id = Editor.init(app, preview_buffer_id);
 
         const input_buffer_id = Buffer.initEmpty(app);
         const input_editor_id = Editor.init(app, input_buffer_id);
@@ -34,8 +34,8 @@ pub const ProjectSearcher = struct {
         return app.putThing(ProjectSearcher{
             .app = app,
             .project_dir = project_dir,
-            .target_buffer_id = target_buffer_id,
-            .target_editor_id = target_editor_id,
+            .preview_buffer_id = preview_buffer_id,
+            .preview_editor_id = preview_editor_id,
             .input_buffer_id = input_buffer_id,
             .input_editor_id = input_editor_id,
             .selector = selector,
@@ -46,8 +46,8 @@ pub const ProjectSearcher = struct {
     }
 
     pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        var target_buffer = self.app.getThing(self.target_buffer_id).Buffer;
-        var target_editor = self.app.getThing(self.target_editor_id).Editor;
+        var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
+        var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
         var input_editor = self.app.getThing(self.input_editor_id).Editor;
 
@@ -84,6 +84,19 @@ pub const ProjectSearcher = struct {
             }
         }
 
+        // split rect
+        var all_rect = rect;
+        const preview_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
+        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
+        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const selector_rect = all_rect;
+        window.queueRect(border1_rect, style.text_color);
+        window.queueRect(border2_rect, style.text_color);
+
+        // run input frame
+        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
+
         // remove any sneaky newlines
         {
             var pos: usize = 0;
@@ -96,7 +109,7 @@ pub const ProjectSearcher = struct {
         // get and filter results
         var results = ArrayList([]const u8).init(self.app.frame_allocator);
         {
-            const max_line_string = format(self.app.frame_allocator, "{}", .{target_buffer.countLines()});
+            const max_line_string = format(self.app.frame_allocator, "{}", .{preview_buffer.countLines()});
             const filter = input_buffer.bytes.items;
             if (filter.len > 0) {
                 const result = std.ChildProcess.exec(.{
@@ -114,22 +127,12 @@ pub const ProjectSearcher = struct {
             }
         }
 
-        // split rect
-        var all_rect = rect;
-        const target_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
-        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
-        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const selector_rect = all_rect;
-        window.queueRect(border1_rect, style.text_color);
-        window.queueRect(border2_rect, style.text_color);
-
         // run selector frame
         const action = self.selector.frame(window, selector_rect, selector_events.toOwnedSlice(), results.items);
 
-        // preview
-        target_editor.collapseCursors();
-        target_editor.clearMark();
+        // update preview
+        preview_editor.collapseCursors();
+        preview_editor.clearMark();
         if (results.items.len > 0) {
             const line = results.items[self.selector.selected];
             var parts = std.mem.split(line, ":");
@@ -139,20 +142,21 @@ pub const ProjectSearcher = struct {
                 catch |err| panic("{} while parsing line number {s} from rg", .{err, line_number_string});
 
             const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{self.project_dir, path_suffix}) catch oom();
-            target_buffer.load(path);
+            preview_buffer.load(path);
 
-            var cursor = target_editor.getMainCursor();
-            target_editor.goLine(cursor, line_number - 1);
+            var cursor = preview_editor.getMainCursor();
+            preview_editor.goLine(cursor, line_number - 1);
+            preview_editor.setMark();
+            preview_editor.goLineEnd(cursor);
             // TODO centre cursor
 
             if (action == .SelectOne) {
                 window.popView();
-                window.pushView(self.target_editor_id);
+                window.pushView(self.preview_editor_id);
             }
         }
 
-        // run other editor frames
-        target_editor.frame(window, target_rect, &[0]c.SDL_Event{});
-        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
+        // run preview frames
+        preview_editor.frame(window, preview_rect, &[0]c.SDL_Event{});
     }
 };

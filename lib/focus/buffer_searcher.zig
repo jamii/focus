@@ -11,13 +11,13 @@ const style = focus.style;
 
 pub const BufferSearcher = struct {
     app: *App,
-    target_buffer_id: Id,
-    target_editor_id: Id,
+    preview_buffer_id: Id,
+    preview_editor_id: Id,
     input_buffer_id: Id,
     input_editor_id: Id,
     selector: Selector,
 
-    pub fn init(app: *App, target_buffer_id: Id, target_editor_id: Id, init_search: []const u8) Id {
+    pub fn init(app: *App, preview_buffer_id: Id, preview_editor_id: Id, init_search: []const u8) Id {
         const input_buffer_id = Buffer.initEmpty(app);
         const input_editor_id = Editor.init(app, input_buffer_id);
         var input_editor = app.getThing(input_editor_id).Editor;
@@ -27,8 +27,8 @@ pub const BufferSearcher = struct {
 
         return app.putThing(BufferSearcher{
             .app = app,
-            .target_buffer_id = target_buffer_id,
-            .target_editor_id = target_editor_id,
+            .preview_buffer_id = preview_buffer_id,
+            .preview_editor_id = preview_editor_id,
             .input_buffer_id = input_buffer_id,
             .input_editor_id = input_editor_id,
             .selector = selector,
@@ -39,8 +39,8 @@ pub const BufferSearcher = struct {
     }
 
     pub fn frame(self: *BufferSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        var target_buffer = self.app.getThing(self.target_buffer_id).Buffer;
-        var target_editor = self.app.getThing(self.target_editor_id).Editor;
+        var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
+        var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
         var input_buffer = self.app.getThing(self.input_buffer_id).Buffer;
         var input_editor = self.app.getThing(self.input_editor_id).Editor;
 
@@ -76,6 +76,19 @@ pub const BufferSearcher = struct {
             }
         }
 
+        // split rect
+        var all_rect = rect;
+        const preview_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
+        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
+        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const selector_rect = all_rect;
+        window.queueRect(border1_rect, style.text_color);
+        window.queueRect(border2_rect, style.text_color);
+
+        // run input frame
+        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
+
         // remove any sneaky newlines
         {
             var pos: usize = 0;
@@ -90,20 +103,20 @@ pub const BufferSearcher = struct {
         var results = ArrayList([]const u8).init(self.app.frame_allocator);
         var result_pos = ArrayList(usize).init(self.app.frame_allocator);
         {
-            const max_line_string = format(self.app.frame_allocator, "{}", .{target_buffer.countLines()});
-            target_editor.collapseCursors();
-            target_editor.setMark();
+            const max_line_string = format(self.app.frame_allocator, "{}", .{preview_buffer.countLines()});
+            preview_editor.collapseCursors();
+            preview_editor.setMark();
             if (filter.len > 0) {
                 var pos: usize = 0;
                 var i: usize = 0;
-                while (target_buffer.searchForwards(pos, filter)) |found_pos| {
-                    const start = target_buffer.getLineStart(found_pos);
-                    const end = target_buffer.getLineEnd(found_pos + filter.len);
-                    const selection = target_buffer.dupe(self.app.frame_allocator, start, end);
+                while (preview_buffer.searchForwards(pos, filter)) |found_pos| {
+                    const start = preview_buffer.getLineStart(found_pos);
+                    const end = preview_buffer.getLineEnd(found_pos + filter.len);
+                    const selection = preview_buffer.dupe(self.app.frame_allocator, start, end);
                     assert(selection[0] != '\n' and selection[selection.len-1] != '\n');
 
                     var result = ArrayList(u8).init(self.app.frame_allocator);
-                    const line = target_buffer.getLineColForPos(found_pos)[0];
+                    const line = preview_buffer.getLineColForPos(found_pos)[0];
                     const line_string = format(self.app.frame_allocator, "{}", .{line});
                     result.appendSlice(line_string) catch oom();
                     result.appendNTimes(' ', max_line_string.len - line_string.len + 1) catch oom();
@@ -118,16 +131,6 @@ pub const BufferSearcher = struct {
             }
         }
 
-        // split rect
-        var all_rect = rect;
-        const target_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
-        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
-        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const selector_rect = all_rect;
-        window.queueRect(border1_rect, style.text_color);
-        window.queueRect(border2_rect, style.text_color);
-
         // run selector frame
         const action = self.selector.frame(window, selector_rect, selector_events.toOwnedSlice(), results.items);
         switch (action) {
@@ -135,29 +138,28 @@ pub const BufferSearcher = struct {
             .SelectOne, .SelectAll => window.popView(),
         }
 
-        // preview
+        // update preview
         // TODO centre view on main cursor
-        target_editor.collapseCursors();
+        preview_editor.collapseCursors();
         switch (action) {
             .None, .SelectRaw, .SelectOne => {
                 if (result_pos.items.len != 0) {
                     const pos = result_pos.items[self.selector.selected];
-                    var cursor = target_editor.getMainCursor();
-                    target_editor.goPos(cursor, pos);
-                    target_editor.updatePos(&cursor.tail, pos + filter.len);
+                    var cursor = preview_editor.getMainCursor();
+                    preview_editor.goPos(cursor, pos);
+                    preview_editor.updatePos(&cursor.tail, pos + filter.len);
                 }
             },
             .SelectAll => {
                 for (result_pos.items) |pos, i| {
-                    var cursor = if (i == 0) target_editor.getMainCursor() else target_editor.newCursor();
-                    target_editor.goPos(cursor, pos);
-                    target_editor.updatePos(&cursor.tail, pos + filter.len);
+                    var cursor = if (i == 0) preview_editor.getMainCursor() else preview_editor.newCursor();
+                    preview_editor.goPos(cursor, pos);
+                    preview_editor.updatePos(&cursor.tail, pos + filter.len);
                 }
             }
         }
 
-        // run other editor frames
-        target_editor.frame(window, target_rect, &[0]c.SDL_Event{});
-        input_editor.frame(window, input_rect, input_events.toOwnedSlice());
+        // run preview frame
+        preview_editor.frame(window, preview_rect, &[0]c.SDL_Event{});
     }
 };
