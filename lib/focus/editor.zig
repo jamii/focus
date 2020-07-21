@@ -116,6 +116,7 @@ pub const Editor = struct {
                                 window.pushView(buffer_searcher_id);
                             },
                             'z' => self.buffer().undo(),
+                            // TODO ctrl+tab for indentall
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LCTRL | c.KMOD_LSHIFT or
@@ -143,8 +144,16 @@ pub const Editor = struct {
                                 self.clearMark();
                             },
                             c.SDLK_RETURN => {
-                                for (self.cursors.items) |*cursor| self.insert(cursor, &[1]u8{'\n'});
+                                for (self.cursors.items) |*cursor| {
+                                    self.insert(cursor, &[1]u8{'\n'});
+                                    self.indent(cursor);
+                                }
                                 self.clearMark();
+                            },
+                            c.SDLK_TAB => {
+                                for (self.cursors.items) |*cursor| {
+                                    self.indent(cursor);
+                                }
                             },
                             // c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
                             // c.SDLK_LEFT => for (self.cursors.items) |*cursor| self.goLeft(cursor),
@@ -509,6 +518,7 @@ pub const Editor = struct {
         self.insert(cursor, cursor.clipboard);
     }
 
+    // TODO rename to addCursor
     pub fn newCursor(self: *Editor) *Cursor {
         self.cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
@@ -548,6 +558,83 @@ pub const Editor = struct {
             self.updateCol(&cursor.head);
             self.updateCol(&cursor.tail);
             self.cursors.append(cursor) catch oom();
+        }
+    }
+
+    pub fn indent(self: *Editor, cursor: *Cursor) void {
+        var self_buffer = self.buffer();
+
+        // figure out how many lines we're going to indent _before_ we start changing them
+        var num_lines: usize = 1;
+        const range = self.getSelectionRange(cursor);
+        {
+            var pos = range[0];
+            while (self_buffer.searchForwards(pos, "\n")) |new_pos| {
+                if (new_pos >= range[1]) break;
+                num_lines += 1;
+                pos = new_pos + 1;
+            }
+        }
+
+        // make a new cursor to peform the indents
+        var edit_cursor = self.newCursor();
+        std.mem.swap(Cursor, edit_cursor, &self.cursors.items[0]);
+        edit_cursor = &self.cursors.items[0];
+        defer {
+            std.mem.swap(Cursor, edit_cursor, &self.cursors.items[self.cursors.items.len-1]);
+            _ = self.cursors.pop();
+        }
+        self.goPos(edit_cursor, range[0]);
+
+        // for each line in selection
+        while (num_lines > 0) : (num_lines -= 1) {
+
+            // work out current indent
+            self.goLineStart(edit_cursor);
+            const this_line_start_pos = edit_cursor.head.pos;
+            var this_indent: usize = 0;
+            while (this_line_start_pos + this_indent < self_buffer.bytes.items.len and self_buffer.bytes.items[this_line_start_pos + this_indent] == ' ') {
+                this_indent += 1;
+            }
+
+            // work out prev line indent
+            var prev_indent: usize = 0;
+            if (edit_cursor.head.pos != 0) {
+                self.goLeft(edit_cursor);
+                const line_end_char = self_buffer.bytes.items[edit_cursor.head.pos-1];
+
+                self.goLineStart(edit_cursor);
+                const prev_line_start_pos = edit_cursor.head.pos;
+                while (prev_line_start_pos + prev_indent < self_buffer.bytes.items.len and self_buffer.bytes.items[prev_line_start_pos + prev_indent] == ' ') {
+                    prev_indent += 1;
+                }
+
+                // add extra indent when opening a block
+                // TODO this is kind of fragile and doesn't handle closing blocks
+                switch (line_end_char) {
+                    '(', '{', '[' => prev_indent += 4,
+                    else => {},
+                }
+            } // else prev_indent=0 is fine
+
+            // adjust indent
+            edit_cursor.head.pos = this_line_start_pos;
+            if (this_indent > prev_indent) {
+                self.delete(this_line_start_pos, this_line_start_pos + this_indent - prev_indent);
+            }
+            if (this_indent < prev_indent) {
+                var spaces = self.app.frame_allocator.alloc(u8, prev_indent - this_indent) catch oom();
+                std.mem.set(u8, spaces, ' ');
+                // TODO this might delete the selection :S
+                const old_marked = self.marked;
+                self.marked = false;
+                self.insert(edit_cursor, spaces);
+                self.marked = old_marked;
+            }
+
+            // go to next line in selection
+            self.goLineEnd(edit_cursor);
+            self.goRight(edit_cursor);
         }
     }
 };
