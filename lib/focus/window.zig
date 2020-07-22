@@ -187,6 +187,23 @@ pub const Window = struct {
                         }
                     }
                 },
+                c.SDL_WINDOWEVENT => {
+                    switch (event.window.event) {
+                        c.SDL_WINDOWEVENT_FOCUS_LOST => {
+                            switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
+                                .Editor => |editor| {
+                                    var buffer = editor.buffer();
+                                    if (buffer.modified_since_last_save) {
+                                        buffer.save();
+                                    }
+                                },
+                                else => {},
+                            }
+                            handled = true;
+                        },
+                        else => {}
+                    }
+                },
                 else => {},
             }
             // delegate other events to editor
@@ -291,11 +308,29 @@ pub const Window = struct {
     // TODO instead of ids, put popped views onto a todo list and free at the end of the frame
 
     pub fn pushView(self: *Window, view: Id) void {
+        switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
+            .Editor => |editor| {
+                var buffer = editor.buffer();
+                if (buffer.modified_since_last_save) {
+                    buffer.save();
+                }
+            },
+            else => {},
+        }
         self.views.append(view) catch oom();
     }
 
     pub fn popView(self: *Window) void {
-        _ = self.views.pop();
+        const view_id = self.views.pop();
+        switch (self.app.getThing(view_id)) {
+            .Editor => |editor| {
+                var buffer = editor.buffer();
+                if (buffer.modified_since_last_save) {
+                    buffer.save();
+                }
+            },
+            else => {},
+        }
     }
 
     // drawing api

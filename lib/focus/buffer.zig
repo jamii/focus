@@ -25,6 +25,7 @@ pub const Buffer = struct {
     bytes: ArrayList(u8),
     undos: ArrayList(Edit),
     redos: ArrayList(Edit),
+    modified_since_last_save: bool,
 
     pub fn initEmpty(app: *App) Id {
         return app.putThing(Buffer{
@@ -33,6 +34,7 @@ pub const Buffer = struct {
             .bytes = ArrayList(u8).init(app.allocator),
             .undos = ArrayList(Edit).init(app.allocator),
             .redos = ArrayList(Edit).init(app.allocator),
+            .modified_since_last_save = false,
         });
     }
 
@@ -81,6 +83,7 @@ pub const Buffer = struct {
                 const file = std.fs.cwd().createFile(filename, .{ .read = false, .truncate = true }) catch |err| panic("{} while saving {s}", .{ err, filename });
                 defer file.close();
                 file.writeAll(self.bytes.items) catch |err| panic("{} while saving {s}", .{ err, filename });
+                self.modified_since_last_save = false;
             },
         }
     }
@@ -144,6 +147,7 @@ pub const Buffer = struct {
         self.bytes.resize(self.bytes.items.len + bytes.len) catch oom();
         std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
+        self.modified_since_last_save = true;
     }
 
     fn rawDelete(self: *Buffer, start: usize, end: usize) void {
@@ -151,6 +155,7 @@ pub const Buffer = struct {
         assert(end <= self.bytes.items.len);
         std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
         self.bytes.shrink(self.bytes.items.len - (end - start));
+        self.modified_since_last_save = true;
     }
 
     pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) void {
