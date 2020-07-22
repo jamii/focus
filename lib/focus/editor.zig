@@ -112,7 +112,7 @@ pub const Editor = struct {
                             'f' => {
                                 const self_id = self.app.getId(self);
                                 const selection = self.dupeSelection(self.app.frame_allocator, self.getMainCursor());
-                                const buffer_searcher_id = BufferSearcher.init(self.app, self.buffer_id, self_id, selection);
+                                const buffer_searcher_id = BufferSearcher.init(self.app, self_id, selection);
                                 window.pushView(buffer_searcher_id);
                             },
                             'z' => self.buffer().undo(),

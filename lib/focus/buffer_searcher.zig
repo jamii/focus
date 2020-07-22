@@ -12,17 +12,21 @@ const style = focus.style;
 
 pub const BufferSearcher = struct {
     app: *App,
-    preview_buffer_id: Id,
+    target_editor_id: Id,
     preview_editor_id: Id,
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App, preview_buffer_id: Id, preview_editor_id: Id, init_search: []const u8) Id {
+    pub fn init(app: *App, target_editor_id: Id, init_search: []const u8) Id {
+        var target_editor = app.getThing(target_editor_id).Editor;
+        const preview_editor_id = Editor.init(app, target_editor.buffer_id);
+        var preview_editor = app.getThing(preview_editor_id).Editor;
+        preview_editor.getMainCursor().* = target_editor.getMainCursor().*;
         const input = SingleLineEditor.init(app, init_search);
         const selector = Selector.init(app);
         return app.putThing(BufferSearcher{
             .app = app,
-            .preview_buffer_id = preview_buffer_id,
+            .target_editor_id = target_editor_id,
             .preview_editor_id = preview_editor_id,
             .input = input,
             .selector = selector,
@@ -32,8 +36,8 @@ pub const BufferSearcher = struct {
     pub fn deinit(self: *BufferSearcher) void {}
 
     pub fn frame(self: *BufferSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
         var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
+        var preview_buffer = self.app.getThing(preview_editor.buffer_id).Buffer;
 
         const layout = window.layoutSearcher(rect);
 
@@ -41,13 +45,12 @@ pub const BufferSearcher = struct {
         self.input.frame(window, layout.input, events);
 
         // search buffer
+        // TODO default to first result after target
         const filter = self.input.getText();
         var results = ArrayList([]const u8).init(self.app.frame_allocator);
         var result_pos = ArrayList(usize).init(self.app.frame_allocator);
         {
             const max_line_string = format(self.app.frame_allocator, "{}", .{preview_buffer.countLines()});
-            preview_editor.collapseCursors();
-            preview_editor.setMark();
             if (filter.len > 0) {
                 var pos: usize = 0;
                 var i: usize = 0;
@@ -77,31 +80,40 @@ pub const BufferSearcher = struct {
         const action = self.selector.frame(window, layout.selector, events, results.items);
         switch (action) {
             .None, .SelectRaw => {},
-            .SelectOne, .SelectAll => window.popView(),
+            .SelectOne, .SelectAll => {
+                self.updateEditor(self.app.getThing(self.target_editor_id).Editor, action, result_pos.items, filter);
+                window.popView();
+            }
         }
 
         // update preview
-        // TODO centre view on main cursor
-        preview_editor.collapseCursors();
-        switch (action) {
-            .None, .SelectRaw, .SelectOne => {
-                if (result_pos.items.len != 0) {
-                    const pos = result_pos.items[self.selector.selected];
-                    var cursor = preview_editor.getMainCursor();
-                    preview_editor.goPos(cursor, pos);
-                    preview_editor.updatePos(&cursor.tail, pos + filter.len);
-                }
-            },
-            .SelectAll => {
-                for (result_pos.items) |pos, i| {
-                    var cursor = if (i == 0) preview_editor.getMainCursor() else preview_editor.newCursor();
-                    preview_editor.goPos(cursor, pos);
-                    preview_editor.updatePos(&cursor.tail, pos + filter.len);
-                }
-            },
-        }
+        self.updateEditor(preview_editor, action, result_pos.items, filter);
 
         // run preview frame
         preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
+
+    fn updateEditor(self: *BufferSearcher, editor: *Editor, action: Selector.Action, result_pos: []usize, filter: []const u8) void {
+        // TODO centre view on main cursor
+        editor.collapseCursors();
+        editor.setMark();
+        switch (action) {
+            .None, .SelectRaw, .SelectOne => {
+                if (result_pos.len != 0) {
+                    const pos = result_pos[self.selector.selected];
+                    var cursor = editor.getMainCursor();
+                    editor.goPos(cursor, pos + filter.len);
+                    editor.updatePos(&cursor.tail, pos);
+                }
+            },
+            .SelectAll => {
+                for (result_pos) |pos, i| {
+                    var cursor = if (i == 0) editor.getMainCursor() else editor.newCursor();
+                    editor.goPos(cursor, pos + filter.len);
+                    editor.updatePos(&cursor.tail, pos);
+                }
+            },
+        }
+    }
+
 };
