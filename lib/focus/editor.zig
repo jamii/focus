@@ -596,6 +596,7 @@ pub const Editor = struct {
             while (this_line_start_pos + this_indent < self_buffer.bytes.items.len and self_buffer.bytes.items[this_line_start_pos + this_indent] == ' ') {
                 this_indent += 1;
             }
+            const line_start_char = self_buffer.bytes.items[this_line_start_pos + this_indent];
 
             // work out prev line indent
             var prev_indent: usize = 0;
@@ -616,6 +617,13 @@ pub const Editor = struct {
                     else => {},
                 }
             } // else prev_indent=0 is fine
+
+            // dedent when closing a block
+            // TODO this is kind of fragile and doesn't handle closing blocks
+            switch (line_start_char) {
+                ')', '}', ']' => prev_indent = subSaturating(prev_indent, 4),
+                else => {},
+            }
 
             // adjust indent
             edit_cursor.head.pos = this_line_start_pos;

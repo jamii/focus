@@ -150,7 +150,7 @@ pub fn format(allocator: *Allocator, comptime fmt: []const u8, args: var) []cons
     return buf.items;
 }
 
-pub fn subSaturating(comptime T: type, a: T, b: T) T {
+pub fn subSaturating(a: var, b: @TypeOf(a)) @TypeOf(a) {
     if (b > a) {
         return 0;
     } else {
