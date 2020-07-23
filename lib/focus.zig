@@ -140,10 +140,6 @@ pub const App = struct {
             assert(std.meta.activeTag(thing) == id.tag);
             return id;
         } else {
-            var ids_iter = self.ids.iterator();
-            while (ids_iter.next()) |kv| {
-                warn("{}\n", .{kv.key});
-            }
             panic("Missing id: {}", .{thing});
         }
     }

@@ -191,12 +191,7 @@ pub const Window = struct {
                     switch (event.window.event) {
                         c.SDL_WINDOWEVENT_FOCUS_LOST => {
                             switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
-                                .Editor => |editor| {
-                                    var buffer = editor.buffer();
-                                    if (buffer.modified_since_last_save) {
-                                        buffer.save();
-                                    }
-                                },
+                                .Editor => |editor| editor.save(),
                                 else => {},
                             }
                             handled = true;
@@ -309,12 +304,7 @@ pub const Window = struct {
 
     pub fn pushView(self: *Window, view: Id) void {
         switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
-            .Editor => |editor| {
-                var buffer = editor.buffer();
-                if (buffer.modified_since_last_save) {
-                    buffer.save();
-                }
-            },
+            .Editor => |editor| editor.save(),
             else => {},
         }
         self.views.append(view) catch oom();
@@ -323,12 +313,7 @@ pub const Window = struct {
     pub fn popView(self: *Window) void {
         const view_id = self.views.pop();
         switch (self.app.getThing(view_id)) {
-            .Editor => |editor| {
-                var buffer = editor.buffer();
-                if (buffer.modified_since_last_save) {
-                    buffer.save();
-                }
-            },
+            .Editor => |editor| editor.save(),
             else => {},
         }
     }

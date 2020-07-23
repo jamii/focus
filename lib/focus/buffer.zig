@@ -2,6 +2,7 @@ const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const App = focus.App;
 const Id = focus.Id;
+const meta = focus.meta;
 
 pub const BufferSource = union(enum) {
     None,
@@ -209,5 +210,14 @@ pub const Buffer = struct {
         var iter = std.mem.split(self.bytes.items, "\n");
         while (iter.next()) |_| lines += 1;
         return lines;
+    }
+
+    pub fn replace(self: *Buffer, new_bytes: []const u8) void {
+        if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
+            self.modified_since_last_save = true;
+        }
+        // TODO undo group
+        self.delete(0, self.getBufferEnd());
+        self.insert(0, new_bytes);
     }
 };

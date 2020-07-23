@@ -6,6 +6,7 @@ const Buffer = focus.Buffer;
 const BufferSearcher = focus.BufferSearcher;
 const Window = focus.Window;
 const style = focus.style;
+const meta = focus.meta;
 
 pub const Point = struct {
     // what char we're at
@@ -108,7 +109,7 @@ pub const Editor = struct {
                                 self.clearMark();
                             },
                             'd' => self.addNextMatch(),
-                            's' => self.buffer().save(),
+                            's' => self.save(),
                             'f' => {
                                 const self_id = self.app.getId(self);
                                 const selection = self.dupeSelection(self.app.frame_allocator, self.getMainCursor());
@@ -596,13 +597,13 @@ pub const Editor = struct {
             while (this_line_start_pos + this_indent < self_buffer.bytes.items.len and self_buffer.bytes.items[this_line_start_pos + this_indent] == ' ') {
                 this_indent += 1;
             }
-            const line_start_char = self_buffer.bytes.items[this_line_start_pos + this_indent];
+            const line_start_char = if (this_line_start_pos + this_indent < self_buffer.bytes.items.len) self_buffer.bytes.items[this_line_start_pos + this_indent] else 0;
 
             // work out prev line indent
             var prev_indent: usize = 0;
             if (edit_cursor.head.pos != 0) {
                 self.goLeft(edit_cursor);
-                const line_end_char = self_buffer.bytes.items[edit_cursor.head.pos-1];
+                const line_end_char = if (edit_cursor.head.pos-1 < self_buffer.bytes.items.len) self_buffer.bytes.items[edit_cursor.head.pos-1] else 0;
 
                 self.goLineStart(edit_cursor);
                 const prev_line_start_pos = edit_cursor.head.pos;
@@ -642,6 +643,65 @@ pub const Editor = struct {
             // go to next line in selection
             self.goLineEnd(edit_cursor);
             self.goRight(edit_cursor);
+        }
+    }
+
+    // this can happen eg after an automatic format
+    pub fn correctInvalidCursors(self: *Editor) void {
+        for (self.cursors.items) |*cursor| {
+            for (&[_]*Point{&cursor.head, &cursor.tail}) |point| {
+                self.updatePos(point, min(point.pos, self.buffer().getBufferEnd()));
+            }
+        }
+    }
+
+    pub fn tryFormat(self: *Editor) void {
+        switch (self.buffer().source) {
+            .None => {},
+            .AbsoluteFilename => |filename| {
+                if (std.mem.endsWith(u8, filename, ".zig")) {
+                    self.zigFormat();
+                }
+            }
+        }
+    }
+
+    pub fn zigFormat(self: *Editor) void {
+        var self_buffer = self.buffer();
+        var process = std.ChildProcess.init(
+            &[_][]const u8{"zig", "fmt", "--stdin"},
+            self.app.frame_allocator,
+        ) catch |err| panic("Error initing zig fmt: {}", .{err});
+        process.stdin_behavior = .Pipe;
+        process.stdout_behavior = .Pipe;
+        process.stderr_behavior = .Pipe;
+        process.spawn()
+            catch |err| panic("Error spawning zig fmt: {}", .{err});
+        process.stdin.?.outStream().writeAll(self_buffer.bytes.items)
+            catch |err| panic("Error writing to zig fmt: {}", .{err});
+        // TODO not sure if this is the correct way to signal input is complete
+        process.stdin.?.close();
+        process.stdin = null;
+        const stderr = process.stderr.?.inStream().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024)
+            catch |err| panic("Error reading zig fmt stderr: {}", .{err});
+        const stdout = process.stdout.?.inStream().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024 * 1024)
+            catch |err| panic("Error reading zig fmt stdout: {}", .{err});
+        const result = process.wait()
+            catch |err| panic("Error waiting for zig fmt: {}", .{err});
+        assert(result == .Exited);
+        if (result.Exited != 0) {
+            warn("Error formatting zig buffer: {}", .{stderr});
+        } else {
+            self_buffer.replace(stdout);
+            self.correctInvalidCursors();
+        }
+    }
+
+    pub fn save(self: *Editor) void {
+        self.tryFormat();
+        var self_buffer = self.buffer();
+        if (self_buffer.modified_since_last_save) {
+            self_buffer.save();
         }
     }
 };
