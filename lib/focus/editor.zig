@@ -611,7 +611,7 @@ pub const Editor = struct {
                 }
 
                 // add extra indent when opening a block
-                // TODO this is kind of fragile and doesn't handle closing blocks
+                // TODO this is kind of fragile
                 switch (line_end_char) {
                     '(', '{', '[' => prev_indent += 4,
                     else => {},
@@ -619,7 +619,6 @@ pub const Editor = struct {
             } // else prev_indent=0 is fine
 
             // dedent when closing a block
-            // TODO this is kind of fragile and doesn't handle closing blocks
             switch (line_start_char) {
                 ')', '}', ']' => prev_indent = subSaturating(prev_indent, 4),
                 else => {},
