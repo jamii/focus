@@ -500,6 +500,7 @@ pub const Editor = struct {
 
     // TODO clipboard stack on app
     // TODO figure out nicer situation for multiple cursor copy/paste
+    // could use wl-paste -w 'focus-copy'
 
     pub fn copy(self: *Editor, cursor: *Cursor) void {
         const text = self.dupeSelection(self.app.frame_allocator, cursor);
