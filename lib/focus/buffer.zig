@@ -56,25 +56,35 @@ pub const Buffer = struct {
         for (self.redos) |edit| self.app.allocator.free(edit.bytes);
     }
 
-    pub fn load(self: *Buffer, filename: []const u8) void {
+
+    fn rawLoad(self: *Buffer, filename: []const u8) !void {
         assert(std.fs.path.isAbsolute(filename));
 
         self.bytes.shrink(0);
 
-        const file = std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false }) catch |err| panic("{} while loading {s}", .{ err, filename });
+        const file = try std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false });
         defer file.close();
 
         const chunk_size = 1024;
         var buf = self.app.frame_allocator.alloc(u8, chunk_size) catch oom();
 
         while (true) {
-            const len = file.readAll(buf) catch |err| panic("{} while loading {s}", .{ err, filename });
+            const len = try file.readAll(buf);
             // worth handling oom here for big files
-            self.bytes.appendSlice(buf[0..len]) catch |err| panic("{} while loading {s}", .{ err, filename });
+            try self.bytes.appendSlice(buf[0..len]);
             if (len < chunk_size) break;
         }
 
         self.source = .{ .AbsoluteFilename = std.mem.dupe(self.app.allocator, u8, filename) catch oom() };
+    }
+
+    pub fn load(self: *Buffer, filename: []const u8) void {
+        self.rawLoad(filename) catch |err| {
+            self.bytes.shrink(0);
+            // TODO differentiate from actual text
+            std.fmt.format(self.bytes.outStream(), "{} while loading {s}", .{err, filename}) catch oom();
+            self.source = .None;
+        };
     }
 
     pub fn save(self: *Buffer) void {

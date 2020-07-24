@@ -11,14 +11,20 @@ const Selector = focus.Selector;
 
 pub const FileOpener = struct {
     app: *App,
+    preview_buffer_id: Id,
+    preview_editor_id: Id,
     input: SingleLineEditor,
     selector: Selector,
 
     pub fn init(app: *App, init_path: []const u8) Id {
+        const preview_buffer_id = Buffer.initEmpty(app);
+        const preview_editor_id = Editor.init(app, preview_buffer_id);
         const input = SingleLineEditor.init(app, init_path);
         const selector = Selector.init(app);
         return app.putThing(FileOpener{
             .app = app,
+            .preview_buffer_id = preview_buffer_id,
+            .preview_editor_id = preview_editor_id,
             .input = input,
             .selector = selector,
         });
@@ -77,17 +83,18 @@ pub const FileOpener = struct {
         // run selector frame
         const action = self.selector.frame(window, layout.selector, events, results.items);
 
+        const path = self.input.getText();
+        const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
+            path[0 .. path.len - 1]
+            else
+            std.fs.path.dirname(path) orelse "";
+
         // maybe open file
         if (action == .SelectRaw or action == .SelectOne) {
             var filename = ArrayList(u8).init(self.app.frame_allocator);
             if (action == .SelectRaw) {
                 filename.appendSlice(self.input.getText()) catch oom();
             } else {
-                const path = self.input.getText();
-                const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
-                    path[0 .. path.len - 1]
-                else
-                    std.fs.path.dirname(path) orelse "";
                 filename.appendSlice(dirname) catch oom();
                 filename.append('/') catch oom();
                 filename.appendSlice(results.items[self.selector.selected]) catch oom();
@@ -102,5 +109,26 @@ pub const FileOpener = struct {
                 window.pushView(new_editor_id);
             }
         }
+
+        // update preview
+        var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
+        var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
+        if (results.items.len == 0) {
+            preview_buffer.bytes.shrink(0);
+        } else {
+            const selected = results.items[self.selector.selected];
+            if (std.mem.endsWith(u8, selected, "/")) {
+                preview_buffer.bytes.shrink(0);
+            } else {
+                var filename = ArrayList(u8).init(self.app.frame_allocator);
+                filename.appendSlice(dirname) catch oom();
+                filename.append('/') catch oom();
+                filename.appendSlice(selected) catch oom();
+                preview_buffer.load(filename.items);
+            }
+        }
+
+        // run preview frame
+        preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 };

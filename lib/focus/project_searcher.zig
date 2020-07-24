@@ -35,9 +35,6 @@ pub const ProjectSearcher = struct {
     }
 
     pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
-        var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
-
         const layout = window.layoutSearcher(rect);
 
         // run input frame
@@ -46,7 +43,6 @@ pub const ProjectSearcher = struct {
         // get and filter results
         var results = ArrayList([]const u8).init(self.app.frame_allocator);
         {
-            const max_line_string = format(self.app.frame_allocator, "{}", .{preview_buffer.countLines()});
             const filter = self.input.getText();
             if (filter.len > 0) {
                 const result = std.ChildProcess.exec(.{
@@ -68,6 +64,8 @@ pub const ProjectSearcher = struct {
         const action = self.selector.frame(window, layout.selector, events, results.items);
 
         // update preview
+        var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
+        var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
         preview_editor.collapseCursors();
         preview_editor.clearMark();
         if (results.items.len > 0) {
@@ -92,7 +90,7 @@ pub const ProjectSearcher = struct {
             }
         }
 
-        // run preview frames
+        // run preview frame
         preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 };

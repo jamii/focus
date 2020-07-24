@@ -21,11 +21,15 @@ const projects = [6][]const u8{
 
 pub const ProjectFileOpener = struct {
     app: *App,
+    preview_buffer_id: Id,
+    preview_editor_id: Id,
     input: SingleLineEditor,
     selector: Selector,
     paths: []const []const u8,
 
     pub fn init(app: *App) Id {
+        const preview_buffer_id = Buffer.initEmpty(app);
+        const preview_editor_id = Editor.init(app, preview_buffer_id);
         const input = SingleLineEditor.init(app, "");
         const selector = Selector.init(app);
 
@@ -47,6 +51,8 @@ pub const ProjectFileOpener = struct {
 
         var self = ProjectFileOpener{
             .app = app,
+            .preview_buffer_id = preview_buffer_id,
+            .preview_editor_id = preview_editor_id,
             .input = input,
             .selector = selector,
             .paths = paths.toOwnedSlice(),
@@ -120,5 +126,22 @@ pub const ProjectFileOpener = struct {
                 window.pushView(new_editor_id);
             }
         }
+
+        // update preview
+        var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
+        var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
+        if (just_paths.items.len == 0) {
+            preview_buffer.bytes.shrink(0);
+        } else {
+            const selected = just_paths.items[self.selector.selected];
+            if (std.mem.endsWith(u8, selected, "/")) {
+                preview_buffer.bytes.shrink(0);
+            } else {
+                preview_buffer.load(selected);
+            }
+        }
+
+        // run preview frame
+        preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 };
