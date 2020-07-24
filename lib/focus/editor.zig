@@ -23,8 +23,6 @@ pub const Cursor = struct {
     head: Point,
     // the other end of the selection, if editor.marked
     tail: Point,
-    // allocated by app.allocator
-    clipboard: []const u8,
 };
 
 pub const Dragging = enum {
@@ -51,7 +49,6 @@ pub const Editor = struct {
         cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
-            .clipboard = "",
         }) catch oom();
         return app.putThing(Editor{
             .app = app,
@@ -65,9 +62,6 @@ pub const Editor = struct {
     }
 
     pub fn deinit(self: *Editor) void {
-        for (self.cursors.items) |cursor| {
-            self.app.allocator.free(cursor.clipboard);
-        }
         self.cursors.deinit();
     }
 
@@ -504,19 +498,29 @@ pub const Editor = struct {
         return self.buffer().dupe(allocator, range[0], range[1]);
     }
 
+    // TODO clipboard stack on app
+    // TODO figure out nicer situation for multiple cursor copy/paste
+
     pub fn copy(self: *Editor, cursor: *Cursor) void {
-        self.app.allocator.free(cursor.clipboard);
-        cursor.clipboard = self.dupeSelection(self.app.allocator, cursor);
+        const text = self.dupeSelection(self.app.frame_allocator, cursor);
+        const textZ = std.mem.dupeZ(self.app.frame_allocator, u8, text) catch oom();
+        if (c.SDL_SetClipboardText(textZ) != 0) {
+            panic("{s} while setting system clipboard", .{c.SDL_GetError()});
+        }
     }
 
     pub fn cut(self: *Editor, cursor: *Cursor) void {
-        self.app.allocator.free(cursor.clipboard);
-        cursor.clipboard = self.dupeSelection(self.app.allocator, cursor);
+        self.copy(cursor);
         self.deleteSelection(cursor);
     }
 
     pub fn paste(self: *Editor, cursor: *Cursor) void {
-        self.insert(cursor, cursor.clipboard);
+        if (c.SDL_GetClipboardText()) |text| {
+            defer c.SDL_free(text);
+            self.insert(cursor, std.mem.spanZ(text));
+        } else {
+            warn("{s} while getting system clipboard", .{c.SDL_GetError()});
+        }
     }
 
     // TODO rename to addCursor
@@ -524,23 +528,12 @@ pub const Editor = struct {
         self.cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
-            .clipboard = "",
         }) catch oom();
         return &self.cursors.items[self.cursors.items.len - 1];
     }
 
     pub fn collapseCursors(self: *Editor) void {
-        var size: usize = 0;
-        for (self.cursors.items) |cursor| {
-            size += cursor.clipboard.len;
-        }
-        var clipboard = ArrayList(u8).initCapacity(self.app.allocator, size) catch oom();
-        for (self.cursors.items) |cursor| {
-            clipboard.appendSlice(cursor.clipboard) catch unreachable;
-            self.app.allocator.free(cursor.clipboard);
-        }
         self.cursors.shrink(1);
-        self.cursors.items[0].clipboard = clipboard.toOwnedSlice();
     }
 
     pub fn getMainCursor(self: *Editor) *Cursor {
@@ -554,7 +547,6 @@ pub const Editor = struct {
             var cursor = Cursor{
                 .head = .{ .pos = pos + selection.len, .col = 0 },
                 .tail = .{ .pos = pos, .col = 0 },
-                .clipboard = "",
             };
             self.updateCol(&cursor.head);
             self.updateCol(&cursor.tail);

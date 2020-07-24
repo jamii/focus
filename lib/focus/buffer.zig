@@ -148,6 +148,7 @@ pub const Buffer = struct {
         return self.searchForwards(pos, "\n") orelse self.getBufferEnd();
     }
 
+    // TODO pass outStream instead of Allocator for easy concat/sentinel? but costs more allocations?
     pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) []const u8 {
         assert(start <= end);
         assert(end <= self.bytes.items.len);
