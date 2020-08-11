@@ -135,13 +135,21 @@ pub const App = struct {
     }
 
     pub fn getId(self: *App, thing_ptr: var) Id {
-        const thing = @unionInit(Thing, @typeName(@typeInfo(@TypeOf(thing_ptr)).Pointer.child), thing_ptr);
+        const thing_type = @typeInfo(@TypeOf(thing_ptr)).Pointer.child;
+        const thing = @unionInit(Thing, @typeName(thing_type), thing_ptr);
         if (self.ids.getValue(thing)) |id| {
             assert(std.meta.activeTag(thing) == id.tag);
             return id;
         } else {
             panic("Missing id: {}", .{thing});
         }
+    }
+
+    pub fn removeThing(self: *App, thing_ptr: var) void {
+        const thing_type = @typeInfo(@TypeOf(thing_ptr)).Pointer.child;
+        const thing = @unionInit(Thing, @typeName(thing_type), thing_ptr);
+        const id = self.ids.remove(thing).?.value;
+        _ = self.things.remove(id);
     }
 
     pub fn frame(self: *App) void {
@@ -169,6 +177,9 @@ pub const App = struct {
         var entity_iter = self.things.iterator();
         while (entity_iter.next()) |kv| {
             if (kv.value == .Window) windows.append(kv.value.Window) catch oom();
+        }
+        if (windows.items.len == 0) {
+            std.os.exit(0);
         }
         for (windows.items) |window| {
             var window_events = ArrayList(c.SDL_Event).init(self.frame_allocator);

@@ -98,7 +98,7 @@ pub const Window = struct {
         self.vertex_buffer.deinit();
         self.texture_buffer.deinit();
         c.SDL_GL_DeleteContext(self.gl_context);
-        c.SDL_DestroyWindow(self.window);
+        c.SDL_DestroyWindow(self.sdl_window);
     }
 
     pub fn frame(self: *Window, events: []const c.SDL_Event) void {
@@ -206,6 +206,11 @@ pub const Window = struct {
                                 else => {},
                             }
                             handled = true;
+                        },
+                        c.SDL_WINDOWEVENT_CLOSE => {
+                            self.app.removeThing(self);
+                            self.deinit();
+                            return;
                         },
                         else => {}
                     }

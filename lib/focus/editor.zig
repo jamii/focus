@@ -596,7 +596,7 @@ pub const Editor = struct {
             var prev_indent: usize = 0;
             if (edit_cursor.head.pos != 0) {
                 self.goLeft(edit_cursor);
-                const line_end_char = if (edit_cursor.head.pos-1 < self_buffer.bytes.items.len) self_buffer.bytes.items[edit_cursor.head.pos-1] else 0;
+                const line_end_char = if (edit_cursor.head.pos > 0 and edit_cursor.head.pos-1 < self_buffer.bytes.items.len) self_buffer.bytes.items[edit_cursor.head.pos-1] else 0;
 
                 self.goLineStart(edit_cursor);
                 const prev_line_start_pos = edit_cursor.head.pos;
