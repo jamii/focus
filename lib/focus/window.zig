@@ -4,6 +4,7 @@ const meta = focus.meta;
 const Atlas = focus.Atlas;
 const App = focus.App;
 const Id = focus.Id;
+const Editor = focus.Editor;
 const FileOpener = focus.FileOpener;
 const ProjectFileOpener = focus.ProjectFileOpener;
 const ProjectSearcher = focus.ProjectSearcher;
@@ -72,7 +73,7 @@ pub const Window = struct {
         // accept unicode input
         c.SDL_StartTextInput();
 
-        // ignore MOUSEMOTION since we just look at current state
+        // TODO ignore MOUSEMOTION since we just look at current state
         // c.SDL_EventState( c.SDL_MOUSEMOTION, c.SDL_IGNORE );
 
         return app.putThing(Window{
@@ -146,6 +147,16 @@ pub const Window = struct {
                             'p' => {
                                 const project_file_opener_id = ProjectFileOpener.init(self.app);
                                 self.pushView(project_file_opener_id);
+                                handled = true;
+                            },
+                            'n' => {
+                                switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
+                                    .Editor => |editor| {
+                                        const new_editor_id = Editor.init(self.app, editor.buffer_id);
+                                        const new_window_id = Window.init(self.app, new_editor_id);
+                                    },
+                                    else => {},
+                                }
                                 handled = true;
                             },
                             else => {},

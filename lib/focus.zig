@@ -151,14 +151,15 @@ pub const App = struct {
 
         // fetch events
         // TODO wrap events with handled flag
-        var events = ArrayList(c.SDL_Event).init(self.allocator);
-        defer events.deinit();
-        var event: c.SDL_Event = undefined;
-        while (c.SDL_PollEvent(&event) != 0) {
-            if (event.type == c.SDL_QUIT) {
-                std.os.exit(0);
+        var events = ArrayList(c.SDL_Event).init(self.frame_allocator);
+        {
+            var event: c.SDL_Event = undefined;
+            while (c.SDL_PollEvent(&event) != 0) {
+                if (event.type == c.SDL_QUIT) {
+                    std.os.exit(0);
+                }
+                events.append(event) catch oom();
             }
-            events.append(event) catch oom();
         }
 
         // run window frames
@@ -170,7 +171,25 @@ pub const App = struct {
             if (kv.value == .Window) windows.append(kv.value.Window) catch oom();
         }
         for (windows.items) |window| {
-            window.frame(events.items);
+            var window_events = ArrayList(c.SDL_Event).init(self.frame_allocator);
+            for (events.items) |event| {
+                const window_id_o: ?u32 = switch (event.type) {
+                    c.SDL_WINDOWEVENT => event.window.windowID,
+                    c.SDL_KEYDOWN, c.SDL_KEYUP => event.key.windowID,
+                    c.SDL_TEXTEDITING => event.edit.windowID,
+                    c.SDL_TEXTINPUT => event.text.windowID,
+                    c.SDL_MOUSEBUTTONDOWN, c.SDL_MOUSEBUTTONUP => event.button.windowID,
+                    c.SDL_MOUSEWHEEL => event.wheel.windowID,
+
+                    else => null,
+                };
+                if (window_id_o) |window_id| {
+                    if (window_id == c.SDL_GetWindowID(window.sdl_window)) {
+                        window_events.append(event) catch oom();
+                    }
+                }
+            }
+            window.frame(window_events.items);
         }
 
         // TODO separate frame from vsync. if vsync takes more than, say, 1s/120 then we must have missed a frame
