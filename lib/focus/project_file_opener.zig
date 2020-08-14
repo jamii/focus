@@ -81,6 +81,7 @@ pub const ProjectFileOpener = struct {
             const filter = self.input.getText();
             for (self.paths) |path| {
                 if (filter.len > 0) {
+                    // TODO find shortest match, not first
                     if (std.mem.indexOfScalar(u8, path, filter[0])) |start| {
                         var is_match = true;
                         var end = start;

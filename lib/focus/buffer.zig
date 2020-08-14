@@ -193,7 +193,7 @@ pub const Buffer = struct {
         self.rawDelete(start, end);
     }
 
-    // TODO need to update cursors on undo/redo somehow
+    // TODO need to update cursors on undo/redo somehow - maybe return list of points?
 
     pub fn undo(self: *Buffer) void {
         if (self.undos.popOrNull()) |edit| {
