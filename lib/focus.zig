@@ -68,6 +68,7 @@ pub const App = struct {
     next_id: u64,
     things: DeepHashMap(Id, Thing),
     ids: AutoHashMap(Thing, Id),
+    frame_time_ms: u64,
 
     pub fn init(allocator: *Allocator) *App {
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
@@ -85,6 +86,7 @@ pub const App = struct {
             .next_id = 0,
             .things = DeepHashMap(Id, Thing).init(allocator),
             .ids = AutoHashMap(Thing, Id).init(allocator),
+            .frame_time_ms = 0,
         };
         self.frame_allocator = &self.frame_arena.allocator;
 
@@ -153,6 +155,7 @@ pub const App = struct {
     }
 
     pub fn frame(self: *App) void {
+        self.frame_time_ms = std.time.milliTimestamp();
         // reset arena
         self.frame_arena.deinit();
         self.frame_arena = ArenaAllocator.init(self.allocator);

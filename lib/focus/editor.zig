@@ -282,17 +282,20 @@ pub const Editor = struct {
                 for (self.cursors.items) |cursor| {
                     // draw cursor
                     if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
-                        const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * self.app.atlas.char_width);
-                        const w = @divTrunc(self.app.atlas.char_width, 8);
-                        window.queueRect(
-                            .{
-                                .x = @intCast(Coord, x) - @divTrunc(w, 2),
-                                .y = @intCast(Coord, y),
-                                .w = w,
-                                .h = self.app.atlas.char_height,
-                            },
-                            if (self.cursors.items.len > 1) style.multi_cursor_color else style.text_color,
-                        );
+                        // blink
+                        if (@divTrunc(self.app.frame_time_ms, 500) % 2 == 0) {
+                            const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * self.app.atlas.char_width);
+                            const w = @divTrunc(self.app.atlas.char_width, 8);
+                            window.queueRect(
+                                .{
+                                    .x = @intCast(Coord, x) - @divTrunc(w, 2),
+                                    .y = @intCast(Coord, y),
+                                    .w = w,
+                                    .h = self.app.atlas.char_height,
+                                },
+                                if (self.cursors.items.len > 1) style.multi_cursor_color else style.text_color,
+                            );
+                        }
                     }
 
                     // draw selection
