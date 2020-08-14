@@ -43,6 +43,16 @@ pub const Window = struct {
             c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_BORDERLESS | c.SDL_WINDOW_ALLOW_HIGHDPI | c.SDL_WINDOW_RESIZABLE,
         ) orelse panic("SDL window creation failed: {s}", .{c.SDL_GetError()});
 
+        // TODO zig compiler can't handle this macro-fest yet
+        //var info: c.SDL_SysWMinfo = undefined;
+        //c.SDL_VERSION(&info.version);
+        //if (!SDL_GetWindowWMInfo(sdl_window, &info)) {
+        //   panic("Could not get window info: {s}", .{c.SDL_GetError()});
+        //}
+        //if (!(info.subsystem == c.SDL_SYSWM_WAYLAND)) {
+        //    panic("Wanted wayland, got subsystem={}", .{info.subsystem});
+        //}
+
         // init gl
         const gl_context = c.SDL_GL_CreateContext(sdl_window);
         if (c.SDL_GL_MakeCurrent(sdl_window, gl_context) != 0)
@@ -212,7 +222,7 @@ pub const Window = struct {
                             self.deinit();
                             return;
                         },
-                        else => {}
+                        else => {},
                     }
                 },
                 else => {},

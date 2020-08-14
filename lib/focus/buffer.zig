@@ -56,7 +56,6 @@ pub const Buffer = struct {
         for (self.redos) |edit| self.app.allocator.free(edit.bytes);
     }
 
-
     fn rawLoad(self: *Buffer, filename: []const u8) !void {
         assert(std.fs.path.isAbsolute(filename));
 
@@ -82,7 +81,7 @@ pub const Buffer = struct {
         self.rawLoad(filename) catch |err| {
             self.bytes.shrink(0);
             // TODO differentiate from actual text
-            std.fmt.format(self.bytes.outStream(), "{} while loading {s}", .{err, filename}) catch oom();
+            std.fmt.format(self.bytes.outStream(), "{} while loading {s}", .{ err, filename }) catch oom();
             self.source = .None;
         };
     }

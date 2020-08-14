@@ -158,7 +158,6 @@ pub const App = struct {
         self.frame_arena = ArenaAllocator.init(self.allocator);
 
         // fetch events
-        // TODO wrap events with handled flag
         var events = ArrayList(c.SDL_Event).init(self.frame_allocator);
         {
             var event: c.SDL_Event = undefined;
