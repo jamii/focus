@@ -268,8 +268,8 @@ pub const Window = struct {
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPopMatrix();
 
-        // TODO is this going to be a problem with multiple windows?
-        // looks like it - https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
+        // TODO this might be a problem with multiple windows on some platforms?
+        // https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
         c.SDL_GL_SwapWindow(self.sdl_window);
 
         // reset
