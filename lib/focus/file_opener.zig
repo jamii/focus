@@ -36,15 +36,6 @@ pub const FileOpener = struct {
         // handle events
         for (events) |event| {
             switch (event.type) {
-                c.SDL_KEYDOWN => {
-                    const sym = event.key.keysym;
-                    if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
-                        switch (sym.sym) {
-                            'q' => window.popView(),
-                            else => {},
-                        }
-                    }
-                },
                 else => {},
             }
         }
@@ -86,7 +77,7 @@ pub const FileOpener = struct {
         const path = self.input.getText();
         const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
             path[0 .. path.len - 1]
-            else
+        else
             std.fs.path.dirname(path) orelse "";
 
         // maybe open file
