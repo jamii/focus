@@ -14,10 +14,18 @@ pub const style = @import("./focus/style.zig");
 
 usingnamespace common;
 
+const ns_per_frame = @divTrunc(1_000_000_000, 60);
+
 pub fn run(allocator: *Allocator) void {
     var app = App.init(allocator);
+    var timer = std.time.Timer.start() catch panic("Couldn't start timer", .{});
     while (true) {
+        _ = timer.lap();
         app.frame();
+        const used_ns = timer.read();
+        if (used_ns > ns_per_frame) warn("Frame took {} ns\n", .{used_ns});
+        // TODO can we correct for drift from sleep imprecision?
+        if (used_ns < ns_per_frame) std.time.sleep(ns_per_frame - used_ns);
     }
 }
 

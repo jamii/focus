@@ -49,7 +49,7 @@ pub const Window = struct {
         //if (!SDL_GetWindowWMInfo(sdl_window, &info)) {
         //   panic("Could not get window info: {s}", .{c.SDL_GetError()});
         //}
-        //if (!(info.subsystem == c.SDL_SYSWM_WAYLAND)) {
+        //if (info.subsystem != c.SDL_SYSWM_WAYLAND) {
         //    panic("Wanted wayland, got subsystem={}", .{info.subsystem});
         //}
 
@@ -76,11 +76,13 @@ pub const Window = struct {
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
         assert(c.glGetError() == 0);
 
-        // sync with monitor - causes input lag
-        if (c.SDL_GL_SetSwapInterval(1) != 0)
+        // no vsync - causes problems with multiple windows
+        // see https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
+        if (c.SDL_GL_SetSwapInterval(0) != 0)
             panic("Setting swap interval failed: {}", .{c.SDL_GetError()});
 
         // accept unicode input
+        // TODO does this need to be per window?
         c.SDL_StartTextInput();
 
         // TODO ignore MOUSEMOTION since we just look at current state
@@ -268,8 +270,6 @@ pub const Window = struct {
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPopMatrix();
 
-        // TODO this might be a problem with multiple windows on some platforms?
-        // https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
         c.SDL_GL_SwapWindow(self.sdl_window);
 
         // reset
