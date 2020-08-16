@@ -166,6 +166,8 @@ pub const Window = struct {
                                     .Editor => |editor| {
                                         const new_editor_id = Editor.init(self.app, editor.buffer_id);
                                         const new_window_id = Window.init(self.app, new_editor_id);
+                                        var new_editor = self.app.getThing(new_editor_id).Editor;
+                                        new_editor.top_pixel = editor.top_pixel;
                                     },
                                     else => {},
                                 }
