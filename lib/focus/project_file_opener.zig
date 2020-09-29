@@ -103,8 +103,8 @@ pub const ProjectFileOpener = struct {
                     scored_paths.append(.{ .score = score, .path = path }) catch oom();
                 }
             }
-            std.sort.sort(ScoredPath, scored_paths.items, struct {
-                fn lessThan(a: ScoredPath, b: ScoredPath) bool {
+            std.sort.sort(ScoredPath, scored_paths.items, {}, struct {
+                fn lessThan(_: void, a: ScoredPath, b: ScoredPath) bool {
                     return meta.deepCompare(a, b) == .LessThan;
                 }
             }.lessThan);

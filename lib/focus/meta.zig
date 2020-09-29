@@ -7,11 +7,11 @@ pub const Ordering = enum {
     GreaterThan,
 };
 
-pub fn deepEqual(a: var, b: @TypeOf(a)) bool {
+pub fn deepEqual(a: anytype, b: @TypeOf(a)) bool {
     return deepCompare(a, b) == .Equal;
 }
 
-pub fn deepCompare(a: var, b: @TypeOf(a)) Ordering {
+pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
     const T = @TypeOf(a);
     const ti = @typeInfo(T);
     switch (ti) {
@@ -140,13 +140,13 @@ pub fn deepCompare(a: var, b: @TypeOf(a)) Ordering {
     }
 }
 
-pub fn deepHash(key: var) u64 {
+pub fn deepHash(key: anytype) u64 {
     var hasher = std.hash.Wyhash.init(0);
     deepHashInto(&hasher, key);
     return hasher.final();
 }
 
-pub fn deepHashInto(hasher: var, key: var) void {
+pub fn deepHashInto(hasher: anytype, key: anytype) void {
     const T = @TypeOf(key);
     const ti = @typeInfo(T);
     switch (ti) {

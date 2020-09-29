@@ -76,7 +76,7 @@ pub const App = struct {
     next_id: u64,
     things: DeepHashMap(Id, Thing),
     ids: AutoHashMap(Thing, Id),
-    frame_time_ms: u64,
+    frame_time_ms: i64,
 
     pub fn init(allocator: *Allocator) *App {
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
@@ -121,7 +121,7 @@ pub const App = struct {
 
     // TODO thing gc
 
-    pub fn putThing(self: *App, thing_inner: var) Id {
+    pub fn putThing(self: *App, thing_inner: anytype) Id {
         const id = Id{
             .tag = comptime tagOf(@TypeOf(thing_inner)),
             .id = self.next_id,
@@ -136,7 +136,7 @@ pub const App = struct {
     }
 
     pub fn getThing(self: *App, id: Id) Thing {
-        if (self.things.getValue(id)) |thing| {
+        if (self.things.get(id)) |thing| {
             assert(std.meta.activeTag(thing) == id.tag);
             return thing;
         } else {
@@ -144,10 +144,10 @@ pub const App = struct {
         }
     }
 
-    pub fn getId(self: *App, thing_ptr: var) Id {
+    pub fn getId(self: *App, thing_ptr: anytype) Id {
         const thing_type = @typeInfo(@TypeOf(thing_ptr)).Pointer.child;
         const thing = @unionInit(Thing, @typeName(thing_type), thing_ptr);
-        if (self.ids.getValue(thing)) |id| {
+        if (self.ids.get(thing)) |id| {
             assert(std.meta.activeTag(thing) == id.tag);
             return id;
         } else {
@@ -155,7 +155,7 @@ pub const App = struct {
         }
     }
 
-    pub fn removeThing(self: *App, thing_ptr: var) void {
+    pub fn removeThing(self: *App, thing_ptr: anytype) void {
         const thing_type = @typeInfo(@TypeOf(thing_ptr)).Pointer.child;
         const thing = @unionInit(Thing, @typeName(thing_type), thing_ptr);
         const id = self.ids.remove(thing).?.value;

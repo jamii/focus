@@ -139,7 +139,7 @@ const Log = struct {
         Hit,
         Miss,
 
-        pub fn jsonStringify(self: Event, options: std.json.StringifyOptions, out_stream: var) !void {
+        pub fn jsonStringify(self: Event, options: std.json.StringifyOptions, out_stream: anytype) !void {
             try std.fmt.format(out_stream, "\"{}\"", .{@tagName(self)});
         }
     };

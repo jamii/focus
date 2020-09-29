@@ -283,7 +283,7 @@ pub const Editor = struct {
                     // draw cursor
                     if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
                         // blink
-                        if (@divTrunc(self.app.frame_time_ms, 500) % 2 == 0) {
+                        if (@mod(@divTrunc(self.app.frame_time_ms, 500), 2) == 0) {
                             const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * self.app.atlas.char_width);
                             const w = @divTrunc(self.app.atlas.char_width, 8);
                             window.queueRect(

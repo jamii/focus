@@ -83,7 +83,7 @@ pub const BufferSearcher = struct {
             .SelectOne, .SelectAll => {
                 self.updateEditor(self.app.getThing(self.target_editor_id).Editor, action, result_pos.items, filter);
                 window.popView();
-            }
+            },
         }
 
         // update preview
@@ -115,5 +115,4 @@ pub const BufferSearcher = struct {
             },
         }
     }
-
 };

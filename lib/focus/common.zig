@@ -20,7 +20,7 @@ pub const HashMap = std.HashMap;
 pub const AutoHashMap = std.AutoHashMap;
 
 // TODO should probably preallocate memory for panic message
-pub fn panic(comptime fmt: []const u8, args: var) noreturn {
+pub fn panic(comptime fmt: []const u8, args: anytype) noreturn {
     var buf = ArrayList(u8).init(std.heap.c_allocator);
     var out = buf.outStream();
     const message: []const u8 = message: {
@@ -40,17 +40,17 @@ pub fn oom() noreturn {
 
 pub fn DeepHashMap(comptime K: type, comptime V: type) type {
     return std.HashMap(K, V, struct {
-        fn hash(key: K) u32 {
-            return @truncate(u32, meta.deepHash(key));
+        fn hash(key: K) u64 {
+            return meta.deepHash(key);
         }
     }.hash, struct {
         fn equal(a: K, b: K) bool {
             return meta.deepEqual(a, b);
         }
-    }.equal);
+    }.equal, std.hash_map.DefaultMaxLoadPercentage);
 }
 
-pub fn dump(thing: var) void {
+pub fn dump(thing: anytype) void {
     const held = std.debug.getStderrMutex().acquire();
     defer held.release();
     const my_stderr = std.debug.getStderrStream();
@@ -58,7 +58,7 @@ pub fn dump(thing: var) void {
     my_stderr.writeAll("\n") catch return;
 }
 
-pub fn dumpInto(out_stream: var, indent: u32, thing: var) anyerror!void {
+pub fn dumpInto(out_stream: anytype, indent: u32, thing: anytype) anyerror!void {
     const ti = @typeInfo(@TypeOf(thing));
     switch (ti) {
         .Pointer => |pti| {
@@ -144,14 +144,14 @@ pub fn dumpInto(out_stream: var, indent: u32, thing: var) anyerror!void {
     }
 }
 
-pub fn format(allocator: *Allocator, comptime fmt: []const u8, args: var) []const u8 {
+pub fn format(allocator: *Allocator, comptime fmt: []const u8, args: anytype) []const u8 {
     var buf = ArrayList(u8).init(allocator);
     var out = buf.outStream();
     std.fmt.format(out, fmt, args) catch oom();
     return buf.items;
 }
 
-pub fn subSaturating(a: var, b: @TypeOf(a)) @TypeOf(a) {
+pub fn subSaturating(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
     if (b > a) {
         return 0;
     } else {
