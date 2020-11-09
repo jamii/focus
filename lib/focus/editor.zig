@@ -123,7 +123,7 @@ pub const Editor = struct {
                         sym.mod == c.KMOD_RCTRL | c.KMOD_RSHIFT)
                     {
                         switch (sym.sym) {
-                            'z' => self.buffer().redo(),
+                            'z' => self.redo(),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
@@ -705,6 +705,18 @@ pub const Editor = struct {
             const pos = switch (edit.tag) {
                 .Insert => edit.data.start,
                 .Delete => edit.data.end,
+            };
+            self.collapseCursors();
+            self.goPos(self.getMainCursor(), pos);
+        }
+    }
+
+    pub fn redo(self: *Editor) void {
+        const edit_o = self.buffer().redo();
+        if (edit_o) |edit| {
+            const pos = switch (edit.tag) {
+                .Insert => edit.data.end,
+                .Delete => edit.data.start,
             };
             self.collapseCursors();
             self.goPos(self.getMainCursor(), pos);

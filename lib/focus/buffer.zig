@@ -207,14 +207,16 @@ pub const Buffer = struct {
         return edit_o;
     }
 
-    pub fn redo(self: *Buffer) void {
-        if (self.redos.popOrNull()) |edit| {
+    pub fn redo(self: *Buffer) ?Edit {
+        const edit_o = self.redos.popOrNull();
+        if (edit_o) |edit| {
             self.undos.append(edit) catch oom();
             switch (edit.tag) {
                 .Insert => self.rawInsert(edit.data.start, edit.data.bytes),
                 .Delete => self.rawDelete(edit.data.start, edit.data.end),
             }
         }
+        return edit_o;
     }
 
     pub fn countLines(self: *Buffer) usize {
