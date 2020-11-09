@@ -41,6 +41,7 @@ pub const Editor = struct {
     dragging: Dragging,
     // which pixel of the buffer is at the top of the viewport
     top_pixel: isize,
+    last_moved_ms: i64,
 
     const scroll_amount = 32;
 
@@ -58,6 +59,7 @@ pub const Editor = struct {
             .marked = false,
             .dragging = .NotDragging,
             .top_pixel = 0,
+            .last_moved_ms = app.frame_time_ms,
         });
     }
 
@@ -76,6 +78,7 @@ pub const Editor = struct {
         // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
         var accept_textinput = false;
         for (events) |event| {
+            self.last_moved_ms = self.app.frame_time_ms;
             switch (event.type) {
                 c.SDL_KEYDOWN => {
                     const sym = event.key.keysym;
@@ -283,7 +286,7 @@ pub const Editor = struct {
                     // draw cursor
                     if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
                         // blink
-                        if (@mod(@divTrunc(self.app.frame_time_ms, 500), 2) == 0) {
+                        if (@mod(@divTrunc(self.app.frame_time_ms - self.last_moved_ms, 500), 2) == 0) {
                             const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * self.app.atlas.char_width);
                             const w = @divTrunc(self.app.atlas.char_width, 8);
                             window.queueRect(
