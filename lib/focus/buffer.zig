@@ -24,8 +24,9 @@ pub const Buffer = struct {
     app: *App,
     source: BufferSource,
     bytes: ArrayList(u8),
-    undos: ArrayList(Edit),
-    redos: ArrayList(Edit),
+    undos: ArrayList([]Edit),
+    doing: ArrayList(Edit),
+    redos: ArrayList([]Edit),
     modified_since_last_save: bool,
 
     pub fn initEmpty(app: *App) Id {
@@ -33,8 +34,9 @@ pub const Buffer = struct {
             .app = app,
             .source = .None,
             .bytes = ArrayList(u8).init(app.allocator),
-            .undos = ArrayList(Edit).init(app.allocator),
-            .redos = ArrayList(Edit).init(app.allocator),
+            .undos = ArrayList([]Edit).init(app.allocator),
+            .doing = ArrayList(Edit).init(app.allocator),
+            .redos = ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
         });
     }
@@ -52,8 +54,9 @@ pub const Buffer = struct {
             .None => {},
             .AbsoluteFilename => |filename| self.app.allocator.free(filename),
         }
-        for (self.undos) |edit| self.app.allocator.free(edit.bytes);
-        for (self.redos) |edit| self.app.allocator.free(edit.bytes);
+        for (self.undos) |edits| for (edits) |edit| self.app.allocator.free(edit.bytes);
+        for (self.doing) |edit| self.app.allocator.free(edit.bytes);
+        for (self.redos) |edits| for (edits) |edit| self.app.allocator.free(edit.bytes);
     }
 
     fn rawLoad(self: *Buffer, filename: []const u8) !void {
@@ -170,7 +173,7 @@ pub const Buffer = struct {
     }
 
     pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) void {
-        self.undos.append(.{
+        self.doing.append(.{
             .tag = .Insert,
             .data = .{
                 .start = pos,
@@ -178,11 +181,12 @@ pub const Buffer = struct {
                 .bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch oom(),
             },
         }) catch oom();
+        self.redos.shrink(0);
         self.rawInsert(pos, bytes);
     }
 
     pub fn delete(self: *Buffer, start: usize, end: usize) void {
-        self.undos.append(.{
+        self.doing.append(.{
             .tag = .Delete,
             .data = .{
                 .start = start,
@@ -190,33 +194,59 @@ pub const Buffer = struct {
                 .bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch oom(),
             },
         }) catch oom();
+        self.redos.shrink(0);
         self.rawDelete(start, end);
     }
 
-    // TODO need to update cursors on undo/redo somehow - maybe return list of points?
+pub fn newUndoGroup(self: *Buffer) void {
+    if (self.doing.items.len > 0) {
+        const edits = self.doing.toOwnedSlice();
+        std.mem.reverse(Edit, edits);
+        self.undos.append(edits) catch oom();
+    }
+}
 
-    pub fn undo(self: *Buffer) ?Edit {
-        const edit_o = self.undos.popOrNull();
-        if (edit_o) |edit| {
-            self.redos.append(edit) catch oom();
-            switch (edit.tag) {
-                .Insert => self.rawDelete(edit.data.start, edit.data.end),
-                .Delete => self.rawInsert(edit.data.start, edit.data.bytes),
+    pub fn undo(self: *Buffer) ?usize {
+        self.newUndoGroup();
+        var pos: ?usize = null;
+        if (self.undos.popOrNull()) |edits| {
+            for (edits) |edit| {
+                switch (edit.tag) {
+                    .Insert => {
+                        self.rawDelete(edit.data.start, edit.data.end);
+                        pos = edit.data.start;
+                    },
+                    .Delete => {
+                        self.rawInsert(edit.data.start, edit.data.bytes);
+                        pos = edit.data.end;
+                    },
+                }
             }
+            std.mem.reverse(Edit, edits);
+            self.redos.append(edits) catch oom();
         }
-        return edit_o;
+        return pos;
     }
 
-    pub fn redo(self: *Buffer) ?Edit {
-        const edit_o = self.redos.popOrNull();
-        if (edit_o) |edit| {
-            self.undos.append(edit) catch oom();
-            switch (edit.tag) {
-                .Insert => self.rawInsert(edit.data.start, edit.data.bytes),
-                .Delete => self.rawDelete(edit.data.start, edit.data.end),
+    pub fn redo(self: *Buffer) ?usize {
+        var pos: ?usize = null;
+        if (self.redos.popOrNull()) |edits| {
+            for (edits) |edit| {
+                switch (edit.tag) {
+                    .Insert => {
+                        self.rawInsert(edit.data.start, edit.data.bytes);
+                        pos = edit.data.end;
+                    },
+                    .Delete => {
+                        self.rawDelete(edit.data.start, edit.data.end);
+                        pos = edit.data.start;
+                    },
+                }
             }
+            std.mem.reverse(Edit, edits);
+            self.undos.append(edits) catch oom();
         }
-        return edit_o;
+        return pos;
     }
 
     pub fn countLines(self: *Buffer) usize {

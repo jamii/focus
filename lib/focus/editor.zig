@@ -41,7 +41,7 @@ pub const Editor = struct {
     dragging: Dragging,
     // which pixel of the buffer is at the top of the viewport
     top_pixel: isize,
-    last_moved_ms: i64,
+    last_event_ms: i64,
 
     const scroll_amount = 32;
 
@@ -59,7 +59,7 @@ pub const Editor = struct {
             .marked = false,
             .dragging = .NotDragging,
             .top_pixel = 0,
-            .last_moved_ms = app.frame_time_ms,
+            .last_event_ms = app.frame_time_ms,
         });
     }
 
@@ -78,7 +78,7 @@ pub const Editor = struct {
         // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
         var accept_textinput = false;
         for (events) |event| {
-            self.last_moved_ms = self.app.frame_time_ms;
+            self.last_event_ms = self.app.frame_time_ms;
             switch (event.type) {
                 c.SDL_KEYDOWN => {
                     const sym = event.key.keysym;
@@ -209,6 +209,11 @@ pub const Editor = struct {
             }
         }
 
+        // maybe start a new undo group
+        if (self.app.frame_time_ms - self.last_event_ms > 500) {
+            self.buffer().newUndoGroup();
+        }
+
         // handle mouse drag
         // (might be dragging outside window, so can't rely on SDL_MOUSEMOTION
         if (self.dragging != .NotDragging) {
@@ -286,7 +291,7 @@ pub const Editor = struct {
                     // draw cursor
                     if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
                         // blink
-                        if (@mod(@divTrunc(self.app.frame_time_ms - self.last_moved_ms, 500), 2) == 0) {
+                        if (@mod(@divTrunc(self.app.frame_time_ms - self.last_event_ms, 500), 2) == 0) {
                             const x = rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * self.app.atlas.char_width);
                             const w = @divTrunc(self.app.atlas.char_width, 8);
                             window.queueRect(
@@ -700,26 +705,24 @@ pub const Editor = struct {
     }
 
     pub fn undo(self: *Editor) void {
-        const edit_o = self.buffer().undo();
-        if (edit_o) |edit| {
-            const pos = switch (edit.tag) {
-                .Insert => edit.data.start,
-                .Delete => edit.data.end,
-            };
+        const pos_o = self.buffer().undo();
+        if (pos_o) |pos| {
             self.collapseCursors();
-            self.goPos(self.getMainCursor(), pos);
+            self.clearMark();
+            var cursor = self.getMainCursor();
+            self.goPos(cursor, pos);
+            cursor.tail = cursor.head;
         }
     }
 
     pub fn redo(self: *Editor) void {
-        const edit_o = self.buffer().redo();
-        if (edit_o) |edit| {
-            const pos = switch (edit.tag) {
-                .Insert => edit.data.end,
-                .Delete => edit.data.start,
-            };
+        const pos_o = self.buffer().redo();
+        if (pos_o) |pos| {
             self.collapseCursors();
-            self.goPos(self.getMainCursor(), pos);
+            self.clearMark();
+            var cursor = self.getMainCursor();
+            self.goPos(cursor, pos);
+            cursor.tail = cursor.head;
         }
     }
 };

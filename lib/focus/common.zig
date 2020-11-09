@@ -53,8 +53,8 @@ pub fn DeepHashMap(comptime K: type, comptime V: type) type {
 pub fn dump(thing: anytype) void {
     const held = std.debug.getStderrMutex().acquire();
     defer held.release();
-    const my_stderr = std.debug.getStderrStream();
-    dumpInto(my_stderr.*, 0, thing) catch return;
+    const my_stderr = std.io.getStdErr().writer();
+    dumpInto(my_stderr, 0, thing) catch return;
     my_stderr.writeAll("\n") catch return;
 }
 
