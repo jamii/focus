@@ -113,7 +113,7 @@ pub const Editor = struct {
                                 const buffer_searcher_id = BufferSearcher.init(self.app, self_id, selection);
                                 window.pushView(buffer_searcher_id);
                             },
-                            'z' => self.buffer().undo(),
+                            'z' => self.undo(),
                             // TODO ctrl+tab for indentall
                             else => accept_textinput = true,
                         }
@@ -696,6 +696,18 @@ pub const Editor = struct {
         var self_buffer = self.buffer();
         if (self_buffer.modified_since_last_save) {
             self_buffer.save();
+        }
+    }
+
+    pub fn undo(self: *Editor) void {
+        const edit_o = self.buffer().undo();
+        if (edit_o) |edit| {
+            const pos = switch (edit.tag) {
+                .Insert => edit.data.start,
+                .Delete => edit.data.end,
+            };
+            self.collapseCursors();
+            self.goPos(self.getMainCursor(), pos);
         }
     }
 };

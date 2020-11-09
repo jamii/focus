@@ -9,7 +9,7 @@ pub const BufferSource = union(enum) {
     AbsoluteFilename: []const u8,
 };
 
-const Edit = struct {
+pub const Edit = struct {
     tag: enum {
         Insert, Delete
     },
@@ -195,14 +195,16 @@ pub const Buffer = struct {
 
     // TODO need to update cursors on undo/redo somehow - maybe return list of points?
 
-    pub fn undo(self: *Buffer) void {
-        if (self.undos.popOrNull()) |edit| {
+    pub fn undo(self: *Buffer) ?Edit {
+        const edit_o = self.undos.popOrNull();
+        if (edit_o) |edit| {
             self.redos.append(edit) catch oom();
             switch (edit.tag) {
                 .Insert => self.rawDelete(edit.data.start, edit.data.end),
                 .Delete => self.rawInsert(edit.data.start, edit.data.bytes),
             }
         }
+        return edit_o;
     }
 
     pub fn redo(self: *Buffer) void {
