@@ -22,7 +22,7 @@ pub const Selector = struct {
 
     pub fn init(app: *App) Selector {
         const buffer_id = Buffer.initEmpty(app);
-        const editor_id = Editor.init(app, buffer_id);
+        const editor_id = Editor.init(app, buffer_id, false);
         return Selector{
             .app = app,
             .buffer_id = buffer_id,

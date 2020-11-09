@@ -18,7 +18,7 @@ pub const FileOpener = struct {
 
     pub fn init(app: *App, init_path: []const u8) Id {
         const preview_buffer_id = Buffer.initEmpty(app);
-        const preview_editor_id = Editor.init(app, preview_buffer_id);
+        const preview_editor_id = Editor.init(app, preview_buffer_id, false);
         const input = SingleLineEditor.init(app, init_path);
         const selector = Selector.init(app);
         return app.putThing(FileOpener{
@@ -95,7 +95,7 @@ pub const FileOpener = struct {
                 self.input.setText(filename.items);
             } else {
                 const new_buffer_id = Buffer.initFromAbsoluteFilename(self.app, filename.toOwnedSlice());
-                const new_editor_id = Editor.init(self.app, new_buffer_id);
+                const new_editor_id = Editor.init(self.app, new_buffer_id, true);
                 window.popView();
                 window.pushView(new_editor_id);
             }

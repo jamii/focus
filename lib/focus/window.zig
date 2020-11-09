@@ -164,7 +164,7 @@ pub const Window = struct {
                             'n' => {
                                 switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
                                     .Editor => |editor| {
-                                        const new_editor_id = Editor.init(self.app, editor.buffer_id);
+                                        const new_editor_id = Editor.init(self.app, editor.buffer_id, true);
                                         const new_window_id = Window.init(self.app, new_editor_id);
                                         var new_editor = self.app.getThing(new_editor_id).Editor;
                                         new_editor.top_pixel = editor.top_pixel;

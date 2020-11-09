@@ -30,7 +30,7 @@ pub const ProjectFileOpener = struct {
 
     pub fn init(app: *App) Id {
         const preview_buffer_id = Buffer.initEmpty(app);
-        const preview_editor_id = Editor.init(app, preview_buffer_id);
+        const preview_editor_id = Editor.init(app, preview_buffer_id, false);
         const input = SingleLineEditor.init(app, "");
         const selector = Selector.init(app);
 
@@ -123,7 +123,7 @@ pub const ProjectFileOpener = struct {
                 self.input.setText(path);
             } else {
                 const new_buffer_id = Buffer.initFromAbsoluteFilename(self.app, path);
-                const new_editor_id = Editor.init(self.app, new_buffer_id);
+                const new_editor_id = Editor.init(self.app, new_buffer_id, true);
                 window.popView();
                 window.pushView(new_editor_id);
             }

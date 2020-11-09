@@ -198,13 +198,13 @@ pub const Buffer = struct {
         self.rawDelete(start, end);
     }
 
-pub fn newUndoGroup(self: *Buffer) void {
-    if (self.doing.items.len > 0) {
-        const edits = self.doing.toOwnedSlice();
-        std.mem.reverse(Edit, edits);
-        self.undos.append(edits) catch oom();
+    pub fn newUndoGroup(self: *Buffer) void {
+        if (self.doing.items.len > 0) {
+            const edits = self.doing.toOwnedSlice();
+            std.mem.reverse(Edit, edits);
+            self.undos.append(edits) catch oom();
+        }
     }
-}
 
     pub fn undo(self: *Buffer) ?usize {
         self.newUndoGroup();

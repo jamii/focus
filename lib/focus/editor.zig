@@ -42,10 +42,11 @@ pub const Editor = struct {
     // which pixel of the buffer is at the top of the viewport
     top_pixel: isize,
     last_event_ms: i64,
+    show_status_bar: bool,
 
     const scroll_amount = 32;
 
-    pub fn init(app: *App, buffer_id: Id) Id {
+    pub fn init(app: *App, buffer_id: Id, show_status_bar: bool) Id {
         var cursors = ArrayList(Cursor).init(app.allocator);
         cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
@@ -60,6 +61,7 @@ pub const Editor = struct {
             .dragging = .NotDragging,
             .top_pixel = 0,
             .last_event_ms = app.frame_time_ms,
+            .show_status_bar = show_status_bar,
         });
     }
 
@@ -73,7 +75,7 @@ pub const Editor = struct {
 
     pub fn frame(self: *Editor, window: *Window, frame_rect: Rect, events: []const c.SDL_Event) void {
         var text_rect = frame_rect;
-        const status_rect = text_rect.splitBottom(self.app.atlas.char_height, 0);
+        const status_rect = if (self.show_status_bar) text_rect.splitBottom(self.app.atlas.char_height, 0) else null;
 
         // handle events
         // if we get textinput, we'll also get the keydown first
@@ -351,11 +353,11 @@ pub const Editor = struct {
         }
 
         // draw statusbar
-        {
-            window.queueRect(status_rect, style.status_background_color);
+        if (self.show_status_bar) {
+            window.queueRect(status_rect.?, style.status_background_color);
             const line_col = self.buffer().getLineColForPos(self.getMainCursor().head.pos);
             const status_text = format(self.app.frame_allocator, "L{} C{}", .{line_col[0], line_col[1]});
-            window.queueText(.{.x= status_rect.x, .y = status_rect.y}, style.background_color, status_text);
+            window.queueText(.{.x= status_rect.?.x, .y = status_rect.?.y}, style.background_color, status_text);
         }
     }
 

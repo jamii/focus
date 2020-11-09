@@ -15,7 +15,7 @@ pub const SingleLineEditor = struct {
 
     pub fn init(app: *App, init_text: []const u8) SingleLineEditor {
         const buffer_id = Buffer.initEmpty(app);
-        const editor_id = Editor.init(app, buffer_id);
+        const editor_id = Editor.init(app, buffer_id, false);
         var editor = app.getThing(editor_id).Editor;
         editor.insert(editor.getMainCursor(), init_text);
         editor.goBufferEnd(editor.getMainCursor());

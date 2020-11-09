@@ -20,7 +20,7 @@ pub const ProjectSearcher = struct {
 
     pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) Id {
         const preview_buffer_id = Buffer.initEmpty(app);
-        const preview_editor_id = Editor.init(app, preview_buffer_id);
+        const preview_editor_id = Editor.init(app, preview_buffer_id, false);
         const input = SingleLineEditor.init(app, init_filter);
         const selector = Selector.init(app);
 

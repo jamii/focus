@@ -19,7 +19,7 @@ pub const BufferSearcher = struct {
 
     pub fn init(app: *App, target_editor_id: Id, init_search: []const u8) Id {
         var target_editor = app.getThing(target_editor_id).Editor;
-        const preview_editor_id = Editor.init(app, target_editor.buffer_id);
+        const preview_editor_id = Editor.init(app, target_editor.buffer_id, false);
         var preview_editor = app.getThing(preview_editor_id).Editor;
         preview_editor.getMainCursor().* = target_editor.getMainCursor().*;
         const input = SingleLineEditor.init(app, init_search);
