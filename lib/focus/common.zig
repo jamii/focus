@@ -199,6 +199,10 @@ pub const Rect = struct {
         self.h -= h + margin;
         return split;
     }
+
+    pub fn contains(self: Rect, x: Coord, y: Coord) bool {
+        return x >= self.x and x < (self.x + self.w) and y >= self.y and (y < self.y + self.h);
+    }
 };
 
 pub const Vec2 = struct {
