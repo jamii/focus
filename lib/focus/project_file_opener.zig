@@ -10,13 +10,14 @@ const Window = focus.Window;
 const style = focus.style;
 const Selector = focus.Selector;
 
-const projects = [6][]const u8{
+const projects = [_][]const u8{
     "/home/jamie/exo/",
     "/home/jamie/exo-secret/",
     "/home/jamie/imp/",
     "/home/jamie/focus/",
     "/home/jamie/tower/",
     "/home/jamie/zig/",
+    "/home/jamie/bluetron/",
 };
 
 pub const ProjectFileOpener = struct {
