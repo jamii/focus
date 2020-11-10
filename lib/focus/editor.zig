@@ -724,9 +724,9 @@ pub const Editor = struct {
     }
 
     pub fn save(self: *Editor) void {
-        self.tryFormat();
         var self_buffer = self.buffer();
         if (self_buffer.modified_since_last_save) {
+            self.tryFormat();
             self_buffer.save();
         }
     }
