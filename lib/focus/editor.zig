@@ -76,6 +76,8 @@ pub const Editor = struct {
     pub fn frame(self: *Editor, window: *Window, frame_rect: Rect, events: []const c.SDL_Event) void {
         var text_rect = frame_rect;
         const status_rect = if (self.show_status_bar) text_rect.splitBottom(self.app.atlas.char_height, 0) else null;
+        const left_gutter_rect = text_rect.splitLeft(self.app.atlas.char_width, 0);
+        const right_gutter_rect = text_rect.splitRight(self.app.atlas.char_width, 0);
 
         // handle events
         // if we get textinput, we'll also get the keydown first
@@ -283,6 +285,8 @@ pub const Editor = struct {
 
         // draw background
         window.queueRect(text_rect, style.background_color);
+        window.queueRect(left_gutter_rect, style.background_color);
+        window.queueRect(right_gutter_rect, style.background_color);
 
         // draw cursors, selections, text
         var lines = std.mem.split(self.buffer().bytes.items, "\n");
@@ -348,15 +352,21 @@ pub const Editor = struct {
         {
             const ratio = @intToFloat(f64, self.top_pixel) / @intToFloat(f64, max_pixels);
             const y = text_rect.y + min(@floatToInt(Coord, @intToFloat(f64, text_rect.h) * ratio), text_rect.h - self.app.atlas.char_height);
-            const x = text_rect.x + text_rect.w - self.app.atlas.char_width;
-            window.queueText(.{ .x = x, .y = y, .w = text_rect.w, .h = text_rect.h }, style.highlight_color, "<");
+            var left_scroll_rect = left_gutter_rect;
+            left_scroll_rect.y = y;
+            left_scroll_rect.h -= y;
+            window.queueText(left_scroll_rect, style.highlight_color, ">");
+            var right_scroll_rect = right_gutter_rect;
+            right_scroll_rect.y = y;
+            right_scroll_rect.h -= y;
+            window.queueText(right_scroll_rect, style.highlight_color, "<");
         }
 
         // draw statusbar
         if (self.show_status_bar) {
             window.queueRect(status_rect.?, style.status_background_color);
             const line_col = self.buffer().getLineColForPos(self.getMainCursor().head.pos);
-            const status_text = format(self.app.frame_allocator, "L{} C{}", .{line_col[0], line_col[1]});
+            const status_text = format(self.app.frame_allocator, "L{} C{}", .{ line_col[0], line_col[1] });
             window.queueText(status_rect.?, style.background_color, status_text);
         }
     }

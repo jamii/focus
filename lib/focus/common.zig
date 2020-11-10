@@ -178,6 +178,14 @@ pub const Rect = struct {
 
     // TODO split into pointers
 
+    pub fn splitLeft(self: *Rect, w: Coord, margin: Coord) Rect {
+        assert(self.w >= w);
+        const split = Rect{ .x = self.x, .y = self.y, .w = w, .h = self.h };
+        self.x += w + margin;
+        self.w -= w + margin;
+        return split;
+    }
+
     pub fn splitRight(self: *Rect, w: Coord, margin: Coord) Rect {
         assert(self.w >= w);
         const split = Rect{ .x = self.x + self.w - w, .y = self.y, .w = w, .h = self.h };
