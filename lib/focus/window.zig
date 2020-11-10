@@ -352,19 +352,26 @@ pub const Window = struct {
         self.queueQuad(rect, self.app.atlas.white_rect, color);
     }
 
-    pub fn queueText(self: *Window, pos: Vec2, color: Color, chars: []const u8) void {
-        // TODO going to need to be able to clip text
-        var dst: Rect = .{ .x = pos.x, .y = pos.y, .w = 0, .h = 0 };
+    pub fn queueText(self: *Window, rect: Rect, color: Color, chars: []const u8) void {
+        const max_x = rect.x + rect.w;
+        const max_y = rect.y + rect.h;
+        var dst: Rect = .{ .x = rect.x, .y = rect.y, .w = 0, .h = 0 };
         for (chars) |char| {
-            const src = if (char < self.app.atlas.char_to_rect.len)
+            var src = if (char < self.app.atlas.char_to_rect.len)
                 self.app.atlas.char_to_rect[char]
             else
-            // TODO tofu
+                // TODO tofu
                 self.app.atlas.white_rect;
+            const max_w = max(0, max_x - dst.x);
+            const max_h = max(0, max_y - dst.y);
+            const ratio_w = @intToFloat(f64, min(max_w, self.app.atlas.char_width)) / @intToFloat(f64, self.app.atlas.char_width);
+            const ratio_h = @intToFloat(f64, min(max_h, self.app.atlas.char_height)) / @intToFloat(f64, self.app.atlas.char_height);
+            src.w = @floatToInt(Coord, @floor(@intToFloat(f64, src.w) * ratio_w));
+            src.h = @floatToInt(Coord, @floor(@intToFloat(f64, src.h) * ratio_h));
             dst.w = src.w;
             dst.h = src.h;
             self.queueQuad(dst, src, color);
-            dst.x += src.w;
+            dst.x += self.app.atlas.char_width;
         }
     }
 

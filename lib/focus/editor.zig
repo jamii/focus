@@ -338,7 +338,7 @@ pub const Editor = struct {
                 }
 
                 // draw text
-                window.queueText(.{ .x = text_rect.x, .y = @intCast(Coord, y) }, style.text_color, line);
+                window.queueText(.{ .x = text_rect.x, .y = @intCast(Coord, y), .w = text_rect.w, .h = text_rect.y + text_rect.h - @intCast(Coord, y) }, style.text_color, line);
             }
 
             line_start_pos = line_end_pos + 1; // + 1 for '\n'
@@ -349,7 +349,7 @@ pub const Editor = struct {
             const ratio = @intToFloat(f64, self.top_pixel) / @intToFloat(f64, max_pixels);
             const y = text_rect.y + min(@floatToInt(Coord, @intToFloat(f64, text_rect.h) * ratio), text_rect.h - self.app.atlas.char_height);
             const x = text_rect.x + text_rect.w - self.app.atlas.char_width;
-            window.queueText(.{ .x = x, .y = y }, style.highlight_color, "<");
+            window.queueText(.{ .x = x, .y = y, .w = text_rect.w, .h = text_rect.h }, style.highlight_color, "<");
         }
 
         // draw statusbar
@@ -357,7 +357,7 @@ pub const Editor = struct {
             window.queueRect(status_rect.?, style.status_background_color);
             const line_col = self.buffer().getLineColForPos(self.getMainCursor().head.pos);
             const status_text = format(self.app.frame_allocator, "L{} C{}", .{line_col[0], line_col[1]});
-            window.queueText(.{.x= status_rect.?.x, .y = status_rect.?.y}, style.background_color, status_text);
+            window.queueText(status_rect.?, style.background_color, status_text);
         }
     }
 
