@@ -6,7 +6,10 @@ const meta = focus.meta;
 
 pub const BufferSource = union(enum) {
     None,
-    AbsoluteFilename: []const u8,
+    File: struct {
+        absolute_filename: []const u8,
+        mtime: i128,
+    },
 };
 
 pub const Edit = struct {
@@ -52,50 +55,87 @@ pub const Buffer = struct {
         self.bytes.deinit();
         switch (self.source) {
             .None => {},
-            .AbsoluteFilename => |filename| self.app.allocator.free(filename),
+            .File => |file_source| self.app.allocator.free(file_source.absolute_filename),
         }
         for (self.undos) |edits| for (edits) |edit| self.app.allocator.free(edit.bytes);
         for (self.doing) |edit| self.app.allocator.free(edit.bytes);
         for (self.redos) |edits| for (edits) |edit| self.app.allocator.free(edit.bytes);
     }
 
-    fn rawLoad(self: *Buffer, filename: []const u8) !void {
-        assert(std.fs.path.isAbsolute(filename));
-
-        self.bytes.shrink(0);
-
+    const TryLoadResult = struct {
+        bytes: []const u8,
+        mtime: i128,
+    };
+    fn tryLoad(self: *Buffer, filename: []const u8) !TryLoadResult {
         const file = try std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false });
         defer file.close();
+
+        const mtime = (try file.stat()).mtime;
 
         const chunk_size = 1024;
         var buf = self.app.frame_allocator.alloc(u8, chunk_size) catch oom();
 
+        var bytes = ArrayList(u8).init(self.app.allocator);
+        errdefer bytes.deinit();
+
         while (true) {
             const len = try file.readAll(buf);
             // worth handling oom here for big files
-            try self.bytes.appendSlice(buf[0..len]);
+            try bytes.appendSlice(buf[0..len]);
             if (len < chunk_size) break;
         }
 
-        self.source = .{ .AbsoluteFilename = std.mem.dupe(self.app.allocator, u8, filename) catch oom() };
+        return TryLoadResult{
+            .bytes = bytes.toOwnedSlice(),
+            .mtime = mtime,
+        };
     }
 
     pub fn load(self: *Buffer, filename: []const u8) void {
-        self.rawLoad(filename) catch |err| {
-            self.bytes.shrink(0);
-            // TODO differentiate from actual text
-            std.fmt.format(self.bytes.outStream(), "{} while loading {s}", .{ err, filename }) catch oom();
+        assert(std.fs.path.isAbsolute(filename));
+
+        self.delete(0, self.bytes.items.len);
+
+        if (self.tryLoad(filename)) |result| {
+            self.insert(0, result.bytes);
+            self.source = .{
+                .File = .{
+                    .absolute_filename = std.mem.dupe(self.app.allocator, u8, filename) catch oom(),
+                    .mtime = result.mtime,
+                },
+            };
+        } else |err| {
+            const message = format(self.app.frame_allocator, "{} while loading {s}", .{ err, filename });
+            self.insert(0, message);
             self.source = .None;
-        };
+        }
+
+        self.modified_since_last_save = false;
+    }
+
+    pub fn refresh(self: *Buffer) void {
+        switch (self.source) {
+            .None => {},
+            .File => |file_source| {
+                const file = std.fs.cwd().createFile(file_source.absolute_filename, .{ .read = true, .truncate = false }) catch |err| panic("{} while refreshing {s}", .{ err, file_source.absolute_filename });
+                defer file.close();
+                const stat = file.stat() catch |err| panic("{} while refreshing {s}", .{ err, file_source.absolute_filename });
+                if (stat.mtime != file_source.mtime) {
+                    self.load(file_source.absolute_filename);
+                }
+            },
+        }
     }
 
     pub fn save(self: *Buffer) void {
         switch (self.source) {
             .None => {},
-            .AbsoluteFilename => |filename| {
-                const file = std.fs.cwd().createFile(filename, .{ .read = false, .truncate = true }) catch |err| panic("{} while saving {s}", .{ err, filename });
+            .File => |*file_source| {
+                const file = std.fs.cwd().createFile(file_source.absolute_filename, .{ .read = false, .truncate = true }) catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 defer file.close();
-                file.writeAll(self.bytes.items) catch |err| panic("{} while saving {s}", .{ err, filename });
+                file.writeAll(self.bytes.items) catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
+                const stat = file.stat() catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
+                file_source.mtime = stat.mtime;
                 self.modified_since_last_save = false;
             },
         }
@@ -260,8 +300,14 @@ pub const Buffer = struct {
         if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
             self.modified_since_last_save = true;
         }
-        // TODO undo group
         self.delete(0, self.getBufferEnd());
         self.insert(0, new_bytes);
+    }
+
+    pub fn getFilename(self: *Buffer) ?[]const u8 {
+        return switch (self.source) {
+            .None => null,
+            .File => |file_source| file_source.absolute_filename,
+        };
     }
 };

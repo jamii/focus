@@ -687,13 +687,10 @@ pub const Editor = struct {
     }
 
     pub fn tryFormat(self: *Editor) void {
-        switch (self.buffer().source) {
-            .None => {},
-            .AbsoluteFilename => |filename| {
-                if (std.mem.endsWith(u8, filename, ".zig")) {
-                    self.zigFormat();
-                }
-            },
+        if (self.buffer().getFilename()) |filename| {
+            if (std.mem.endsWith(u8, filename, ".zig")) {
+                self.zigFormat();
+            }
         }
     }
 

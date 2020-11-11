@@ -180,13 +180,28 @@ pub const App = struct {
             }
         }
 
+        // refresh buffers
+        {
+            var entity_iter = self.things.iterator();
+            while (entity_iter.next()) |kv| {
+                switch (kv.value) {
+                    .Buffer => |buffer| {
+                        buffer.refresh();
+                    },
+                    else => {}
+                }
+            }
+        }
+
         // run window frames
         // collect all windows up front, because the list might change during frame
-        var windows = ArrayList(*Window).init(self.allocator);
-        defer windows.deinit();
-        var entity_iter = self.things.iterator();
-        while (entity_iter.next()) |kv| {
-            if (kv.value == .Window) windows.append(kv.value.Window) catch oom();
+        var windows = ArrayList(*Window).init(self.frame_allocator);
+
+        {
+            var entity_iter = self.things.iterator();
+            while (entity_iter.next()) |kv| {
+                if (kv.value == .Window) windows.append(kv.value.Window) catch oom();
+            }
         }
         if (windows.items.len == 0) {
             std.os.exit(0);

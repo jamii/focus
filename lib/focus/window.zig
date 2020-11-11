@@ -143,11 +143,8 @@ pub const Window = struct {
                                 switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
                                     .Editor => |editor| {
                                         const buffer = self.app.getThing(editor.buffer_id).Buffer;
-                                        switch (buffer.source) {
-                                            .None => {},
-                                            .AbsoluteFilename => |filename| {
-                                                init_path = std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch oom();
-                                            },
+                                        if (buffer.getFilename()) |filename| {
+                                            init_path = std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch oom();
                                         }
                                     },
                                     else => {},
@@ -184,22 +181,19 @@ pub const Window = struct {
                                 switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
                                     .Editor => |editor| {
                                         const buffer = self.app.getThing(editor.buffer_id).Buffer;
-                                        switch (buffer.source) {
-                                            .None => {},
-                                            .AbsoluteFilename => |filename| {
-                                                const dirname = std.fs.path.dirname(filename).?;
-                                                var root = dirname;
-                                                while (!meta.deepEqual(root, "/")) {
-                                                    const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch oom();
-                                                    if (std.fs.openFileAbsolute(git_path, .{})) |file| {
-                                                        file.close();
-                                                        break;
-                                                    } else |_| {}
-                                                    root = std.fs.path.dirname(root).?;
-                                                }
-                                                project_dir = if (meta.deepEqual(root, "/")) dirname else root;
-                                                filter = editor.dupeSelection(self.app.frame_allocator, editor.getMainCursor());
-                                            },
+                                        if (buffer.getFilename()) |filename| {
+                                            const dirname = std.fs.path.dirname(filename).?;
+                                            var root = dirname;
+                                            while (!meta.deepEqual(root, "/")) {
+                                                const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch oom();
+                                                if (std.fs.openFileAbsolute(git_path, .{})) |file| {
+                                                    file.close();
+                                                    break;
+                                                } else |_| {}
+                                                root = std.fs.path.dirname(root).?;
+                                            }
+                                            project_dir = if (meta.deepEqual(root, "/")) dirname else root;
+                                            filter = editor.dupeSelection(self.app.frame_allocator, editor.getMainCursor());
                                         }
                                     },
                                     else => {},
