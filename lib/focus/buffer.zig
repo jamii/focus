@@ -312,4 +312,8 @@ pub const Buffer = struct {
             .File => |file_source| file_source.absolute_filename,
         };
     }
+
+    pub fn getChar(self: *Buffer, pos: usize) u8 {
+        return self.bytes.items[pos];
+    }
 };

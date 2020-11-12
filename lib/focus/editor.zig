@@ -43,6 +43,7 @@ pub const Editor = struct {
     top_pixel: isize,
     last_event_ms: i64,
     show_status_bar: bool,
+    prev_wrapped_line_ranges: ?[][2]usize,
 
     const scroll_amount = 32;
 
@@ -62,11 +63,15 @@ pub const Editor = struct {
             .top_pixel = 0,
             .last_event_ms = app.frame_time_ms,
             .show_status_bar = show_status_bar,
+            .prev_wrapped_line_ranges = null,
         });
     }
 
     pub fn deinit(self: *Editor) void {
         self.cursors.deinit();
+        if (self.prev_wrapped_line_ranges) |prev_wrapped_line_ranges| {
+            self.app.allocator.free(prev_wrapped_line_ranges);
+        }
     }
 
     pub fn buffer(self: *Editor) *Buffer {
@@ -78,6 +83,13 @@ pub const Editor = struct {
         const status_rect = if (self.show_status_bar) text_rect.splitBottom(self.app.atlas.char_height, 0) else null;
         const left_gutter_rect = text_rect.splitLeft(self.app.atlas.char_width, 0);
         const right_gutter_rect = text_rect.splitRight(self.app.atlas.char_width, 0);
+
+        const max_chars_per_line = @intCast(usize, @divTrunc(text_rect.w, self.app.atlas.char_width));
+
+        // on first frame, don't have any prev state
+        if (self.prev_wrapped_line_ranges == null) {
+            self.updateLineWrap(max_chars_per_line);
+        }
 
         // handle events
         // if we get textinput, we'll also get the keydown first
@@ -261,6 +273,9 @@ pub const Editor = struct {
             if (mouse_y <= text_rect.y) self.top_pixel -= scroll_amount;
             if (mouse_y >= text_rect.y + text_rect.h) self.top_pixel += scroll_amount;
         }
+
+        // update line wrapping now that buffer might have changed
+        self.updateLineWrap(max_chars_per_line);
 
         // if cursor moved, scroll it into editor
         if (self.getMainCursor().head.pos != self.prev_main_cursor_head_pos) {
@@ -748,5 +763,57 @@ pub const Editor = struct {
             self.goPos(cursor, pos);
             cursor.tail = cursor.head;
         }
+    }
+
+    pub fn updateLineWrap(self: *Editor, max_chars_per_line: usize) void {
+        const self_buffer = self.buffer();
+        const buffer_end = self_buffer.getBufferEnd();
+        var line_ranges = ArrayList([2]usize).init(self.app.allocator);
+        var line_begin: usize = 0;
+        while (true) {
+            var line_end = line_begin;
+            {
+                var maybe_line_end: usize = line_end;
+                while (true) {
+                    if (maybe_line_end >= buffer_end) {
+                        line_end = maybe_line_end;
+                        break;
+                    }
+                    const char = self_buffer.getChar(maybe_line_end);
+                    if (maybe_line_end - line_begin >= max_chars_per_line) {
+                        // if we haven't soft wrapped yet, hard wrap before this char, otherwise use soft wrap
+                        if (line_end == line_begin) {
+                            line_end = maybe_line_end;
+                        }
+                        break;
+                    } else {
+                        maybe_line_end += 1;
+                    }
+                    if (char == '\n') {
+                        // wrap here
+                        line_end = maybe_line_end;
+                        break;
+                    }
+                    if (char == ' ') {
+                        // commit to including this char
+                        line_end = maybe_line_end;
+                    }
+                    // otherwise keep looking ahead
+                }
+            }
+            line_ranges.append(.{ line_begin, line_end }) catch oom();
+            line_begin = line_end;
+            if (line_begin >= buffer_end) {
+                break;
+            }
+        }
+        self.prev_wrapped_line_ranges = line_ranges.toOwnedSlice();
+    }
+
+    fn getLineColForPos(self: *WrappedLines, pos: usize) [2]usize {
+        for (self.prev_wrapped_line_ranges.?) |line_range, line| {
+            if (pos < line_range[1]) return .{ line, pos - line_range[0] };
+        }
+        panic("pos {} outside of buffer", .{pos});
     }
 };

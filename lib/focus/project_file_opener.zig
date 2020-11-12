@@ -18,6 +18,7 @@ const projects = [_][]const u8{
     "/home/jamie/tower/",
     "/home/jamie/zig/",
     "/home/jamie/bluetron/",
+    "/home/jamie/blog",
 };
 
 pub const ProjectFileOpener = struct {
