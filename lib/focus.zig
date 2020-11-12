@@ -102,7 +102,7 @@ pub const App = struct {
         const editor_id = Editor.init(self, buffer_id, true);
         const window_id = Window.init(self, editor_id);
 
-        self.getThing(buffer_id).Buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n" ** 20000));
+        self.getThing(buffer_id).Buffer.insert(0, "some initial text\nand some more\nshort\nreaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long" ++ ("abc\n" ** 20000));
 
         return self;
     }
@@ -188,7 +188,7 @@ pub const App = struct {
                     .Buffer => |buffer| {
                         buffer.refresh();
                     },
-                    else => {}
+                    else => {},
                 }
             }
         }
