@@ -48,6 +48,8 @@ pub const Buffer = struct {
         const self_id = Buffer.initEmpty(app);
         var self = app.getThing(self_id).Buffer;
         self.load(filename);
+        // don't want the load on the undo stack
+        self.doing.shrink(0);
         return self_id;
     }
 
