@@ -3,6 +3,7 @@ usingnamespace focus.common;
 const App = focus.App;
 const Id = focus.Id;
 const Buffer = focus.Buffer;
+const LineWrappedBuffer = focus.LineWrappedBuffer;
 const BufferSearcher = focus.BufferSearcher;
 const Window = focus.Window;
 const style = focus.style;
@@ -34,6 +35,8 @@ pub const Dragging = enum {
 pub const Editor = struct {
     app: *App,
     buffer_id: Id,
+    max_chars_per_line: usize,
+    line_wrapped_buffer: LineWrappedBuffer,
     // cursors.len > 0
     cursors: ArrayList(Cursor),
     prev_main_cursor_head_pos: usize,
@@ -43,11 +46,14 @@ pub const Editor = struct {
     top_pixel: isize,
     last_event_ms: i64,
     show_status_bar: bool,
-    prev_wrapped_line_ranges: ?[][2]usize,
 
     const scroll_amount = 32;
 
     pub fn init(app: *App, buffer_id: Id, show_status_bar: bool) Id {
+        const self_buffer = app.getThing(buffer_id).Buffer;
+        // dummy value - will be updated every frame
+        const max_chars_per_line = std.math.maxInt(usize);
+        const line_wrapped_buffer = LineWrappedBuffer.init(app, self_buffer, max_chars_per_line);
         var cursors = ArrayList(Cursor).init(app.allocator);
         cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
@@ -56,6 +62,8 @@ pub const Editor = struct {
         return app.putThing(Editor{
             .app = app,
             .buffer_id = buffer_id,
+            .max_chars_per_line = max_chars_per_line,
+            .line_wrapped_buffer = line_wrapped_buffer,
             .cursors = cursors,
             .prev_main_cursor_head_pos = 0,
             .marked = false,
@@ -63,15 +71,7 @@ pub const Editor = struct {
             .top_pixel = 0,
             .last_event_ms = app.frame_time_ms,
             .show_status_bar = show_status_bar,
-            .prev_wrapped_line_ranges = null,
         });
-    }
-
-    pub fn deinit(self: *Editor) void {
-        self.cursors.deinit();
-        if (self.prev_wrapped_line_ranges) |prev_wrapped_line_ranges| {
-            self.app.allocator.free(prev_wrapped_line_ranges);
-        }
     }
 
     pub fn buffer(self: *Editor) *Buffer {
@@ -84,12 +84,13 @@ pub const Editor = struct {
         const left_gutter_rect = text_rect.splitLeft(self.app.atlas.char_width, 0);
         const right_gutter_rect = text_rect.splitRight(self.app.atlas.char_width, 0);
 
-        const max_chars_per_line = @intCast(usize, @divTrunc(text_rect.w, self.app.atlas.char_width));
+        // window width might have changed
+        self.max_chars_per_line = @intCast(usize, @divTrunc(text_rect.w, self.app.atlas.char_width));
 
-        // on first frame, don't have any prev state
-        if (self.prev_wrapped_line_ranges == null) {
-            self.updateLineWrap(max_chars_per_line);
-        }
+        // TODO these state updates are total hacks
+        // buffer might have been changed by another window
+        self.line_wrapped_buffer = LineWrappedBuffer.init(self.app, self.buffer(), self.max_chars_per_line);
+        self.correctInvalidCursors();
 
         // handle events
         // if we get textinput, we'll also get the keydown first
@@ -275,7 +276,7 @@ pub const Editor = struct {
         }
 
         // update line wrapping now that buffer might have changed
-        self.updateLineWrap(max_chars_per_line);
+        self.line_wrapped_buffer = LineWrappedBuffer.init(self.app, self.buffer(), self.max_chars_per_line);
 
         // if cursor moved, scroll it into editor
         if (self.getMainCursor().head.pos != self.prev_main_cursor_head_pos) {
@@ -387,7 +388,7 @@ pub const Editor = struct {
     }
 
     pub fn updateCol(self: *Editor, point: *Point) void {
-        point.col = point.pos - self.getLineStart(point.*.pos);
+        point.col = point.pos - self.line_wrapped_buffer.getLineStart(point.*.pos);
     }
 
     pub fn updatePos(self: *Editor, point: *Point, pos: usize) void {
@@ -400,13 +401,13 @@ pub const Editor = struct {
     }
 
     pub fn goCol(self: *Editor, cursor: *Cursor, col: usize) void {
-        const line_start = self.getLineStart(cursor.head.pos);
-        cursor.head.col = min(col, self.getLineEnd(cursor.head.pos) - line_start);
+        const line_start = self.line_wrapped_buffer.getLineStart(cursor.head.pos);
+        cursor.head.col = min(col, self.line_wrapped_buffer.getLineEnd(cursor.head.pos) - line_start);
         cursor.head.pos = line_start + cursor.head.col;
     }
 
     pub fn goLine(self: *Editor, cursor: *Cursor, line: usize) void {
-        cursor.head.pos = self.getPosForLine(line);
+        cursor.head.pos = self.line_wrapped_buffer.getPosForLine(line);
         // leave head.col intact
     }
 
@@ -426,32 +427,32 @@ pub const Editor = struct {
     }
 
     pub fn goDown(self: *Editor, cursor: *Cursor) void {
-        const line_col = self.getLineColForPos(cursor.head.pos);
-        if (line_col[0] < self.countLines() - 1) {
+        const line_col = self.line_wrapped_buffer.getLineColForPos(cursor.head.pos);
+        if (line_col[0] < self.line_wrapped_buffer.countLines() - 1) {
             const col = cursor.head.col;
-            cursor.head.pos = self.getPosForLine(line_col[0] + 1);
+            cursor.head.pos = self.line_wrapped_buffer.getPosForLine(line_col[0] + 1);
             self.goCol(cursor, col);
             cursor.head.col = col;
         }
     }
 
     pub fn goUp(self: *Editor, cursor: *Cursor) void {
-        const line_col = self.getLineColForPos(cursor.head.pos);
+        const line_col = self.line_wrapped_buffer.getLineColForPos(cursor.head.pos);
         if (line_col[0] > 0) {
             const col = cursor.head.col;
-            cursor.head.pos = self.getPosForLine(line_col[0] - 1);
+            cursor.head.pos = self.line_wrapped_buffer.getPosForLine(line_col[0] - 1);
             self.goCol(cursor, col);
             cursor.head.col = col;
         }
     }
 
     pub fn goLineStart(self: *Editor, cursor: *Cursor) void {
-        cursor.head.pos = self.getLineStart(cursor.head.pos);
+        cursor.head.pos = self.line_wrapped_buffer.getLineStart(cursor.head.pos);
         cursor.head.col = 0;
     }
 
     pub fn goLineEnd(self: *Editor, cursor: *Cursor) void {
-        cursor.head.pos = self.getLineEnd(cursor.head.pos);
+        cursor.head.pos = self.line_wrapped_buffer.getLineEnd(cursor.head.pos);
         self.updateCol(&cursor.head);
     }
 
@@ -460,7 +461,7 @@ pub const Editor = struct {
     }
 
     pub fn goBufferEnd(self: *Editor, cursor: *Cursor) void {
-        self.goPos(cursor, self.getBufferEnd());
+        self.goPos(cursor, self.buffer().getBufferEnd());
     }
 
     pub fn insert(self: *Editor, cursor: *Cursor, bytes: []const u8) void {
@@ -508,7 +509,7 @@ pub const Editor = struct {
     pub fn deleteForwards(self: *Editor, cursor: *Cursor) void {
         if (self.marked) {
             self.deleteSelection(cursor);
-        } else if (cursor.head.pos < self.getBufferEnd()) {
+        } else if (cursor.head.pos < self.buffer().getBufferEnd()) {
             self.delete(cursor.head.pos, cursor.head.pos + 1);
         }
     }
@@ -698,7 +699,7 @@ pub const Editor = struct {
     pub fn correctInvalidCursors(self: *Editor) void {
         for (self.cursors.items) |*cursor| {
             for (&[_]*Point{ &cursor.head, &cursor.tail }) |point| {
-                self.updatePos(point, min(point.pos, self.buffer().getBufferEnd()));
+                point.pos = min(point.pos, self.buffer().getBufferEnd());
             }
         }
     }
@@ -765,91 +766,5 @@ pub const Editor = struct {
             self.goPos(cursor, pos);
             cursor.tail = cursor.head;
         }
-    }
-
-    pub fn updateLineWrap(self: *Editor, max_chars_per_line: usize) void {
-        const self_buffer = self.buffer();
-        const buffer_end = self_buffer.getBufferEnd();
-        var line_ranges = ArrayList([2]usize).init(self.app.allocator);
-        var line_start: usize = 0;
-        while (true) {
-            var line_end = line_start;
-            {
-                var maybe_line_end: usize = line_end;
-                while (true) {
-                    if (maybe_line_end >= buffer_end) {
-                        line_end = maybe_line_end;
-                        break;
-                    }
-                    const char = self_buffer.getChar(maybe_line_end);
-                    if (maybe_line_end - line_start >= max_chars_per_line) {
-                        // if we haven't soft wrapped yet, hard wrap before this char, otherwise use soft wrap
-                        if (line_end == line_start) {
-                            line_end = maybe_line_end;
-                        }
-                        break;
-                    } else {
-                        maybe_line_end += 1;
-                    }
-                    if (char == '\n') {
-                        // wrap here
-                        line_end = maybe_line_end;
-                        break;
-                    }
-                    if (char == ' ') {
-                        // commit to including this char
-                        line_end = maybe_line_end;
-                    }
-                    // otherwise keep looking ahead
-                }
-            }
-            line_ranges.append(.{ line_start, line_end }) catch oom();
-            line_start = line_end;
-            if (line_start >= buffer_end) {
-                break;
-            }
-        }
-        self.prev_wrapped_line_ranges = line_ranges.toOwnedSlice();
-    }
-
-    fn getLineColForPos(self: *Editor, pos: usize) [2]usize {
-        for (self.prev_wrapped_line_ranges.?) |line_range, line| {
-            if (pos < line_range[1]) return .{ line, pos - line_range[0] };
-        }
-        const last_line = self.prev_wrapped_line_ranges.?.len - 1;
-        const last_line_range = self.prev_wrapped_line_ranges.?[last_line];
-        if (pos == last_line_range[1]) {
-            return .{ last_line, pos - last_line_range[0] };
-        }
-        panic("pos {} outside of buffer", .{pos});
-    }
-
-    fn getRangeForLine(self: *Editor, line: usize) [2]usize {
-        for (self.prev_wrapped_line_ranges.?) |other_line_range, other_line| {
-            if (other_line == line) return other_line_range;
-        }
-        panic("line {} outside of buffer", .{line});
-    }
-
-    fn getPosForLine(self: *Editor, line: usize) usize {
-        return self.getRangeForLine(line)[0];
-    }
-
-    fn getLineStart(self: *Editor, pos: usize) usize {
-        const line_col = self.getLineColForPos(pos);
-        return self.getRangeForLine(line_col[0])[0];
-    }
-
-    fn getLineEnd(self: *Editor, pos: usize) usize {
-        const line_col = self.getLineColForPos(pos);
-        return self.getRangeForLine(line_col[0])[1];
-    }
-
-    fn countLines(self: *Editor) usize {
-        return self.prev_wrapped_line_ranges.?.len;
-    }
-
-    fn getBufferEnd(self: *Editor) usize {
-        return self.prev_wrapped_line_ranges.?[self.prev_wrapped_line_ranges.?.len - 1][1];
     }
 };
