@@ -27,8 +27,8 @@ pub const LineWrappedBuffer = struct {
         var line_start: usize = 0;
         while (true) {
             var line_end = line_start;
+            var maybe_line_end: usize = line_end;
             {
-                var maybe_line_end: usize = line_end;
                 while (true) {
                     if (maybe_line_end >= buffer_end) {
                         line_end = maybe_line_end;
@@ -41,12 +41,11 @@ pub const LineWrappedBuffer = struct {
                             line_end = maybe_line_end;
                         }
                         break;
-                    } else {
-                        maybe_line_end += 1;
                     }
+                    maybe_line_end += 1;
                     if (char == '\n') {
-                        // wrap here
-                        line_end = maybe_line_end;
+                        // wrap here, don't include \n in range
+                        line_end = maybe_line_end - 1;
                         break;
                     }
                     if (char == ' ') {
@@ -57,7 +56,7 @@ pub const LineWrappedBuffer = struct {
                 }
             }
             line_ranges.append(.{ line_start, line_end }) catch oom();
-            line_start = line_end;
+            line_start = maybe_line_end;
             if (line_start >= buffer_end) {
                 break;
             }
@@ -67,25 +66,24 @@ pub const LineWrappedBuffer = struct {
 
     pub fn getLineColForPos(self: *LineWrappedBuffer, pos: usize) [2]usize {
         for (self.wrapped_line_ranges) |line_range, line| {
-            if (pos < line_range[1]) return .{ line, pos - line_range[0] };
+            if (pos <= line_range[1]) return .{ line, pos - line_range[0] };
         }
         const last_line = self.wrapped_line_ranges.len - 1;
         const last_line_range = self.wrapped_line_ranges[last_line];
-        if (pos == last_line_range[1]) {
-            return .{ last_line, pos - last_line_range[0] };
-        }
         panic("pos {} outside of buffer", .{pos});
     }
 
     pub fn getRangeForLine(self: *LineWrappedBuffer, line: usize) [2]usize {
-        for (self.wrapped_line_ranges) |other_line_range, other_line| {
-            if (other_line == line) return other_line_range;
-        }
-        panic("line {} outside of buffer", .{line});
+        return self.wrapped_line_ranges[line];
     }
 
     pub fn getPosForLine(self: *LineWrappedBuffer, line: usize) usize {
         return self.getRangeForLine(line)[0];
+    }
+
+    pub fn getPosForLineCol(self: *LineWrappedBuffer, line: usize, col: usize) usize {
+        const range = self.wrapped_line_ranges[line];
+        return range[0] + min(col, range[1] - range[0]);
     }
 
     pub fn getLineStart(self: *LineWrappedBuffer, pos: usize) usize {
@@ -97,7 +95,7 @@ pub const LineWrappedBuffer = struct {
         const line_col = self.getLineColForPos(pos);
         const line_range = self.getRangeForLine(line_col[0]);
         // -1 for '\n'
-        return line_range[1] - if (line_range[0] != line_range[1]) @intCast(usize, 1) else 0;
+        return line_range[1];
     }
 
     pub fn countLines(self: *LineWrappedBuffer) usize {

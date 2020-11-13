@@ -201,7 +201,7 @@ pub const Editor = struct {
                         if (text_rect.contains(mouse_x, mouse_y)) {
                             const line = @divTrunc(self.top_pixel + mouse_y - text_rect.y, self.app.atlas.char_height);
                             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
-                            const pos = self.buffer().getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
+                            const pos = self.line_wrapped_buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
                             const mod = @enumToInt(c.SDL_GetModState());
                             if (mod == c.KMOD_LCTRL or mod == c.KMOD_RCTRL) {
                                 self.dragging = .CtrlDragging;
@@ -253,7 +253,7 @@ pub const Editor = struct {
             // update selection of dragged cursor
             const line = @divTrunc(self.top_pixel + mouse_y - text_rect.y, self.app.atlas.char_height);
             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
-            const pos = self.buffer().getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
+            const pos = self.line_wrapped_buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
             if (self.dragging == .CtrlDragging) {
                 var cursor = &self.cursors.items[self.cursors.items.len - 1];
                 if (cursor.tail.pos != pos and !self.marked) {
@@ -278,7 +278,7 @@ pub const Editor = struct {
         if (self.getMainCursor().head.pos != self.prev_main_cursor_head_pos) {
             self.prev_main_cursor_head_pos = self.getMainCursor().head.pos;
             const bottom_pixel = self.top_pixel + text_rect.h;
-            const cursor_top_pixel = @intCast(isize, self.buffer().getLineColForPos(self.getMainCursor().head.pos)[0]) * @intCast(isize, self.app.atlas.char_height);
+            const cursor_top_pixel = @intCast(isize, self.line_wrapped_buffer.getLineColForPos(self.getMainCursor().head.pos)[0]) * @intCast(isize, self.app.atlas.char_height);
             const cursor_bottom_pixel = cursor_top_pixel + @intCast(isize, self.app.atlas.char_height);
             if (cursor_top_pixel > bottom_pixel - @intCast(isize, self.app.atlas.char_height))
                 self.top_pixel = cursor_top_pixel - @intCast(isize, text_rect.h) + @intCast(isize, self.app.atlas.char_height);
@@ -288,7 +288,7 @@ pub const Editor = struct {
 
         // calculate visible range
         // ensure we don't scroll off the top or bottom of the buffer
-        const max_pixels = @intCast(isize, self.buffer().countLines()) * @intCast(isize, self.app.atlas.char_height);
+        const max_pixels = @intCast(isize, self.line_wrapped_buffer.countLines()) * @intCast(isize, self.app.atlas.char_height);
         if (self.top_pixel < 0) self.top_pixel = 0;
         if (self.top_pixel > max_pixels) self.top_pixel = max_pixels;
         const num_visible_lines = @divTrunc(text_rect.h, self.app.atlas.char_height) + @rem(@rem(text_rect.h, self.app.atlas.char_height), 1); // round up
@@ -301,23 +301,20 @@ pub const Editor = struct {
         window.queueRect(right_gutter_rect, style.background_color);
 
         // draw cursors, selections, text
-        var lines = std.mem.split(self.buffer().bytes.items, "\n");
-        var line_ix: usize = 0;
-        var line_start_pos: usize = 0;
-        while (lines.next()) |line| : (line_ix += 1) {
-            if (line_ix > visible_end_line) break;
-
-            const line_end_pos = line_start_pos + line.len;
+        var line_ix = @intCast(usize, visible_start_line);
+        while (line_ix < visible_end_line) : (line_ix += 1) {
+            const line_range = self.line_wrapped_buffer.wrapped_line_ranges[line_ix];
+            const line = self.buffer().bytes.items[line_range[0]..line_range[1]];
 
             if (line_ix >= visible_start_line) {
                 const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_ix) - visible_start_line) * self.app.atlas.char_height);
 
                 for (self.cursors.items) |cursor| {
                     // draw cursor
-                    if (cursor.head.pos >= line_start_pos and cursor.head.pos <= line_end_pos) {
+                    if (cursor.head.pos >= line_range[0] and cursor.head.pos <= line_range[1]) {
                         // blink
                         if (@mod(@divTrunc(self.app.frame_time_ms - self.last_event_ms, 500), 2) == 0) {
-                            const x = text_rect.x + (@intCast(Coord, (cursor.head.pos - line_start_pos)) * self.app.atlas.char_width);
+                            const x = text_rect.x + (@intCast(Coord, (cursor.head.pos - line_range[0])) * self.app.atlas.char_width);
                             const w = @divTrunc(self.app.atlas.char_width, 8);
                             window.queueRect(
                                 .{
@@ -335,11 +332,11 @@ pub const Editor = struct {
                     if (self.marked) {
                         const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
                         const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
-                        const highlight_start_pos = min(max(selection_start_pos, line_start_pos), line_end_pos);
-                        const highlight_end_pos = min(max(selection_end_pos, line_start_pos), line_end_pos);
-                        if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_end_pos and selection_end_pos > line_end_pos)) {
-                            const x = text_rect.x + (@intCast(Coord, (highlight_start_pos - line_start_pos)) * self.app.atlas.char_width);
-                            const w = if (selection_end_pos > line_end_pos)
+                        const highlight_start_pos = min(max(selection_start_pos, line_range[0]), line_range[1]);
+                        const highlight_end_pos = min(max(selection_end_pos, line_range[0]), line_range[1]);
+                        if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_range[1] and selection_end_pos > line_range[1])) {
+                            const x = text_rect.x + (@intCast(Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
+                            const w = if (selection_end_pos > line_range[1])
                                 text_rect.x + text_rect.w - x
                             else
                                 @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
@@ -356,8 +353,6 @@ pub const Editor = struct {
                 // draw text
                 window.queueText(.{ .x = text_rect.x, .y = @intCast(Coord, y), .w = text_rect.w, .h = text_rect.y + text_rect.h - @intCast(Coord, y) }, style.text_color, line);
             }
-
-            line_start_pos = line_end_pos + 1; // + 1 for '\n'
         }
 
         // draw scrollbar
@@ -377,6 +372,7 @@ pub const Editor = struct {
         // draw statusbar
         if (self.show_status_bar) {
             window.queueRect(status_rect.?, style.status_background_color);
+            // use real line_col instead of wrapped
             const line_col = self.buffer().getLineColForPos(self.getMainCursor().head.pos);
             const status_text = format(self.app.frame_allocator, "L{} C{}", .{ line_col[0], line_col[1] });
             window.queueText(status_rect.?, style.background_color, status_text);
