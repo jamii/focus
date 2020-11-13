@@ -47,14 +47,14 @@ pub const SingleLineEditor = struct {
     }
 
     pub fn getText(self: *SingleLineEditor) []const u8 {
+        // TODO should this copy?
         return self.app.getThing(self.buffer_id).Buffer.bytes.items;
     }
 
     pub fn setText(self: *SingleLineEditor, text: []const u8) void {
         var buffer = self.app.getThing(self.buffer_id).Buffer;
         var editor = self.app.getThing(self.editor_id).Editor;
-        buffer.bytes.shrink(0);
-        buffer.bytes.appendSlice(text) catch oom();
+        buffer.replace(text);
         editor.clearMark();
         editor.collapseCursors();
         editor.goBufferEnd(editor.getMainCursor());

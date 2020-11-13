@@ -79,10 +79,10 @@ pub const Selector = struct {
 
         // fill buffer
         // TODO highlight found area
-        buffer.bytes.shrink(0);
+        buffer.replace("");
         for (items) |item| {
-            buffer.bytes.appendSlice(item) catch oom();
-            buffer.bytes.append('\n') catch oom();
+            buffer.insert(buffer.getBufferEnd(), item);
+            buffer.insert(buffer.getBufferEnd(), "\n");
         }
 
         // set selection

@@ -105,11 +105,11 @@ pub const FileOpener = struct {
         var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
         var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
         if (results.items.len == 0) {
-            preview_buffer.bytes.shrink(0);
+            preview_buffer.replace("");
         } else {
             const selected = results.items[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                preview_buffer.bytes.shrink(0);
+                preview_buffer.replace("");
             } else {
                 var filename = ArrayList(u8).init(self.app.frame_allocator);
                 filename.appendSlice(dirname) catch oom();

@@ -134,11 +134,11 @@ pub const ProjectFileOpener = struct {
         var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
         var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
         if (just_paths.items.len == 0) {
-            preview_buffer.bytes.shrink(0);
+            preview_buffer.replace("");
         } else {
             const selected = just_paths.items[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                preview_buffer.bytes.shrink(0);
+                preview_buffer.replace("");
             } else {
                 preview_buffer.load(selected);
             }
