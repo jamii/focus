@@ -56,10 +56,10 @@ pub const LineWrappedBuffer = struct {
                 }
             }
             line_ranges.append(.{ line_start, line_end }) catch oom();
-            line_start = maybe_line_end;
-            if (line_start >= buffer_end) {
+            if (line_end >= buffer_end) {
                 break;
             }
+            line_start = maybe_line_end;
         }
         self.wrapped_line_ranges = line_ranges.toOwnedSlice();
     }
