@@ -26,9 +26,6 @@ pub const LineWrappedBuffer = struct {
         var line_ranges = ArrayList([2]usize).init(self.app.allocator);
         var line_start: usize = 0;
         while (true) {
-            if (line_start < self.buffer.getBufferEnd() and self.buffer.getChar(line_start) == '\n') {
-                line_start += 1;
-            }
             var line_end = line_start;
             var maybe_line_end: usize = line_end;
             {
@@ -63,6 +60,9 @@ pub const LineWrappedBuffer = struct {
                 break;
             }
             line_start = line_end;
+            if (line_start < self.buffer.getBufferEnd() and self.buffer.getChar(line_start) == '\n') {
+                line_start += 1;
+            }
         }
         self.wrapped_line_ranges = line_ranges.toOwnedSlice();
     }
