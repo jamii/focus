@@ -3,6 +3,7 @@ usingnamespace focus.common;
 const App = focus.App;
 const Id = focus.Id;
 const meta = focus.meta;
+const LineWrappedBuffer = focus.LineWrappedBuffer;
 
 pub const BufferSource = union(enum) {
     None,
@@ -31,6 +32,7 @@ pub const Buffer = struct {
     doing: ArrayList(Edit),
     redos: ArrayList([]Edit),
     modified_since_last_save: bool,
+    line_wrapped_buffers: ArrayList(*LineWrappedBuffer),
 
     pub fn initEmpty(app: *App) Id {
         return app.putThing(Buffer{
@@ -41,6 +43,7 @@ pub const Buffer = struct {
             .doing = ArrayList(Edit).init(app.allocator),
             .redos = ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
+            .line_wrapped_buffers = ArrayList(*LineWrappedBuffer).init(app.allocator),
         });
     }
 
@@ -113,6 +116,9 @@ pub const Buffer = struct {
         }
 
         self.modified_since_last_save = false;
+        for (self.line_wrapped_buffers.items) |line_wrapped_buffer| {
+            line_wrapped_buffer.update();
+        }
     }
 
     pub fn refresh(self: *Buffer) void {
@@ -204,6 +210,9 @@ pub const Buffer = struct {
         std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
         self.modified_since_last_save = true;
+        for (self.line_wrapped_buffers.items) |line_wrapped_buffer| {
+            line_wrapped_buffer.update();
+        }
     }
 
     fn rawDelete(self: *Buffer, start: usize, end: usize) void {
@@ -212,6 +221,9 @@ pub const Buffer = struct {
         std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
         self.bytes.shrink(self.bytes.items.len - (end - start));
         self.modified_since_last_save = true;
+        for (self.line_wrapped_buffers.items) |line_wrapped_buffer| {
+            line_wrapped_buffer.update();
+        }
     }
 
     pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) void {
@@ -301,9 +313,9 @@ pub const Buffer = struct {
     pub fn replace(self: *Buffer, new_bytes: []const u8) void {
         if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
             self.modified_since_last_save = true;
+            self.delete(0, self.getBufferEnd());
+            self.insert(0, new_bytes);
         }
-        self.delete(0, self.getBufferEnd());
-        self.insert(0, new_bytes);
     }
 
     pub fn getFilename(self: *Buffer) ?[]const u8 {
@@ -315,5 +327,12 @@ pub const Buffer = struct {
 
     pub fn getChar(self: *Buffer, pos: usize) u8 {
         return self.bytes.items[pos];
+    }
+
+    pub fn getLineWrappedBuffer(self: *Buffer, max_chars_per_line: usize) *LineWrappedBuffer {
+        var line_wrapped_buffer = self.app.allocator.create(LineWrappedBuffer) catch oom();
+        line_wrapped_buffer.* = LineWrappedBuffer.init(self.app, self, max_chars_per_line);
+        self.line_wrapped_buffers.append(line_wrapped_buffer) catch oom();
+        return line_wrapped_buffer;
     }
 };

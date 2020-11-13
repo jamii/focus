@@ -35,8 +35,7 @@ pub const Dragging = enum {
 pub const Editor = struct {
     app: *App,
     buffer_id: Id,
-    max_chars_per_line: usize,
-    line_wrapped_buffer: LineWrappedBuffer,
+    line_wrapped_buffer: *LineWrappedBuffer,
     // cursors.len > 0
     cursors: ArrayList(Cursor),
     prev_main_cursor_head_pos: usize,
@@ -51,9 +50,7 @@ pub const Editor = struct {
 
     pub fn init(app: *App, buffer_id: Id, show_status_bar: bool) Id {
         const self_buffer = app.getThing(buffer_id).Buffer;
-        // dummy value - will be updated every frame
-        const max_chars_per_line = std.math.maxInt(usize);
-        const line_wrapped_buffer = LineWrappedBuffer.init(app, self_buffer, max_chars_per_line);
+        const line_wrapped_buffer = self_buffer.getLineWrappedBuffer(std.math.maxInt(usize));
         var cursors = ArrayList(Cursor).init(app.allocator);
         cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
@@ -62,7 +59,6 @@ pub const Editor = struct {
         return app.putThing(Editor{
             .app = app,
             .buffer_id = buffer_id,
-            .max_chars_per_line = max_chars_per_line,
             .line_wrapped_buffer = line_wrapped_buffer,
             .cursors = cursors,
             .prev_main_cursor_head_pos = 0,
@@ -85,11 +81,14 @@ pub const Editor = struct {
         const right_gutter_rect = text_rect.splitRight(self.app.atlas.char_width, 0);
 
         // window width might have changed
-        self.max_chars_per_line = @intCast(usize, @divTrunc(text_rect.w, self.app.atlas.char_width));
+        const max_chars_per_line = @intCast(usize, @divTrunc(text_rect.w, self.app.atlas.char_width));
+        if (self.line_wrapped_buffer.max_chars_per_line != max_chars_per_line) {
+            self.line_wrapped_buffer.max_chars_per_line = max_chars_per_line;
+            self.line_wrapped_buffer.update();
+        }
 
         // TODO these state updates are total hacks
         // buffer might have been changed by another window
-        self.line_wrapped_buffer = LineWrappedBuffer.init(self.app, self.buffer(), self.max_chars_per_line);
         self.correctInvalidCursors();
 
         // handle events
@@ -274,9 +273,6 @@ pub const Editor = struct {
             if (mouse_y <= text_rect.y) self.top_pixel -= scroll_amount;
             if (mouse_y >= text_rect.y + text_rect.h) self.top_pixel += scroll_amount;
         }
-
-        // update line wrapping now that buffer might have changed
-        self.line_wrapped_buffer = LineWrappedBuffer.init(self.app, self.buffer(), self.max_chars_per_line);
 
         // if cursor moved, scroll it into editor
         if (self.getMainCursor().head.pos != self.prev_main_cursor_head_pos) {
