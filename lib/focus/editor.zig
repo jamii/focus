@@ -201,7 +201,7 @@ pub const Editor = struct {
                         if (text_rect.contains(mouse_x, mouse_y)) {
                             const line = @divTrunc(self.top_pixel + mouse_y - text_rect.y, self.app.atlas.char_height);
                             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
-                            const pos = self.line_wrapped_buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
+                            const pos = self.line_wrapped_buffer.getPosForLineCol(min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, max(line, 0))), @intCast(usize, max(col, 0)));
                             const mod = @enumToInt(c.SDL_GetModState());
                             if (mod == c.KMOD_LCTRL or mod == c.KMOD_RCTRL) {
                                 self.dragging = .CtrlDragging;
@@ -253,7 +253,7 @@ pub const Editor = struct {
             // update selection of dragged cursor
             const line = @divTrunc(self.top_pixel + mouse_y - text_rect.y, self.app.atlas.char_height);
             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
-            const pos = self.line_wrapped_buffer.getPosForLineCol(@intCast(usize, max(line, 0)), @intCast(usize, max(col, 0)));
+            const pos = self.line_wrapped_buffer.getPosForLineCol(min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, max(line, 0))), @intCast(usize, max(col, 0)));
             if (self.dragging == .CtrlDragging) {
                 var cursor = &self.cursors.items[self.cursors.items.len - 1];
                 if (cursor.tail.pos != pos and !self.marked) {

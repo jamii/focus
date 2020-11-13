@@ -26,6 +26,9 @@ pub const LineWrappedBuffer = struct {
         var line_ranges = ArrayList([2]usize).init(self.app.allocator);
         var line_start: usize = 0;
         while (true) {
+            if (line_start < self.buffer.getBufferEnd() and self.buffer.getChar(line_start) == '\n') {
+                line_start += 1;
+            }
             var line_end = line_start;
             var maybe_line_end: usize = line_end;
             {
@@ -35,19 +38,19 @@ pub const LineWrappedBuffer = struct {
                         break;
                     }
                     const char = self.buffer.getChar(maybe_line_end);
-                    if (maybe_line_end - line_start >= self.max_chars_per_line) {
+                    if (maybe_line_end - line_start > self.max_chars_per_line) {
                         // if we haven't soft wrapped yet, hard wrap before this char, otherwise use soft wrap
                         if (line_end == line_start) {
                             line_end = maybe_line_end;
                         }
                         break;
                     }
-                    maybe_line_end += 1;
                     if (char == '\n') {
-                        // wrap here, don't include \n in range
-                        line_end = maybe_line_end - 1;
+                        // wrap here
+                        line_end = maybe_line_end;
                         break;
                     }
+                    maybe_line_end += 1;
                     if (char == ' ') {
                         // commit to including this char
                         line_end = maybe_line_end;
@@ -59,7 +62,7 @@ pub const LineWrappedBuffer = struct {
             if (line_end >= buffer_end) {
                 break;
             }
-            line_start = maybe_line_end;
+            line_start = line_end;
         }
         self.wrapped_line_ranges = line_ranges.toOwnedSlice();
     }
