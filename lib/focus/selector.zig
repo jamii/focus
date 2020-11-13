@@ -79,11 +79,12 @@ pub const Selector = struct {
 
         // fill buffer
         // TODO highlight found area
-        buffer.replace("");
+        var text = ArrayList(u8).init(self.app.frame_allocator);
         for (items) |item| {
-            buffer.insert(buffer.getBufferEnd(), item);
-            buffer.insert(buffer.getBufferEnd(), "\n");
+            text.appendSlice(item) catch oom();
+            text.append('\n') catch oom();
         }
+        buffer.replace(text.items);
 
         // set selection
         self.selected = min(self.selected, max(1, items.len) - 1);
