@@ -302,7 +302,8 @@ pub const Editor = struct {
 
         // draw cursors, selections, text
         var line_ix = @intCast(usize, visible_start_line);
-        while (line_ix < visible_end_line) : (line_ix += 1) {
+        const max_line_ix = min(@intCast(usize, visible_end_line), self.line_wrapped_buffer.wrapped_line_ranges.len);
+        while (line_ix < max_line_ix) : (line_ix += 1) {
             const line_range = self.line_wrapped_buffer.wrapped_line_ranges[line_ix];
             const line = self.buffer().bytes.items[line_range[0]..line_range[1]];
 
