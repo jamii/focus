@@ -300,6 +300,9 @@ pub const Editor = struct {
         window.queueRect(left_gutter_rect, style.background_color);
         window.queueRect(right_gutter_rect, style.background_color);
 
+        // can't draw if the window is too narrow
+        if (max_chars_per_line == 0) return;
+
         // draw cursors, selections, text
         var line_ix = @intCast(usize, visible_start_line);
         const max_line_ix = min(@intCast(usize, visible_end_line), self.line_wrapped_buffer.wrapped_line_ranges.len);
@@ -742,7 +745,7 @@ pub const Editor = struct {
         process.stderr_behavior = .Pipe;
         process.spawn() catch |err| panic("Error spawning zig fmt: {}", .{err});
         process.stdin.?.outStream().writeAll(self_buffer.bytes.items) catch |err| panic("Error writing to zig fmt: {}", .{err});
-        // TODO not sure if this is the cortext_rect way to signal input is complete
+        // TODO not sure if this is the correct way to signal input is complete
         process.stdin.?.close();
         process.stdin = null;
         const stderr = process.stderr.?.inStream().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024) catch |err| panic("Error reading zig fmt stderr: {}", .{err});
