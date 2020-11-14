@@ -13,6 +13,8 @@ pub const Atlas = struct {
     char_height: Coord,
     char_to_rect: []Rect,
     white_rect: Rect,
+    right_down_arrow_rect: Rect,
+    down_right_arrow_rect: Rect,
 
     pub const point_size = 16;
 
@@ -30,16 +32,25 @@ pub const Atlas = struct {
             point_size,
         ) orelse panic("Font load failed: {s}", .{c.TTF_GetError()});
 
-        // render all ascii chars
-        var text = allocator.allocSentinel(u8, 128, 0) catch oom();
+        // text to be rendered
+        var text = allocator.allocSentinel(u8, 128 + 6, 0) catch oom();
         defer allocator.free(text);
-        text[0] = ' '; // going to overwrite this with a white block in final texture
+
+        // going to overwrite this with a white block in final texture
+        text[0] = ' ';
+
+        // add all ascii chars
         {
             var char: usize = 1;
             while (char < text.len) : (char += 1) {
                 text[char] = @intCast(u8, char);
             }
         }
+
+        // add special characters
+        std.mem.copy(u8, text[128..], "⤵⤷");
+
+        // render
         const surface = c.TTF_RenderUTF8_Blended(font, text, c.SDL_Color{ .r = 255, .g = 255, .b = 255, .a = 255 }) orelse panic("Atlas render failed: {s}", .{c.TTF_GetError()});
         defer c.SDL_FreeSurface(surface);
 
@@ -53,7 +64,7 @@ pub const Atlas = struct {
 
         // calculate char sizes
         // assume monospaced font
-        const char_width = @intCast(Coord, @divTrunc(@intCast(usize, surface.*.w), text.len));
+        const char_width = @intCast(Coord, @divTrunc(@intCast(usize, surface.*.w), 128 + 2));
         const char_height = @intCast(Coord, surface.*.h);
 
         // calculate location of each char
@@ -70,6 +81,18 @@ pub const Atlas = struct {
                 };
             }
         }
+        const right_down_arrow_rect = Rect{
+            .x = 128 * char_width,
+            .y = 0,
+            .w = char_width,
+            .h = char_height,
+        };
+        const down_right_arrow_rect = Rect{
+            .x = 129 * char_width,
+            .y = 0,
+            .w = char_width,
+            .h = char_height,
+        };
 
         return Atlas{
             .allocator = allocator,
@@ -83,6 +106,8 @@ pub const Atlas = struct {
             .char_height = char_height,
             .char_to_rect = char_to_rect,
             .white_rect = white_rect,
+            .right_down_arrow_rect = right_down_arrow_rect,
+            .down_right_arrow_rect = down_right_arrow_rect,
         };
     }
 

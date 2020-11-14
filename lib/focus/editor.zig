@@ -307,52 +307,78 @@ pub const Editor = struct {
             const line_range = self.line_wrapped_buffer.wrapped_line_ranges[line_ix];
             const line = self.buffer().bytes.items[line_range[0]..line_range[1]];
 
-            if (line_ix >= visible_start_line) {
-                const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_ix) - visible_start_line) * self.app.atlas.char_height);
+            const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_ix) - visible_start_line) * self.app.atlas.char_height);
 
-                for (self.cursors.items) |cursor| {
-                    // draw cursor
-                    if (cursor.head.pos >= line_range[0] and cursor.head.pos <= line_range[1]) {
-                        // blink
-                        if (@mod(@divTrunc(self.app.frame_time_ms - self.last_event_ms, 500), 2) == 0) {
-                            const x = text_rect.x + (@intCast(Coord, (cursor.head.pos - line_range[0])) * self.app.atlas.char_width);
-                            const w = @divTrunc(self.app.atlas.char_width, 8);
-                            window.queueRect(
-                                .{
-                                    .x = @intCast(Coord, x) - @divTrunc(w, 2),
-                                    .y = @intCast(Coord, y),
-                                    .w = w,
-                                    .h = self.app.atlas.char_height,
-                                },
-                                if (self.cursors.items.len > 1) style.multi_cursor_color else style.text_color,
-                            );
-                        }
-                    }
-
-                    // draw selection
-                    if (self.marked) {
-                        const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
-                        const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
-                        const highlight_start_pos = min(max(selection_start_pos, line_range[0]), line_range[1]);
-                        const highlight_end_pos = min(max(selection_end_pos, line_range[0]), line_range[1]);
-                        if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_range[1] and selection_end_pos > line_range[1])) {
-                            const x = text_rect.x + (@intCast(Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
-                            const w = if (selection_end_pos > line_range[1])
-                                text_rect.x + text_rect.w - x
-                            else
-                                @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
-                            window.queueRect(.{
-                                .x = @intCast(Coord, x),
+            for (self.cursors.items) |cursor| {
+                // draw cursor
+                if (cursor.head.pos >= line_range[0] and cursor.head.pos <= line_range[1]) {
+                    // blink
+                    if (@mod(@divTrunc(self.app.frame_time_ms - self.last_event_ms, 500), 2) == 0) {
+                        const x = text_rect.x + (@intCast(Coord, (cursor.head.pos - line_range[0])) * self.app.atlas.char_width);
+                        const w = @divTrunc(self.app.atlas.char_width, 8);
+                        window.queueRect(
+                            .{
+                                .x = @intCast(Coord, x) - @divTrunc(w, 2),
                                 .y = @intCast(Coord, y),
-                                .w = @intCast(Coord, w),
+                                .w = w,
                                 .h = self.app.atlas.char_height,
-                            }, style.highlight_color);
-                        }
+                            },
+                            if (self.cursors.items.len > 1) style.multi_cursor_color else style.text_color,
+                        );
                     }
                 }
 
-                // draw text
-                window.queueText(.{ .x = text_rect.x, .y = @intCast(Coord, y), .w = text_rect.w, .h = text_rect.y + text_rect.h - @intCast(Coord, y) }, style.text_color, line);
+                // draw selection
+                if (self.marked) {
+                    const selection_start_pos = min(cursor.head.pos, cursor.tail.pos);
+                    const selection_end_pos = max(cursor.head.pos, cursor.tail.pos);
+                    const highlight_start_pos = min(max(selection_start_pos, line_range[0]), line_range[1]);
+                    const highlight_end_pos = min(max(selection_end_pos, line_range[0]), line_range[1]);
+                    if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_range[1] and selection_end_pos > line_range[1])) {
+                        const x = text_rect.x + (@intCast(Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
+                        const w = if (selection_end_pos > line_range[1])
+                            text_rect.x + text_rect.w - x
+                        else
+                            @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
+                        window.queueRect(.{
+                            .x = @intCast(Coord, x),
+                            .y = @intCast(Coord, y),
+                            .w = @intCast(Coord, w),
+                            .h = self.app.atlas.char_height,
+                        }, style.highlight_color);
+                    }
+                }
+            }
+
+            // draw text
+            window.queueText(.{ .x = text_rect.x, .y = @intCast(Coord, y), .w = text_rect.w, .h = text_rect.y + text_rect.h - @intCast(Coord, y) }, style.text_color, line);
+
+            // if wrapped, draw arrows
+            if (line_ix > 0 and line_range[0] == self.line_wrapped_buffer.wrapped_line_ranges[line_ix - 1][1]) {
+                window.queueText(
+                    .{ .x = left_gutter_rect.x, .y = @intCast(Coord, y), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
+                    style.highlight_color,
+                    "\\",
+                );
+                // TODO need a font that has these arrows
+                //window.queueQuad(
+                //    .{ .x = left_gutter_rect.x, .y = @intCast(Coord, y), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
+                //    self.app.atlas.down_right_arrow_rect,
+                //    style.highlight_color,
+                //);
+            }
+            if (line_ix < self.line_wrapped_buffer.countLines() - 1 and line_range[1] == self.line_wrapped_buffer.wrapped_line_ranges[line_ix + 1][0]) {
+                window.queueText(
+                    .{ .x = right_gutter_rect.x, .y = @intCast(Coord, y), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
+                    style.highlight_color,
+                    "\\",
+                );
+                // TODO need a font that has these arrows
+                //window.queueQuad(
+                //    .{ .x = right_gutter_rect.x, .y = @intCast(Coord, y), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
+                //    self.app.atlas.right_down_arrow_rect,
+                //    style.highlight_color,
+                //);
             }
         }
 

@@ -275,7 +275,7 @@ pub const Window = struct {
         self.index_buffer.resize(0) catch oom();
     }
 
-    fn queueQuad(self: *Window, dst: Rect, src: Rect, color: Color) void {
+    pub fn queueQuad(self: *Window, dst: Rect, src: Rect, color: Color) void {
         const tx = @intToFloat(f32, src.x) / @intToFloat(f32, self.app.atlas.texture_dims.x);
         const ty = @intToFloat(f32, src.y) / @intToFloat(f32, self.app.atlas.texture_dims.y);
         const tw = @intToFloat(f32, src.w) / @intToFloat(f32, self.app.atlas.texture_dims.x);
@@ -354,7 +354,7 @@ pub const Window = struct {
             var src = if (char < self.app.atlas.char_to_rect.len)
                 self.app.atlas.char_to_rect[char]
             else
-                // TODO tofu
+            // TODO tofu
                 self.app.atlas.white_rect;
             const max_w = max(0, max_x - dst.x);
             const max_h = max(0, max_y - dst.y);
