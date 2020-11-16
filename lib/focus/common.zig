@@ -8,6 +8,7 @@ pub const c = @cImport({
     @cInclude("SDL2/SDL_ttf.h");
 });
 
+pub const builtin = @import("builtin");
 pub const std = @import("std");
 pub const warn = std.debug.warn;
 pub const assert = std.debug.assert;

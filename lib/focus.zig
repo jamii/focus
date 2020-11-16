@@ -175,6 +175,9 @@ pub const App = struct {
             var event: c.SDL_Event = undefined;
             while (c.SDL_PollEvent(&event) != 0) {
                 if (event.type == c.SDL_QUIT) {
+                    if (builtin.mode == .Debug) {
+                        _ = @import("root").gpa.detectLeaks();
+                    }
                     std.os.exit(0);
                 }
                 events.append(event) catch oom();
