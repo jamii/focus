@@ -244,4 +244,8 @@ pub const App = struct {
 
         // TODO separate frame from vsync. if vsync takes more than, say, 1s/120 then we must have missed a frame
     }
+
+    pub fn dupe(self: *App, slice: anytype) @TypeOf(slice) {
+        return self.app.allocator.dupe(@typeInfo(@TypeOf(slice)).child, slice) catch oom();
+    }
 };

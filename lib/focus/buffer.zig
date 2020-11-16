@@ -11,6 +11,13 @@ pub const BufferSource = union(enum) {
         absolute_filename: []const u8,
         mtime: i128,
     },
+
+    fn deinit(self: *BufferSource, app: *App) void {
+        switch (self.*) {
+            .None => {},
+            .File => |file_source| app.allocator.free(file_source.absolute_filename),
+        }
+    }
 };
 
 pub const Edit = struct {
@@ -52,6 +59,7 @@ pub const Buffer = struct {
         var self = app.getThing(self_id).Buffer;
         self.load(filename);
         // don't want the load on the undo stack
+        for (self.doing.items) |edit| self.app.allocator.free(edit.data.bytes);
         self.doing.shrink(0);
         return self_id;
     }
@@ -77,10 +85,7 @@ pub const Buffer = struct {
 
         self.bytes.deinit();
 
-        switch (self.source) {
-            .None => {},
-            .File => |file_source| self.app.allocator.free(file_source.absolute_filename),
-        }
+        self.source.deinit(self.app);
     }
 
     const TryLoadResult = struct {
@@ -95,9 +100,7 @@ pub const Buffer = struct {
 
         const chunk_size = 1024;
         var buf = self.app.frame_allocator.alloc(u8, chunk_size) catch oom();
-
-        var bytes = ArrayList(u8).init(self.app.allocator);
-        errdefer bytes.deinit();
+        var bytes = ArrayList(u8).init(self.app.frame_allocator);
 
         while (true) {
             const len = try file.readAll(buf);
@@ -117,6 +120,7 @@ pub const Buffer = struct {
 
         self.delete(0, self.bytes.items.len);
 
+        self.source.deinit(self.app);
         if (self.tryLoad(filename)) |result| {
             self.insert(0, result.bytes);
             self.source = .{
@@ -126,7 +130,7 @@ pub const Buffer = struct {
                 },
             };
         } else |err| {
-            const message = format(self.app.frame_allocator, "{} while loading {s}", .{ err, filename });
+            const message = format(self.app.allocator, "{} while loading {s}", .{ err, filename });
             self.insert(0, message);
             self.source = .None;
         }
