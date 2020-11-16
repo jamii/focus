@@ -68,6 +68,8 @@ pub const ProjectFileOpener = struct {
             self.app.allocator.free(completion);
         }
         self.app.allocator.free(self.paths);
+        self.selector.deinit();
+        self.input.deinit();
     }
 
     pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {

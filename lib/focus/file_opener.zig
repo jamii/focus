@@ -30,6 +30,11 @@ pub const FileOpener = struct {
         });
     }
 
+    pub fn deinit(self: *FileOpener) void {
+        self.selector.deinit();
+        self.input.deinit();
+    }
+
     pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         const layout = window.layoutSearcher(rect);
 

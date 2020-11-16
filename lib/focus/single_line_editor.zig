@@ -27,6 +27,8 @@ pub const SingleLineEditor = struct {
         };
     }
 
+    pub fn deinit(self: *SingleLineEditor) void {}
+
     pub fn frame(self: *SingleLineEditor, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         var buffer = self.app.getThing(self.buffer_id).Buffer;
         var editor = self.app.getThing(self.editor_id).Editor;

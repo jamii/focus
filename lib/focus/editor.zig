@@ -70,6 +70,13 @@ pub const Editor = struct {
         });
     }
 
+    pub fn deinit(self: *Editor) void {
+        self.cursors.deinit();
+        // TODO who does this belong to?
+        self.line_wrapped_buffer.deinit();
+        self.app.allocator.destroy(self.line_wrapped_buffer);
+    }
+
     pub fn buffer(self: *Editor) *Buffer {
         return self.app.getThing(self.buffer_id).Buffer;
     }
@@ -305,9 +312,9 @@ pub const Editor = struct {
 
         // draw cursors, selections, text
         var line_ix = @intCast(usize, visible_start_line);
-        const max_line_ix = min(@intCast(usize, visible_end_line + 1), self.line_wrapped_buffer.wrapped_line_ranges.len);
+        const max_line_ix = min(@intCast(usize, visible_end_line + 1), self.line_wrapped_buffer.wrapped_line_ranges.items.len);
         while (line_ix < max_line_ix) : (line_ix += 1) {
-            const line_range = self.line_wrapped_buffer.wrapped_line_ranges[line_ix];
+            const line_range = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix];
             const line = self.buffer().bytes.items[line_range[0]..line_range[1]];
 
             const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_ix) - visible_start_line) * self.app.atlas.char_height);
@@ -357,7 +364,7 @@ pub const Editor = struct {
             window.queueText(.{ .x = text_rect.x, .y = @intCast(Coord, y), .w = text_rect.w, .h = text_rect.y + text_rect.h - @intCast(Coord, y) }, style.text_color, line);
 
             // if wrapped, draw arrows
-            if (line_ix > 0 and line_range[0] == self.line_wrapped_buffer.wrapped_line_ranges[line_ix - 1][1]) {
+            if (line_ix > 0 and line_range[0] == self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix - 1][1]) {
                 window.queueText(
                     .{ .x = left_gutter_rect.x, .y = @intCast(Coord, y), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
                     style.highlight_color,
@@ -370,7 +377,7 @@ pub const Editor = struct {
                 //    style.highlight_color,
                 //);
             }
-            if (line_ix < self.line_wrapped_buffer.countLines() - 1 and line_range[1] == self.line_wrapped_buffer.wrapped_line_ranges[line_ix + 1][0]) {
+            if (line_ix < self.line_wrapped_buffer.countLines() - 1 and line_range[1] == self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix + 1][0]) {
                 window.queueText(
                     .{ .x = right_gutter_rect.x, .y = @intCast(Coord, y), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
                     style.highlight_color,

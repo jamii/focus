@@ -57,14 +57,30 @@ pub const Buffer = struct {
     }
 
     pub fn deinit(self: *Buffer) void {
+        // TODO editors will deinit individual
+        self.line_wrapped_buffers.deinit();
+
+        for (self.undos.items) |edits| {
+            for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+            self.app.allocator.free(edits);
+        }
+        self.undos.deinit();
+
+        for (self.doing.items) |edit| self.app.allocator.free(edit.data.bytes);
+        self.doing.deinit();
+
+        for (self.redos.items) |edits| {
+            for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+            self.app.allocator.free(edits);
+        }
+        self.redos.deinit();
+
         self.bytes.deinit();
+
         switch (self.source) {
             .None => {},
             .File => |file_source| self.app.allocator.free(file_source.absolute_filename),
         }
-        for (self.undos) |edits| for (edits) |edit| self.app.allocator.free(edit.bytes);
-        for (self.doing) |edit| self.app.allocator.free(edit.bytes);
-        for (self.redos) |edits| for (edits) |edit| self.app.allocator.free(edit.bytes);
     }
 
     const TryLoadResult = struct {

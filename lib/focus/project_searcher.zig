@@ -34,6 +34,11 @@ pub const ProjectSearcher = struct {
         });
     }
 
+    pub fn deinit(self: *ProjectSearcher) void {
+        self.selector.deinit();
+        self.input.deinit();
+    }
+
     pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         const layout = window.layoutSearcher(rect);
 

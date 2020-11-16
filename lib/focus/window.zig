@@ -111,6 +111,7 @@ pub const Window = struct {
         self.texture_buffer.deinit();
         c.SDL_GL_DeleteContext(self.gl_context);
         c.SDL_DestroyWindow(self.sdl_window);
+        self.views.deinit();
     }
 
     pub fn frame(self: *Window, events: []const c.SDL_Event) void {

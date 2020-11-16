@@ -8,22 +8,26 @@ pub const LineWrappedBuffer = struct {
     app: *App,
     buffer: *Buffer,
     max_chars_per_line: usize,
-    wrapped_line_ranges: [][2]usize,
+    wrapped_line_ranges: ArrayList([2]usize),
 
     pub fn init(app: *App, buffer: *Buffer, max_chars_per_line: usize) LineWrappedBuffer {
         var self = LineWrappedBuffer{
             .app = app,
             .buffer = buffer,
             .max_chars_per_line = max_chars_per_line,
-            .wrapped_line_ranges = &[_][2]usize{},
+            .wrapped_line_ranges = ArrayList([2]usize).init(app.allocator),
         };
         self.update();
         return self;
     }
 
+    pub fn deinit(self: *LineWrappedBuffer) void {
+        self.wrapped_line_ranges.deinit();
+    }
+
     pub fn update(self: *LineWrappedBuffer) void {
+        self.wrapped_line_ranges.resize(0) catch oom();
         const buffer_end = self.buffer.getBufferEnd();
-        var line_ranges = ArrayList([2]usize).init(self.app.allocator);
         var line_start: usize = 0;
         while (true) {
             var line_end = line_start;
@@ -55,7 +59,7 @@ pub const LineWrappedBuffer = struct {
                     // otherwise keep looking ahead
                 }
             }
-            line_ranges.append(.{ line_start, line_end }) catch oom();
+            self.wrapped_line_ranges.append(.{ line_start, line_end }) catch oom();
             if (line_end >= buffer_end) {
                 break;
             }
@@ -64,14 +68,13 @@ pub const LineWrappedBuffer = struct {
                 line_start += 1;
             }
         }
-        self.wrapped_line_ranges = line_ranges.toOwnedSlice();
     }
 
     pub fn getLineColForPos(self: *LineWrappedBuffer, pos: usize) [2]usize {
         // iterate backwards to resolve ambiguity around putting the cursor before/after line wraps
-        var line: usize = self.wrapped_line_ranges.len - 1;
+        var line: usize = self.wrapped_line_ranges.items.len - 1;
         while (line >= 0) : (line -= 1) {
-            const line_range = self.wrapped_line_ranges[line];
+            const line_range = self.wrapped_line_ranges.items[line];
             if (pos >= line_range[0] and pos <= line_range[1]) {
                 return .{ line, pos - line_range[0] };
             }
@@ -80,7 +83,7 @@ pub const LineWrappedBuffer = struct {
     }
 
     pub fn getRangeForLine(self: *LineWrappedBuffer, line: usize) [2]usize {
-        return self.wrapped_line_ranges[line];
+        return self.wrapped_line_ranges.items[line];
     }
 
     pub fn getPosForLine(self: *LineWrappedBuffer, line: usize) usize {
@@ -88,7 +91,7 @@ pub const LineWrappedBuffer = struct {
     }
 
     pub fn getPosForLineCol(self: *LineWrappedBuffer, line: usize, col: usize) usize {
-        const range = self.wrapped_line_ranges[line];
+        const range = self.wrapped_line_ranges.items[line];
         return range[0] + min(col, range[1] - range[0]);
     }
 
@@ -105,6 +108,6 @@ pub const LineWrappedBuffer = struct {
     }
 
     pub fn countLines(self: *LineWrappedBuffer) usize {
-        return self.wrapped_line_ranges.len;
+        return self.wrapped_line_ranges.items.len;
     }
 };

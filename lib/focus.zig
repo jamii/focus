@@ -61,9 +61,10 @@ pub const Thing = union(Tag) {
     Window: *Window,
 
     pub fn deinit(self: *Thing) void {
-        inline for (@typeInfo(self).Union.fields) |field| {
-            if (@enumToInt(std.meta.tag(Thing)) == field.enum_field.?.value) {
-                @field(self, field.name).deinit();
+        const tag_type = @typeInfo(Thing).Union.tag_type.?;
+        inline for (@typeInfo(tag_type).Enum.fields) |field| {
+            if (@enumToInt(std.meta.activeTag(self.*)) == field.value) {
+                @field(self.*, field.name).deinit();
             }
         }
     }
@@ -112,12 +113,23 @@ pub const App = struct {
         var thing_iter = self.things.iterator();
         while (thing_iter.next()) |kv| {
             kv.value.deinit();
-            self.allocator.destroy(kv.value);
+            const tag_type = @typeInfo(Thing).Union.tag_type.?;
+            inline for (@typeInfo(tag_type).Enum.fields) |field| {
+                if (@enumToInt(std.meta.activeTag(kv.value)) == field.value) {
+                    self.allocator.destroy(@field(kv.value, field.name));
+                }
+            }
         }
+        self.ids.deinit();
+        self.things.deinit();
         self.atlas.deinit();
         self.allocator.destroy(self.atlas);
         self.frame_arena.deinit();
         self.allocator.destroy(self);
+
+        if (builtin.mode == .Debug) {
+            _ = @import("root").gpa.detectLeaks();
+        }
     }
 
     // TODO thing gc
@@ -175,9 +187,7 @@ pub const App = struct {
             var event: c.SDL_Event = undefined;
             while (c.SDL_PollEvent(&event) != 0) {
                 if (event.type == c.SDL_QUIT) {
-                    if (builtin.mode == .Debug) {
-                        _ = @import("root").gpa.detectLeaks();
-                    }
+                    self.deinit();
                     std.os.exit(0);
                 }
                 events.append(event) catch oom();
