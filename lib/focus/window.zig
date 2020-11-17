@@ -241,6 +241,18 @@ pub const Window = struct {
             else => panic("Not a view: {}", .{view}),
         }
 
+        // set window title
+        var window_title: [*c]const u8 = "";
+        switch (view) {
+            .Editor => |editor| {
+                if (self.app.getThing(editor.buffer_id).Buffer.getFilename()) |filename| {
+                    window_title = std.mem.dupeZ(self.app.frame_allocator, u8, filename) catch oom();
+                }
+            },
+            else => {},
+        }
+        c.SDL_SetWindowTitle(self.sdl_window, window_title);
+
         // render
         if (c.SDL_GL_MakeCurrent(self.sdl_window, self.gl_context) != 0)
             panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
