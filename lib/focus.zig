@@ -30,10 +30,6 @@ pub fn run(allocator: *Allocator) void {
     }
 }
 
-pub fn tagOf(comptime thing_type: type) Tag {
-    return std.meta.stringToEnum(Tag, @typeName(thing_type)).?;
-}
-
 pub const Id = struct {
     tag: Tag,
     id: u64,
@@ -127,7 +123,7 @@ pub const App = struct {
 
     pub fn putThing(self: *App, thing_inner: anytype) Id {
         const id = Id{
-            .tag = comptime tagOf(@TypeOf(thing_inner)),
+            .tag = comptime std.meta.stringToEnum(Tag, @typeName(@TypeOf(thing_inner))).?,
             .id = self.next_id,
         };
         self.next_id += 1;
