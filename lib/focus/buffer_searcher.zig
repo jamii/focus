@@ -114,5 +114,6 @@ pub const BufferSearcher = struct {
                 }
             },
         }
+        editor.top_pixel = self.app.getThing(self.preview_editor_id).Editor.top_pixel;
     }
 };
