@@ -91,8 +91,11 @@ pub const ProjectSearcher = struct {
             // TODO centre cursor
 
             if (action == .SelectOne) {
+                const new_editor_id = Editor.init(self.app, preview_editor.buffer_id, true);
+                const new_editor = self.app.getThing(new_editor_id).Editor;
+                new_editor.top_pixel = preview_editor.top_pixel;
                 window.popView();
-                window.pushView(self.preview_editor_id);
+                window.pushView(new_editor_id);
             }
         }
 
