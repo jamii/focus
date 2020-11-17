@@ -73,8 +73,7 @@ pub const App = struct {
             panic("SDL init failed: {s}", .{c.SDL_GetError()});
 
         var atlas = allocator.create(Atlas) catch oom();
-        atlas.* = Atlas.init(allocator);
-
+        atlas.* = Atlas.init(allocator, 16);
         var self = allocator.create(App) catch oom();
         self.* = App{
             .allocator = allocator,

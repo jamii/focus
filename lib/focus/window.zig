@@ -171,6 +171,16 @@ pub const Window = struct {
                                 }
                                 handled = true;
                             },
+                            '-' => {
+                                self.app.atlas.deinit();
+                                self.app.atlas.* = Atlas.init(self.app.allocator, self.app.atlas.point_size - 1);
+                                handled = true;
+                            },
+                            '=' => {
+                                self.app.atlas.deinit();
+                                self.app.atlas.* = Atlas.init(self.app.allocator, self.app.atlas.point_size + 1);
+                                handled = true;
+                            },
                             else => {},
                         }
                     }

@@ -2,10 +2,11 @@ const focus = @import("../focus.zig");
 usingnamespace focus.common;
 pub const ui = focus.ui;
 
-const fira_code = @embedFile("../../fonts/Fira_Code_v5.2/ttf/FiraCode-Regular.ttf");
+const fira_code = @embedFile("../../fonts/Fira_Code_v5.2/woff/FiraCode-Regular.woff");
 
 pub const Atlas = struct {
     allocator: *Allocator,
+    point_size: usize,
     font: *c.TTF_Font,
     texture: []Color,
     texture_dims: Vec2,
@@ -16,9 +17,7 @@ pub const Atlas = struct {
     right_down_arrow_rect: Rect,
     down_right_arrow_rect: Rect,
 
-    pub const point_size = 16;
-
-    pub fn init(allocator: *Allocator) Atlas {
+    pub fn init(allocator: *Allocator, point_size: usize) Atlas {
 
         // init SDL2_ttf
         if (c.TTF_Init() != 0)
@@ -29,7 +28,7 @@ pub const Atlas = struct {
         const font = c.TTF_OpenFontRW(
             reader,
             1, // automatically close reader
-            point_size,
+            @intCast(c_int, point_size),
         ) orelse panic("Font load failed: {s}", .{c.TTF_GetError()});
 
         // text to be rendered
@@ -96,6 +95,7 @@ pub const Atlas = struct {
 
         return Atlas{
             .allocator = allocator,
+            .point_size = point_size,
             .font = font,
             .texture = texture,
             .texture_dims = .{
