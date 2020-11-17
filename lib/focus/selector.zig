@@ -92,7 +92,7 @@ pub const Selector = struct {
         if (items.len != 0) {
             editor.goPos(cursor, buffer.getPosForLineCol(self.selected, 0));
             editor.setMark();
-            editor.goLineEnd(cursor);
+            editor.goRealLineEnd(cursor);
         } else {
             editor.clearMark();
             editor.goBufferStart(cursor);

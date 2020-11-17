@@ -155,8 +155,8 @@ pub const Editor = struct {
                     } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
                         switch (sym.sym) {
                             ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
-                            'j' => for (self.cursors.items) |*cursor| self.goLineStart(cursor),
-                            'l' => for (self.cursors.items) |*cursor| self.goLineEnd(cursor),
+                            'j' => for (self.cursors.items) |*cursor| self.goRealLineStart(cursor),
+                            'l' => for (self.cursors.items) |*cursor| self.goRealLineEnd(cursor),
                             'k' => for (self.cursors.items) |*cursor| self.goBufferEnd(cursor),
                             'i' => for (self.cursors.items) |*cursor| self.goBufferStart(cursor),
                             else => accept_textinput = true,
@@ -430,20 +430,36 @@ pub const Editor = struct {
         self.updatePos(&cursor.head, pos);
     }
 
-    pub fn goCol(self: *Editor, cursor: *Cursor, col: usize) void {
-        const line_start = self.line_wrapped_buffer.getLineStart(cursor.head.pos);
-        cursor.head.col = min(col, self.line_wrapped_buffer.getLineEnd(cursor.head.pos) - line_start);
+    pub fn goRealCol(self: *Editor, cursor: *Cursor, col: usize) void {
+        const line_start = self.buffer().getLineStart(cursor.head.pos);
+        cursor.head.col = min(col, self.buffer().getLineEnd(cursor.head.pos) - line_start);
         cursor.head.pos = line_start + cursor.head.col;
     }
 
-    pub fn goLine(self: *Editor, cursor: *Cursor, line: usize) void {
+    pub fn goRealLine(self: *Editor, cursor: *Cursor, line: usize) void {
+        cursor.head.pos = self.buffer().getPosForLine(line);
+        // leave head.col intact
+    }
+
+    pub fn goRealLineCol(self: *Editor, cursor: *Cursor, line: usize, col: usize) void {
+        self.goRealLine(cursor, line);
+        self.goRealCol(cursor, col);
+    }
+
+    pub fn goWrappedCol(self: *Editor, cursor: *Cursor, col: usize) void {
+        const line_start = self.buffer().getLineStart(cursor.head.pos);
+        cursor.head.col = min(col, self.buffer().getLineEnd(cursor.head.pos) - line_start);
+        cursor.head.pos = line_start + cursor.head.col;
+    }
+
+    pub fn goWrappedLine(self: *Editor, cursor: *Cursor, line: usize) void {
         cursor.head.pos = self.line_wrapped_buffer.getPosForLine(line);
         // leave head.col intact
     }
 
-    pub fn goLineCol(self: *Editor, cursor: *Cursor, line: usize, col: usize) void {
-        self.goLine(cursor, line);
-        self.goCol(cursor, col);
+    pub fn goWrappedLineCol(self: *Editor, cursor: *Cursor, line: usize, col: usize) void {
+        self.goWrappedLine(cursor, line);
+        self.goWrappedCol(cursor, col);
     }
 
     pub fn goLeft(self: *Editor, cursor: *Cursor) void {
@@ -461,7 +477,7 @@ pub const Editor = struct {
         if (line_col[0] < self.line_wrapped_buffer.countLines() - 1) {
             const col = cursor.head.col;
             cursor.head.pos = self.line_wrapped_buffer.getPosForLine(line_col[0] + 1);
-            self.goCol(cursor, col);
+            self.goWrappedCol(cursor, col);
             cursor.head.col = col;
         }
     }
@@ -471,17 +487,27 @@ pub const Editor = struct {
         if (line_col[0] > 0) {
             const col = cursor.head.col;
             cursor.head.pos = self.line_wrapped_buffer.getPosForLine(line_col[0] - 1);
-            self.goCol(cursor, col);
+            self.goWrappedCol(cursor, col);
             cursor.head.col = col;
         }
     }
 
-    pub fn goLineStart(self: *Editor, cursor: *Cursor) void {
+    pub fn goRealLineStart(self: *Editor, cursor: *Cursor) void {
+        cursor.head.pos = self.buffer().getLineStart(cursor.head.pos);
+        cursor.head.col = 0;
+    }
+
+    pub fn goRealLineEnd(self: *Editor, cursor: *Cursor) void {
+        cursor.head.pos = self.buffer().getLineEnd(cursor.head.pos);
+        self.updateCol(&cursor.head);
+    }
+
+    pub fn goWrappedLineStart(self: *Editor, cursor: *Cursor) void {
         cursor.head.pos = self.line_wrapped_buffer.getLineStart(cursor.head.pos);
         cursor.head.col = 0;
     }
 
-    pub fn goLineEnd(self: *Editor, cursor: *Cursor) void {
+    pub fn goWrappedLineEnd(self: *Editor, cursor: *Cursor) void {
         cursor.head.pos = self.line_wrapped_buffer.getLineEnd(cursor.head.pos);
         self.updateCol(&cursor.head);
     }
@@ -696,7 +722,7 @@ pub const Editor = struct {
         while (num_lines > 0) : (num_lines -= 1) {
 
             // work out current indent
-            self.goLineStart(edit_cursor);
+            self.goRealLineStart(edit_cursor);
             const this_line_start_pos = edit_cursor.head.pos;
             var this_indent: usize = 0;
             while (this_line_start_pos + this_indent < self_buffer.bytes.items.len and self_buffer.bytes.items[this_line_start_pos + this_indent] == ' ') {
@@ -710,7 +736,7 @@ pub const Editor = struct {
                 self.goLeft(edit_cursor);
                 const line_end_char = if (edit_cursor.head.pos > 0 and edit_cursor.head.pos - 1 < self_buffer.bytes.items.len) self_buffer.bytes.items[edit_cursor.head.pos - 1] else 0;
 
-                self.goLineStart(edit_cursor);
+                self.goRealLineStart(edit_cursor);
                 const prev_line_start_pos = edit_cursor.head.pos;
                 while (prev_line_start_pos + prev_indent < self_buffer.bytes.items.len and self_buffer.bytes.items[prev_line_start_pos + prev_indent] == ' ') {
                     prev_indent += 1;
@@ -746,7 +772,7 @@ pub const Editor = struct {
             }
 
             // go to next line in selection
-            self.goLineEnd(edit_cursor);
+            self.goRealLineEnd(edit_cursor);
             self.goRight(edit_cursor);
         }
     }

@@ -71,6 +71,7 @@ pub const LineWrappedBuffer = struct {
     }
 
     pub fn getLineColForPos(self: *LineWrappedBuffer, pos: usize) [2]usize {
+        if (pos > self.buffer.getBufferEnd()) panic("pos {} outside of buffer", .{pos});
         // iterate backwards to resolve ambiguity around putting the cursor before/after line wraps
         var line: usize = self.wrapped_line_ranges.items.len - 1;
         while (line >= 0) : (line -= 1) {
@@ -79,7 +80,6 @@ pub const LineWrappedBuffer = struct {
                 return .{ line, pos - line_range[0] };
             }
         }
-        panic("pos {} outside of buffer", .{pos});
     }
 
     pub fn getRangeForLine(self: *LineWrappedBuffer, line: usize) [2]usize {

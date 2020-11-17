@@ -81,11 +81,13 @@ pub const ProjectSearcher = struct {
 
             const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch oom();
             preview_editor.buffer_id = self.app.getBufferFromAbsoluteFilename(path);
+            preview_editor.line_wrapped_buffer.buffer = self.app.getThing(preview_editor.buffer_id).Buffer;
+            preview_editor.line_wrapped_buffer.update();
 
             var cursor = preview_editor.getMainCursor();
-            preview_editor.goLine(cursor, line_number - 1);
+            preview_editor.goRealLine(cursor, line_number - 1);
             preview_editor.setMark();
-            preview_editor.goLineEnd(cursor);
+            preview_editor.goRealLineEnd(cursor);
             // TODO centre cursor
 
             if (action == .SelectOne) {
@@ -95,8 +97,6 @@ pub const ProjectSearcher = struct {
         }
 
         // run preview frame
-        preview_editor.line_wrapped_buffer.buffer = self.app.getThing(preview_editor.buffer_id).Buffer;
-        preview_editor.line_wrapped_buffer.update();
         preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 };
