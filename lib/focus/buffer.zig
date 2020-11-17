@@ -39,7 +39,7 @@ pub const Buffer = struct {
     doing: ArrayList(Edit),
     redos: ArrayList([]Edit),
     modified_since_last_save: bool,
-    line_wrapped_buffers: ArrayList(*LineWrappedBuffer),
+    editor_ids: ArrayList(Id),
 
     pub fn initEmpty(app: *App) Id {
         return app.putThing(Buffer{
@@ -50,7 +50,7 @@ pub const Buffer = struct {
             .doing = ArrayList(Edit).init(app.allocator),
             .redos = ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
-            .line_wrapped_buffers = ArrayList(*LineWrappedBuffer).init(app.allocator),
+            .editor_ids = ArrayList(Id).init(app.allocator),
         });
     }
 
@@ -65,8 +65,7 @@ pub const Buffer = struct {
     }
 
     pub fn deinit(self: *Buffer) void {
-        // TODO editors will deinit individual
-        self.line_wrapped_buffers.deinit();
+        self.editor_ids.deinit();
 
         for (self.undos.items) |edits| {
             for (edits) |edit| self.app.allocator.free(edit.data.bytes);
@@ -136,8 +135,10 @@ pub const Buffer = struct {
         }
 
         self.modified_since_last_save = false;
-        for (self.line_wrapped_buffers.items) |line_wrapped_buffer| {
-            line_wrapped_buffer.update();
+        for (self.editor_ids.items) |editor_id| {
+            if (self.app.getThingOrNull(editor_id)) |thing| {
+                thing.Editor.line_wrapped_buffer.update();
+            }
         }
     }
 
@@ -230,8 +231,10 @@ pub const Buffer = struct {
         std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
         self.modified_since_last_save = true;
-        for (self.line_wrapped_buffers.items) |line_wrapped_buffer| {
-            line_wrapped_buffer.update();
+        for (self.editor_ids.items) |editor_id| {
+            if (self.app.getThingOrNull(editor_id)) |thing| {
+                thing.Editor.line_wrapped_buffer.update();
+            }
         }
     }
 
@@ -241,8 +244,10 @@ pub const Buffer = struct {
         std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
         self.bytes.shrink(self.bytes.items.len - (end - start));
         self.modified_since_last_save = true;
-        for (self.line_wrapped_buffers.items) |line_wrapped_buffer| {
-            line_wrapped_buffer.update();
+        for (self.editor_ids.items) |editor_id| {
+            if (self.app.getThingOrNull(editor_id)) |thing| {
+                thing.Editor.line_wrapped_buffer.update();
+            }
         }
     }
 
@@ -347,12 +352,5 @@ pub const Buffer = struct {
 
     pub fn getChar(self: *Buffer, pos: usize) u8 {
         return self.bytes.items[pos];
-    }
-
-    pub fn getLineWrappedBuffer(self: *Buffer, max_chars_per_line: usize) *LineWrappedBuffer {
-        var line_wrapped_buffer = self.app.allocator.create(LineWrappedBuffer) catch oom();
-        line_wrapped_buffer.* = LineWrappedBuffer.init(self.app, self, max_chars_per_line);
-        self.line_wrapped_buffers.append(line_wrapped_buffer) catch oom();
-        return line_wrapped_buffer;
     }
 };

@@ -157,6 +157,15 @@ pub const App = struct {
         }
     }
 
+    pub fn getThingOrNull(self: *App, id: Id) ?Thing {
+        if (self.things.get(id)) |thing| {
+            assert(std.meta.activeTag(thing) == id.tag);
+            return thing;
+        } else {
+            return null;
+        }
+    }
+
     pub fn getId(self: *App, thing_ptr: anytype) Id {
         const thing_type = @typeInfo(@TypeOf(thing_ptr)).Pointer.child;
         const thing = @unionInit(Thing, @typeName(thing_type), thing_ptr);
@@ -173,6 +182,7 @@ pub const App = struct {
         const thing = @unionInit(Thing, @typeName(thing_type), thing_ptr);
         const id = self.ids.remove(thing).?.value;
         _ = self.things.remove(id);
+        self.allocator.destroy(thing_ptr);
     }
 
     pub fn frame(self: *App) void {

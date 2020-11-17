@@ -35,7 +35,7 @@ pub const Dragging = enum {
 pub const Editor = struct {
     app: *App,
     buffer_id: Id,
-    line_wrapped_buffer: *LineWrappedBuffer,
+    line_wrapped_buffer: LineWrappedBuffer,
     // cursors.len > 0
     cursors: ArrayList(Cursor),
     prev_main_cursor_head_pos: usize,
@@ -50,13 +50,13 @@ pub const Editor = struct {
 
     pub fn init(app: *App, buffer_id: Id, show_status_bar: bool) Id {
         const self_buffer = app.getThing(buffer_id).Buffer;
-        const line_wrapped_buffer = self_buffer.getLineWrappedBuffer(std.math.maxInt(usize));
+        const line_wrapped_buffer = LineWrappedBuffer.init(app, self_buffer, std.math.maxInt(usize));
         var cursors = ArrayList(Cursor).init(app.allocator);
         cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
         }) catch oom();
-        return app.putThing(Editor{
+        const id = app.putThing(Editor{
             .app = app,
             .buffer_id = buffer_id,
             .line_wrapped_buffer = line_wrapped_buffer,
@@ -68,13 +68,13 @@ pub const Editor = struct {
             .last_event_ms = app.frame_time_ms,
             .show_status_bar = show_status_bar,
         });
+        self_buffer.editor_ids.append(id) catch oom();
+        return id;
     }
 
     pub fn deinit(self: *Editor) void {
         self.cursors.deinit();
-        // TODO who does this belong to?
         self.line_wrapped_buffer.deinit();
-        self.app.allocator.destroy(self.line_wrapped_buffer);
     }
 
     pub fn buffer(self: *Editor) *Buffer {

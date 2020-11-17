@@ -217,8 +217,8 @@ pub const Window = struct {
                             handled = true;
                         },
                         c.SDL_WINDOWEVENT_CLOSE => {
-                            self.app.removeThing(self);
                             self.deinit();
+                            self.app.removeThing(self);
                             return;
                         },
                         else => {},
