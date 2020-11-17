@@ -411,8 +411,9 @@ pub const Editor = struct {
             window.queueRect(status_rect.?, style.status_background_color);
             // use real line_col instead of wrapped
             const line_col = self.buffer().getLineColForPos(self.getMainCursor().head.pos);
-            const status_text = format(self.app.frame_allocator, "L{} C{}", .{ line_col[0], line_col[1] });
-            window.queueText(status_rect.?, style.background_color, status_text);
+            const filename = self.buffer().getFilename() orelse "";
+            const status_text = format(self.app.frame_allocator, "{} L{} C{}", .{ filename, line_col[0], line_col[1] });
+            window.queueText(status_rect.?, style.text_color, status_text);
         }
     }
 
