@@ -23,15 +23,15 @@ const projects = [_][]const u8{
 
 pub const ProjectFileOpener = struct {
     app: *App,
-    preview_buffer_id: Id,
+    empty_buffer_id: Id,
     preview_editor_id: Id,
     input: SingleLineEditor,
     selector: Selector,
     paths: []const []const u8,
 
     pub fn init(app: *App) Id {
-        const preview_buffer_id = Buffer.initEmpty(app);
-        const preview_editor_id = Editor.init(app, preview_buffer_id, false);
+        const empty_buffer_id = Buffer.initEmpty(app);
+        const preview_editor_id = Editor.init(app, empty_buffer_id, false);
         const input = SingleLineEditor.init(app, "");
         const selector = Selector.init(app);
 
@@ -53,7 +53,7 @@ pub const ProjectFileOpener = struct {
 
         var self = ProjectFileOpener{
             .app = app,
-            .preview_buffer_id = preview_buffer_id,
+            .empty_buffer_id = empty_buffer_id,
             .preview_editor_id = preview_editor_id,
             .input = input,
             .selector = selector,
@@ -125,7 +125,7 @@ pub const ProjectFileOpener = struct {
             if (path.len > 0 and std.fs.path.isSep(path[path.len - 1])) {
                 self.input.setText(path);
             } else {
-                const new_buffer_id = Buffer.initFromAbsoluteFilename(self.app, path);
+                const new_buffer_id = self.app.getBufferFromAbsoluteFilename(path);
                 const new_editor_id = Editor.init(self.app, new_buffer_id, true);
                 window.popView();
                 window.pushView(new_editor_id);
@@ -133,21 +133,22 @@ pub const ProjectFileOpener = struct {
         }
 
         // update preview
-        var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
         var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
         if (just_paths.items.len == 0) {
-            preview_buffer.replace("");
+            preview_editor.buffer_id = self.empty_buffer_id;
         } else {
             const selected = just_paths.items[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                preview_buffer.replace("");
+                preview_editor.buffer_id = self.empty_buffer_id;
             } else {
-                preview_buffer.load(selected);
-                preview_editor.goBufferStart(preview_editor.getMainCursor());
+                preview_editor.buffer_id = self.app.getBufferFromAbsoluteFilename(selected);
             }
         }
 
         // run preview frame
+        preview_editor.line_wrapped_buffer.buffer = self.app.getThing(preview_editor.buffer_id).Buffer;
+        preview_editor.line_wrapped_buffer.update();
+        preview_editor.goBufferStart(preview_editor.getMainCursor());
         preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 };

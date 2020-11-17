@@ -65,6 +65,7 @@ pub const App = struct {
     next_id: u64,
     things: DeepHashMap(Id, Thing),
     ids: AutoHashMap(Thing, Id),
+    buffers: DeepHashMap([]const u8, Id),
     frame_time_ms: i64,
 
     pub fn init(allocator: *Allocator) *App {
@@ -83,6 +84,7 @@ pub const App = struct {
             .next_id = 0,
             .things = DeepHashMap(Id, Thing).init(allocator),
             .ids = AutoHashMap(Thing, Id).init(allocator),
+            .buffers = DeepHashMap([]const u8, Id).init(allocator),
             .frame_time_ms = 0,
         };
         self.frame_allocator = &self.frame_arena.allocator;
@@ -97,6 +99,12 @@ pub const App = struct {
     }
 
     pub fn deinit(self: *App) void {
+        var buffer_iter = self.buffers.iterator();
+        while (buffer_iter.next()) |kv| {
+            self.allocator.free(kv.key);
+        }
+        self.buffers.deinit();
+
         var thing_iter = self.things.iterator();
         while (thing_iter.next()) |kv| {
             kv.value.deinit();
@@ -172,6 +180,16 @@ pub const App = struct {
         self.allocator.destroy(thing_ptr);
     }
 
+    pub fn getBufferFromAbsoluteFilename(self: *App, absolute_filename: []const u8) Id {
+        if (self.buffers.get(absolute_filename)) |id| {
+            return id;
+        } else {
+            const id = Buffer.initFromAbsoluteFilename(self, absolute_filename);
+            self.buffers.put(self.dupe(absolute_filename), id) catch oom();
+            return id;
+        }
+    }
+
     pub fn frame(self: *App) void {
         self.frame_time_ms = std.time.milliTimestamp();
         // reset arena
@@ -243,6 +261,6 @@ pub const App = struct {
     }
 
     pub fn dupe(self: *App, slice: anytype) @TypeOf(slice) {
-        return self.app.allocator.dupe(@typeInfo(@TypeOf(slice)).child, slice) catch oom();
+        return self.allocator.dupe(@typeInfo(@TypeOf(slice)).Pointer.child, slice) catch oom();
     }
 };

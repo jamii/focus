@@ -13,21 +13,21 @@ const Selector = focus.Selector;
 pub const ProjectSearcher = struct {
     app: *App,
     project_dir: []const u8,
-    preview_buffer_id: Id,
+    empty_buffer_id: Id,
     preview_editor_id: Id,
     input: SingleLineEditor,
     selector: Selector,
 
     pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) Id {
-        const preview_buffer_id = Buffer.initEmpty(app);
-        const preview_editor_id = Editor.init(app, preview_buffer_id, false);
+        const empty_buffer_id = Buffer.initEmpty(app);
+        const preview_editor_id = Editor.init(app, empty_buffer_id, false);
         const input = SingleLineEditor.init(app, init_filter);
         const selector = Selector.init(app);
 
         return app.putThing(ProjectSearcher{
             .app = app,
             .project_dir = project_dir,
-            .preview_buffer_id = preview_buffer_id,
+            .empty_buffer_id = empty_buffer_id,
             .preview_editor_id = preview_editor_id,
             .input = input,
             .selector = selector,
@@ -69,7 +69,6 @@ pub const ProjectSearcher = struct {
         const action = self.selector.frame(window, layout.selector, events, results.items);
 
         // update preview
-        var preview_buffer = self.app.getThing(self.preview_buffer_id).Buffer;
         var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
         preview_editor.collapseCursors();
         preview_editor.clearMark();
@@ -81,7 +80,7 @@ pub const ProjectSearcher = struct {
             const line_number = std.fmt.parseInt(usize, line_number_string, 10) catch |err| panic("{} while parsing line number {s} from rg", .{ err, line_number_string });
 
             const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch oom();
-            preview_buffer.load(path);
+            preview_editor.buffer_id = self.app.getBufferFromAbsoluteFilename(path);
 
             var cursor = preview_editor.getMainCursor();
             preview_editor.goLine(cursor, line_number - 1);
@@ -96,6 +95,8 @@ pub const ProjectSearcher = struct {
         }
 
         // run preview frame
+        preview_editor.line_wrapped_buffer.buffer = self.app.getThing(preview_editor.buffer_id).Buffer;
+        preview_editor.line_wrapped_buffer.update();
         preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 };

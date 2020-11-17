@@ -54,10 +54,17 @@ pub const Buffer = struct {
         });
     }
 
-    pub fn initFromAbsoluteFilename(app: *App, filename: []const u8) Id {
+    pub fn initFromAbsoluteFilename(app: *App, absolute_filename: []const u8) Id {
+        assert(std.fs.path.isAbsolute(absolute_filename));
         const self_id = Buffer.initEmpty(app);
         var self = app.getThing(self_id).Buffer;
-        self.load(filename);
+        self.source = .{
+            .File = .{
+                .absolute_filename = std.mem.dupe(self.app.allocator, u8, absolute_filename) catch oom(),
+                .mtime = 0,
+            },
+        };
+        self.load();
         // don't want the load on the undo stack
         for (self.doing.items) |edit| self.app.allocator.free(edit.data.bytes);
         self.doing.shrink(0);
@@ -91,8 +98,9 @@ pub const Buffer = struct {
         bytes: []const u8,
         mtime: i128,
     };
-    fn tryLoad(self: *Buffer, filename: []const u8) !TryLoadResult {
-        const file = try std.fs.cwd().createFile(filename, .{ .read = true, .truncate = false });
+    fn tryLoad(self: *Buffer) !TryLoadResult {
+        dump(.{ "loading", self.getFilename() });
+        const file = try std.fs.cwd().createFile(self.source.File.absolute_filename, .{ .read = true, .truncate = false });
         defer file.close();
 
         const mtime = (try file.stat()).mtime;
@@ -114,31 +122,15 @@ pub const Buffer = struct {
         };
     }
 
-    pub fn load(self: *Buffer, filename: []const u8) void {
-        assert(std.fs.path.isAbsolute(filename));
-
+    fn load(self: *Buffer) void {
         self.delete(0, self.bytes.items.len);
-
-        self.source.deinit(self.app);
-        if (self.tryLoad(filename)) |result| {
+        if (self.tryLoad()) |result| {
             self.insert(0, result.bytes);
-            self.source = .{
-                .File = .{
-                    .absolute_filename = std.mem.dupe(self.app.allocator, u8, filename) catch oom(),
-                    .mtime = result.mtime,
-                },
-            };
+            self.source.File.mtime = result.mtime;
         } else |err| {
-            const message = format(self.app.allocator, "{} while loading {s}", .{ err, filename });
+            const message = format(self.app.allocator, "{} while loading {s}", .{ err, self.getFilename() });
+            dump(message);
             self.insert(0, message);
-            self.source = .None;
-        }
-
-        self.modified_since_last_save = false;
-        for (self.editor_ids.items) |editor_id| {
-            if (self.app.getThingOrNull(editor_id)) |thing| {
-                thing.Editor.line_wrapped_buffer.update();
-            }
         }
     }
 
@@ -150,7 +142,7 @@ pub const Buffer = struct {
                 defer file.close();
                 const stat = file.stat() catch |err| panic("{} while refreshing {s}", .{ err, file_source.absolute_filename });
                 if (stat.mtime != file_source.mtime) {
-                    self.load(file_source.absolute_filename);
+                    self.load();
                 }
             },
         }
