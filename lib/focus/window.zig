@@ -67,14 +67,7 @@ pub const Window = struct {
         c.glEnableClientState(c.GL_COLOR_ARRAY);
 
         // init texture
-        // TODO should this be per-window or per-app?
-        var id: u32 = undefined;
-        c.glGenTextures(1, &id);
-        c.glBindTexture(c.GL_TEXTURE_2D, id);
-        c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_ALPHA, app.atlas.texture_dims.x, app.atlas.texture_dims.y, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, app.atlas.texture.ptr);
-        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
-        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
-        assert(c.glGetError() == 0);
+        Window.loadAtlasTexture(app.atlas);
 
         // no vsync - causes problems with multiple windows
         // see https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
@@ -102,6 +95,16 @@ pub const Window = struct {
             .color_buffer = ArrayList(Quad(Color)).init(app.allocator),
             .index_buffer = ArrayList([2]Tri(u32)).init(app.allocator),
         });
+    }
+
+    pub fn loadAtlasTexture(atlas: *Atlas) void {
+        var id: u32 = undefined;
+        c.glGenTextures(1, &id);
+        c.glBindTexture(c.GL_TEXTURE_2D, id);
+        c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, atlas.texture.ptr);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
+        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
+        assert(c.glGetError() == 0);
     }
 
     pub fn deinit(self: *Window) void {
@@ -172,13 +175,11 @@ pub const Window = struct {
                                 handled = true;
                             },
                             '-' => {
-                                self.app.atlas.deinit();
-                                self.app.atlas.* = Atlas.init(self.app.allocator, self.app.atlas.point_size - 1);
+                                self.app.changeFontSize(-1);
                                 handled = true;
                             },
                             '=' => {
-                                self.app.atlas.deinit();
-                                self.app.atlas.* = Atlas.init(self.app.allocator, self.app.atlas.point_size + 1);
+                                self.app.changeFontSize(1);
                                 handled = true;
                             },
                             else => {},

@@ -262,4 +262,21 @@ pub const App = struct {
     pub fn dupe(self: *App, slice: anytype) @TypeOf(slice) {
         return self.allocator.dupe(@typeInfo(@TypeOf(slice)).Pointer.child, slice) catch oom();
     }
+
+    pub fn changeFontSize(self: *App, increment: isize) void {
+        self.atlas.deinit();
+        const new_font_size = @intCast(isize, self.atlas.point_size) + increment;
+        if (new_font_size >= 0) {
+            self.atlas.* = Atlas.init(self.allocator, @intCast(usize, new_font_size));
+            var entity_iter = self.things.iterator();
+            while (entity_iter.next()) |kv| {
+                if (kv.value == .Window) {
+                    const window = kv.value.Window;
+                    if (c.SDL_GL_MakeCurrent(window.sdl_window, window.gl_context) != 0)
+                        panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
+                    Window.loadAtlasTexture(self.atlas);
+                }
+            }
+        }
+    }
 };

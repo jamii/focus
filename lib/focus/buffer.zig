@@ -99,7 +99,6 @@ pub const Buffer = struct {
         mtime: i128,
     };
     fn tryLoad(self: *Buffer) !TryLoadResult {
-        dump(.{ "loading", self.getFilename() });
         const file = try std.fs.cwd().createFile(self.source.File.absolute_filename, .{ .read = true, .truncate = false });
         defer file.close();
 
