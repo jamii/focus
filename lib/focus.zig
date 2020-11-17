@@ -30,16 +30,6 @@ pub fn run(allocator: *Allocator) void {
     }
 }
 
-pub const Tag = enum(u8) {
-    Buffer,
-    Editor,
-    FileOpener,
-    ProjectFileOpener,
-    BufferSearcher,
-    ProjectSearcher,
-    Window,
-};
-
 pub fn tagOf(comptime thing_type: type) Tag {
     return std.meta.stringToEnum(Tag, @typeName(thing_type)).?;
 }
@@ -51,7 +41,7 @@ pub const Id = struct {
 
 // TODO get rid off Thing, gc buffers and make View for window
 
-pub const Thing = union(Tag) {
+pub const Thing = union(enum) {
     Buffer: *Buffer,
     Editor: *Editor,
     FileOpener: *FileOpener,
@@ -69,6 +59,7 @@ pub const Thing = union(Tag) {
         }
     }
 };
+pub const Tag = @TagType(Thing);
 
 pub const App = struct {
     allocator: *Allocator,
