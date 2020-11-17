@@ -106,6 +106,8 @@ pub const FileOpener = struct {
             }
         }
 
+        // TODO setting buffer_id is currently dodgy, but this will be fixed when Thing is removed
+
         // update preview
         var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
         if (results.items.len == 0) {

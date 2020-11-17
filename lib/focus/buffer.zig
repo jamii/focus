@@ -2,6 +2,7 @@ const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const App = focus.App;
 const Id = focus.Id;
+const Editor = focus.Editor;
 const meta = focus.meta;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 
@@ -39,7 +40,7 @@ pub const Buffer = struct {
     doing: ArrayList(Edit),
     redos: ArrayList([]Edit),
     modified_since_last_save: bool,
-    editor_ids: ArrayList(Id),
+    editors: ArrayList(*Editor),
 
     pub fn initEmpty(app: *App) Id {
         return app.putThing(Buffer{
@@ -50,7 +51,7 @@ pub const Buffer = struct {
             .doing = ArrayList(Edit).init(app.allocator),
             .redos = ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
-            .editor_ids = ArrayList(Id).init(app.allocator),
+            .editors = ArrayList(*Editor).init(app.allocator),
         });
     }
 
@@ -72,7 +73,9 @@ pub const Buffer = struct {
     }
 
     pub fn deinit(self: *Buffer) void {
-        self.editor_ids.deinit();
+        // all editors should have unregistered already
+        assert(self.editors.items.len == 0);
+        self.editors.deinit();
 
         for (self.undos.items) |edits| {
             for (edits) |edit| self.app.allocator.free(edit.data.bytes);
@@ -221,10 +224,8 @@ pub const Buffer = struct {
         std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
         self.modified_since_last_save = true;
-        for (self.editor_ids.items) |editor_id| {
-            if (self.app.getThingOrNull(editor_id)) |thing| {
-                thing.Editor.updateAfterInsert(pos, bytes);
-            }
+        for (self.editors.items) |editor| {
+            editor.updateAfterInsert(pos, bytes);
         }
     }
 
@@ -234,10 +235,8 @@ pub const Buffer = struct {
         std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
         self.bytes.shrink(self.bytes.items.len - (end - start));
         self.modified_since_last_save = true;
-        for (self.editor_ids.items) |editor_id| {
-            if (self.app.getThingOrNull(editor_id)) |thing| {
-                thing.Editor.updateAfterDelete(start, end);
-            }
+        for (self.editors.items) |editor| {
+            editor.updateAfterDelete(start, end);
         }
     }
 
@@ -288,20 +287,16 @@ pub const Buffer = struct {
             self.redos.shrink(0);
 
             var line_colss = ArrayList([][2]usize).init(self.app.frame_allocator);
-            for (self.editor_ids.items) |editor_id| {
-                if (self.app.getThingOrNull(editor_id)) |thing| {
-                    line_colss.append(thing.Editor.updateBeforeReplace()) catch oom();
-                }
+            for (self.editors.items) |editor| {
+                line_colss.append(editor.updateBeforeReplace()) catch oom();
             }
             std.mem.reverse([][2]usize, line_colss.items);
 
             self.bytes.resize(0) catch oom();
             self.bytes.appendSlice(new_bytes) catch oom();
 
-            for (self.editor_ids.items) |editor_id| {
-                if (self.app.getThingOrNull(editor_id)) |thing| {
-                    thing.Editor.updateAfterReplace(line_colss.pop());
-                }
+            for (self.editors.items) |editor| {
+                editor.updateAfterReplace(line_colss.pop());
             }
         }
     }
@@ -373,5 +368,14 @@ pub const Buffer = struct {
 
     pub fn getChar(self: *Buffer, pos: usize) u8 {
         return self.bytes.items[pos];
+    }
+
+    pub fn registerEditor(self: *Buffer, editor: *Editor) void {
+        self.editors.append(editor) catch oom();
+    }
+
+    pub fn deregisterEditor(self: *Buffer, editor: *Editor) void {
+        const i = std.mem.indexOfScalar(*Editor, self.editors.items, editor).?;
+        _ = self.editors.swapRemove(i);
     }
 };

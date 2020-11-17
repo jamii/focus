@@ -13,6 +13,7 @@ pub const Point = struct {
     // what char we're at
     // 0 <= pos <= buffer.getBufferEnd()
     pos: usize,
+
     // what column we 'want' to be at
     // should only be updated by left/right movement
     // 0 <= col
@@ -68,11 +69,13 @@ pub const Editor = struct {
             .last_event_ms = app.frame_time_ms,
             .show_status_bar = show_status_bar,
         });
-        self_buffer.editor_ids.append(id) catch oom();
+        var self = app.getThing(id).Editor;
+        self_buffer.registerEditor(self);
         return id;
     }
 
     pub fn deinit(self: *Editor) void {
+        self.buffer().deregisterEditor(self);
         self.cursors.deinit();
         self.line_wrapped_buffer.deinit();
     }

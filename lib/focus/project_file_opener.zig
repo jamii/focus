@@ -137,6 +137,8 @@ pub const ProjectFileOpener = struct {
             }
         }
 
+        // TODO setting buffer_id is currently dodgy, but this will be fixed when Thing is removed
+
         // update preview
         var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
         if (just_paths.items.len == 0) {
