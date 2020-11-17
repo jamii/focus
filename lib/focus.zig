@@ -44,7 +44,6 @@ pub const Thing = union(enum) {
     ProjectFileOpener: *ProjectFileOpener,
     BufferSearcher: *BufferSearcher,
     ProjectSearcher: *ProjectSearcher,
-    Window: *Window,
 
     pub fn deinit(self: *Thing) void {
         const tag_type = @typeInfo(Thing).Union.tag_type.?;
@@ -66,6 +65,7 @@ pub const App = struct {
     things: DeepHashMap(Id, Thing),
     ids: AutoHashMap(Thing, Id),
     buffers: DeepHashMap([]const u8, Id),
+    windows: ArrayList(*Window),
     frame_time_ms: i64,
 
     pub fn init(allocator: *Allocator) *App {
@@ -84,13 +84,14 @@ pub const App = struct {
             .things = DeepHashMap(Id, Thing).init(allocator),
             .ids = AutoHashMap(Thing, Id).init(allocator),
             .buffers = DeepHashMap([]const u8, Id).init(allocator),
+            .windows = ArrayList(*Window).init(allocator),
             .frame_time_ms = 0,
         };
         self.frame_allocator = &self.frame_arena.allocator;
 
         const buffer_id = Buffer.initEmpty(self);
         const editor_id = Editor.init(self, buffer_id, true);
-        const window_id = Window.init(self, editor_id);
+        const window = self.registerWindow(Window.init(self, editor_id));
 
         self.getThing(buffer_id).Buffer.insert(0, "some initial text\nand some more\nshort\nre" ++ ("a" ** 1000) ++ "lly long" ++ ("abc\n" ** 10));
 
@@ -101,8 +102,15 @@ pub const App = struct {
         var buffer_iter = self.buffers.iterator();
         while (buffer_iter.next()) |kv| {
             self.allocator.free(kv.key);
+            // TODO kv.value.deinit(); self.allocator.destroy(kv.value);
         }
         self.buffers.deinit();
+
+        for (self.windows.items) |window| {
+            window.deinit();
+            self.allocator.destroy(window);
+        }
+        self.windows.deinit();
 
         var thing_iter = self.things.iterator();
         while (thing_iter.next()) |kv| {
@@ -116,9 +124,12 @@ pub const App = struct {
         }
         self.ids.deinit();
         self.things.deinit();
+
         self.atlas.deinit();
         self.allocator.destroy(self.atlas);
+
         self.frame_arena.deinit();
+
         self.allocator.destroy(self);
 
         if (builtin.mode == .Debug) {
@@ -151,15 +162,6 @@ pub const App = struct {
         }
     }
 
-    pub fn getThingOrNull(self: *App, id: Id) ?Thing {
-        if (self.things.get(id)) |thing| {
-            assert(std.meta.activeTag(thing) == id.tag);
-            return thing;
-        } else {
-            return null;
-        }
-    }
-
     pub fn getId(self: *App, thing_ptr: anytype) Id {
         const thing_type = @typeInfo(@TypeOf(thing_ptr)).Pointer.child;
         const thing = @unionInit(Thing, @typeName(thing_type), thing_ptr);
@@ -187,6 +189,19 @@ pub const App = struct {
             self.buffers.put(self.dupe(absolute_filename), id) catch oom();
             return id;
         }
+    }
+
+    pub fn registerWindow(self: *App, window: Window) *Window {
+        var window_ptr = self.allocator.create(Window) catch oom();
+        window_ptr.* = window;
+        self.windows.append(window_ptr) catch oom();
+        return window_ptr;
+    }
+
+    pub fn deregisterWindow(self: *App, window: *Window) void {
+        const i = std.mem.indexOfScalar(*Window, self.windows.items, window).?;
+        _ = self.windows.swapRemove(i);
+        self.allocator.destroy(window);
     }
 
     pub fn frame(self: *App) void {
@@ -222,19 +237,12 @@ pub const App = struct {
         }
 
         // run window frames
-        // collect all windows up front, because the list might change during frame
-        var windows = ArrayList(*Window).init(self.frame_allocator);
-
-        {
-            var entity_iter = self.things.iterator();
-            while (entity_iter.next()) |kv| {
-                if (kv.value == .Window) windows.append(kv.value.Window) catch oom();
-            }
-        }
-        if (windows.items.len == 0) {
+        if (self.windows.items.len == 0) {
             std.os.exit(0);
         }
-        for (windows.items) |window| {
+        // copy window list because it might change during frame
+        const current_windows = std.mem.dupe(self.frame_allocator, *Window, self.windows.items) catch oom();
+        for (current_windows) |window| {
             var window_events = ArrayList(c.SDL_Event).init(self.frame_allocator);
             for (events.items) |event| {
                 const window_id_o: ?u32 = switch (event.type) {
@@ -269,13 +277,10 @@ pub const App = struct {
         if (new_font_size >= 0) {
             self.atlas.* = Atlas.init(self.allocator, @intCast(usize, new_font_size));
             var entity_iter = self.things.iterator();
-            while (entity_iter.next()) |kv| {
-                if (kv.value == .Window) {
-                    const window = kv.value.Window;
-                    if (c.SDL_GL_MakeCurrent(window.sdl_window, window.gl_context) != 0)
-                        panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
-                    Window.loadAtlasTexture(self.atlas);
-                }
+            for (self.windows.items) |window| {
+                if (c.SDL_GL_MakeCurrent(window.sdl_window, window.gl_context) != 0)
+                    panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
+                Window.loadAtlasTexture(self.atlas);
             }
         }
     }

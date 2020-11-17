@@ -25,7 +25,7 @@ pub const Window = struct {
     color_buffer: ArrayList(Quad(Color)),
     index_buffer: ArrayList([2]Tri(u32)),
 
-    pub fn init(app: *App, view: Id) Id {
+    pub fn init(app: *App, view: Id) Window {
         var views = ArrayList(Id).init(app.allocator);
         views.append(view) catch oom();
 
@@ -81,7 +81,7 @@ pub const Window = struct {
         // TODO ignore MOUSEMOTION since we just look at current state
         // c.SDL_EventState( c.SDL_MOUSEMOTION, c.SDL_IGNORE );
 
-        return app.putThing(Window{
+        return Window{
             .app = app,
             .views = views,
 
@@ -94,7 +94,7 @@ pub const Window = struct {
             .vertex_buffer = ArrayList(Quad(Vec2f)).init(app.allocator),
             .color_buffer = ArrayList(Quad(Color)).init(app.allocator),
             .index_buffer = ArrayList([2]Tri(u32)).init(app.allocator),
-        });
+        };
     }
 
     pub fn loadAtlasTexture(atlas: *Atlas) void {
@@ -166,7 +166,7 @@ pub const Window = struct {
                                 switch (self.app.getThing(self.views.items[self.views.items.len - 1])) {
                                     .Editor => |editor| {
                                         const new_editor_id = Editor.init(self.app, editor.buffer_id, true);
-                                        const new_window_id = Window.init(self.app, new_editor_id);
+                                        const new_window = self.app.registerWindow(Window.init(self.app, new_editor_id));
                                         var new_editor = self.app.getThing(new_editor_id).Editor;
                                         new_editor.top_pixel = editor.top_pixel;
                                     },
@@ -229,7 +229,7 @@ pub const Window = struct {
                         },
                         c.SDL_WINDOWEVENT_CLOSE => {
                             self.deinit();
-                            self.app.removeThing(self);
+                            self.app.deregisterWindow(self);
                             return;
                         },
                         else => {},
