@@ -233,7 +233,7 @@ pub const Buffer = struct {
         self.modified_since_last_save = true;
         for (self.editor_ids.items) |editor_id| {
             if (self.app.getThingOrNull(editor_id)) |thing| {
-                thing.Editor.line_wrapped_buffer.update();
+                thing.Editor.updateAfterInsert(pos, bytes);
             }
         }
     }
@@ -246,7 +246,7 @@ pub const Buffer = struct {
         self.modified_since_last_save = true;
         for (self.editor_ids.items) |editor_id| {
             if (self.app.getThingOrNull(editor_id)) |thing| {
-                thing.Editor.line_wrapped_buffer.update();
+                thing.Editor.updateAfterDelete(start, end);
             }
         }
     }
@@ -337,7 +337,6 @@ pub const Buffer = struct {
 
     pub fn replace(self: *Buffer, new_bytes: []const u8) void {
         if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
-            self.modified_since_last_save = true;
             self.delete(0, self.getBufferEnd());
             self.insert(0, new_bytes);
         }

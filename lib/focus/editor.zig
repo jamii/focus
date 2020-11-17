@@ -497,11 +497,16 @@ pub const Editor = struct {
     pub fn insert(self: *Editor, cursor: *Cursor, bytes: []const u8) void {
         self.deleteSelection(cursor);
         self.buffer().insert(cursor.head.pos, bytes);
-        const insert_at = cursor.head.pos;
-        for (self.cursors.items) |*other_cursor| {
-            for (&[2]*Point{ &other_cursor.head, &other_cursor.tail }) |point| {
-                // ptr compare is because we want paste to leave each cursor after its own insert
-                if (point.pos > insert_at or (point.pos == insert_at and @ptrToInt(other_cursor) >= @ptrToInt(cursor))) {
+        // buffer calls updateAfterInsert
+    }
+
+    pub fn updateAfterInsert(self: *Editor, start: usize, bytes: []const u8) void {
+        self.line_wrapped_buffer.update();
+        for (self.cursors.items) |*cursor| {
+            for (&[2]*Point{ &cursor.head, &cursor.tail }) |point| {
+                // TODO ptr compare is because we want paste to leave each cursor after its own insert
+                // if (point.pos > insert_at or (point.pos == insert_at and @ptrToInt(other_cursor) >= @ptrToInt(cursor))) {
+                if (point.pos >= start) {
                     point.pos += bytes.len;
                     self.updateCol(point);
                 }
@@ -512,8 +517,13 @@ pub const Editor = struct {
     pub fn delete(self: *Editor, start: usize, end: usize) void {
         assert(start <= end);
         self.buffer().delete(start, end);
-        for (self.cursors.items) |*other_cursor| {
-            for (&[2]*Point{ &other_cursor.head, &other_cursor.tail }) |point| {
+        // buffer calls updateAfterDelete
+    }
+
+    pub fn updateAfterDelete(self: *Editor, start: usize, end: usize) void {
+        self.line_wrapped_buffer.update();
+        for (self.cursors.items) |*cursor| {
+            for (&[2]*Point{ &cursor.head, &cursor.tail }) |point| {
                 if (point.pos >= start and point.pos <= end) point.pos = start;
                 if (point.pos > end) point.pos -= (end - start);
                 self.updateCol(point);
