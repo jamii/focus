@@ -123,14 +123,13 @@ pub const Buffer = struct {
     }
 
     fn load(self: *Buffer) void {
-        self.delete(0, self.bytes.items.len);
         if (self.tryLoad()) |result| {
-            self.insert(0, result.bytes);
+            self.replace(result.bytes);
             self.source.File.mtime = result.mtime;
         } else |err| {
             const message = format(self.app.allocator, "{} while loading {s}", .{ err, self.getFilename() });
             dump(message);
-            self.insert(0, message);
+            self.replace(message);
         }
     }
 
@@ -269,6 +268,45 @@ pub const Buffer = struct {
         self.rawDelete(start, end);
     }
 
+    pub fn replace(self: *Buffer, new_bytes: []const u8) void {
+        if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
+            self.doing.append(.{
+                .tag = .Delete,
+                .data = .{
+                    .start = 0,
+                    .end = self.bytes.items.len,
+                    .bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items) catch oom(),
+                },
+            }) catch oom();
+            self.doing.append(.{
+                .tag = .Insert,
+                .data = .{
+                    .start = 0,
+                    .end = new_bytes.len,
+                    .bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch oom(),
+                },
+            }) catch oom();
+            self.redos.shrink(0);
+
+            var line_colss = ArrayList([][2]usize).init(self.app.frame_allocator);
+            for (self.editor_ids.items) |editor_id| {
+                if (self.app.getThingOrNull(editor_id)) |thing| {
+                    line_colss.append(thing.Editor.updateBeforeReplace()) catch oom();
+                }
+            }
+            std.mem.reverse([][2]usize, line_colss.items);
+
+            self.bytes.resize(0) catch oom();
+            self.bytes.appendSlice(new_bytes) catch oom();
+
+            for (self.editor_ids.items) |editor_id| {
+                if (self.app.getThingOrNull(editor_id)) |thing| {
+                    thing.Editor.updateAfterReplace(line_colss.pop());
+                }
+            }
+        }
+    }
+
     pub fn newUndoGroup(self: *Buffer) void {
         if (self.doing.items.len > 0) {
             const edits = self.doing.toOwnedSlice();
@@ -325,13 +363,6 @@ pub const Buffer = struct {
         var iter = std.mem.split(self.bytes.items, "\n");
         while (iter.next()) |_| lines += 1;
         return lines;
-    }
-
-    pub fn replace(self: *Buffer, new_bytes: []const u8) void {
-        if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
-            self.delete(0, self.getBufferEnd());
-            self.insert(0, new_bytes);
-        }
     }
 
     pub fn getFilename(self: *Buffer) ?[]const u8 {

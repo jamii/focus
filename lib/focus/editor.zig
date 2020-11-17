@@ -531,6 +531,22 @@ pub const Editor = struct {
         }
     }
 
+    pub fn updateBeforeReplace(self: *Editor) [][2]usize {
+        var line_cols = ArrayList([2]usize).init(self.app.frame_allocator);
+        for (self.cursors.items) |cursor| {
+            line_cols.append(self.buffer().getLineColForPos(cursor.head.pos)) catch oom();
+        }
+        return line_cols.toOwnedSlice();
+    }
+
+    pub fn updateAfterReplace(self: *Editor, line_cols: [][2]usize) void {
+        self.line_wrapped_buffer.update();
+        for (self.cursors.items) |*cursor, i| {
+            const line_col = line_cols[i];
+            self.goPos(cursor, self.buffer().getPosForLineCol(line_col[0], line_col[1]));
+        }
+    }
+
     pub fn deleteSelection(self: *Editor, cursor: *Cursor) void {
         if (self.marked) {
             const range = self.getSelectionRange(cursor);
