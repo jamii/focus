@@ -143,6 +143,7 @@ pub const ProjectFileOpener = struct {
                 preview_buffer.replace("");
             } else {
                 preview_buffer.load(selected);
+                preview_editor.goBufferStart(preview_editor.getMainCursor());
             }
         }
 

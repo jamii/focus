@@ -121,6 +121,7 @@ pub const FileOpener = struct {
                 filename.append('/') catch oom();
                 filename.appendSlice(selected) catch oom();
                 preview_buffer.load(filename.items);
+                preview_editor.goBufferStart(preview_editor.getMainCursor());
             }
         }
 
