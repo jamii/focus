@@ -85,23 +85,28 @@ pub const ProjectFileOpener = struct {
             const filter = self.input.getText();
             for (self.paths) |path| {
                 if (filter.len > 0) {
-                    // TODO find shortest match, not first
-                    if (std.mem.indexOfScalar(u8, path, filter[0])) |start| {
-                        var is_match = true;
-                        var end = start;
-                        for (filter[1..]) |char| {
-                            if (std.mem.indexOfScalarPos(u8, path, end, char)) |new_end| {
-                                end = new_end + 1;
-                            } else {
-                                is_match = false;
-                                break;
+                    var score: usize = std.math.maxInt(usize);
+                    var any_match = false;
+                    const filter_start_char = filter[0];
+                    for (path) |start_char, start| {
+                        if (start_char == filter_start_char) {
+                            var is_match = true;
+                            var end = start;
+                            for (filter[1..]) |char| {
+                                if (std.mem.indexOfScalarPos(u8, path, end, char)) |new_end| {
+                                    end = new_end + 1;
+                                } else {
+                                    is_match = false;
+                                    break;
+                                }
+                            }
+                            if (is_match) {
+                                score = min(score, end - start);
+                                any_match = true;
                             }
                         }
-                        if (is_match) {
-                            const score = end - start;
-                            scored_paths.append(.{ .score = score, .path = path }) catch oom();
-                        }
                     }
+                    if (any_match) scored_paths.append(.{ .score = score, .path = path }) catch oom();
                 } else {
                     const score = 0;
                     scored_paths.append(.{ .score = score, .path = path }) catch oom();
