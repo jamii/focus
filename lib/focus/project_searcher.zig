@@ -75,7 +75,6 @@ pub const ProjectSearcher = struct {
         const action = self.selector.frame(window, layout.selector, events, results.items);
 
         // update preview
-        self.preview_editor.deinit();
         if (results.items.len > 0) {
             const line = results.items[self.selector.selected];
             var parts = std.mem.split(line, ":");
@@ -84,6 +83,7 @@ pub const ProjectSearcher = struct {
             const line_number = std.fmt.parseInt(usize, line_number_string, 10) catch |err| panic("{} while parsing line number {s} from rg", .{ err, line_number_string });
 
             const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch oom();
+            self.preview_editor.deinit();
             self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(path), false);
 
             var cursor = self.preview_editor.getMainCursor();
