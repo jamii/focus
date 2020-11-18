@@ -16,18 +16,20 @@ pub const BufferSearcher = struct {
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App, target_editor: *Editor, init_search: []const u8) BufferSearcher {
+    pub fn init(app: *App, target_editor: *Editor, init_search: []const u8) *BufferSearcher {
         const preview_editor = Editor.init(app, target_editor.buffer, false);
         preview_editor.getMainCursor().* = target_editor.getMainCursor().*;
         const input = SingleLineEditor.init(app, init_search);
         const selector = Selector.init(app);
-        return BufferSearcher{
+        var self = app.allocator.create(BufferSearcher) catch oom();
+        self.* = BufferSearcher{
             .app = app,
             .target_editor = target_editor,
             .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
         };
+        return self;
     }
 
     pub fn deinit(self: *BufferSearcher) void {
@@ -35,6 +37,7 @@ pub const BufferSearcher = struct {
         self.input.deinit();
         self.preview_editor.deinit();
         // dont own target_editor
+        self.app.allocator.destroy(self);
     }
 
     pub fn frame(self: *BufferSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {

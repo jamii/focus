@@ -28,7 +28,7 @@ pub const ProjectFileOpener = struct {
     selector: Selector,
     paths: []const []const u8,
 
-    pub fn init(app: *App) ProjectFileOpener {
+    pub fn init(app: *App) *ProjectFileOpener {
         const empty_buffer = Buffer.initEmpty(app);
         const preview_editor = Editor.init(app, empty_buffer, false);
         const input = SingleLineEditor.init(app, "");
@@ -50,7 +50,8 @@ pub const ProjectFileOpener = struct {
             }
         }
 
-        return ProjectFileOpener{
+        const self = app.allocator.create(ProjectFileOpener) catch oom();
+        self.* = ProjectFileOpener{
             .app = app,
             .empty_buffer = empty_buffer,
             .preview_editor = preview_editor,
@@ -58,6 +59,7 @@ pub const ProjectFileOpener = struct {
             .selector = selector,
             .paths = paths.toOwnedSlice(),
         };
+        return self;
     }
 
     pub fn deinit(self: *ProjectFileOpener) void {
@@ -69,6 +71,7 @@ pub const ProjectFileOpener = struct {
         self.input.deinit();
         self.preview_editor.deinit();
         self.empty_buffer.deinit();
+        self.app.allocator.destroy(self);
     }
 
     pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {

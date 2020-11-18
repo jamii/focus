@@ -15,18 +15,20 @@ pub const FileOpener = struct {
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App, init_path: []const u8) FileOpener {
+    pub fn init(app: *App, init_path: []const u8) *FileOpener {
         const empty_buffer = Buffer.initEmpty(app);
         const preview_editor = Editor.init(app, empty_buffer, false);
         const input = SingleLineEditor.init(app, init_path);
         const selector = Selector.init(app);
-        return FileOpener{
+        const self = app.allocator.create(FileOpener) catch oom();
+        self.* = FileOpener{
             .app = app,
             .empty_buffer = empty_buffer,
             .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
         };
+        return self;
     }
 
     pub fn deinit(self: *FileOpener) void {
@@ -34,6 +36,7 @@ pub const FileOpener = struct {
         self.input.deinit();
         self.preview_editor.deinit();
         self.empty_buffer.deinit();
+        self.app.allocator.destroy(self);
     }
 
     pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
@@ -120,7 +123,7 @@ pub const FileOpener = struct {
                 filename.appendSlice(dirname) catch oom();
                 filename.append('/') catch oom();
                 filename.appendSlice(selected) catch oom();
-                self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(selected), false);
+                self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(filename.items), false);
             }
         }
 

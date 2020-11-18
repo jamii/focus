@@ -12,10 +12,10 @@ const style = focus.style;
 
 pub const View = union(enum) {
     Editor: *Editor,
-    FileOpener: FileOpener,
-    ProjectFileOpener: ProjectFileOpener,
-    BufferSearcher: BufferSearcher,
-    ProjectSearcher: ProjectSearcher,
+    FileOpener: *FileOpener,
+    ProjectFileOpener: *ProjectFileOpener,
+    BufferSearcher: *BufferSearcher,
+    ProjectSearcher: *ProjectSearcher,
 };
 pub const ViewTag = @TagType(View);
 
@@ -261,10 +261,10 @@ pub const Window = struct {
         var view = self.views.items[self.views.items.len - 1];
         switch (view) {
             .Editor => |editor| editor.frame(self, window_rect, view_events.items),
-            .FileOpener => |*file_opener| file_opener.frame(self, window_rect, view_events.items),
-            .ProjectFileOpener => |*project_file_opener| project_file_opener.frame(self, window_rect, view_events.items),
-            .BufferSearcher => |*buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
-            .ProjectSearcher => |*project_searcher| project_searcher.frame(self, window_rect, view_events.items),
+            .FileOpener => |file_opener| file_opener.frame(self, window_rect, view_events.items),
+            .ProjectFileOpener => |project_file_opener| project_file_opener.frame(self, window_rect, view_events.items),
+            .BufferSearcher => |buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
+            .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
         }
 
         // clean up after
@@ -364,9 +364,9 @@ pub const Window = struct {
 
     // view api
 
-    pub fn pushView(self: *Window, view_inner: anytype) void {
-        const tag_name = if (@TypeOf(view_inner) == *Editor) "Editor" else @typeName(@TypeOf(view_inner));
-        const view = @unionInit(View, tag_name, view_inner);
+    pub fn pushView(self: *Window, view_ptr: anytype) void {
+        const tag_name = @typeName(@typeInfo(@TypeOf(view_ptr)).Pointer.child);
+        const view = @unionInit(View, tag_name, view_ptr);
         self.views.append(view) catch oom();
     }
 

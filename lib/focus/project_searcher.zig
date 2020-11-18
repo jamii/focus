@@ -17,13 +17,15 @@ pub const ProjectSearcher = struct {
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) ProjectSearcher {
+    pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) *ProjectSearcher {
         const empty_buffer = Buffer.initEmpty(app);
         const preview_editor = Editor.init(app, empty_buffer, false);
         const input = SingleLineEditor.init(app, init_filter);
         const selector = Selector.init(app);
 
-        return ProjectSearcher{
+        const self = app.allocator.create(ProjectSearcher) catch oom();
+        self.* =
+            ProjectSearcher{
             .app = app,
             .project_dir = project_dir,
             .empty_buffer = empty_buffer,
@@ -31,6 +33,7 @@ pub const ProjectSearcher = struct {
             .input = input,
             .selector = selector,
         };
+        return self;
     }
 
     pub fn deinit(self: *ProjectSearcher) void {
@@ -39,6 +42,7 @@ pub const ProjectSearcher = struct {
         self.preview_editor.deinit();
         self.empty_buffer.deinit();
         // TODO should this own project_dir?
+        self.app.allocator.destroy(self);
     }
 
     pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
