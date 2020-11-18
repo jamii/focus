@@ -36,7 +36,7 @@ pub const App = struct {
     frame_allocator: *Allocator,
     atlas: *Atlas,
     // contains only buffers that were created from files
-    // other buffers are just floating around
+    // other buffers are just floating around but must be deinited by their owning view
     buffers: DeepHashMap([]const u8, *Buffer),
     scratch_buffer: *Buffer,
     windows: ArrayList(*Window),

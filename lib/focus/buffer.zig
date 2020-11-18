@@ -39,6 +39,7 @@ pub const Buffer = struct {
     doing: ArrayList(Edit),
     redos: ArrayList([]Edit),
     modified_since_last_save: bool,
+    // editors must unregister before buffer deinits
     editors: ArrayList(*Editor),
 
     pub fn initEmpty(app: *App) *Buffer {
