@@ -2,7 +2,6 @@ const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const meta = focus.meta;
 const App = focus.App;
-const Id = focus.Id;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
 const SingleLineEditor = focus.SingleLineEditor;
@@ -13,30 +12,33 @@ const Selector = focus.Selector;
 pub const ProjectSearcher = struct {
     app: *App,
     project_dir: []const u8,
-    empty_buffer_id: Id,
-    preview_editor_id: Id,
+    empty_buffer: *Buffer,
+    preview_editor: *Editor,
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) Id {
-        const empty_buffer_id = Buffer.initEmpty(app);
-        const preview_editor_id = Editor.init(app, empty_buffer_id, false);
+    pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) ProjectSearcher {
+        const empty_buffer = Buffer.initEmpty(app);
+        const preview_editor = Editor.init(app, empty_buffer, false);
         const input = SingleLineEditor.init(app, init_filter);
         const selector = Selector.init(app);
 
-        return app.putThing(ProjectSearcher{
+        return ProjectSearcher{
             .app = app,
             .project_dir = project_dir,
-            .empty_buffer_id = empty_buffer_id,
-            .preview_editor_id = preview_editor_id,
+            .empty_buffer = empty_buffer,
+            .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
-        });
+        };
     }
 
     pub fn deinit(self: *ProjectSearcher) void {
         self.selector.deinit();
         self.input.deinit();
+        self.preview_editor.deinit();
+        self.empty_buffer.deinit();
+        // TODO should this own project_dir?
     }
 
     pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
@@ -68,12 +70,8 @@ pub const ProjectSearcher = struct {
         // run selector frame
         const action = self.selector.frame(window, layout.selector, events, results.items);
 
-        // TODO setting buffer_id is currently dodgy, but this will be fixed when Thing is removed
-
         // update preview
-        var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
-        preview_editor.collapseCursors();
-        preview_editor.clearMark();
+        self.preview_editor.deinit();
         if (results.items.len > 0) {
             const line = results.items[self.selector.selected];
             var parts = std.mem.split(line, ":");
@@ -82,26 +80,23 @@ pub const ProjectSearcher = struct {
             const line_number = std.fmt.parseInt(usize, line_number_string, 10) catch |err| panic("{} while parsing line number {s} from rg", .{ err, line_number_string });
 
             const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch oom();
-            preview_editor.buffer_id = self.app.getBufferFromAbsoluteFilename(path);
-            preview_editor.line_wrapped_buffer.buffer = self.app.getThing(preview_editor.buffer_id).Buffer;
-            preview_editor.line_wrapped_buffer.update();
+            self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(path), false);
 
-            var cursor = preview_editor.getMainCursor();
-            preview_editor.goRealLine(cursor, line_number - 1);
-            preview_editor.setMark();
-            preview_editor.goRealLineEnd(cursor);
+            var cursor = self.preview_editor.getMainCursor();
+            self.preview_editor.goRealLine(cursor, line_number - 1);
+            self.preview_editor.setMark();
+            self.preview_editor.goRealLineEnd(cursor);
             // TODO centre cursor
 
             if (action == .SelectOne) {
-                const new_editor_id = Editor.init(self.app, preview_editor.buffer_id, true);
-                const new_editor = self.app.getThing(new_editor_id).Editor;
-                new_editor.top_pixel = preview_editor.top_pixel;
+                const new_editor = Editor.init(self.app, self.preview_editor.buffer, true);
+                new_editor.top_pixel = self.preview_editor.top_pixel;
                 window.popView();
-                window.pushView(new_editor_id);
+                window.pushView(new_editor);
             }
         }
 
         // run preview frame
-        preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
+        self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 };

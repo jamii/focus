@@ -2,7 +2,6 @@ const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const meta = focus.meta;
 const App = focus.App;
-const Id = focus.Id;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
 const SingleLineEditor = focus.SingleLineEditor;
@@ -12,33 +11,33 @@ const style = focus.style;
 
 pub const BufferSearcher = struct {
     app: *App,
-    target_editor_id: Id,
-    preview_editor_id: Id,
+    target_editor: *Editor,
+    preview_editor: *Editor,
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App, target_editor_id: Id, init_search: []const u8) Id {
-        var target_editor = app.getThing(target_editor_id).Editor;
-        const preview_editor_id = Editor.init(app, target_editor.buffer_id, false);
-        var preview_editor = app.getThing(preview_editor_id).Editor;
+    pub fn init(app: *App, target_editor: *Editor, init_search: []const u8) BufferSearcher {
+        const preview_editor = Editor.init(app, target_editor.buffer, false);
         preview_editor.getMainCursor().* = target_editor.getMainCursor().*;
         const input = SingleLineEditor.init(app, init_search);
         const selector = Selector.init(app);
-        return app.putThing(BufferSearcher{
+        return BufferSearcher{
             .app = app,
-            .target_editor_id = target_editor_id,
-            .preview_editor_id = preview_editor_id,
+            .target_editor = target_editor,
+            .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
-        });
+        };
     }
 
-    pub fn deinit(self: *BufferSearcher) void {}
+    pub fn deinit(self: *BufferSearcher) void {
+        self.selector.deinit();
+        self.input.deinit();
+        self.preview_editor.deinit();
+        // dont own target_editor
+    }
 
     pub fn frame(self: *BufferSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
-        var preview_buffer = self.app.getThing(preview_editor.buffer_id).Buffer;
-
         const layout = window.layoutSearcher(rect);
 
         // run input frame
@@ -50,18 +49,18 @@ pub const BufferSearcher = struct {
         var results = ArrayList([]const u8).init(self.app.frame_allocator);
         var result_pos = ArrayList(usize).init(self.app.frame_allocator);
         {
-            const max_line_string = format(self.app.frame_allocator, "{}", .{preview_buffer.countLines()});
+            const max_line_string = format(self.app.frame_allocator, "{}", .{self.preview_editor.buffer.countLines()});
             if (filter.len > 0) {
                 var pos: usize = 0;
                 var i: usize = 0;
-                while (preview_buffer.searchForwards(pos, filter)) |found_pos| {
-                    const start = preview_buffer.getLineStart(found_pos);
-                    const end = preview_buffer.getLineEnd(found_pos + filter.len);
-                    const selection = preview_buffer.dupe(self.app.frame_allocator, start, end);
+                while (self.preview_editor.buffer.searchForwards(pos, filter)) |found_pos| {
+                    const start = self.preview_editor.buffer.getLineStart(found_pos);
+                    const end = self.preview_editor.buffer.getLineEnd(found_pos + filter.len);
+                    const selection = self.preview_editor.buffer.dupe(self.app.frame_allocator, start, end);
                     assert(selection[0] != '\n' and selection[selection.len - 1] != '\n');
 
                     var result = ArrayList(u8).init(self.app.frame_allocator);
-                    const line = preview_buffer.getLineColForPos(found_pos)[0];
+                    const line = self.preview_editor.buffer.getLineColForPos(found_pos)[0];
                     const line_string = format(self.app.frame_allocator, "{}", .{line});
                     result.appendSlice(line_string) catch oom();
                     result.appendNTimes(' ', max_line_string.len - line_string.len + 1) catch oom();
@@ -81,16 +80,17 @@ pub const BufferSearcher = struct {
         switch (action) {
             .None, .SelectRaw => {},
             .SelectOne, .SelectAll => {
-                self.updateEditor(self.app.getThing(self.target_editor_id).Editor, action, result_pos.items, filter);
+                self.updateEditor(self.target_editor, action, result_pos.items, filter);
+                self.target_editor.top_pixel = self.preview_editor.top_pixel;
                 window.popView();
             },
         }
 
         // update preview
-        self.updateEditor(preview_editor, action, result_pos.items, filter);
+        self.updateEditor(self.preview_editor, action, result_pos.items, filter);
 
         // run preview frame
-        preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
+        self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 
     fn updateEditor(self: *BufferSearcher, editor: *Editor, action: Selector.Action, result_pos: []usize, filter: []const u8) void {
@@ -114,6 +114,5 @@ pub const BufferSearcher = struct {
                 }
             },
         }
-        editor.top_pixel = self.app.getThing(self.preview_editor_id).Editor.top_pixel;
     }
 };

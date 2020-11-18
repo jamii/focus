@@ -2,15 +2,14 @@ const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const meta = focus.meta;
 const App = focus.App;
-const Id = focus.Id;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
 const Window = focus.Window;
 
 pub const Selector = struct {
     app: *App,
-    buffer_id: Id,
-    editor_id: Id,
+    buffer: *Buffer,
+    editor: *Editor,
     selected: usize,
 
     pub const Action = enum {
@@ -21,22 +20,22 @@ pub const Selector = struct {
     };
 
     pub fn init(app: *App) Selector {
-        const buffer_id = Buffer.initEmpty(app);
-        const editor_id = Editor.init(app, buffer_id, false);
+        const buffer = Buffer.initEmpty(app);
+        const editor = Editor.init(app, buffer, false);
         return Selector{
             .app = app,
-            .buffer_id = buffer_id,
-            .editor_id = editor_id,
+            .buffer = buffer,
+            .editor = editor,
             .selected = 0,
         };
     }
 
-    pub fn deinit(self: *Selector) void {}
+    pub fn deinit(self: *Selector) void {
+        self.editor.deinit();
+        self.buffer.deinit();
+    }
 
     pub fn frame(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event, items: []const []const u8) Action {
-        var buffer = self.app.getThing(self.buffer_id).Buffer;
-        var editor = self.app.getThing(self.editor_id).Editor;
-
         var action: Action = .None;
 
         // handle events
@@ -84,22 +83,22 @@ pub const Selector = struct {
             text.appendSlice(item) catch oom();
             text.append('\n') catch oom();
         }
-        buffer.replace(text.items);
+        self.buffer.replace(text.items);
 
         // set selection
         self.selected = min(self.selected, max(1, items.len) - 1);
-        var cursor = editor.getMainCursor();
+        var cursor = self.editor.getMainCursor();
         if (items.len != 0) {
-            editor.goPos(cursor, buffer.getPosForLineCol(self.selected, 0));
-            editor.setMark();
-            editor.goRealLineEnd(cursor);
+            self.editor.goPos(cursor, self.buffer.getPosForLineCol(self.selected, 0));
+            self.editor.setMark();
+            self.editor.goRealLineEnd(cursor);
         } else {
-            editor.clearMark();
-            editor.goBufferStart(cursor);
+            self.editor.clearMark();
+            self.editor.goBufferStart(cursor);
         }
 
         // render
-        editor.frame(window, rect, &[0]c.SDL_Event{});
+        self.editor.frame(window, rect, &[0]c.SDL_Event{});
 
         return action;
     }

@@ -30,41 +30,15 @@ pub fn run(allocator: *Allocator) void {
     }
 }
 
-pub const Id = struct {
-    tag: Tag,
-    id: u64,
-};
-
-// TODO get rid off Thing, gc buffers and make View for window
-
-pub const Thing = union(enum) {
-    Buffer: *Buffer,
-    Editor: *Editor,
-    FileOpener: *FileOpener,
-    ProjectFileOpener: *ProjectFileOpener,
-    BufferSearcher: *BufferSearcher,
-    ProjectSearcher: *ProjectSearcher,
-
-    pub fn deinit(self: *Thing) void {
-        const tag_type = @typeInfo(Thing).Union.tag_type.?;
-        inline for (@typeInfo(tag_type).Enum.fields) |field| {
-            if (@enumToInt(std.meta.activeTag(self.*)) == field.value) {
-                @field(self.*, field.name).deinit();
-            }
-        }
-    }
-};
-pub const Tag = @TagType(Thing);
-
 pub const App = struct {
     allocator: *Allocator,
     frame_arena: ArenaAllocator,
     frame_allocator: *Allocator,
     atlas: *Atlas,
-    next_id: u64,
-    things: DeepHashMap(Id, Thing),
-    ids: AutoHashMap(Thing, Id),
-    buffers: DeepHashMap([]const u8, Id),
+    // contains only buffers that were created from files
+    // other buffers are just floating around
+    buffers: DeepHashMap([]const u8, *Buffer),
+    scratch_buffer: *Buffer,
     windows: ArrayList(*Window),
     frame_time_ms: i64,
 
@@ -80,50 +54,36 @@ pub const App = struct {
             .frame_arena = ArenaAllocator.init(allocator),
             .frame_allocator = undefined,
             .atlas = atlas,
-            .next_id = 0,
-            .things = DeepHashMap(Id, Thing).init(allocator),
-            .ids = AutoHashMap(Thing, Id).init(allocator),
-            .buffers = DeepHashMap([]const u8, Id).init(allocator),
+            .buffers = DeepHashMap([]const u8, *Buffer).init(allocator),
+            .scratch_buffer = undefined, // defined below
             .windows = ArrayList(*Window).init(allocator),
             .frame_time_ms = 0,
         };
         self.frame_allocator = &self.frame_arena.allocator;
 
-        const buffer_id = Buffer.initEmpty(self);
-        const editor_id = Editor.init(self, buffer_id, true);
-        const window = self.registerWindow(Window.init(self, editor_id));
-
-        self.getThing(buffer_id).Buffer.insert(0, "some initial text\nand some more\nshort\nre" ++ ("a" ** 1000) ++ "lly long" ++ ("abc\n" ** 10));
+        self.scratch_buffer = Buffer.initEmpty(self);
+        self.scratch_buffer.insert(0, "some initial text\nand some more\nshort\nre" ++ ("a" ** 1000) ++ "lly long" ++ ("abc\n" ** 10));
+        const editor = Editor.init(self, self.scratch_buffer, true);
+        const window = self.registerWindow(Window.init(self, .{ .Editor = editor }));
 
         return self;
     }
 
     pub fn deinit(self: *App) void {
-        var buffer_iter = self.buffers.iterator();
-        while (buffer_iter.next()) |kv| {
-            self.allocator.free(kv.key);
-            // TODO kv.value.deinit(); self.allocator.destroy(kv.value);
-        }
-        self.buffers.deinit();
-
         for (self.windows.items) |window| {
             window.deinit();
             self.allocator.destroy(window);
         }
         self.windows.deinit();
 
-        var thing_iter = self.things.iterator();
-        while (thing_iter.next()) |kv| {
+        self.scratch_buffer.deinit();
+
+        var buffer_iter = self.buffers.iterator();
+        while (buffer_iter.next()) |kv| {
+            self.allocator.free(kv.key);
             kv.value.deinit();
-            const tag_type = @typeInfo(Thing).Union.tag_type.?;
-            inline for (@typeInfo(tag_type).Enum.fields) |field| {
-                if (@enumToInt(std.meta.activeTag(kv.value)) == field.value) {
-                    self.allocator.destroy(@field(kv.value, field.name));
-                }
-            }
         }
-        self.ids.deinit();
-        self.things.deinit();
+        self.buffers.deinit();
 
         self.atlas.deinit();
         self.allocator.destroy(self.atlas);
@@ -137,57 +97,13 @@ pub const App = struct {
         }
     }
 
-    // TODO thing gc
-
-    pub fn putThing(self: *App, thing_inner: anytype) Id {
-        const id = Id{
-            .tag = comptime std.meta.stringToEnum(Tag, @typeName(@TypeOf(thing_inner))).?,
-            .id = self.next_id,
-        };
-        self.next_id += 1;
-        const thing_ptr = self.allocator.create(@TypeOf(thing_inner)) catch oom();
-        thing_ptr.* = thing_inner;
-        const thing = @unionInit(Thing, @typeName(@TypeOf(thing_inner)), thing_ptr);
-        _ = self.things.put(id, thing) catch oom();
-        _ = self.ids.put(thing, id) catch oom();
-        return id;
-    }
-
-    pub fn getThing(self: *App, id: Id) Thing {
-        if (self.things.get(id)) |thing| {
-            assert(std.meta.activeTag(thing) == id.tag);
-            return thing;
+    pub fn getBufferFromAbsoluteFilename(self: *App, absolute_filename: []const u8) *Buffer {
+        if (self.buffers.get(absolute_filename)) |buffer| {
+            return buffer;
         } else {
-            panic("Missing thing: {}", .{id});
-        }
-    }
-
-    pub fn getId(self: *App, thing_ptr: anytype) Id {
-        const thing_type = @typeInfo(@TypeOf(thing_ptr)).Pointer.child;
-        const thing = @unionInit(Thing, @typeName(thing_type), thing_ptr);
-        if (self.ids.get(thing)) |id| {
-            assert(std.meta.activeTag(thing) == id.tag);
-            return id;
-        } else {
-            panic("Missing id: {}", .{thing});
-        }
-    }
-
-    pub fn removeThing(self: *App, thing_ptr: anytype) void {
-        const thing_type = @typeInfo(@TypeOf(thing_ptr)).Pointer.child;
-        const thing = @unionInit(Thing, @typeName(thing_type), thing_ptr);
-        const id = self.ids.remove(thing).?.value;
-        _ = self.things.remove(id);
-        self.allocator.destroy(thing_ptr);
-    }
-
-    pub fn getBufferFromAbsoluteFilename(self: *App, absolute_filename: []const u8) Id {
-        if (self.buffers.get(absolute_filename)) |id| {
-            return id;
-        } else {
-            const id = Buffer.initFromAbsoluteFilename(self, absolute_filename);
-            self.buffers.put(self.dupe(absolute_filename), id) catch oom();
-            return id;
+            const buffer = Buffer.initFromAbsoluteFilename(self, absolute_filename);
+            self.buffers.put(self.dupe(absolute_filename), buffer) catch oom();
+            return buffer;
         }
     }
 
@@ -206,6 +122,7 @@ pub const App = struct {
 
     pub fn frame(self: *App) void {
         self.frame_time_ms = std.time.milliTimestamp();
+
         // reset arena
         self.frame_arena.deinit();
         self.frame_arena = ArenaAllocator.init(self.allocator);
@@ -224,16 +141,9 @@ pub const App = struct {
         }
 
         // refresh buffers
-        {
-            var entity_iter = self.things.iterator();
-            while (entity_iter.next()) |kv| {
-                switch (kv.value) {
-                    .Buffer => |buffer| {
-                        buffer.refresh();
-                    },
-                    else => {},
-                }
-            }
+        var buffer_iter = self.buffers.iterator();
+        while (buffer_iter.next()) |kv| {
+            kv.value.refresh();
         }
 
         // run window frames
@@ -276,7 +186,6 @@ pub const App = struct {
         const new_font_size = @intCast(isize, self.atlas.point_size) + increment;
         if (new_font_size >= 0) {
             self.atlas.* = Atlas.init(self.allocator, @intCast(usize, new_font_size));
-            var entity_iter = self.things.iterator();
             for (self.windows.items) |window| {
                 if (c.SDL_GL_MakeCurrent(window.sdl_window, window.gl_context) != 0)
                     panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});

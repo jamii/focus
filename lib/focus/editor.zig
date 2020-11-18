@@ -1,7 +1,6 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const App = focus.App;
-const Id = focus.Id;
 const Buffer = focus.Buffer;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 const BufferSearcher = focus.BufferSearcher;
@@ -35,7 +34,7 @@ pub const Dragging = enum {
 
 pub const Editor = struct {
     app: *App,
-    buffer_id: Id,
+    buffer: *Buffer,
     line_wrapped_buffer: LineWrappedBuffer,
     // cursors.len > 0
     cursors: ArrayList(Cursor),
@@ -49,17 +48,17 @@ pub const Editor = struct {
 
     const scroll_amount = 32;
 
-    pub fn init(app: *App, buffer_id: Id, show_status_bar: bool) Id {
-        const self_buffer = app.getThing(buffer_id).Buffer;
-        const line_wrapped_buffer = LineWrappedBuffer.init(app, self_buffer, std.math.maxInt(usize));
+    pub fn init(app: *App, buffer: *Buffer, show_status_bar: bool) *Editor {
+        const line_wrapped_buffer = LineWrappedBuffer.init(app, buffer, std.math.maxInt(usize));
         var cursors = ArrayList(Cursor).init(app.allocator);
         cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
         }) catch oom();
-        const id = app.putThing(Editor{
+        var self = app.allocator.create(Editor) catch oom();
+        self.* = Editor{
             .app = app,
-            .buffer_id = buffer_id,
+            .buffer = buffer,
             .line_wrapped_buffer = line_wrapped_buffer,
             .cursors = cursors,
             .prev_main_cursor_head_pos = 0,
@@ -68,20 +67,16 @@ pub const Editor = struct {
             .top_pixel = 0,
             .last_event_ms = app.frame_time_ms,
             .show_status_bar = show_status_bar,
-        });
-        var self = app.getThing(id).Editor;
-        self_buffer.registerEditor(self);
-        return id;
+        };
+        buffer.registerEditor(self);
+        return self;
     }
 
     pub fn deinit(self: *Editor) void {
-        self.buffer().deregisterEditor(self);
+        self.buffer.deregisterEditor(self);
         self.cursors.deinit();
         self.line_wrapped_buffer.deinit();
-    }
-
-    pub fn buffer(self: *Editor) *Buffer {
-        return self.app.getThing(self.buffer_id).Buffer;
+        self.app.allocator.destroy(self);
     }
 
     pub fn frame(self: *Editor, window: *Window, frame_rect: Rect, events: []const c.SDL_Event) void {
@@ -96,10 +91,6 @@ pub const Editor = struct {
             self.line_wrapped_buffer.max_chars_per_line = max_chars_per_line;
             self.line_wrapped_buffer.update();
         }
-
-        // TODO these state updates are total hacks
-        // buffer might have been changed by another window
-        self.correctInvalidCursors();
 
         // handle events
         // if we get textinput, we'll also get the keydown first
@@ -137,10 +128,9 @@ pub const Editor = struct {
                             'd' => self.addNextMatch(),
                             's' => self.save(),
                             'f' => {
-                                const self_id = self.app.getId(self);
                                 const selection = self.dupeSelection(self.app.frame_allocator, self.getMainCursor());
-                                const buffer_searcher_id = BufferSearcher.init(self.app, self_id, selection);
-                                window.pushView(buffer_searcher_id);
+                                const buffer_searcher = BufferSearcher.init(self.app, self, selection);
+                                window.pushView(buffer_searcher);
                             },
                             'z' => self.undo(),
                             // TODO ctrl+tab for indentall
@@ -244,7 +234,7 @@ pub const Editor = struct {
 
         // maybe start a new undo group
         if (self.app.frame_time_ms - self.last_event_ms > 500) {
-            self.buffer().newUndoGroup();
+            self.buffer.newUndoGroup();
         }
 
         // handle mouse drag
@@ -318,7 +308,7 @@ pub const Editor = struct {
         const max_line_ix = min(@intCast(usize, visible_end_line + 1), self.line_wrapped_buffer.wrapped_line_ranges.items.len);
         while (line_ix < max_line_ix) : (line_ix += 1) {
             const line_range = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix];
-            const line = self.buffer().bytes.items[line_range[0]..line_range[1]];
+            const line = self.buffer.bytes.items[line_range[0]..line_range[1]];
 
             const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_ix) - visible_start_line) * self.app.atlas.char_height);
 
@@ -413,8 +403,8 @@ pub const Editor = struct {
         if (self.show_status_bar) {
             window.queueRect(status_rect.?, style.status_background_color);
             // use real line_col instead of wrapped
-            const line_col = self.buffer().getLineColForPos(self.getMainCursor().head.pos);
-            const filename = self.buffer().getFilename() orelse "";
+            const line_col = self.buffer.getLineColForPos(self.getMainCursor().head.pos);
+            const filename = self.buffer.getFilename() orelse "";
             const status_text = format(self.app.frame_allocator, "{} L{} C{}", .{ filename, line_col[0], line_col[1] });
             window.queueText(status_rect.?, style.text_color, status_text);
         }
@@ -434,13 +424,13 @@ pub const Editor = struct {
     }
 
     pub fn goRealCol(self: *Editor, cursor: *Cursor, col: usize) void {
-        const line_start = self.buffer().getLineStart(cursor.head.pos);
-        cursor.head.col = min(col, self.buffer().getLineEnd(cursor.head.pos) - line_start);
+        const line_start = self.buffer.getLineStart(cursor.head.pos);
+        cursor.head.col = min(col, self.buffer.getLineEnd(cursor.head.pos) - line_start);
         cursor.head.pos = line_start + cursor.head.col;
     }
 
     pub fn goRealLine(self: *Editor, cursor: *Cursor, line: usize) void {
-        cursor.head.pos = self.buffer().getPosForLine(line);
+        cursor.head.pos = self.buffer.getPosForLine(line);
         // leave head.col intact
     }
 
@@ -450,8 +440,8 @@ pub const Editor = struct {
     }
 
     pub fn goWrappedCol(self: *Editor, cursor: *Cursor, col: usize) void {
-        const line_start = self.buffer().getLineStart(cursor.head.pos);
-        cursor.head.col = min(col, self.buffer().getLineEnd(cursor.head.pos) - line_start);
+        const line_start = self.buffer.getLineStart(cursor.head.pos);
+        cursor.head.col = min(col, self.buffer.getLineEnd(cursor.head.pos) - line_start);
         cursor.head.pos = line_start + cursor.head.col;
     }
 
@@ -471,7 +461,7 @@ pub const Editor = struct {
     }
 
     pub fn goRight(self: *Editor, cursor: *Cursor) void {
-        cursor.head.pos += @as(usize, if (cursor.head.pos >= self.buffer().getBufferEnd()) 0 else 1);
+        cursor.head.pos += @as(usize, if (cursor.head.pos >= self.buffer.getBufferEnd()) 0 else 1);
         self.updateCol(&cursor.head);
     }
 
@@ -496,12 +486,12 @@ pub const Editor = struct {
     }
 
     pub fn goRealLineStart(self: *Editor, cursor: *Cursor) void {
-        cursor.head.pos = self.buffer().getLineStart(cursor.head.pos);
+        cursor.head.pos = self.buffer.getLineStart(cursor.head.pos);
         cursor.head.col = 0;
     }
 
     pub fn goRealLineEnd(self: *Editor, cursor: *Cursor) void {
-        cursor.head.pos = self.buffer().getLineEnd(cursor.head.pos);
+        cursor.head.pos = self.buffer.getLineEnd(cursor.head.pos);
         self.updateCol(&cursor.head);
     }
 
@@ -520,12 +510,12 @@ pub const Editor = struct {
     }
 
     pub fn goBufferEnd(self: *Editor, cursor: *Cursor) void {
-        self.goPos(cursor, self.buffer().getBufferEnd());
+        self.goPos(cursor, self.buffer.getBufferEnd());
     }
 
     pub fn insert(self: *Editor, cursor: *Cursor, bytes: []const u8) void {
         self.deleteSelection(cursor);
-        self.buffer().insert(cursor.head.pos, bytes);
+        self.buffer.insert(cursor.head.pos, bytes);
         // buffer calls updateAfterInsert
     }
 
@@ -545,7 +535,7 @@ pub const Editor = struct {
 
     pub fn delete(self: *Editor, start: usize, end: usize) void {
         assert(start <= end);
-        self.buffer().delete(start, end);
+        self.buffer.delete(start, end);
         // buffer calls updateAfterDelete
     }
 
@@ -563,7 +553,7 @@ pub const Editor = struct {
     pub fn updateBeforeReplace(self: *Editor) [][2]usize {
         var line_cols = ArrayList([2]usize).init(self.app.frame_allocator);
         for (self.cursors.items) |cursor| {
-            line_cols.append(self.buffer().getLineColForPos(cursor.head.pos)) catch oom();
+            line_cols.append(self.buffer.getLineColForPos(cursor.head.pos)) catch oom();
         }
         return line_cols.toOwnedSlice();
     }
@@ -572,7 +562,7 @@ pub const Editor = struct {
         self.line_wrapped_buffer.update();
         for (self.cursors.items) |*cursor, i| {
             const line_col = line_cols[i];
-            self.goPos(cursor, self.buffer().getPosForLineCol(line_col[0], line_col[1]));
+            self.goPos(cursor, self.buffer.getPosForLineCol(line_col[0], line_col[1]));
         }
     }
 
@@ -594,7 +584,7 @@ pub const Editor = struct {
     pub fn deleteForwards(self: *Editor, cursor: *Cursor) void {
         if (self.marked) {
             self.deleteSelection(cursor);
-        } else if (cursor.head.pos < self.buffer().getBufferEnd()) {
+        } else if (cursor.head.pos < self.buffer.getBufferEnd()) {
             self.delete(cursor.head.pos, cursor.head.pos + 1);
         }
     }
@@ -636,7 +626,7 @@ pub const Editor = struct {
 
     pub fn dupeSelection(self: *Editor, allocator: *Allocator, cursor: *Cursor) []const u8 {
         const range = self.getSelectionRange(cursor);
-        return self.buffer().dupe(allocator, range[0], range[1]);
+        return self.buffer.dupe(allocator, range[0], range[1]);
     }
 
     // TODO clipboard stack on app
@@ -685,7 +675,7 @@ pub const Editor = struct {
     pub fn addNextMatch(self: *Editor) void {
         const main_cursor = self.getMainCursor();
         const selection = self.dupeSelection(self.app.frame_allocator, main_cursor);
-        if (self.buffer().searchForwards(max(main_cursor.head.pos, main_cursor.tail.pos), selection)) |pos| {
+        if (self.buffer.searchForwards(max(main_cursor.head.pos, main_cursor.tail.pos), selection)) |pos| {
             var cursor = Cursor{
                 .head = .{ .pos = pos + selection.len, .col = 0 },
                 .tail = .{ .pos = pos, .col = 0 },
@@ -697,14 +687,12 @@ pub const Editor = struct {
     }
 
     pub fn indent(self: *Editor, cursor: *Cursor) void {
-        var self_buffer = self.buffer();
-
         // figure out how many lines we're going to indent _before_ we start changing them
         var num_lines: usize = 1;
         const range = self.getSelectionRange(cursor);
         {
             var pos = range[0];
-            while (self_buffer.searchForwards(pos, "\n")) |new_pos| {
+            while (self.buffer.searchForwards(pos, "\n")) |new_pos| {
                 if (new_pos >= range[1]) break;
                 num_lines += 1;
                 pos = new_pos + 1;
@@ -728,20 +716,20 @@ pub const Editor = struct {
             self.goRealLineStart(edit_cursor);
             const this_line_start_pos = edit_cursor.head.pos;
             var this_indent: usize = 0;
-            while (this_line_start_pos + this_indent < self_buffer.bytes.items.len and self_buffer.bytes.items[this_line_start_pos + this_indent] == ' ') {
+            while (this_line_start_pos + this_indent < self.buffer.bytes.items.len and self.buffer.bytes.items[this_line_start_pos + this_indent] == ' ') {
                 this_indent += 1;
             }
-            const line_start_char = if (this_line_start_pos + this_indent < self_buffer.bytes.items.len) self_buffer.bytes.items[this_line_start_pos + this_indent] else 0;
+            const line_start_char = if (this_line_start_pos + this_indent < self.buffer.bytes.items.len) self.buffer.bytes.items[this_line_start_pos + this_indent] else 0;
 
             // work out prev line indent
             var prev_indent: usize = 0;
             if (edit_cursor.head.pos != 0) {
                 self.goLeft(edit_cursor);
-                const line_end_char = if (edit_cursor.head.pos > 0 and edit_cursor.head.pos - 1 < self_buffer.bytes.items.len) self_buffer.bytes.items[edit_cursor.head.pos - 1] else 0;
+                const line_end_char = if (edit_cursor.head.pos > 0 and edit_cursor.head.pos - 1 < self.buffer.bytes.items.len) self.buffer.bytes.items[edit_cursor.head.pos - 1] else 0;
 
                 self.goRealLineStart(edit_cursor);
                 const prev_line_start_pos = edit_cursor.head.pos;
-                while (prev_line_start_pos + prev_indent < self_buffer.bytes.items.len and self_buffer.bytes.items[prev_line_start_pos + prev_indent] == ' ') {
+                while (prev_line_start_pos + prev_indent < self.buffer.bytes.items.len and self.buffer.bytes.items[prev_line_start_pos + prev_indent] == ' ') {
                     prev_indent += 1;
                 }
 
@@ -780,17 +768,8 @@ pub const Editor = struct {
         }
     }
 
-    // this can happen eg after an automatic format
-    pub fn correctInvalidCursors(self: *Editor) void {
-        for (self.cursors.items) |*cursor| {
-            for (&[_]*Point{ &cursor.head, &cursor.tail }) |point| {
-                point.pos = min(point.pos, self.buffer().getBufferEnd());
-            }
-        }
-    }
-
     pub fn tryFormat(self: *Editor) void {
-        if (self.buffer().getFilename()) |filename| {
+        if (self.buffer.getFilename()) |filename| {
             if (std.mem.endsWith(u8, filename, ".zig")) {
                 self.zigFormat();
             }
@@ -798,7 +777,6 @@ pub const Editor = struct {
     }
 
     pub fn zigFormat(self: *Editor) void {
-        var self_buffer = self.buffer();
         var process = std.ChildProcess.init(
             &[_][]const u8{ "zig", "fmt", "--stdin" },
             self.app.frame_allocator,
@@ -807,7 +785,7 @@ pub const Editor = struct {
         process.stdout_behavior = .Pipe;
         process.stderr_behavior = .Pipe;
         process.spawn() catch |err| panic("Error spawning zig fmt: {}", .{err});
-        process.stdin.?.outStream().writeAll(self_buffer.bytes.items) catch |err| panic("Error writing to zig fmt: {}", .{err});
+        process.stdin.?.outStream().writeAll(self.buffer.bytes.items) catch |err| panic("Error writing to zig fmt: {}", .{err});
         // TODO not sure if this is the correct way to signal input is complete
         process.stdin.?.close();
         process.stdin = null;
@@ -818,21 +796,19 @@ pub const Editor = struct {
         if (result.Exited != 0) {
             warn("Error formatting zig buffer: {}", .{stderr});
         } else {
-            self_buffer.replace(stdout);
-            self.correctInvalidCursors();
+            self.buffer.replace(stdout);
         }
     }
 
     pub fn save(self: *Editor) void {
-        var self_buffer = self.buffer();
-        if (self_buffer.modified_since_last_save) {
+        if (self.buffer.modified_since_last_save) {
             self.tryFormat();
-            self_buffer.save();
+            self.buffer.save();
         }
     }
 
     pub fn undo(self: *Editor) void {
-        const pos_o = self.buffer().undo();
+        const pos_o = self.buffer.undo();
         if (pos_o) |pos| {
             self.collapseCursors();
             self.clearMark();
@@ -843,7 +819,7 @@ pub const Editor = struct {
     }
 
     pub fn redo(self: *Editor) void {
-        const pos_o = self.buffer().redo();
+        const pos_o = self.buffer.redo();
         if (pos_o) |pos| {
             self.collapseCursors();
             self.clearMark();

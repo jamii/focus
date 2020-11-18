@@ -1,7 +1,6 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const App = focus.App;
-const Id = focus.Id;
 const Editor = focus.Editor;
 const meta = focus.meta;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
@@ -42,8 +41,9 @@ pub const Buffer = struct {
     modified_since_last_save: bool,
     editors: ArrayList(*Editor),
 
-    pub fn initEmpty(app: *App) Id {
-        return app.putThing(Buffer{
+    pub fn initEmpty(app: *App) *Buffer {
+        const self = app.allocator.create(Buffer) catch oom();
+        self.* = Buffer{
             .app = app,
             .source = .None,
             .bytes = ArrayList(u8).init(app.allocator),
@@ -52,13 +52,13 @@ pub const Buffer = struct {
             .redos = ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
             .editors = ArrayList(*Editor).init(app.allocator),
-        });
+        };
+        return self;
     }
 
-    pub fn initFromAbsoluteFilename(app: *App, absolute_filename: []const u8) Id {
+    pub fn initFromAbsoluteFilename(app: *App, absolute_filename: []const u8) *Buffer {
         assert(std.fs.path.isAbsolute(absolute_filename));
-        const self_id = Buffer.initEmpty(app);
-        var self = app.getThing(self_id).Buffer;
+        const self = Buffer.initEmpty(app);
         self.source = .{
             .File = .{
                 .absolute_filename = std.mem.dupe(self.app.allocator, u8, absolute_filename) catch oom(),
@@ -69,7 +69,7 @@ pub const Buffer = struct {
         // don't want the load on the undo stack
         for (self.doing.items) |edit| self.app.allocator.free(edit.data.bytes);
         self.doing.shrink(0);
-        return self_id;
+        return self;
     }
 
     pub fn deinit(self: *Buffer) void {
@@ -95,6 +95,8 @@ pub const Buffer = struct {
         self.bytes.deinit();
 
         self.source.deinit(self.app);
+
+        self.app.allocator.destroy(self);
     }
 
     const TryLoadResult = struct {

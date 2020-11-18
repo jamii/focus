@@ -1,7 +1,6 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const App = focus.App;
-const Id = focus.Id;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
 const Window = focus.Window;
@@ -11,28 +10,30 @@ const Selector = focus.Selector;
 
 pub const FileOpener = struct {
     app: *App,
-    empty_buffer_id: Id,
-    preview_editor_id: Id,
+    empty_buffer: *Buffer,
+    preview_editor: *Editor,
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App, init_path: []const u8) Id {
-        const empty_buffer_id = Buffer.initEmpty(app);
-        const preview_editor_id = Editor.init(app, empty_buffer_id, false);
+    pub fn init(app: *App, init_path: []const u8) FileOpener {
+        const empty_buffer = Buffer.initEmpty(app);
+        const preview_editor = Editor.init(app, empty_buffer, false);
         const input = SingleLineEditor.init(app, init_path);
         const selector = Selector.init(app);
-        return app.putThing(FileOpener{
+        return FileOpener{
             .app = app,
-            .empty_buffer_id = empty_buffer_id,
-            .preview_editor_id = preview_editor_id,
+            .empty_buffer = empty_buffer,
+            .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
-        });
+        };
     }
 
     pub fn deinit(self: *FileOpener) void {
         self.selector.deinit();
         self.input.deinit();
+        self.preview_editor.deinit();
+        self.empty_buffer.deinit();
     }
 
     pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
@@ -99,36 +100,31 @@ pub const FileOpener = struct {
                 // TODO mkdir?
                 self.input.setText(filename.items);
             } else {
-                const new_buffer_id = self.app.getBufferFromAbsoluteFilename(filename.items);
-                const new_editor_id = Editor.init(self.app, new_buffer_id, true);
+                const new_buffer = self.app.getBufferFromAbsoluteFilename(filename.items);
+                const new_editor = Editor.init(self.app, new_buffer, true);
                 window.popView();
-                window.pushView(new_editor_id);
+                window.pushView(new_editor);
             }
         }
 
-        // TODO setting buffer_id is currently dodgy, but this will be fixed when Thing is removed
-
         // update preview
-        var preview_editor = self.app.getThing(self.preview_editor_id).Editor;
+        self.preview_editor.deinit();
         if (results.items.len == 0) {
-            preview_editor.buffer_id = self.empty_buffer_id;
+            self.preview_editor = Editor.init(self.app, self.empty_buffer, false);
         } else {
             const selected = results.items[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                preview_editor.buffer_id = self.empty_buffer_id;
+                self.preview_editor = Editor.init(self.app, self.empty_buffer, false);
             } else {
                 var filename = ArrayList(u8).init(self.app.frame_allocator);
                 filename.appendSlice(dirname) catch oom();
                 filename.append('/') catch oom();
                 filename.appendSlice(selected) catch oom();
-                preview_editor.buffer_id = self.app.getBufferFromAbsoluteFilename(filename.items);
+                self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(selected), false);
             }
         }
 
         // run preview frame
-        preview_editor.line_wrapped_buffer.buffer = self.app.getThing(preview_editor.buffer_id).Buffer;
-        preview_editor.line_wrapped_buffer.update();
-        preview_editor.goBufferStart(preview_editor.getMainCursor());
-        preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
+        self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 };
