@@ -244,6 +244,10 @@ pub const Window = struct {
                             handled = true;
                         },
                         c.SDL_WINDOWEVENT_CLOSE => {
+                            switch (self.views.items[self.views.items.len - 1]) {
+                                .Editor => |editor| editor.save(),
+                                else => {},
+                            }
                             self.deinit();
                             self.app.deregisterWindow(self);
                             return;
@@ -365,6 +369,10 @@ pub const Window = struct {
     // view api
 
     pub fn pushView(self: *Window, view_ptr: anytype) void {
+        switch (self.views.items[self.views.items.len - 1]) {
+            .Editor => |editor| editor.save(),
+            else => {},
+        }
         const tag_name = @typeName(@typeInfo(@TypeOf(view_ptr)).Pointer.child);
         const view = @unionInit(View, tag_name, view_ptr);
         self.views.append(view) catch oom();
