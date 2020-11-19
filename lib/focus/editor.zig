@@ -133,7 +133,7 @@ pub const Editor = struct {
                                 window.pushView(buffer_searcher);
                             },
                             'z' => self.undo(),
-                            // TODO ctrl+tab for indentall
+                            '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LCTRL | c.KMOD_LSHIFT or
@@ -152,6 +152,7 @@ pub const Editor = struct {
                             'l' => for (self.cursors.items) |*cursor| self.goRealLineEnd(cursor),
                             'k' => for (self.cursors.items) |*cursor| self.goBufferEnd(cursor),
                             'i' => for (self.cursors.items) |*cursor| self.goBufferStart(cursor),
+                            '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == 0) {
@@ -797,6 +798,65 @@ pub const Editor = struct {
             // go to next line in selection
             self.goRealLineEnd(edit_cursor);
             self.goRight(edit_cursor);
+        }
+    }
+
+    pub fn modifyComment(self: *Editor, cursor: *Cursor, action: enum { Insert, Remove }) void {
+        const filename = self.buffer.getFilename() orelse "";
+        const comment_string: []const u8 = if (std.mem.endsWith(u8, filename, ".zig"))
+            "//"
+        else
+        // don't know how to comment this lang
+            return;
+
+        // figure out how many lines we're going to comment _before_ we start changing them
+        var num_lines: usize = 1;
+        const range = self.getSelectionRange(cursor);
+        {
+            var pos = range[0];
+            while (self.buffer.searchForwards(pos, "\n")) |new_pos| {
+                if (new_pos >= range[1]) break;
+                num_lines += 1;
+                pos = new_pos + 1;
+            }
+        }
+
+        // make a new cursor to peform the comments
+        var edit_cursor = self.newCursor();
+        std.mem.swap(Cursor, edit_cursor, &self.cursors.items[0]);
+        edit_cursor = &self.cursors.items[0];
+        defer {
+            std.mem.swap(Cursor, edit_cursor, &self.cursors.items[self.cursors.items.len - 1]);
+            _ = self.cursors.pop();
+        }
+        self.goPos(edit_cursor, range[0]);
+
+        // for each line in selection
+        while (num_lines > 0) : (num_lines -= 1) {
+
+            // find first non-whitespace char
+            self.goRealLineStart(edit_cursor);
+            var start = edit_cursor.head.pos;
+            const end = self.buffer.getLineEnd(start);
+            while (start < end and self.buffer.bytes.items[start] == ' ') : (start += 1) {}
+            if (start == end) continue;
+
+            // insert or remove comment
+            switch (action) {
+                .Insert => {
+                    self.buffer.insert(start, comment_string);
+                },
+                .Remove => {
+                    if (end - start > comment_string.len and
+                        meta.deepEqual(comment_string, self.buffer.bytes.items[start .. start + comment_string.len]))
+                    {
+                        self.buffer.delete(start, start + comment_string.len);
+                    }
+                },
+            }
+
+            // go to next line in selection
+            self.goRealDown(edit_cursor);
         }
     }
 
