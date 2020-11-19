@@ -252,6 +252,10 @@ pub const Buffer = struct {
                 .bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch oom(),
             },
         }) catch oom();
+        for (self.redos.items) |edits| {
+            for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+            self.app.allocator.free(edits);
+        }
         self.redos.shrink(0);
         self.rawInsert(pos, bytes);
     }
@@ -265,6 +269,10 @@ pub const Buffer = struct {
                 .bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch oom(),
             },
         }) catch oom();
+        for (self.redos.items) |edits| {
+            for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+            self.app.allocator.free(edits);
+        }
         self.redos.shrink(0);
         self.rawDelete(start, end);
     }
@@ -287,6 +295,10 @@ pub const Buffer = struct {
                     .bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch oom(),
                 },
             }) catch oom();
+            for (self.redos.items) |edits| {
+                for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+                self.app.allocator.free(edits);
+            }
             self.redos.shrink(0);
 
             var line_colss = ArrayList([][2]usize).init(self.app.frame_allocator);
