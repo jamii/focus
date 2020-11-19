@@ -119,8 +119,8 @@ pub const Editor = struct {
                             },
                             'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
                             'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                            'k' => for (self.cursors.items) |*cursor| self.goDown(cursor),
-                            'i' => for (self.cursors.items) |*cursor| self.goUp(cursor),
+                            'k' => for (self.cursors.items) |*cursor| self.goRealDown(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goRealUp(cursor),
                             'q' => {
                                 self.collapseCursors();
                                 self.clearMark();
@@ -174,8 +174,8 @@ pub const Editor = struct {
                             },
                             // c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
                             // c.SDLK_LEFT => for (self.cursors.items) |*cursor| self.goLeft(cursor),
-                            // c.SDLK_DOWN => for (self.cursors.items) |*cursor| self.goDown(cursor),
-                            // c.SDLK_UP => for (self.cursors.items) |*cursor| self.goUp(cursor),
+                            // c.SDLK_DOWN => for (self.cursors.items) |*cursor| self.goWrappedDown(cursor),
+                            // c.SDLK_UP => for (self.cursors.items) |*cursor| self.goWrappedUp(cursor),
                             c.SDLK_DELETE => {
                                 for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
                                 self.clearMark();
@@ -465,7 +465,27 @@ pub const Editor = struct {
         self.updateCol(&cursor.head);
     }
 
-    pub fn goDown(self: *Editor, cursor: *Cursor) void {
+    pub fn goRealDown(self: *Editor, cursor: *Cursor) void {
+        const line_col = self.buffer.getLineColForPos(cursor.head.pos);
+        if (line_col[0] < self.buffer.countLines() - 1) {
+            const col = cursor.head.col;
+            cursor.head.pos = self.buffer.getPosForLine(line_col[0] + 1);
+            self.goRealCol(cursor, col);
+            cursor.head.col = col;
+        }
+    }
+
+    pub fn goRealUp(self: *Editor, cursor: *Cursor) void {
+        const line_col = self.buffer.getLineColForPos(cursor.head.pos);
+        if (line_col[0] > 0) {
+            const col = cursor.head.col;
+            cursor.head.pos = self.buffer.getPosForLine(line_col[0] - 1);
+            self.goRealCol(cursor, col);
+            cursor.head.col = col;
+        }
+    }
+
+    pub fn goWrappedDown(self: *Editor, cursor: *Cursor) void {
         const line_col = self.line_wrapped_buffer.getLineColForPos(cursor.head.pos);
         if (line_col[0] < self.line_wrapped_buffer.countLines() - 1) {
             const col = cursor.head.col;
@@ -475,7 +495,7 @@ pub const Editor = struct {
         }
     }
 
-    pub fn goUp(self: *Editor, cursor: *Cursor) void {
+    pub fn goWrappedUp(self: *Editor, cursor: *Cursor) void {
         const line_col = self.line_wrapped_buffer.getLineColForPos(cursor.head.pos);
         if (line_col[0] > 0) {
             const col = cursor.head.col;
@@ -724,7 +744,19 @@ pub const Editor = struct {
             // work out prev line indent
             var prev_indent: usize = 0;
             if (edit_cursor.head.pos != 0) {
-                self.goLeft(edit_cursor);
+
+                // skip blank lines
+                while (true) {
+                    self.goRealUp(edit_cursor);
+                    var start = edit_cursor.head.pos;
+                    const end = self.buffer.getLineEnd(edit_cursor.head.pos);
+                    var is_blank = true;
+                    while (start < end) : (start += 1) {
+                        if (self.buffer.bytes.items[start] != ' ') is_blank = false;
+                    }
+                    if (!is_blank or start == 0) break;
+                }
+
                 const line_end_char = if (edit_cursor.head.pos > 0 and edit_cursor.head.pos - 1 < self.buffer.bytes.items.len) self.buffer.bytes.items[edit_cursor.head.pos - 1] else 0;
 
                 self.goRealLineStart(edit_cursor);
