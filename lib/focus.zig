@@ -166,7 +166,10 @@ pub const App = struct {
                     else => null,
                 };
                 if (window_id_o) |window_id| {
-                    if (window_id == c.SDL_GetWindowID(window.sdl_window)) {
+                    if (window_id == c.SDL_GetWindowID(window.sdl_window) or
+                        // need to react to mouse up even if it happened outside the window
+                        event.type == c.SDL_MOUSEBUTTONUP)
+                    {
                         window_events.append(event) catch oom();
                     }
                 }
