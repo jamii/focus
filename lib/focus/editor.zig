@@ -119,8 +119,8 @@ pub const Editor = struct {
                             },
                             'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
                             'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                            'k' => for (self.cursors.items) |*cursor| self.goRealDown(cursor),
-                            'i' => for (self.cursors.items) |*cursor| self.goRealUp(cursor),
+                            'k' => for (self.cursors.items) |*cursor| self.goWrappedDown(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goWrappedUp(cursor),
                             'q' => {
                                 self.collapseCursors();
                                 self.clearMark();
@@ -441,8 +441,8 @@ pub const Editor = struct {
     }
 
     pub fn goWrappedCol(self: *Editor, cursor: *Cursor, col: usize) void {
-        const line_start = self.buffer.getLineStart(cursor.head.pos);
-        cursor.head.col = min(col, self.buffer.getLineEnd(cursor.head.pos) - line_start);
+        const line_start = self.line_wrapped_buffer.getLineStart(cursor.head.pos);
+        cursor.head.col = min(col, self.line_wrapped_buffer.getLineEnd(cursor.head.pos) - line_start);
         cursor.head.pos = line_start + cursor.head.col;
     }
 
@@ -470,8 +470,7 @@ pub const Editor = struct {
         const line_col = self.buffer.getLineColForPos(cursor.head.pos);
         if (line_col[0] < self.buffer.countLines() - 1) {
             const col = cursor.head.col;
-            cursor.head.pos = self.buffer.getPosForLine(line_col[0] + 1);
-            self.goRealCol(cursor, col);
+            self.goRealLineCol(cursor, line_col[0] + 1, col);
             cursor.head.col = col;
         }
     }
@@ -480,8 +479,7 @@ pub const Editor = struct {
         const line_col = self.buffer.getLineColForPos(cursor.head.pos);
         if (line_col[0] > 0) {
             const col = cursor.head.col;
-            cursor.head.pos = self.buffer.getPosForLine(line_col[0] - 1);
-            self.goRealCol(cursor, col);
+            self.goRealLineCol(cursor, line_col[0] - 1, col);
             cursor.head.col = col;
         }
     }
@@ -490,8 +488,7 @@ pub const Editor = struct {
         const line_col = self.line_wrapped_buffer.getLineColForPos(cursor.head.pos);
         if (line_col[0] < self.line_wrapped_buffer.countLines() - 1) {
             const col = cursor.head.col;
-            cursor.head.pos = self.line_wrapped_buffer.getPosForLine(line_col[0] + 1);
-            self.goWrappedCol(cursor, col);
+            self.goWrappedLineCol(cursor, line_col[0] + 1, col);
             cursor.head.col = col;
         }
     }
@@ -500,8 +497,7 @@ pub const Editor = struct {
         const line_col = self.line_wrapped_buffer.getLineColForPos(cursor.head.pos);
         if (line_col[0] > 0) {
             const col = cursor.head.col;
-            cursor.head.pos = self.line_wrapped_buffer.getPosForLine(line_col[0] - 1);
-            self.goWrappedCol(cursor, col);
+            self.goWrappedLineCol(cursor, line_col[0] - 1, col);
             cursor.head.col = col;
         }
     }
