@@ -30,7 +30,7 @@ pub const ProjectFileOpener = struct {
 
     pub fn init(app: *App) *ProjectFileOpener {
         const empty_buffer = Buffer.initEmpty(app);
-        const preview_editor = Editor.init(app, empty_buffer, false);
+        const preview_editor = Editor.init(app, empty_buffer, false, false);
         const input = SingleLineEditor.init(app, "");
         const selector = Selector.init(app);
 
@@ -133,7 +133,7 @@ pub const ProjectFileOpener = struct {
                 self.input.setText(path);
             } else {
                 const new_buffer = self.app.getBufferFromAbsoluteFilename(path);
-                const new_editor = Editor.init(self.app, new_buffer, true);
+                const new_editor = Editor.init(self.app, new_buffer, true, true);
                 window.popView();
                 window.pushView(new_editor);
             }
@@ -142,13 +142,13 @@ pub const ProjectFileOpener = struct {
         // update preview
         self.preview_editor.deinit();
         if (just_paths.items.len == 0) {
-            self.preview_editor = Editor.init(self.app, self.empty_buffer, false);
+            self.preview_editor = Editor.init(self.app, self.empty_buffer, false, false);
         } else {
             const selected = just_paths.items[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                self.preview_editor = Editor.init(self.app, self.empty_buffer, false);
+                self.preview_editor = Editor.init(self.app, self.empty_buffer, false, false);
             } else {
-                self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(selected), false);
+                self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(selected), false, false);
             }
         }
 

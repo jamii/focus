@@ -17,7 +17,7 @@ pub const FileOpener = struct {
 
     pub fn init(app: *App, init_path: []const u8) *FileOpener {
         const empty_buffer = Buffer.initEmpty(app);
-        const preview_editor = Editor.init(app, empty_buffer, false);
+        const preview_editor = Editor.init(app, empty_buffer, false, false);
         const input = SingleLineEditor.init(app, init_path);
         const selector = Selector.init(app);
         const self = app.allocator.create(FileOpener) catch oom();
@@ -104,7 +104,7 @@ pub const FileOpener = struct {
                 self.input.setText(filename.items);
             } else {
                 const new_buffer = self.app.getBufferFromAbsoluteFilename(filename.items);
-                const new_editor = Editor.init(self.app, new_buffer, true);
+                const new_editor = Editor.init(self.app, new_buffer, true, true);
                 window.popView();
                 window.pushView(new_editor);
             }
@@ -113,17 +113,17 @@ pub const FileOpener = struct {
         // update preview
         self.preview_editor.deinit();
         if (results.items.len == 0) {
-            self.preview_editor = Editor.init(self.app, self.empty_buffer, false);
+            self.preview_editor = Editor.init(self.app, self.empty_buffer, false, false);
         } else {
             const selected = results.items[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                self.preview_editor = Editor.init(self.app, self.empty_buffer, false);
+                self.preview_editor = Editor.init(self.app, self.empty_buffer, false, false);
             } else {
                 var filename = ArrayList(u8).init(self.app.frame_allocator);
                 filename.appendSlice(dirname) catch oom();
                 filename.append('/') catch oom();
                 filename.appendSlice(selected) catch oom();
-                self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(filename.items), false);
+                self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(filename.items), false, false);
             }
         }
 

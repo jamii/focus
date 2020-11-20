@@ -4,6 +4,7 @@ const App = focus.App;
 const Buffer = focus.Buffer;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 const BufferSearcher = focus.BufferSearcher;
+const Selector = focus.Selector;
 const Window = focus.Window;
 const style = focus.style;
 const meta = focus.meta;
@@ -45,16 +46,18 @@ pub const Editor = struct {
     top_pixel: isize,
     last_event_ms: i64,
     show_status_bar: bool,
+    completer_o: ?Selector,
 
     const scroll_amount = 32;
 
-    pub fn init(app: *App, buffer: *Buffer, show_status_bar: bool) *Editor {
+    pub fn init(app: *App, buffer: *Buffer, show_status_bar: bool, show_completer: bool) *Editor {
         const line_wrapped_buffer = LineWrappedBuffer.init(app, buffer, std.math.maxInt(usize));
         var cursors = ArrayList(Cursor).init(app.allocator);
         cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
         }) catch oom();
+        const completer_o = if (show_completer) Selector.init(app) else null;
         var self = app.allocator.create(Editor) catch oom();
         self.* = Editor{
             .app = app,
@@ -67,12 +70,14 @@ pub const Editor = struct {
             .top_pixel = 0,
             .last_event_ms = app.frame_time_ms,
             .show_status_bar = show_status_bar,
+            .completer_o = completer_o,
         };
         buffer.registerEditor(self);
         return self;
     }
 
     pub fn deinit(self: *Editor) void {
+        if (self.completer_o) |*completer| completer.deinit();
         self.buffer.deregisterEditor(self);
         self.cursors.deinit();
         self.line_wrapped_buffer.deinit();
@@ -304,8 +309,8 @@ pub const Editor = struct {
         if (max_chars_per_line == 0) return;
 
         // draw cursors, selections, text
-        var line_ix = @intCast(usize, visible_start_line);
-        const max_line_ix = min(@intCast(usize, visible_end_line + 1), self.line_wrapped_buffer.wrapped_line_ranges.items.len);
+        var line_ix = @intCast(usize, max(visible_start_line, 0));
+        const max_line_ix = min(@intCast(usize, max(visible_end_line + 1, 0)), self.line_wrapped_buffer.wrapped_line_ranges.items.len);
         while (line_ix < max_line_ix) : (line_ix += 1) {
             const line_range = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix];
             const line = self.buffer.bytes.items[line_range[0]..line_range[1]];
@@ -383,6 +388,23 @@ pub const Editor = struct {
                 //    style.highlight_color,
                 //);
             }
+        }
+
+        // draw completer
+        if (self.completer_o) |*completer| {
+            const cursor_linecol = self.line_wrapped_buffer.getLineColForPos(self.getMainCursor().head.pos);
+            const cursor_x = text_rect.x + @intCast(Coord, cursor_linecol[1]) * self.app.atlas.char_width;
+            const cursor_y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, cursor_linecol[0]) - visible_start_line) * self.app.atlas.char_height);
+            const complete_above_cursor = (@intCast(isize, cursor_linecol[0]) - visible_start_line) > (visible_end_line - @intCast(isize, cursor_linecol[0]));
+            const available_h = if (complete_above_cursor) cursor_y - text_rect.y else text_rect.y + text_rect.h + self.app.atlas.char_height - cursor_y;
+            const completer_h = min(@intCast(Coord, available_h), @intCast(Coord, 3 * self.app.atlas.char_height));
+            const completer_rect = Rect{
+                .x = min(cursor_x, text_rect.x + text_rect.w - (40 * self.app.atlas.char_width)),
+                .y = if (complete_above_cursor) @intCast(Coord, cursor_y) - completer_h else @intCast(Coord, cursor_y) + @intCast(Coord, self.app.atlas.char_height),
+                .h = completer_h,
+                .w = text_rect.w, // TODO should we limit the width?
+            };
+            //const action = completer.frame(window, completer_rect, &[_]c.SDL_Event{}, &[_][]const u8{ "red", "purple", "yellow" });
         }
 
         // draw scrollbar
@@ -859,6 +881,7 @@ pub const Editor = struct {
     pub fn tryFormat(self: *Editor) void {
         if (self.buffer.getFilename()) |filename| {
             if (std.mem.endsWith(u8, filename, ".zig")) {
+                self.buffer.newUndoGroup();
                 self.zigFormat();
             }
         }

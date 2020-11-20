@@ -67,7 +67,7 @@ pub const App = struct {
 
         self.scratch_buffer = Buffer.initEmpty(self);
         self.scratch_buffer.insert(0, "some initial text\nand some more\nshort\nre" ++ ("a" ** 1000) ++ "lly long" ++ ("abc\n" ** 10));
-        const editor = Editor.init(self, self.scratch_buffer, true);
+        const editor = Editor.init(self, self.scratch_buffer, true, true);
         const window = self.registerWindow(Window.init(self, .{ .Editor = editor }));
 
         return self;

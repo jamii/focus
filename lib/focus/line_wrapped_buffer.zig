@@ -102,9 +102,7 @@ pub const LineWrappedBuffer = struct {
 
     pub fn getLineEnd(self: *LineWrappedBuffer, pos: usize) usize {
         const line_col = self.getLineColForPos(pos);
-        const line_range = self.getRangeForLine(line_col[0]);
-        // -1 for '\n'
-        return line_range[1];
+        return self.getRangeForLine(line_col[0])[1];
     }
 
     pub fn countLines(self: *LineWrappedBuffer) usize {

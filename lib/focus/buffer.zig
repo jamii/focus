@@ -39,6 +39,7 @@ pub const Buffer = struct {
     doing: ArrayList(Edit),
     redos: ArrayList([]Edit),
     modified_since_last_save: bool,
+    completions: ArrayList([]const u8),
     // editors must unregister before buffer deinits
     editors: ArrayList(*Editor),
 
@@ -52,6 +53,7 @@ pub const Buffer = struct {
             .doing = ArrayList(Edit).init(app.allocator),
             .redos = ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
+            .completions = ArrayList([]const u8).init(app.allocator),
             .editors = ArrayList(*Editor).init(app.allocator),
         };
         return self;
@@ -77,6 +79,9 @@ pub const Buffer = struct {
         // all editors should have unregistered already
         assert(self.editors.items.len == 0);
         self.editors.deinit();
+
+        for (self.completions.items) |completion| self.app.allocator.free(completion);
+        self.completions.deinit();
 
         for (self.undos.items) |edits| {
             for (edits) |edit| self.app.allocator.free(edit.data.bytes);
@@ -223,9 +228,16 @@ pub const Buffer = struct {
     }
 
     fn rawInsert(self: *Buffer, pos: usize, bytes: []const u8) void {
+        const line_start = self.getLineStart(pos);
+        const line_end = self.getLineEnd(pos);
+        self.removeRangeFromCompletions(line_start, line_end);
+
         self.bytes.resize(self.bytes.items.len + bytes.len) catch oom();
         std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
+
+        self.addRangeToCompletions(line_start, line_end + bytes.len);
+
         self.modified_since_last_save = true;
         for (self.editors.items) |editor| {
             editor.updateAfterInsert(pos, bytes);
@@ -235,8 +247,16 @@ pub const Buffer = struct {
     fn rawDelete(self: *Buffer, start: usize, end: usize) void {
         assert(start <= end);
         assert(end <= self.bytes.items.len);
+
+        const line_start = self.getLineStart(start);
+        const line_end = self.getLineEnd(end);
+        self.removeRangeFromCompletions(line_start, line_end);
+
         std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
         self.bytes.shrink(self.bytes.items.len - (end - start));
+
+        self.addRangeToCompletions(line_start, line_end - (end - start));
+
         self.modified_since_last_save = true;
         for (self.editors.items) |editor| {
             editor.updateAfterDelete(start, end);
@@ -310,9 +330,13 @@ pub const Buffer = struct {
             self.bytes.resize(0) catch oom();
             self.bytes.appendSlice(new_bytes) catch oom();
 
+            self.modified_since_last_save = true;
+
             for (self.editors.items) |editor| {
                 editor.updateAfterReplace(line_colss.pop());
             }
+
+            self.updateCompletions();
         }
     }
 
@@ -383,6 +407,100 @@ pub const Buffer = struct {
 
     pub fn getChar(self: *Buffer, pos: usize) u8 {
         return self.bytes.items[pos];
+    }
+
+    fn isLikeIdent(byte: u8) bool {
+        return (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or (byte == '_');
+    }
+
+    fn updateCompletions(self: *Buffer) void {
+        for (self.completions.items) |completion| self.app.allocator.free(completion);
+        self.completions.resize(0) catch oom();
+
+        const bytes = self.bytes.items;
+        const len = bytes.len;
+        const completions = &self.completions;
+        var start: usize = 0;
+        while (start < len) {
+            var end = start;
+            while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
+            if (end > start) completions.append(self.app.dupe(bytes[start..end])) catch oom();
+            start = end + 1;
+            while (start < len and !isLikeIdent(bytes[start])) : (start += 1) {}
+        }
+
+        std.sort.sort([]const u8, completions.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+    }
+
+    fn removeRangeFromCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
+        const bytes = self.bytes.items;
+        const completions = &self.completions;
+        var start = range_start;
+        while (start < range_end) {
+            var end = start;
+            while (end < range_end and isLikeIdent(bytes[end])) : (end += 1) {}
+            if (end > start) {
+                const completions_items = completions.items;
+                const completion = bytes[start..end];
+                var left: usize = 0;
+                var right: usize = completions_items.len;
+
+                const pos = pos: {
+                    while (left < right) {
+                        const mid = left + (right - left) / 2;
+                        switch (std.mem.order(u8, completion, completions_items[mid])) {
+                            .eq => break :pos mid,
+                            .gt => left = mid + 1,
+                            .lt => right = mid,
+                        }
+                    }
+                    // completion should definitely exist in the list
+                    @panic("how");
+                };
+
+                const removed = completions.orderedRemove(pos);
+                self.app.allocator.free(removed);
+            }
+            start = end + 1;
+            while (start < range_end and !isLikeIdent(bytes[start])) : (start += 1) {}
+        }
+    }
+
+    fn addRangeToCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
+        const bytes = self.bytes.items;
+        const completions = &self.completions;
+        var start = range_start;
+        while (start < range_end) {
+            var end = start;
+            while (end < range_end and isLikeIdent(bytes[end])) : (end += 1) {}
+            if (end > start) {
+                const completions_items = completions.items;
+                const completion = bytes[start..end];
+                var left: usize = 0;
+                var right: usize = completions_items.len;
+
+                const pos = pos: {
+                    while (left < right) {
+                        const mid = left + (right - left) / 2;
+                        switch (std.mem.order(u8, completion, completions_items[mid])) {
+                            .eq => break :pos mid,
+                            .gt => left = mid + 1,
+                            .lt => right = mid,
+                        }
+                    }
+                    // completion might not be in the list, but there is where it should be added
+                    break :pos left;
+                };
+
+                completions.insert(pos, self.app.dupe(completion)) catch oom();
+            }
+            start = end + 1;
+            while (start < range_end and !isLikeIdent(bytes[start])) : (start += 1) {}
+        }
     }
 
     pub fn registerEditor(self: *Buffer, editor: *Editor) void {
