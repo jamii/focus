@@ -503,6 +503,46 @@ pub const Buffer = struct {
         }
     }
 
+    pub fn getCompletions(self: *Buffer, prefix: []const u8) [][]const u8 {
+        const bytes = self.bytes.items;
+        const completions = &self.completions;
+        const completions_items = completions.items;
+        var left: usize = 0;
+        var right: usize = completions_items.len;
+
+        const start = pos: {
+            while (left < right) {
+                const mid = left + (right - left) / 2;
+                switch (std.mem.order(u8, prefix, completions_items[mid])) {
+                    .eq => break :pos mid,
+                    .gt => left = mid + 1,
+                    .lt => right = mid,
+                }
+            }
+            // prefix might not be in the list, but there is where suffixes of it might start
+            break :pos left;
+        };
+
+        var results = ArrayList([]const u8).init(self.app.frame_allocator);
+
+        var end = start;
+        const len = completions_items.len;
+        while (end < len and std.mem.startsWith(u8, completions_items[end], prefix)) : (end += 1) {
+            if (end == 0 or !(std.mem.eql(u8, completions_items[end - 1], completions_items[end])))
+                if (!std.mem.eql(u8, prefix, completions_items[end]))
+                    results.append(completions_items[end]) catch oom();
+        }
+
+        return results.toOwnedSlice();
+    }
+
+    pub fn getCompletionsPrefix(self: *Buffer, pos: usize) []const u8 {
+        const bytes = self.bytes.items;
+        var start = pos;
+        while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
+        return bytes[start..pos];
+    }
+
     pub fn registerEditor(self: *Buffer, editor: *Editor) void {
         self.editors.append(editor) catch oom();
     }

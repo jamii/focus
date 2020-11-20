@@ -49,6 +49,7 @@ pub const Editor = struct {
     completer_o: ?Selector,
 
     const scroll_amount = 32;
+    const max_completions = 10;
 
     pub fn init(app: *App, buffer: *Buffer, show_status_bar: bool, show_completer: bool) *Editor {
         const line_wrapped_buffer = LineWrappedBuffer.init(app, buffer, std.math.maxInt(usize));
@@ -390,21 +391,29 @@ pub const Editor = struct {
             }
         }
 
-        // draw completer
+        // get completions
         if (self.completer_o) |*completer| {
-            const cursor_linecol = self.line_wrapped_buffer.getLineColForPos(self.getMainCursor().head.pos);
-            const cursor_x = text_rect.x + @intCast(Coord, cursor_linecol[1]) * self.app.atlas.char_width;
-            const cursor_y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, cursor_linecol[0]) - visible_start_line) * self.app.atlas.char_height);
-            const complete_above_cursor = (@intCast(isize, cursor_linecol[0]) - visible_start_line) > (visible_end_line - @intCast(isize, cursor_linecol[0]));
-            const available_h = if (complete_above_cursor) cursor_y - text_rect.y else text_rect.y + text_rect.h + self.app.atlas.char_height - cursor_y;
-            const completer_h = min(@intCast(Coord, available_h), @intCast(Coord, 3 * self.app.atlas.char_height));
-            const completer_rect = Rect{
-                .x = min(cursor_x, text_rect.x + text_rect.w - (40 * self.app.atlas.char_width)),
-                .y = if (complete_above_cursor) @intCast(Coord, cursor_y) - completer_h else @intCast(Coord, cursor_y) + @intCast(Coord, self.app.atlas.char_height),
-                .h = completer_h,
-                .w = text_rect.w, // TODO should we limit the width?
-            };
-            //const action = completer.frame(window, completer_rect, &[_]c.SDL_Event{}, &[_][]const u8{ "red", "purple", "yellow" });
+            const prefix = self.buffer.getCompletionsPrefix(self.getMainCursor().head.pos);
+            if (prefix.len > 0) {
+                const completions = self.buffer.getCompletions(prefix);
+                if (completions.len > 0) {
+                    // draw completer
+                    const cursor_linecol = self.line_wrapped_buffer.getLineColForPos(self.getMainCursor().head.pos);
+                    const cursor_x = text_rect.x + @intCast(Coord, cursor_linecol[1]) * self.app.atlas.char_width;
+                    const cursor_y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, cursor_linecol[0]) - visible_start_line) * self.app.atlas.char_height);
+                    const complete_above_cursor = (@intCast(isize, cursor_linecol[0]) - visible_start_line) > (visible_end_line - @intCast(isize, cursor_linecol[0]));
+                    const available_h = if (complete_above_cursor) cursor_y - text_rect.y else text_rect.y + text_rect.h + self.app.atlas.char_height - cursor_y;
+                    const completer_h = min(@intCast(Coord, available_h), @intCast(Coord, completions.len) * self.app.atlas.char_height);
+                    const completer_rect = Rect{
+                        .x = min(cursor_x, text_rect.x + text_rect.w - (40 * self.app.atlas.char_width)),
+                        .y = if (complete_above_cursor) @intCast(Coord, cursor_y) - completer_h else @intCast(Coord, cursor_y) + @intCast(Coord, self.app.atlas.char_height),
+                        .h = completer_h,
+                        .w = text_rect.w, // TODO should we limit the width?
+                    };
+
+                    const action = completer.frame(window, completer_rect, &[_]c.SDL_Event{}, completions);
+                }
+            }
         }
 
         // draw scrollbar
