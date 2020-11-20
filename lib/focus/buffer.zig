@@ -503,7 +503,7 @@ pub const Buffer = struct {
         }
     }
 
-    pub fn getCompletions(self: *Buffer, prefix: []const u8) [][]const u8 {
+    pub fn getCompletionsInto(self: *Buffer, prefix: []const u8, results: *ArrayList([]const u8)) void {
         const bytes = self.bytes.items;
         const completions = &self.completions;
         const completions_items = completions.items;
@@ -523,17 +523,13 @@ pub const Buffer = struct {
             break :pos left;
         };
 
-        var results = ArrayList([]const u8).init(self.app.frame_allocator);
-
         var end = start;
         const len = completions_items.len;
         while (end < len and std.mem.startsWith(u8, completions_items[end], prefix)) : (end += 1) {
-            if (end == 0 or !(std.mem.eql(u8, completions_items[end - 1], completions_items[end])))
+            if (end == 0 or !std.mem.eql(u8, completions_items[end - 1], completions_items[end]))
                 if (!std.mem.eql(u8, prefix, completions_items[end]))
                     results.append(completions_items[end]) catch oom();
         }
-
-        return results.toOwnedSlice();
     }
 
     pub fn getCompletionsPrefix(self: *Buffer, pos: usize) []const u8 {
@@ -541,6 +537,16 @@ pub const Buffer = struct {
         var start = pos;
         while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
         return bytes[start..pos];
+    }
+
+    pub fn getCompletionsToken(self: *Buffer, pos: usize) []const u8 {
+        const bytes = self.bytes.items;
+        const len = bytes.len;
+        var start = pos;
+        while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
+        var end = pos;
+        while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
+        return bytes[start..end];
     }
 
     pub fn registerEditor(self: *Buffer, editor: *Editor) void {

@@ -173,7 +173,7 @@ pub const App = struct {
                 };
                 if (window_id_o) |window_id| {
                     if (window_id == c.SDL_GetWindowID(window.sdl_window) or
-                    // need to react to mouse up even if it happened outside the window
+                        // need to react to mouse up even if it happened outside the window
                         event.type == c.SDL_MOUSEBUTTONUP)
                     {
                         window_events.append(event) catch oom();
@@ -201,5 +201,22 @@ pub const App = struct {
                 Window.loadAtlasTexture(self.atlas);
             }
         }
+    }
+
+    pub fn getCompletions(self: *App, prefix: []const u8) [][]const u8 {
+        var results = ArrayList([]const u8).init(self.frame_allocator);
+
+        var buffer_iter = self.buffers.iterator();
+        while (buffer_iter.next()) |kv| {
+            kv.value.getCompletionsInto(prefix, &results);
+        }
+
+        std.sort.sort([]const u8, results.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
+
+        return results.toOwnedSlice();
     }
 };
