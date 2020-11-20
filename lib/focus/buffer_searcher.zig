@@ -16,10 +16,13 @@ pub const BufferSearcher = struct {
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App, target_editor: *Editor, init_search: []const u8) *BufferSearcher {
-        const preview_editor = Editor.init(app, target_editor.buffer, false);
+    pub fn init(app: *App, target_editor: *Editor) *BufferSearcher {
+        const preview_editor = Editor.init(app, target_editor.buffer, false, false);
         preview_editor.getMainCursor().* = target_editor.getMainCursor().*;
-        const input = SingleLineEditor.init(app, init_search);
+        const input = SingleLineEditor.init(app, app.last_search_filter);
+        input.editor.goRealLineStart(input.editor.getMainCursor());
+        input.editor.setMark();
+        input.editor.goRealLineEnd(input.editor.getMainCursor());
         const selector = Selector.init(app);
         var self = app.allocator.create(BufferSearcher) catch oom();
         self.* = BufferSearcher{
@@ -88,6 +91,10 @@ pub const BufferSearcher = struct {
                 window.popView();
             },
         }
+
+        // set cached search text
+        self.app.allocator.free(self.app.last_search_filter);
+        self.app.last_search_filter = self.app.dupe(self.input.getText());
 
         // update preview
         self.updateEditor(self.preview_editor, action, result_pos.items, filter);

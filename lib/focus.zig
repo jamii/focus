@@ -41,6 +41,8 @@ pub const App = struct {
     scratch_buffer: *Buffer,
     windows: ArrayList(*Window),
     frame_time_ms: i64,
+    last_search_filter: []const u8,
+    last_project_search_selected: usize,
 
     pub fn init(allocator: *Allocator) *App {
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
@@ -58,6 +60,8 @@ pub const App = struct {
             .scratch_buffer = undefined, // defined below
             .windows = ArrayList(*Window).init(allocator),
             .frame_time_ms = 0,
+            .last_search_filter = "",
+            .last_project_search_selected = 0,
         };
         self.frame_allocator = &self.frame_arena.allocator;
 
@@ -70,6 +74,8 @@ pub const App = struct {
     }
 
     pub fn deinit(self: *App) void {
+        self.allocator.free(self.last_search_filter);
+
         for (self.windows.items) |window| {
             window.deinit();
             self.allocator.destroy(window);
@@ -167,7 +173,7 @@ pub const App = struct {
                 };
                 if (window_id_o) |window_id| {
                     if (window_id == c.SDL_GetWindowID(window.sdl_window) or
-                        // need to react to mouse up even if it happened outside the window
+                    // need to react to mouse up even if it happened outside the window
                         event.type == c.SDL_MOUSEBUTTONUP)
                     {
                         window_events.append(event) catch oom();

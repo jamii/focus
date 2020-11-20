@@ -128,8 +128,7 @@ pub const Editor = struct {
                             'd' => self.addNextMatch(),
                             's' => self.save(),
                             'f' => {
-                                const selection = self.dupeSelection(self.app.frame_allocator, self.getMainCursor());
-                                const buffer_searcher = BufferSearcher.init(self.app, self, selection);
+                                const buffer_searcher = BufferSearcher.init(self.app, self);
                                 window.pushView(buffer_searcher);
                             },
                             'z' => self.undo(),

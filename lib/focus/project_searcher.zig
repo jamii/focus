@@ -17,11 +17,15 @@ pub const ProjectSearcher = struct {
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App, project_dir: []const u8, init_filter: []const u8) *ProjectSearcher {
+    pub fn init(app: *App, project_dir: []const u8) *ProjectSearcher {
         const empty_buffer = Buffer.initEmpty(app);
-        const preview_editor = Editor.init(app, empty_buffer, false);
-        const input = SingleLineEditor.init(app, init_filter);
-        const selector = Selector.init(app);
+        const preview_editor = Editor.init(app, empty_buffer, false, false);
+        const input = SingleLineEditor.init(app, app.last_search_filter);
+        input.editor.goRealLineStart(input.editor.getMainCursor());
+        input.editor.setMark();
+        input.editor.goRealLineEnd(input.editor.getMainCursor());
+        var selector = Selector.init(app);
+        selector.selected = app.last_project_search_selected;
 
         const self = app.allocator.create(ProjectSearcher) catch oom();
         self.* =
@@ -74,33 +78,47 @@ pub const ProjectSearcher = struct {
         // run selector frame
         const action = self.selector.frame(window, layout.selector, events, results.items);
 
+        // set cached search text
+        self.app.allocator.free(self.app.last_search_filter);
+        self.app.last_search_filter = self.app.dupe(self.input.getText());
+        self.app.last_project_search_selected = self.selector.selected;
+
         // update preview
+        var line_number: ?usize = null;
         if (results.items.len > 0) {
             const line = results.items[self.selector.selected];
             var parts = std.mem.split(line, ":");
             const path_suffix = parts.next().?;
             const line_number_string = parts.next().?;
-            const line_number = std.fmt.parseInt(usize, line_number_string, 10) catch |err| panic("{} while parsing line number {s} from rg", .{ err, line_number_string });
+            line_number = std.fmt.parseInt(usize, line_number_string, 10) catch |err| panic("{} while parsing line number {s} from rg", .{ err, line_number_string });
 
             const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch oom();
             self.preview_editor.deinit();
-            self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(path), false);
+            self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(path), false, false);
 
-            var cursor = self.preview_editor.getMainCursor();
-            self.preview_editor.goRealLine(cursor, line_number - 1);
-            self.preview_editor.setMark();
-            self.preview_editor.goRealLineEnd(cursor);
-            // TODO centre cursor
-
-            if (action == .SelectOne) {
-                const new_editor = Editor.init(self.app, self.preview_editor.buffer, true);
-                new_editor.top_pixel = self.preview_editor.top_pixel;
-                window.popView();
-                window.pushView(new_editor);
+            {
+                var cursor = self.preview_editor.getMainCursor();
+                self.preview_editor.goRealLine(cursor, line_number.? - 1);
+                self.preview_editor.setMark();
+                self.preview_editor.goRealLineEnd(cursor);
+                // TODO centre cursor
             }
         }
 
         // run preview frame
         self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
+
+        // handle action
+        if (results.items.len > 0 and action == .SelectOne) {
+            const new_editor = Editor.init(self.app, self.preview_editor.buffer, true, true);
+            new_editor.top_pixel = self.preview_editor.top_pixel;
+            var cursor = new_editor.getMainCursor();
+            new_editor.goRealLine(cursor, line_number.? - 1);
+            new_editor.setMark();
+            new_editor.goRealLineEnd(cursor);
+            //new_editor.prev_main_cursor_head_pos = cursor.head.pos;
+            window.popView();
+            window.pushView(new_editor);
+        }
     }
 };

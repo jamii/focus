@@ -206,7 +206,6 @@ pub const Window = struct {
                         switch (sym.sym) {
                             'f' => {
                                 var project_dir: []const u8 = "/home/jamie";
-                                var filter: []const u8 = "";
                                 switch (self.views.items[self.views.items.len - 1]) {
                                     .Editor => |editor| {
                                         if (editor.buffer.getFilename()) |filename| {
@@ -221,12 +220,11 @@ pub const Window = struct {
                                                 root = std.fs.path.dirname(root).?;
                                             }
                                             project_dir = if (meta.deepEqual(root, "/")) dirname else root;
-                                            filter = editor.dupeSelection(self.app.frame_allocator, editor.getMainCursor());
                                         }
                                     },
                                     else => {},
                                 }
-                                const project_searcher = ProjectSearcher.init(self.app, project_dir, filter);
+                                const project_searcher = ProjectSearcher.init(self.app, project_dir);
                                 self.pushView(project_searcher);
                                 handled = true;
                             },
