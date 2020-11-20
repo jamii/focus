@@ -753,7 +753,8 @@ pub const Editor = struct {
                     if (!is_blank or start == 0) break;
                 }
 
-                const line_end_char = if (edit_cursor.head.pos > 0 and edit_cursor.head.pos - 1 < self.buffer.bytes.items.len) self.buffer.bytes.items[edit_cursor.head.pos - 1] else 0;
+                const line_end_pos = self.buffer.getLineEnd(edit_cursor.head.pos);
+                const line_end_char = if (line_end_pos > 0 and line_end_pos - 1 < self.buffer.bytes.items.len) self.buffer.bytes.items[line_end_pos - 1] else 0;
 
                 self.goRealLineStart(edit_cursor);
                 const prev_line_start_pos = edit_cursor.head.pos;
