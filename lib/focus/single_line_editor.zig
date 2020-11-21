@@ -31,9 +31,15 @@ pub const SingleLineEditor = struct {
     }
 
     pub fn frame(self: *SingleLineEditor, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
+        // filter out return presses
+        var editor_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
+        for (events) |event| {
+            if (event.type == c.SDL_KEYDOWN and event.key.keysym.sym == c.SDLK_RETURN) continue;
+            editor_events.append(event) catch oom();
+        }
 
-        // TODO filter out return so doesn't overwrite marked text
-        self.editor.frame(window, rect, events);
+        // run editor
+        self.editor.frame(window, rect, editor_events.items);
 
         // remove any sneaky newlines from eg paste
         // TODO want to put this between event handling and render
