@@ -63,7 +63,7 @@ pub const ProjectSearcher = struct {
                 const result = std.ChildProcess.exec(.{
                     .allocator = self.app.frame_allocator,
                     // TODO would prefer null separated but tricky to parse
-                    .argv = &[6][]const u8{ "rg", "--line-number", "--sort", "path", "--fixed-strings", filter },
+                    .argv = &[_][]const u8{ "rg", "--line-number", "--sort", "path", "--fixed-strings", filter },
                     .cwd = self.project_dir,
                     .max_output_bytes = 128 * 1024 * 1024,
                 }) catch |err| panic("{} while calling rg", .{err});

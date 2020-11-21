@@ -38,7 +38,7 @@ pub const ProjectFileOpener = struct {
         for (projects) |project| {
             const result = std.ChildProcess.exec(.{
                 .allocator = app.frame_allocator,
-                .argv = &[3][]const u8{ "rg", "--files", "-0" },
+                .argv = &[_][]const u8{ "rg", "--files", "-0" },
                 .cwd = project,
                 .max_output_bytes = 128 * 1024 * 1024,
             }) catch |err| panic("{} while calling rg", .{err});
@@ -49,6 +49,12 @@ pub const ProjectFileOpener = struct {
                 paths.append(path) catch oom();
             }
         }
+
+        std.sort.sort([]const u8, paths.items, {}, struct {
+            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lessThan);
 
         const self = app.allocator.create(ProjectFileOpener) catch oom();
         self.* = ProjectFileOpener{
@@ -81,7 +87,7 @@ pub const ProjectFileOpener = struct {
         self.input.frame(window, layout.input, events);
 
         // filter paths
-        const ScoredPath = struct { score: ?usize, path: []const u8 };
+        const ScoredPath = struct { score: usize, path: []const u8 };
         var scored_paths = ArrayList(ScoredPath).init(self.app.frame_allocator);
         {
             const filter = self.input.getText();
@@ -116,7 +122,7 @@ pub const ProjectFileOpener = struct {
             }
             std.sort.sort(ScoredPath, scored_paths.items, {}, struct {
                 fn lessThan(_: void, a: ScoredPath, b: ScoredPath) bool {
-                    return meta.deepCompare(a, b) == .LessThan;
+                    return a.score < b.score;
                 }
             }.lessThan);
         }
