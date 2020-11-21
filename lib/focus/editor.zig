@@ -427,12 +427,17 @@ pub const Editor = struct {
                 const cursor_linecol = self.line_wrapped_buffer.getLineColForPos(self.getMainCursor().head.pos);
                 const cursor_x = text_rect.x + @intCast(Coord, cursor_linecol[1]) * self.app.atlas.char_width;
                 const cursor_y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, cursor_linecol[0]) - visible_start_line) * self.app.atlas.char_height);
-                const complete_above_cursor = (@intCast(isize, cursor_linecol[0]) - visible_start_line) > (visible_end_line - @intCast(isize, cursor_linecol[0]));
-                const available_h = if (complete_above_cursor) cursor_y - text_rect.y else text_rect.y + text_rect.h + self.app.atlas.char_height - cursor_y;
-                const completer_h = min(@intCast(Coord, available_h), @intCast(Coord, min(max_completions_shown, completions.len)) * self.app.atlas.char_height);
+                const available_h = text_rect.y + text_rect.h - (cursor_y + self.app.atlas.char_height);
+                const completions_shown = min(max_completions_shown, completions.len);
+                const fractional_completer_h = min(@intCast(Coord, available_h), @intCast(Coord, completions_shown) * self.app.atlas.char_height);
+                const completer_h = fractional_completer_h - @rem(fractional_completer_h, self.app.atlas.char_height);
+                var max_completion_chars: usize = 0;
+                for (completions) |completion| {
+                    max_completion_chars = max(max_completion_chars, completion.len);
+                }
                 const completer_rect = Rect{
-                    .x = min(cursor_x, text_rect.x + text_rect.w - (40 * self.app.atlas.char_width)),
-                    .y = if (complete_above_cursor) @intCast(Coord, cursor_y) - completer_h else @intCast(Coord, cursor_y) + @intCast(Coord, self.app.atlas.char_height),
+                    .x = min(cursor_x, text_rect.x + max(0, text_rect.w - (@intCast(Coord, max_completion_chars) * self.app.atlas.char_width))),
+                    .y = @intCast(Coord, cursor_y) + @intCast(Coord, self.app.atlas.char_height),
                     .h = completer_h,
                     .w = text_rect.w, // TODO should we limit the width?
                 };
