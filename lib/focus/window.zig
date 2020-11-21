@@ -183,7 +183,7 @@ pub const Window = struct {
                             'n' => {
                                 switch (self.views.items[self.views.items.len - 1]) {
                                     .Editor => |editor| {
-                                        const new_editor = Editor.init(self.app, editor.buffer, true, false);
+                                        const new_editor = Editor.init(self.app, editor.buffer, true, true);
                                         const new_window = self.app.registerWindow(Window.init(self.app, .{ .Editor = new_editor }));
                                         new_editor.top_pixel = editor.top_pixel;
                                     },
