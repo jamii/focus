@@ -46,7 +46,14 @@ pub const Editor = struct {
     top_pixel: isize,
     last_event_ms: i64,
     show_status_bar: bool,
-    completer_o: ?Selector,
+    completer_o: ?Completer,
+
+    const Completer = struct {
+        prefix: []const u8,
+        prefix_pos: usize,
+        next_completion_ix: usize,
+        last_pos: usize,
+    };
 
     const scroll_amount = 32;
     const max_completions_shown = 10;
@@ -58,7 +65,15 @@ pub const Editor = struct {
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
         }) catch oom();
-        const completer_o = if (show_completer) Selector.init(app) else null;
+        const completer_o = if (show_completer)
+            Completer{
+                .prefix = "",
+                .prefix_pos = 0,
+                .next_completion_ix = 0,
+                .last_pos = 0,
+            }
+        else
+            null;
         var self = app.allocator.create(Editor) catch oom();
         self.* = Editor{
             .app = app,
@@ -78,7 +93,7 @@ pub const Editor = struct {
     }
 
     pub fn deinit(self: *Editor) void {
-        if (self.completer_o) |*completer| completer.deinit();
+        if (self.completer_o) |completer| self.app.allocator.free(completer.prefix);
         self.buffer.deregisterEditor(self);
         self.cursors.deinit();
         self.line_wrapped_buffer.deinit();
@@ -98,21 +113,16 @@ pub const Editor = struct {
             self.line_wrapped_buffer.update();
         }
 
-        // get completions
-        var completions: [][]const u8 = &[_][]const u8{};
-        if (self.completer_o) |*completer| {
-            const prefix = self.buffer.getCompletionsPrefix(self.getMainCursor().head.pos);
-            if (prefix.len > 0) {
-                completions = self.app.getCompletions(prefix);
-            }
-        }
-        const show_completions = completions.len > 0;
+        var completer_event: enum {
+            None,
+            Down,
+            Up,
+        } = .None;
 
         // handle events
         // if we get textinput, we'll also get the keydown first
         // if the keydown is mapped to a command, we'll do that and ignore the textinput
         // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
-        var completer_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
         var accept_textinput = false;
         for (events) |event| {
             self.last_event_ms = self.app.frame_time_ms;
@@ -136,16 +146,8 @@ pub const Editor = struct {
                             },
                             'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
                             'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                            'k' => if (show_completions) {
-                                completer_events.append(event) catch oom();
-                            } else {
-                                for (self.cursors.items) |*cursor| self.goWrappedDown(cursor);
-                            },
-                            'i' => if (show_completions) {
-                                completer_events.append(event) catch oom();
-                            } else {
-                                for (self.cursors.items) |*cursor| self.goWrappedUp(cursor);
-                            },
+                            'k' => for (self.cursors.items) |*cursor| self.goWrappedDown(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goWrappedUp(cursor),
                             'q' => {
                                 self.collapseCursors();
                                 self.clearMark();
@@ -158,7 +160,6 @@ pub const Editor = struct {
                             },
                             'z' => self.undo(),
                             '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
-                            c.SDLK_RETURN => completer_events.append(event) catch oom(),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LCTRL | c.KMOD_LSHIFT or
@@ -168,7 +169,6 @@ pub const Editor = struct {
                     {
                         switch (sym.sym) {
                             'z' => self.redo(),
-                            c.SDLK_RETURN => completer_events.append(event) catch oom(),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
@@ -176,18 +176,14 @@ pub const Editor = struct {
                             ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
                             'j' => for (self.cursors.items) |*cursor| self.goRealLineStart(cursor),
                             'l' => for (self.cursors.items) |*cursor| self.goRealLineEnd(cursor),
-                            'k' => if (show_completions) {
-                                completer_events.append(event) catch oom();
-                            } else {
-                                for (self.cursors.items) |*cursor| self.goBufferEnd(cursor);
-                            },
-                            'i' => if (show_completions) {
-                                completer_events.append(event) catch oom();
-                            } else {
-                                for (self.cursors.items) |*cursor| self.goBufferStart(cursor);
-                            },
+                            'k' => for (self.cursors.items) |*cursor| self.goBufferEnd(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goBufferStart(cursor),
                             '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
-                            c.SDLK_RETURN => completer_events.append(event) catch oom(),
+                            else => accept_textinput = true,
+                        }
+                    } else if (sym.mod == c.KMOD_LSHIFT or sym.mod == c.KMOD_RSHIFT) {
+                        switch (sym.sym) {
+                            c.SDLK_TAB => completer_event = .Up,
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == 0) {
@@ -203,15 +199,7 @@ pub const Editor = struct {
                                 }
                                 self.clearMark();
                             },
-                            c.SDLK_TAB => {
-                                for (self.cursors.items) |*cursor| {
-                                    self.indent(cursor);
-                                }
-                            },
-                            // c.SDLK_RIGHT => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                            // c.SDLK_LEFT => for (self.cursors.items) |*cursor| self.goLeft(cursor),
-                            // c.SDLK_DOWN => for (self.cursors.items) |*cursor| self.goWrappedDown(cursor),
-                            // c.SDLK_UP => for (self.cursors.items) |*cursor| self.goWrappedUp(cursor),
+                            c.SDLK_TAB => completer_event = .Down,
                             c.SDLK_DELETE => {
                                 for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
                                 self.clearMark();
@@ -421,40 +409,78 @@ pub const Editor = struct {
             }
         }
 
-        // draw completer
-        if (show_completions) {
-            if (self.completer_o) |*completer| {
-                const cursor_linecol = self.line_wrapped_buffer.getLineColForPos(self.getMainCursor().head.pos);
-                const cursor_x = text_rect.x + @intCast(Coord, cursor_linecol[1]) * self.app.atlas.char_width;
-                const cursor_y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, cursor_linecol[0]) - visible_start_line) * self.app.atlas.char_height);
-                const available_h = text_rect.y + text_rect.h - (cursor_y + self.app.atlas.char_height);
-                const completions_shown = min(max_completions_shown, completions.len);
-                const fractional_completer_h = min(@intCast(Coord, available_h), @intCast(Coord, completions_shown) * self.app.atlas.char_height);
-                const completer_h = fractional_completer_h - @rem(fractional_completer_h, self.app.atlas.char_height);
-                var max_completion_chars: usize = 0;
-                for (completions) |completion| {
-                    max_completion_chars = max(max_completion_chars, completion.len);
-                }
-                const completer_rect = Rect{
-                    .x = min(cursor_x, text_rect.x + max(0, text_rect.w - (@intCast(Coord, max_completion_chars) * self.app.atlas.char_width))),
-                    .y = @intCast(Coord, cursor_y) + @intCast(Coord, self.app.atlas.char_height),
-                    .h = completer_h,
-                    .w = text_rect.w, // TODO should we limit the width?
-                };
-                const action = completer.frame(window, completer_rect, completer_events.items, completions);
+        if (self.completer_o) |*completer| completer: {
+            if (self.dragging != .NotDragging) break :completer;
 
-                // handle completion action
-                // TODO think carefully about controls here
-                // TODO is it definitely safe to modify buffer here?
-                switch (action) {
-                    .None, .SelectOne => {},
-                    .SelectRaw => {
-                        for (self.cursors.items) |*cursor| self.buffer.insertCompletion(cursor.head.pos, completions[completer.selected]);
-                    },
-                    .SelectAll => {
-                        // TODO
-                    },
-                }
+            // if cursor moved, reset completer prefix
+            if (self.getMainCursor().head.pos != completer.last_pos) {
+                self.app.allocator.free(completer.prefix);
+                completer.prefix = self.app.dupe(self.buffer.getCompletionsPrefix(self.getMainCursor().head.pos));
+                completer.prefix_pos = self.getMainCursor().head.pos - completer.prefix.len;
+                completer.next_completion_ix = 0;
+                completer.last_pos = self.getMainCursor().head.pos;
+            }
+
+            if (completer.prefix.len == 0) break :completer;
+
+            // get completions
+            const completions = self.app.getCompletions(completer.prefix);
+
+            if (completions.len == 0) break :completer;
+
+            // rotate completions
+            std.mem.rotate([]const u8, completions, completer.next_completion_ix);
+
+            // figure out cursor position
+            const cursor_linecol = self.line_wrapped_buffer.getLineColForPos(self.getMainCursor().head.pos);
+            const cursor_x = text_rect.x + @intCast(Coord, cursor_linecol[1]) * self.app.atlas.char_width;
+            const cursor_y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, cursor_linecol[0]) - visible_start_line) * self.app.atlas.char_height);
+
+            // figure out x placement
+            var max_completion_chars: usize = 0;
+            for (completions) |completion| {
+                max_completion_chars = max(max_completion_chars, completion.len);
+            }
+            const prefix_x = cursor_x - (@intCast(Coord, (self.getMainCursor().head.pos - completer.prefix_pos)) * self.app.atlas.char_width);
+            const completer_x = max(text_rect.x, min(text_rect.x + max(0, text_rect.w - (@intCast(Coord, max_completion_chars) * self.app.atlas.char_width)), prefix_x));
+            const completer_w = text_rect.x + text_rect.w - completer_x;
+
+            // figure out y placement
+            const completer_y = @intCast(Coord, cursor_y) + @intCast(Coord, self.app.atlas.char_height);
+            const available_h = text_rect.y + text_rect.h - completer_y;
+            const completions_shown = min(max_completions_shown, completions.len);
+            const fractional_completer_h = min(@intCast(Coord, available_h), @intCast(Coord, completions_shown) * self.app.atlas.char_height);
+            const completer_h = fractional_completer_h - @rem(fractional_completer_h, self.app.atlas.char_height);
+
+            const completer_rect = Rect{
+                .x = completer_x,
+                .y = completer_y,
+                .h = completer_h,
+                .w = completer_w,
+            };
+
+            // draw completions
+            window.queueRect(completer_rect, style.status_background_color);
+            for (completions) |completion, i| {
+                if (i > completions_shown) break;
+                var rect = completer_rect;
+                rect.y += @intCast(Coord, i) * self.app.atlas.char_height;
+                window.queueText(rect, style.text_color, completion);
+            }
+
+            // handle replacement
+            if (completer_event != .None) {
+                for (self.cursors.items) |*cursor|
+                    self.buffer.insertCompletion(cursor.head.pos, std.mem.dupe(self.app.frame_allocator, u8, completions[0]) catch oom());
+                // make sure we don't get confused about that cursor movement
+                completer.last_pos = self.getMainCursor().head.pos;
+            }
+
+            // handle movement
+            switch (completer_event) {
+                .None => {},
+                .Up => completer.next_completion_ix = @intCast(usize, @mod(@intCast(isize, completer.next_completion_ix) - 1, @intCast(isize, completions.len))),
+                .Down => completer.next_completion_ix = (completer.next_completion_ix + 1) % completions.len,
             }
         }
 
