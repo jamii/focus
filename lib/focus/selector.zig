@@ -20,7 +20,7 @@ pub const Selector = struct {
     };
 
     pub fn init(app: *App) Selector {
-        const buffer = Buffer.initEmpty(app);
+        const buffer = Buffer.initEmpty(app, .Real);
         const editor = Editor.init(app, buffer, false, false);
         return Selector{
             .app = app,

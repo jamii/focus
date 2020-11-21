@@ -65,7 +65,7 @@ pub const App = struct {
         };
         self.frame_allocator = &self.frame_arena.allocator;
 
-        self.scratch_buffer = Buffer.initEmpty(self);
+        self.scratch_buffer = Buffer.initEmpty(self, .Real);
         self.scratch_buffer.insert(0, "some initial text\nand some more\nshort\nre" ++ ("a" ** 1000) ++ "lly long" ++ ("abc\n" ** 10));
         const editor = Editor.init(self, self.scratch_buffer, true, true);
         const window = self.registerWindow(Window.init(self, .{ .Editor = editor }));
@@ -107,7 +107,7 @@ pub const App = struct {
         if (self.buffers.get(absolute_filename)) |buffer| {
             return buffer;
         } else {
-            const buffer = Buffer.initFromAbsoluteFilename(self, absolute_filename);
+            const buffer = Buffer.initFromAbsoluteFilename(self, .Real, absolute_filename);
             self.buffers.put(self.dupe(absolute_filename), buffer) catch oom();
             return buffer;
         }
@@ -173,7 +173,7 @@ pub const App = struct {
                 };
                 if (window_id_o) |window_id| {
                     if (window_id == c.SDL_GetWindowID(window.sdl_window) or
-                        // need to react to mouse up even if it happened outside the window
+                    // need to react to mouse up even if it happened outside the window
                         event.type == c.SDL_MOUSEBUTTONUP)
                     {
                         window_events.append(event) catch oom();

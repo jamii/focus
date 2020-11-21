@@ -20,6 +20,14 @@ pub const BufferSource = union(enum) {
     }
 };
 
+pub const Role = enum {
+    Real,
+    Preview,
+};
+
+// rare to have enough space to put more chars than this above the fold
+const max_preview_bytes = 200 * 500;
+
 pub const Edit = struct {
     tag: enum {
         Insert, Delete
@@ -42,8 +50,9 @@ pub const Buffer = struct {
     completions: ArrayList([]const u8),
     // editors must unregister before buffer deinits
     editors: ArrayList(*Editor),
+    role: Role,
 
-    pub fn initEmpty(app: *App) *Buffer {
+    pub fn initEmpty(app: *App, role: Role) *Buffer {
         const self = app.allocator.create(Buffer) catch oom();
         self.* = Buffer{
             .app = app,
@@ -55,13 +64,14 @@ pub const Buffer = struct {
             .modified_since_last_save = false,
             .completions = ArrayList([]const u8).init(app.allocator),
             .editors = ArrayList(*Editor).init(app.allocator),
+            .role = role,
         };
         return self;
     }
 
-    pub fn initFromAbsoluteFilename(app: *App, absolute_filename: []const u8) *Buffer {
+    pub fn initFromAbsoluteFilename(app: *App, role: Role, absolute_filename: []const u8) *Buffer {
         assert(std.fs.path.isAbsolute(absolute_filename));
-        const self = Buffer.initEmpty(app);
+        const self = Buffer.initEmpty(app, role);
         self.source = .{
             .File = .{
                 .absolute_filename = std.mem.dupe(self.app.allocator, u8, absolute_filename) catch oom(),
@@ -126,6 +136,7 @@ pub const Buffer = struct {
             // worth handling oom here for big files
             try bytes.appendSlice(buf[0..len]);
             if (len < chunk_size) break;
+            if (self.role == .Preview and bytes.items.len >= max_preview_bytes) break;
         }
 
         return TryLoadResult{
@@ -139,7 +150,7 @@ pub const Buffer = struct {
             self.replace(result.bytes);
             self.source.File.mtime = result.mtime;
         } else |err| {
-            const message = format(self.app.allocator, "{} while loading {s}", .{ err, self.getFilename() });
+            const message = format(self.app.frame_allocator, "{} while loading {s}", .{ err, self.getFilename() });
             dump(message);
             self.replace(message);
         }
@@ -416,6 +427,8 @@ pub const Buffer = struct {
     }
 
     fn updateCompletions(self: *Buffer) void {
+        if (self.role == .Preview) return;
+
         for (self.completions.items) |completion| self.app.allocator.free(completion);
         self.completions.resize(0) catch oom();
 

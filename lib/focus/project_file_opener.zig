@@ -28,7 +28,7 @@ pub const ProjectFileOpener = struct {
     paths: []const []const u8,
 
     pub fn init(app: *App) *ProjectFileOpener {
-        const empty_buffer = Buffer.initEmpty(app);
+        const empty_buffer = Buffer.initEmpty(app, .Preview);
         const preview_editor = Editor.init(app, empty_buffer, false, false);
         const input = SingleLineEditor.init(app, "");
         const selector = Selector.init(app);
@@ -149,15 +149,15 @@ pub const ProjectFileOpener = struct {
         self.preview_editor.deinit();
         buffer.deinit();
         if (just_paths.items.len == 0) {
-            const empty_buffer = Buffer.initEmpty(self.app);
+            const empty_buffer = Buffer.initEmpty(self.app, .Preview);
             self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
         } else {
             const selected = just_paths.items[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                const empty_buffer = Buffer.initEmpty(self.app);
+                const empty_buffer = Buffer.initEmpty(self.app, .Preview);
                 self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
             } else {
-                const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, selected);
+                const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .Preview, selected);
                 self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
             }
         }

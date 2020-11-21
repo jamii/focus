@@ -15,7 +15,7 @@ pub const FileOpener = struct {
     selector: Selector,
 
     pub fn init(app: *App, init_path: []const u8) *FileOpener {
-        const empty_buffer = Buffer.initEmpty(app);
+        const empty_buffer = Buffer.initEmpty(app, .Preview);
         const preview_editor = Editor.init(app, empty_buffer, false, false);
         const input = SingleLineEditor.init(app, init_path);
         const selector = Selector.init(app);
@@ -119,19 +119,19 @@ pub const FileOpener = struct {
         self.preview_editor.deinit();
         buffer.deinit();
         if (results.items.len == 0) {
-            const empty_buffer = Buffer.initEmpty(self.app);
+            const empty_buffer = Buffer.initEmpty(self.app, .Preview);
             self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
         } else {
             const selected = results.items[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                const empty_buffer = Buffer.initEmpty(self.app);
+                const empty_buffer = Buffer.initEmpty(self.app, .Preview);
                 self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
             } else {
                 var filename = ArrayList(u8).init(self.app.frame_allocator);
                 filename.appendSlice(dirname) catch oom();
                 filename.append('/') catch oom();
                 filename.appendSlice(selected) catch oom();
-                const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, filename.items);
+                const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .Preview, filename.items);
                 self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
             }
         }
