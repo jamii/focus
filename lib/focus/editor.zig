@@ -443,7 +443,7 @@ pub const Editor = struct {
             }
             const prefix_x = cursor_x - (@intCast(Coord, (self.getMainCursor().head.pos - completer.prefix_pos)) * self.app.atlas.char_width);
             const completer_x = max(text_rect.x, min(text_rect.x + max(0, text_rect.w - (@intCast(Coord, max_completion_chars) * self.app.atlas.char_width)), prefix_x));
-            const completer_w = text_rect.x + text_rect.w - completer_x;
+            const completer_w = min(text_rect.x + text_rect.w - completer_x, @intCast(Coord, max_completion_chars) * self.app.atlas.char_width);
 
             // figure out y placement
             const completer_y = @intCast(Coord, cursor_y) + @intCast(Coord, self.app.atlas.char_height);
