@@ -12,7 +12,6 @@ const Selector = focus.Selector;
 pub const ProjectSearcher = struct {
     app: *App,
     project_dir: []const u8,
-    empty_buffer: *Buffer,
     preview_editor: *Editor,
     input: SingleLineEditor,
     selector: Selector,
@@ -32,7 +31,6 @@ pub const ProjectSearcher = struct {
             ProjectSearcher{
             .app = app,
             .project_dir = project_dir,
-            .empty_buffer = empty_buffer,
             .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
@@ -43,8 +41,9 @@ pub const ProjectSearcher = struct {
     pub fn deinit(self: *ProjectSearcher) void {
         self.selector.deinit();
         self.input.deinit();
+        const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
-        self.empty_buffer.deinit();
+        buffer.deinit();
         // TODO should this own project_dir?
         self.app.allocator.destroy(self);
     }
@@ -85,6 +84,7 @@ pub const ProjectSearcher = struct {
 
         // update preview
         var line_number: ?usize = null;
+        var path: ?[]const u8 = null;
         if (results.items.len > 0) {
             const line = results.items[self.selector.selected];
             var parts = std.mem.split(line, ":");
@@ -92,9 +92,12 @@ pub const ProjectSearcher = struct {
             const line_number_string = parts.next().?;
             line_number = std.fmt.parseInt(usize, line_number_string, 10) catch |err| panic("{} while parsing line number {s} from rg", .{ err, line_number_string });
 
-            const path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch oom();
+            path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch oom();
+            const buffer = self.preview_editor.buffer;
             self.preview_editor.deinit();
-            self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(path), false, false);
+            buffer.deinit();
+            const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, path.?);
+            self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
 
             {
                 var cursor = self.preview_editor.getMainCursor();
@@ -110,7 +113,8 @@ pub const ProjectSearcher = struct {
 
         // handle action
         if (results.items.len > 0 and action == .SelectOne) {
-            const new_editor = Editor.init(self.app, self.preview_editor.buffer, true, true);
+            const new_buffer = self.app.getBufferFromAbsoluteFilename(path.?);
+            const new_editor = Editor.init(self.app, new_buffer, true, true);
             new_editor.top_pixel = self.preview_editor.top_pixel;
             var cursor = new_editor.getMainCursor();
             new_editor.goRealLine(cursor, line_number.? - 1);

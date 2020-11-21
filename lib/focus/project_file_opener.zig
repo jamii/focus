@@ -22,7 +22,6 @@ const projects = [_][]const u8{
 
 pub const ProjectFileOpener = struct {
     app: *App,
-    empty_buffer: *Buffer,
     preview_editor: *Editor,
     input: SingleLineEditor,
     selector: Selector,
@@ -59,7 +58,6 @@ pub const ProjectFileOpener = struct {
         const self = app.allocator.create(ProjectFileOpener) catch oom();
         self.* = ProjectFileOpener{
             .app = app,
-            .empty_buffer = empty_buffer,
             .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
@@ -75,8 +73,9 @@ pub const ProjectFileOpener = struct {
         self.app.allocator.free(self.paths);
         self.selector.deinit();
         self.input.deinit();
+        const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
-        self.empty_buffer.deinit();
+        buffer.deinit();
         self.app.allocator.destroy(self);
     }
 
@@ -146,15 +145,20 @@ pub const ProjectFileOpener = struct {
         }
 
         // update preview
+        const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
+        buffer.deinit();
         if (just_paths.items.len == 0) {
-            self.preview_editor = Editor.init(self.app, self.empty_buffer, false, false);
+            const empty_buffer = Buffer.initEmpty(self.app);
+            self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
         } else {
             const selected = just_paths.items[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                self.preview_editor = Editor.init(self.app, self.empty_buffer, false, false);
+                const empty_buffer = Buffer.initEmpty(self.app);
+                self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
             } else {
-                self.preview_editor = Editor.init(self.app, self.app.getBufferFromAbsoluteFilename(selected), false, false);
+                const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, selected);
+                self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
             }
         }
 

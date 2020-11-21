@@ -75,6 +75,8 @@ pub const Buffer = struct {
         return self;
     }
 
+    // TODO fn initPreviewFromAbsoluteFilename
+
     pub fn deinit(self: *Buffer) void {
         // all editors should have unregistered already
         assert(self.editors.items.len == 0);
