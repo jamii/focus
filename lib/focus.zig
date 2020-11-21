@@ -217,6 +217,12 @@ pub const App = struct {
             }
         }.lessThan);
 
-        return results.toOwnedSlice();
+        var unique_results = ArrayList([]const u8).init(self.frame_allocator);
+        for (results.items) |result, i| {
+            if (i == 0 or !std.mem.eql(u8, result, results.items[i - 1]))
+                unique_results.append(result) catch oom();
+        }
+
+        return unique_results.toOwnedSlice();
     }
 };

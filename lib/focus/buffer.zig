@@ -549,6 +549,22 @@ pub const Buffer = struct {
         return bytes[start..end];
     }
 
+    pub fn insertCompletion(self: *Buffer, pos: usize, completion: []const u8) void {
+        const bytes = self.bytes.items;
+        const len = bytes.len;
+
+        // get range of current token
+        var start = pos;
+        while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
+        var end = pos;
+        while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
+
+        // replace completion
+        // (insert before delete so completion gets duped before self.completions updates)
+        self.insert(start, completion);
+        self.delete(start + completion.len, end + completion.len);
+    }
+
     pub fn registerEditor(self: *Buffer, editor: *Editor) void {
         self.editors.append(editor) catch oom();
     }
