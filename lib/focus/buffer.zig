@@ -202,14 +202,17 @@ pub const Buffer = struct {
         return line_range[0] + min(col, line_range[1] - line_range[0]);
     }
 
-    // TODO binary search
     pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
-        for (self.line_ranges.items) |line_range, line| {
-            if (line_range[0] <= pos and pos <= line_range[1]) {
-                return .{ line, pos - line_range[0] };
+        // TODO avoid hacky fake key
+        const line = std.sort.binarySearch([2]usize, [2]usize{ pos, pos }, self.line_ranges.items, {}, struct {
+            fn compare(_: void, key: [2]usize, item: [2]usize) std.math.Order {
+                if (key[0] < item[0]) return .lt;
+                if (key[0] > item[1]) return .gt;
+                return .eq;
             }
-        }
-        panic("pos {} outside of buffer", .{pos});
+        }.compare).?;
+        const line_range = self.line_ranges.items[line];
+        return .{ line, pos - line_range[0] };
     }
 
     pub fn searchBackwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {

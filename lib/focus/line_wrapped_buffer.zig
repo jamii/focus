@@ -71,17 +71,19 @@ pub const LineWrappedBuffer = struct {
         }
     }
 
-    // TODO binary search and check next line
     pub fn getLineColForPos(self: *LineWrappedBuffer, pos: usize) [2]usize {
-        // iterate backwards to resolve ambiguity around putting the cursor before/after line wraps
-        var line: usize = self.wrapped_line_ranges.items.len - 1;
-        while (line >= 0) : (line -= 1) {
-            const line_range = self.wrapped_line_ranges.items[line];
-            if (pos >= line_range[0] and pos <= line_range[1]) {
-                return .{ line, pos - line_range[0] };
+        // TODO avoid hacky fake key
+        var line = std.sort.binarySearch([2]usize, [2]usize{ pos, pos }, self.wrapped_line_ranges.items, {}, struct {
+            fn compare(_: void, key: [2]usize, item: [2]usize) std.math.Order {
+                if (key[0] < item[0]) return .lt;
+                if (key[0] > item[1]) return .gt;
+                return .eq;
             }
-        }
-        panic("pos {} outside of buffer", .{pos});
+        }.compare).?;
+        // check next line to resolve ambiguity around putting the cursor before/after line wraps
+        if (line + 1 < self.wrapped_line_ranges.items.len and pos == self.wrapped_line_ranges.items[line + 1][0]) line = line + 1;
+        const line_range = self.wrapped_line_ranges.items[line];
+        return .{ line, pos - line_range[0] };
     }
 
     pub fn getRangeForLine(self: *LineWrappedBuffer, line: usize) [2]usize {
