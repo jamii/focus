@@ -225,6 +225,51 @@ pub const Buffer = struct {
         return if (std.mem.indexOf(u8, bytes, needle)) |result_pos| result_pos + pos else null;
     }
 
+    pub fn isCloseParen(char: u8) bool {
+        return char == ')' or char == '}' or char == ']';
+    }
+
+    pub fn isOpenParen(char: u8) bool {
+        return char == '(' or char == '{' or char == '[';
+    }
+
+    fn matchParenBackwards(self: *Buffer, pos: usize) ?usize {
+        const bytes = self.bytes.items;
+        var num_closing: usize = 0;
+        var search_pos = pos;
+        while (search_pos > 0) : (search_pos -= 1) {
+            const char = bytes[search_pos];
+            if (isCloseParen(char)) num_closing += 1;
+            if (isOpenParen(char)) num_closing -= 1;
+            if (num_closing == 0) return search_pos;
+        }
+        return null;
+    }
+
+    fn matchParenForwards(self: *Buffer, pos: usize) ?usize {
+        const bytes = self.bytes.items;
+        const len = bytes.len;
+        var num_opening: usize = 0;
+        var search_pos = pos;
+        while (search_pos < len) : (search_pos += 1) {
+            const char = bytes[search_pos];
+            if (isCloseParen(char)) num_opening -= 1;
+            if (isOpenParen(char)) num_opening += 1;
+            if (num_opening == 0) return search_pos;
+        }
+        return null;
+    }
+
+    pub fn matchParen(self: *Buffer, pos: usize) ?[2]usize {
+        if (pos < self.bytes.items.len and isOpenParen(self.bytes.items[pos]))
+            if (self.matchParenForwards(pos)) |matching_pos|
+                return [2]usize{ pos, matching_pos };
+        if (pos > 0 and isCloseParen(self.bytes.items[pos - 1]))
+            if (self.matchParenBackwards(pos - 1)) |matching_pos|
+                return [2]usize{ pos - 1, matching_pos };
+        return null;
+    }
+
     pub fn getLineStart(self: *Buffer, pos: usize) usize {
         return self.searchBackwards(pos, "\n") orelse 0;
     }

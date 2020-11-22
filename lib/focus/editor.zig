@@ -328,6 +328,26 @@ pub const Editor = struct {
         // can't draw if the window is too narrow
         if (max_chars_per_line == 0) return;
 
+        // draw matching paren
+        if (self.buffer.matchParen(self.getMainCursor().head.pos)) |matching_poss| {
+            for (matching_poss) |matching_pos| {
+            const line_col = self.line_wrapped_buffer.getLineColForPos(matching_pos);
+            if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
+                const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_col[0]) - visible_start_line) * self.app.atlas.char_height);
+                const x = text_rect.x + @intCast(Coord, line_col[1]) * self.app.atlas.char_width;
+                window.queueRect(
+                    .{
+                        .x = x,
+                        .y = @intCast(Coord, y),
+                        .w = self.app.atlas.char_width,
+                        .h = self.app.atlas.char_height,
+                    },
+                    style.paren_match_color,
+                );
+                }
+            }
+        }
+
         // draw cursors, selections, text
         var line_ix = @intCast(usize, max(visible_start_line, 0));
         const max_line_ix = min(@intCast(usize, max(visible_end_line + 1, 0)), self.line_wrapped_buffer.wrapped_line_ranges.items.len);

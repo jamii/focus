@@ -6,3 +6,4 @@ pub const status_background_color = Color{ .r = @divTrunc(0x2e, 2), .g = @divTru
 pub const text_color = Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 255 };
 pub const highlight_color = Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 100 };
 pub const multi_cursor_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 255 };
+pub const paren_match_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 100 };
