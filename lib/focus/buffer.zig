@@ -47,6 +47,7 @@ pub const Buffer = struct {
     doing: ArrayList(Edit),
     redos: ArrayList([]Edit),
     modified_since_last_save: bool,
+    line_ranges: ArrayList([2]usize),
     completions: ArrayList([]const u8),
     // editors must unregister before buffer deinits
     editors: ArrayList(*Editor),
@@ -62,10 +63,12 @@ pub const Buffer = struct {
             .doing = ArrayList(Edit).init(app.allocator),
             .redos = ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
+            .line_ranges = ArrayList([2]usize).init(app.allocator),
             .completions = ArrayList([]const u8).init(app.allocator),
             .editors = ArrayList(*Editor).init(app.allocator),
             .role = role,
         };
+        self.updateLineRanges();
         return self;
     }
 
@@ -94,6 +97,8 @@ pub const Buffer = struct {
 
         for (self.completions.items) |completion| self.app.allocator.free(completion);
         self.completions.deinit();
+
+        self.line_ranges.deinit();
 
         for (self.undos.items) |edits| {
             for (edits) |edit| self.app.allocator.free(edit.data.bytes);
@@ -189,30 +194,22 @@ pub const Buffer = struct {
     }
 
     pub fn getPosForLine(self: *Buffer, line: usize) usize {
-        var pos: usize = 0;
-        var lines_remaining = line;
-        while (lines_remaining > 0) : (lines_remaining -= 1) {
-            pos = if (self.searchForwards(pos, "\n")) |next_pos| next_pos + 1 else self.bytes.items.len;
-        }
-        return pos;
+        return self.line_ranges.items[line][0];
     }
 
     pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
-        var pos = self.getPosForLine(line);
-        const end = if (self.searchForwards(pos, "\n")) |line_end| line_end else self.bytes.items.len;
-        pos += min(col, end - pos);
-        return pos;
+        const line_range = self.line_ranges.items[line];
+        return line_range[0] + min(col, line_range[1] - line_range[0]);
     }
 
+    // TODO binary search
     pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
-        var line: usize = 0;
-        const col = pos - (self.searchBackwards(pos, "\n") orelse 0);
-        var pos_remaining = pos;
-        while (self.searchBackwards(pos_remaining, "\n")) |line_start| {
-            pos_remaining = line_start - 1;
-            line += 1;
+        for (self.line_ranges.items) |line_range, line| {
+            if (line_range[0] <= pos and pos <= line_range[1]) {
+                return .{ line, pos - line_range[0] };
+            }
         }
-        return .{ line, col };
+        panic("pos {} outside of buffer", .{pos});
     }
 
     pub fn searchBackwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
@@ -251,6 +248,7 @@ pub const Buffer = struct {
 
         self.addRangeToCompletions(line_start, line_end + bytes.len);
 
+        self.updateLineRanges();
         self.modified_since_last_save = true;
         for (self.editors.items) |editor| {
             editor.updateAfterInsert(pos, bytes);
@@ -270,6 +268,7 @@ pub const Buffer = struct {
 
         self.addRangeToCompletions(line_start, line_end - (end - start));
 
+        self.updateLineRanges();
         self.modified_since_last_save = true;
         for (self.editors.items) |editor| {
             editor.updateAfterDelete(start, end);
@@ -343,8 +342,8 @@ pub const Buffer = struct {
             self.bytes.resize(0) catch oom();
             self.bytes.appendSlice(new_bytes) catch oom();
 
+            self.updateLineRanges();
             self.modified_since_last_save = true;
-
             for (self.editors.items) |editor| {
                 editor.updateAfterReplace(line_colss.pop());
             }
@@ -424,6 +423,22 @@ pub const Buffer = struct {
 
     fn isLikeIdent(byte: u8) bool {
         return (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or (byte == '_');
+    }
+
+    fn updateLineRanges(self: *Buffer) void {
+        var line_ranges = &self.line_ranges;
+        const bytes = self.bytes.items;
+        const len = bytes.len;
+
+        self.line_ranges.resize(0) catch oom();
+
+        var start: usize = 0;
+        while (start <= len) {
+            var end = start;
+            while (end < len and bytes[end] != '\n') : (end += 1) {}
+            line_ranges.append(.{ start, end }) catch oom();
+            start = end + 1;
+        }
     }
 
     fn updateCompletions(self: *Buffer) void {
