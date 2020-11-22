@@ -32,8 +32,8 @@ let
   zig = hostPkgs.stdenv.mkDerivation {
     name = "zig";
     src = fetchTarball {
-      url = "https://ziglang.org/builds/zig-linux-x86_64-0.7.0+f0b1b74d2.tar.xz";
-      sha256 = "0pgzz6jnas9klrcc3kw0sf58cd7bi2r281crp7gymjp6ywmvcqg2";
+      url = "https://ziglang.org/builds/zig-linux-x86_64-0.7.0+39336fd2e.tar.xz";
+      sha256 = "0qxspql32jvwknp0w61c6dhzf8s47p010g05w3n72npswqqxrnaj";
     };
     dontConfigure = true;
     dontBuild = true;
