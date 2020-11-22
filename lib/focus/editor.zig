@@ -169,6 +169,7 @@ pub const Editor = struct {
                     {
                         switch (sym.sym) {
                             'z' => self.redo(),
+                            'd' => self.removeLastMatch(),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
@@ -798,6 +799,12 @@ pub const Editor = struct {
             self.updateCol(&cursor.head);
             self.updateCol(&cursor.tail);
             self.cursors.append(cursor) catch oom();
+        }
+    }
+
+    pub fn removeLastMatch(self: *Editor) void {
+        if (self.cursors.items.len > 1) {
+            _ = self.cursors.pop();
         }
     }
 
