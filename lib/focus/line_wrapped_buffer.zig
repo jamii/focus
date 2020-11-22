@@ -25,48 +25,50 @@ pub const LineWrappedBuffer = struct {
         self.wrapped_line_ranges.deinit();
     }
 
-    // TODO use buffer.line_ranges to skip work
     pub fn update(self: *LineWrappedBuffer) void {
-        self.wrapped_line_ranges.resize(0) catch oom();
-        const buffer_end = self.buffer.getBufferEnd();
-        var line_start: usize = 0;
-        while (true) {
-            var line_end = line_start;
-            var maybe_line_end: usize = line_end;
-            {
-                while (true) {
-                    if (maybe_line_end >= buffer_end) {
-                        line_end = maybe_line_end;
-                        break;
-                    }
-                    const char = self.buffer.getChar(maybe_line_end);
-                    if (maybe_line_end - line_start > self.max_chars_per_line) {
-                        // if we haven't soft wrapped yet, hard wrap before this char, otherwise use soft wrap
-                        if (line_end == line_start) {
+        const bytes = self.buffer.bytes.items;
+        const wrapped_line_ranges = &self.wrapped_line_ranges;
+        wrapped_line_ranges.resize(0) catch oom();
+        for (self.buffer.line_ranges.items) |real_line_range, real_line| {
+            const real_line_end = real_line_range[1];
+            var line_start: usize = real_line_range[0];
+            if (real_line_end - line_start <= self.max_chars_per_line) {
+                wrapped_line_ranges.append(real_line_range) catch oom();
+                continue;
+            }
+            while (true) {
+                var line_end = line_start;
+                var maybe_line_end = line_end;
+                {
+                    while (true) {
+                        if (maybe_line_end >= real_line_end) {
+                            line_end = maybe_line_end;
+                            break;
+                        }
+                        const char = bytes[maybe_line_end];
+                        if (maybe_line_end - line_start > self.max_chars_per_line) {
+                            // if we haven't soft wrapped yet, hard wrap before this char, otherwise use soft wrap
+                            if (line_end == line_start) {
+                                line_end = maybe_line_end;
+                            }
+                            break;
+                        }
+                        if (char == '\n') {
+                            // wrap here
+                            line_end = maybe_line_end;
+                            break;
+                        }
+                        maybe_line_end += 1;
+                        if (char == ' ') {
+                            // commit to including this char
                             line_end = maybe_line_end;
                         }
-                        break;
+                        // otherwise keep looking ahead
                     }
-                    if (char == '\n') {
-                        // wrap here
-                        line_end = maybe_line_end;
-                        break;
-                    }
-                    maybe_line_end += 1;
-                    if (char == ' ') {
-                        // commit to including this char
-                        line_end = maybe_line_end;
-                    }
-                    // otherwise keep looking ahead
                 }
-            }
-            self.wrapped_line_ranges.append(.{ line_start, line_end }) catch oom();
-            if (line_end >= buffer_end) {
-                break;
-            }
-            line_start = line_end;
-            if (line_start < self.buffer.getBufferEnd() and self.buffer.getChar(line_start) == '\n') {
-                line_start += 1;
+                self.wrapped_line_ranges.append(.{ line_start, line_end }) catch oom();
+                if (line_end >= real_line_end) break;
+                line_start = line_end;
             }
         }
     }
