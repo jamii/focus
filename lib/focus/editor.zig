@@ -331,19 +331,19 @@ pub const Editor = struct {
         // draw matching paren
         if (self.buffer.matchParen(self.getMainCursor().head.pos)) |matching_poss| {
             for (matching_poss) |matching_pos| {
-            const line_col = self.line_wrapped_buffer.getLineColForPos(matching_pos);
-            if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
-                const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_col[0]) - visible_start_line) * self.app.atlas.char_height);
-                const x = text_rect.x + @intCast(Coord, line_col[1]) * self.app.atlas.char_width;
-                window.queueRect(
-                    .{
-                        .x = x,
-                        .y = @intCast(Coord, y),
-                        .w = self.app.atlas.char_width,
-                        .h = self.app.atlas.char_height,
-                    },
-                    style.paren_match_color,
-                );
+                const line_col = self.line_wrapped_buffer.getLineColForPos(matching_pos);
+                if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
+                    const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_col[0]) - visible_start_line) * self.app.atlas.char_height);
+                    const x = text_rect.x + @intCast(Coord, line_col[1]) * self.app.atlas.char_width;
+                    window.queueRect(
+                        .{
+                            .x = x,
+                            .y = @intCast(Coord, y),
+                            .w = self.app.atlas.char_width,
+                            .h = self.app.atlas.char_height,
+                        },
+                        style.paren_match_color,
+                    );
                 }
             }
         }
