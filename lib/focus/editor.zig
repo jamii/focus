@@ -698,7 +698,7 @@ pub const Editor = struct {
         self.line_wrapped_buffer.update();
         for (self.cursors.items) |*cursor, i| {
             const line_col = line_cols[i];
-            self.goPos(cursor, self.buffer.getPosForLineCol(line_col[0], line_col[1]));
+            self.goPos(cursor, self.buffer.getPosForLineCol(min(line_col[0], self.buffer.countLines() - 1), line_col[1]));
         }
     }
 
