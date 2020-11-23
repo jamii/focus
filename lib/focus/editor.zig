@@ -160,6 +160,7 @@ pub const Editor = struct {
                             },
                             'z' => self.undo(),
                             '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
+                            c.SDLK_TAB => for (self.cursors.items) |*cursor| self.indent(cursor),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LCTRL | c.KMOD_LSHIFT or
