@@ -525,7 +525,7 @@ pub const Editor = struct {
             // use real line_col instead of wrapped
             const line_col = self.buffer.getLineColForPos(self.getMainCursor().head.pos);
             const filename = self.buffer.getFilename() orelse "";
-            const status_text = format(self.app.frame_allocator, "{} L{} C{}", .{ filename, line_col[0], line_col[1] });
+            const status_text = format(self.app.frame_allocator, "{} L{} C{}", .{ filename, line_col[0] + 1, line_col[1] + 1 });
             window.queueText(status_rect.?, style.text_color, status_text);
         }
     }
