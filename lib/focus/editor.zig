@@ -1001,11 +1001,11 @@ pub const Editor = struct {
         process.stderr_behavior = .Pipe;
         process.spawn() catch |err| panic("Error spawning zig fmt: {}", .{err});
         process.stdin.?.outStream().writeAll(self.buffer.bytes.items) catch |err| panic("Error writing to zig fmt: {}", .{err});
-        // TODO not sure if this is the correct way to signal input is complete
         process.stdin.?.close();
         process.stdin = null;
-        const stderr = process.stderr.?.inStream().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024) catch |err| panic("Error reading zig fmt stderr: {}", .{err});
+        // NOTE this is fragile - currently zig fmt closes stdout before stderr so this works but reading the other way round will sometimes block
         const stdout = process.stdout.?.inStream().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024 * 1024) catch |err| panic("Error reading zig fmt stdout: {}", .{err});
+        const stderr = process.stderr.?.inStream().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024) catch |err| panic("Error reading zig fmt stderr: {}", .{err});
         const result = process.wait() catch |err| panic("Error waiting for zig fmt: {}", .{err});
         assert(result == .Exited);
         if (result.Exited != 0) {
