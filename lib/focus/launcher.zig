@@ -76,7 +76,7 @@ pub const Launcher = struct {
             ) catch unreachable;
             process.spawn() catch unreachable;
 
-            self.app.quit();
+            window.close();
         }
     }
 };

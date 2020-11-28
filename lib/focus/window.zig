@@ -134,6 +134,12 @@ pub const Window = struct {
         self.views.deinit();
     }
 
+    pub fn close(self: *Window) void {
+        if (self.getTopViewIfEditor()) |editor| editor.save();
+        self.deinit();
+        self.app.deregisterWindow(self);
+    }
+
     fn getTopView(self: *Window) ?View {
         if (self.views.items.len > 0)
             return self.views.items[self.views.items.len - 1]
@@ -210,6 +216,17 @@ pub const Window = struct {
                                 self.app.changeFontSize(1);
                                 handled = true;
                             },
+                            // TODO this shortcut is just for testing
+                            '1' => {
+                                var timer = std.time.Timer.start() catch panic("Couldn't start timer", .{});
+                                const new_window = self.app.registerWindow(Window.init(self.app));
+                                dump(@divTrunc(100 * timer.lap(), focus.ns_per_frame));
+                                const launcher = Launcher.init(self.app);
+                                dump(@divTrunc(100 * timer.lap(), focus.ns_per_frame));
+                                new_window.pushView(launcher);
+                                dump(@divTrunc(100 * timer.lap(), focus.ns_per_frame));
+                                handled = true;
+                            },
                             else => {},
                         }
                     }
@@ -247,9 +264,7 @@ pub const Window = struct {
                             handled = true;
                         },
                         c.SDL_WINDOWEVENT_CLOSE => {
-                            if (self.getTopViewIfEditor()) |editor| editor.save();
-                            self.deinit();
-                            self.app.deregisterWindow(self);
+                            self.close();
                             return;
                         },
                         else => {},
