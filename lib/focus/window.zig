@@ -38,19 +38,25 @@ pub const Window = struct {
     color_buffer: ArrayList(Quad(Color)),
     index_buffer: ArrayList([2]Tri(u32)),
 
-    pub fn init(app: *App) Window {
+    pub fn init(
+        app: *App,
+        floating: enum { Floating, NotFloating },
+    ) Window {
         // pretty arbitrary
         const init_width: usize = 1920;
         const init_height: usize = 1080;
 
         // init window
+        const floating_flag = if (floating == .NotFloating) c.SDL_WINDOW_RESIZABLE else 0;
+        const flags = c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_BORDERLESS | c.SDL_WINDOW_ALLOW_HIGHDPI | floating_flag;
+        //@compileLog(@TypeOf(c.SDL_WINDOW_OPENGL), @TypeOf(c.SDL_WINDOW_BORDERLESS), @TypeOf(c.SDL_WINDOW_ALLOW_HIGHDPI));
         const sdl_window = c.SDL_CreateWindow(
             "focus",
             c.SDL_WINDOWPOS_UNDEFINED,
             c.SDL_WINDOWPOS_UNDEFINED,
             @as(c_int, init_width),
             @as(c_int, init_height),
-            c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_BORDERLESS | c.SDL_WINDOW_ALLOW_HIGHDPI | c.SDL_WINDOW_RESIZABLE,
+            @intCast(u32, flags),
         ) orelse panic("SDL window creation failed: {s}", .{c.SDL_GetError()});
 
         // TODO zig compiler can't handle this macro-fest yet
@@ -195,7 +201,7 @@ pub const Window = struct {
                             },
                             'n' => {
                                 if (self.getTopViewIfEditor()) |editor| {
-                                    const new_window = self.app.registerWindow(Window.init(self.app));
+                                    const new_window = self.app.registerWindow(Window.init(self.app, .NotFloating));
                                     const new_editor = Editor.init(self.app, editor.buffer, true, true);
                                     new_editor.top_pixel = editor.top_pixel;
                                     new_window.pushView(new_editor);
@@ -208,16 +214,6 @@ pub const Window = struct {
                             },
                             '=' => {
                                 self.app.changeFontSize(1);
-                                handled = true;
-                            },
-                            // TODO this shortcut is just for testing
-                            '1' => {
-                                const new_window = self.app.registerWindow(Window.init(self.app));
-                                // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
-                                // without this, keypresses sometimes get sent to the current window instead of the new window
-                                new_window.frame(&[0]c.SDL_Event{});
-                                const launcher = Launcher.init(self.app);
-                                new_window.pushView(launcher);
                                 handled = true;
                             },
                             else => {},

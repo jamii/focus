@@ -203,10 +203,10 @@ pub const App = struct {
     pub fn handleRequest(self: *App, request: Request) void {
         switch (request) {
             .CreateEmptyWindow => {
-                const new_window = self.registerWindow(Window.init(self));
+                const new_window = self.registerWindow(Window.init(self, .NotFloating));
             },
             .CreateLauncherWindow => {
-                const new_window = self.registerWindow(Window.init(self));
+                const new_window = self.registerWindow(Window.init(self, .Floating));
                 // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
                 // without this, keypresses sometimes get sent to the current window instead of the new window
                 new_window.frame(&[0]c.SDL_Event{});
