@@ -26,6 +26,7 @@ pub const Window = struct {
     // views are allowed to have pointers to previous views on the stack
     views: ArrayList(View),
     popped_views: ArrayList(View),
+    close_after_frame: bool,
 
     sdl_window: *c.SDL_Window,
     width: Coord,
@@ -94,6 +95,7 @@ pub const Window = struct {
             .app = app,
             .views = ArrayList(View).init(app.allocator),
             .popped_views = ArrayList(View).init(app.allocator),
+            .close_after_frame = false,
 
             .sdl_window = sdl_window,
             .width = init_width,
@@ -132,12 +134,6 @@ pub const Window = struct {
         self.deinitPoppedViews();
         self.popped_views.deinit();
         self.views.deinit();
-    }
-
-    pub fn close(self: *Window) void {
-        if (self.getTopViewIfEditor()) |editor| editor.save();
-        self.deinit();
-        self.app.deregisterWindow(self);
     }
 
     fn getTopView(self: *Window) ?View {
@@ -218,7 +214,6 @@ pub const Window = struct {
                             },
                             // TODO this shortcut is just for testing
                             '1' => {
-                                var timer = std.time.Timer.start() catch panic("Couldn't start timer", .{});
                                 const new_window = self.app.registerWindow(Window.init(self.app));
                                 // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
                                 // without this, keypresses sometimes get sent to the current window instead of the new window
@@ -264,8 +259,8 @@ pub const Window = struct {
                             handled = true;
                         },
                         c.SDL_WINDOWEVENT_CLOSE => {
-                            self.close();
-                            return;
+                            self.close_after_frame = true;
+                            handled = true;
                         },
                         else => {},
                     }
@@ -289,9 +284,6 @@ pub const Window = struct {
                 }
             }
         }
-
-        // clean up after
-        self.deinitPoppedViews();
 
         // set window title
         var window_title: [*c]const u8 = "";
@@ -333,6 +325,14 @@ pub const Window = struct {
         self.vertex_buffer.resize(0) catch oom();
         self.color_buffer.resize(0) catch oom();
         self.index_buffer.resize(0) catch oom();
+
+        // clean up
+        self.deinitPoppedViews();
+        if (self.close_after_frame) {
+            if (self.getTopViewIfEditor()) |editor| editor.save();
+            self.deinit();
+            self.app.deregisterWindow(self);
+        }
     }
 
     pub fn queueQuad(self: *Window, dst: Rect, src: Rect, color: Color) void {

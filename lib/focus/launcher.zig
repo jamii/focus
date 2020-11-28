@@ -74,8 +74,7 @@ pub const Launcher = struct {
                 self.app.frame_allocator,
             ) catch unreachable;
             process.spawn() catch unreachable;
-
-            window.close();
+            window.close_after_frame = true;
         }
     }
 };
