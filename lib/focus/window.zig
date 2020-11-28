@@ -176,7 +176,9 @@ pub const Window = struct {
                     const sym = event.key.keysym;
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
-                            'q' => self.popView(),
+                            'q' => {
+                                if (self.getTopViewIfEditor() == null) self.popView();
+                            },
                             'o' => {
                                 const init_path = if (self.getTopViewFilename()) |filename|
                                     std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch oom()
