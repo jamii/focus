@@ -220,11 +220,8 @@ pub const Window = struct {
                             '1' => {
                                 var timer = std.time.Timer.start() catch panic("Couldn't start timer", .{});
                                 const new_window = self.app.registerWindow(Window.init(self.app));
-                                dump(@divTrunc(100 * timer.lap(), focus.ns_per_frame));
                                 const launcher = Launcher.init(self.app);
-                                dump(@divTrunc(100 * timer.lap(), focus.ns_per_frame));
                                 new_window.pushView(launcher);
-                                dump(@divTrunc(100 * timer.lap(), focus.ns_per_frame));
                                 handled = true;
                             },
                             else => {},
