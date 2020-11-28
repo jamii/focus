@@ -48,7 +48,7 @@ pub const App = struct {
         const args = std.process.argsAlloc(allocator) catch unreachable;
         defer std.process.argsFree(allocator, args);
 
-        if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
+        if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0)
             panic("SDL init failed: {s}", .{c.SDL_GetError()});
 
         var atlas = allocator.create(Atlas) catch oom();
