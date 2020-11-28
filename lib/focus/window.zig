@@ -220,6 +220,9 @@ pub const Window = struct {
                             '1' => {
                                 var timer = std.time.Timer.start() catch panic("Couldn't start timer", .{});
                                 const new_window = self.app.registerWindow(Window.init(self.app));
+                                // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
+                                // without this, keypresses sometimes get sent to the current window instead of the new window
+                                new_window.frame(&[0]c.SDL_Event{});
                                 const launcher = Launcher.init(self.app);
                                 new_window.pushView(launcher);
                                 handled = true;
