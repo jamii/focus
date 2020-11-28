@@ -18,7 +18,6 @@ pub const Launcher = struct {
     pub fn init(app: *App) *Launcher {
         const input = SingleLineEditor.init(app, "");
         var selector = Selector.init(app);
-        selector.selected = app.last_project_search_selected;
 
         var exes = ArrayList([]const u8).init(app.allocator);
         {
