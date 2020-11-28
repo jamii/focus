@@ -119,6 +119,12 @@ pub const Editor = struct {
             Up,
         } = .None;
 
+        // maybe start a new undo group
+        // TODO should this be buffer.last_event_ms? or even just internal to buffer?
+        if (self.app.frame_time_ms - self.last_event_ms > 500) {
+            self.buffer.newUndoGroup();
+        }
+
         // handle events
         // if we get textinput, we'll also get the keydown first
         // if the keydown is mapped to a command, we'll do that and ignore the textinput
@@ -256,11 +262,6 @@ pub const Editor = struct {
                 },
                 else => {},
             }
-        }
-
-        // maybe start a new undo group
-        if (self.app.frame_time_ms - self.last_event_ms > 500) {
-            self.buffer.newUndoGroup();
         }
 
         // handle mouse drag
