@@ -178,9 +178,7 @@ pub const Window = struct {
                     const sym = event.key.keysym;
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
-                            'q' => {
-                                if (self.getTopViewIfEditor() == null) self.popView();
-                            },
+                            'q' => self.popView(),
                             'o' => {
                                 const init_path = if (self.getTopViewFilename()) |filename|
                                     std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch oom()
@@ -272,17 +270,24 @@ pub const Window = struct {
         }
 
         // run view frame
-        if (self.views.items.len > 0) {
-            if (self.getTopView()) |view| {
-                switch (view) {
-                    .Editor => |editor| editor.frame(self, window_rect, view_events.items),
-                    .FileOpener => |file_opener| file_opener.frame(self, window_rect, view_events.items),
-                    .ProjectFileOpener => |project_file_opener| project_file_opener.frame(self, window_rect, view_events.items),
-                    .BufferSearcher => |buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
-                    .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
-                    .Launcher => |launcher| launcher.frame(self, window_rect, view_events.items),
-                }
+        if (self.getTopView()) |view| {
+            switch (view) {
+                .Editor => |editor| editor.frame(self, window_rect, view_events.items),
+                .FileOpener => |file_opener| file_opener.frame(self, window_rect, view_events.items),
+                .ProjectFileOpener => |project_file_opener| project_file_opener.frame(self, window_rect, view_events.items),
+                .BufferSearcher => |buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
+                .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
+                .Launcher => |launcher| launcher.frame(self, window_rect, view_events.items),
             }
+        } else {
+            const message = "focus";
+            const rect = Rect{
+                .x = window_rect.x + max(0, @divTrunc(window_rect.w - (@intCast(Coord, message.len) * self.app.atlas.char_width), 2)),
+                .y = window_rect.y + max(0, @divTrunc(window_rect.h - self.app.atlas.char_height, 2)),
+                .w = min(window_rect.w, @intCast(Coord, message.len) * self.app.atlas.char_width),
+                .h = min(window_rect.h, self.app.atlas.char_height),
+            };
+            self.queueText(rect, style.text_color, message);
         }
 
         // set window title
@@ -441,50 +446,6 @@ pub const Window = struct {
             dst.x += self.app.atlas.char_width;
         }
     }
-
-    // pub fn text(self: *Window, rect: Rect, color: Color, chars: []const u8) void {
-    //     var h: Coord = 0;
-    //     var line_begin: usize = 0;
-    //     while (true) {
-    //         var line_end = line_begin;
-    //         {
-    //             var w: Coord = 0;
-    //             var i: usize = line_end;
-    //             while (true) {
-    //                 if (i >= chars.len) {
-    //                     line_end = i;
-    //                     break;
-    //                 }
-    //                 const char = chars[i];
-    //                 w += @intCast(Coord, app.atlas.max_char_width);
-    //                 if (w > rect.w) {
-    //                     // if haven't soft wrapped yet, hard wrap before this char
-    //                     if (line_end == line_begin) {
-    //                         line_end = i;
-    //                     }
-    //                     break;
-    //                 }
-    //                 if (char == '\n') {
-    //                     // commit to drawing this char and wrap here
-    //                     line_end = i + 1;
-    //                     break;
-    //                 }
-    //                 if (char == ' ') {
-    //                     // commit to drawing this char
-    //                     line_end = i + 1;
-    //                 }
-    //                 // otherwise keep looking ahead
-    //                 i += 1;
-    //             }
-    //         }
-    //         self.queueText(.{ .x = rect.x, .y = rect.y + h }, color, chars[line_begin..line_end]);
-    //         line_begin = line_end;
-    //         h += atlas.text_height;
-    //         if (line_begin >= chars.len or h > rect.h) {
-    //             break;
-    //         }
-    //     }
-    // }
 
     // util
 

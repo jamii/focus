@@ -242,10 +242,10 @@ pub const Editor = struct {
                                 self.updatePos(&cursor.tail, pos);
                             } else {
                                 self.dragging = .Dragging;
-                                for (self.cursors.items) |*cursor| {
-                                    self.updatePos(&cursor.head, pos);
-                                    self.updatePos(&cursor.tail, pos);
-                                }
+                                self.collapseCursors();
+                                var cursor = self.getMainCursor();
+                                self.updatePos(&cursor.head, pos);
+                                self.updatePos(&cursor.tail, pos);
                                 self.clearMark();
                             }
                         }
