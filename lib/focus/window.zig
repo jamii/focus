@@ -201,9 +201,9 @@ pub const Window = struct {
                             },
                             'n' => {
                                 if (self.getTopViewIfEditor()) |editor| {
+                                    const new_window = self.app.registerWindow(Window.init(self.app));
                                     const new_editor = Editor.init(self.app, editor.buffer, true, true);
                                     new_editor.top_pixel = editor.top_pixel;
-                                    const new_window = self.app.registerWindow(Window.init(self.app));
                                     new_window.pushView(new_editor);
                                 }
                                 handled = true;
