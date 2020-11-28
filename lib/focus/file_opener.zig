@@ -39,7 +39,7 @@ pub const FileOpener = struct {
     }
 
     pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        const layout = window.layoutSearcher(rect);
+        const layout = window.layoutSearcherWithPreview(rect);
 
         // handle events
         for (events) |event| {

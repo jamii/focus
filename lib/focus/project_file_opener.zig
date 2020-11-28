@@ -80,60 +80,20 @@ pub const ProjectFileOpener = struct {
     }
 
     pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        const layout = window.layoutSearcher(rect);
+        const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
         self.input.frame(window, layout.input, events);
 
         // filter paths
-        const ScoredPath = struct { score: usize, path: []const u8 };
-        var scored_paths = ArrayList(ScoredPath).init(self.app.frame_allocator);
-        {
-            const filter = self.input.getText();
-            for (self.paths) |path| {
-                if (filter.len > 0) {
-                    var score: usize = std.math.maxInt(usize);
-                    var any_match = false;
-                    const filter_start_char = filter[0];
-                    for (path) |start_char, start| {
-                        if (start_char == filter_start_char) {
-                            var is_match = true;
-                            var end = start;
-                            for (filter[1..]) |char| {
-                                if (std.mem.indexOfScalarPos(u8, path, end, char)) |new_end| {
-                                    end = new_end + 1;
-                                } else {
-                                    is_match = false;
-                                    break;
-                                }
-                            }
-                            if (is_match) {
-                                score = min(score, end - start);
-                                any_match = true;
-                            }
-                        }
-                    }
-                    if (any_match) scored_paths.append(.{ .score = score, .path = path }) catch oom();
-                } else {
-                    const score = 0;
-                    scored_paths.append(.{ .score = score, .path = path }) catch oom();
-                }
-            }
-            std.sort.sort(ScoredPath, scored_paths.items, {}, struct {
-                fn lessThan(_: void, a: ScoredPath, b: ScoredPath) bool {
-                    return a.score < b.score;
-                }
-            }.lessThan);
-        }
+        const filtered_paths = fuzzy_search(self.app.frame_allocator, self.paths, self.input.getText());
 
         // run selector frame
-        var just_paths = ArrayList([]const u8).init(self.app.frame_allocator);
-        for (scored_paths.items) |scored_path| just_paths.append(scored_path.path) catch oom();
-        const action = self.selector.frame(window, layout.selector, events, just_paths.items);
+        const action = self.selector.frame(window, layout.selector, events, filtered_paths);
 
         // maybe open file
-        if (action == .SelectOne and just_paths.items.len > 0) {
-            const path = just_paths.items[self.selector.selected];
+        if (action == .SelectOne and filtered_paths.len > 0) {
+            const path = filtered_paths[self.selector.selected];
             if (path.len > 0 and std.fs.path.isSep(path[path.len - 1])) {
                 self.input.setText(path);
             } else {
@@ -148,11 +108,11 @@ pub const ProjectFileOpener = struct {
         const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
         buffer.deinit();
-        if (just_paths.items.len == 0) {
+        if (filtered_paths.len == 0) {
             const empty_buffer = Buffer.initEmpty(self.app, .Preview);
             self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
         } else {
-            const selected = just_paths.items[self.selector.selected];
+            const selected = filtered_paths[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
                 const empty_buffer = Buffer.initEmpty(self.app, .Preview);
                 self.preview_editor = Editor.init(self.app, empty_buffer, false, false);

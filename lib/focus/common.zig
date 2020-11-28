@@ -247,3 +247,56 @@ pub fn Quad(comptime t: type) type {
         br: t,
     };
 }
+
+// --------------------------------------------------------------------------------
+// search stuff
+
+const ScoredItem = struct {
+    score: usize,
+    item: []const u8,
+};
+pub fn fuzzy_search(allocator: *Allocator, items: []const []const u8, filter: []const u8) [][]const u8 {
+    var scored_items = ArrayList(ScoredItem).init(allocator);
+    defer scored_items.deinit();
+
+    for (items) |item| {
+        if (filter.len > 0) {
+            var score: usize = std.math.maxInt(usize);
+            var any_match = false;
+            const filter_start_char = filter[0];
+            for (item) |start_char, start| {
+                if (start_char == filter_start_char) {
+                    var is_match = true;
+                    var end = start;
+                    for (filter[1..]) |char| {
+                        if (std.mem.indexOfScalarPos(u8, item, end, char)) |new_end| {
+                            end = new_end + 1;
+                        } else {
+                            is_match = false;
+                            break;
+                        }
+                    }
+                    if (is_match) {
+                        score = min(score, end - start);
+                        any_match = true;
+                    }
+                }
+            }
+            if (any_match) scored_items.append(.{ .score = score, .item = item }) catch oom();
+        } else {
+            const score = 0;
+            scored_items.append(.{ .score = score, .item = item }) catch oom();
+        }
+    }
+    std.sort.sort(ScoredItem, scored_items.items, {}, struct {
+        fn lessThan(_: void, a: ScoredItem, b: ScoredItem) bool {
+            return a.score < b.score;
+        }
+    }.lessThan);
+
+    var results = ArrayList([]const u8).init(allocator);
+    for (scored_items.items) |scored_item| {
+        results.append(scored_item.item) catch oom();
+    }
+    return results.toOwnedSlice();
+}

@@ -400,6 +400,7 @@ pub const Editor = struct {
             }
 
             // draw text
+            // TODO clip text at the top of the editor, only the bottom
             window.queueText(.{ .x = text_rect.x, .y = @intCast(Coord, y), .w = text_rect.w, .h = text_rect.y + text_rect.h - @intCast(Coord, y) }, style.text_color, line);
 
             // if wrapped, draw arrows

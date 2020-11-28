@@ -8,6 +8,7 @@ const FileOpener = focus.FileOpener;
 const ProjectFileOpener = focus.ProjectFileOpener;
 const BufferSearcher = focus.BufferSearcher;
 const ProjectSearcher = focus.ProjectSearcher;
+const Launcher = focus.Launcher;
 const style = focus.style;
 
 pub const View = union(enum) {
@@ -16,12 +17,12 @@ pub const View = union(enum) {
     ProjectFileOpener: *ProjectFileOpener,
     BufferSearcher: *BufferSearcher,
     ProjectSearcher: *ProjectSearcher,
+    Launcher: *Launcher,
 };
 pub const ViewTag = @TagType(View);
 
 pub const Window = struct {
     app: *App,
-    // views.len > 0
     // views are allowed to have pointers to previous views on the stack
     views: ArrayList(View),
     popped_views: ArrayList(View),
@@ -36,10 +37,7 @@ pub const Window = struct {
     color_buffer: ArrayList(Quad(Color)),
     index_buffer: ArrayList([2]Tri(u32)),
 
-    pub fn init(app: *App, view: View) Window {
-        var views = ArrayList(View).init(app.allocator);
-        views.append(view) catch oom();
-
+    pub fn init(app: *App) Window {
         // pretty arbitrary
         const init_width: usize = 1920;
         const init_height: usize = 1080;
@@ -94,7 +92,7 @@ pub const Window = struct {
 
         return Window{
             .app = app,
-            .views = views,
+            .views = ArrayList(View).init(app.allocator),
             .popped_views = ArrayList(View).init(app.allocator),
 
             .sdl_window = sdl_window,
@@ -136,6 +134,29 @@ pub const Window = struct {
         self.views.deinit();
     }
 
+    fn getTopView(self: *Window) ?View {
+        if (self.views.items.len > 0)
+            return self.views.items[self.views.items.len - 1]
+        else
+            return null;
+    }
+
+    fn getTopViewIfEditor(self: *Window) ?*Editor {
+        if (self.getTopView()) |view| {
+            switch (view) {
+                .Editor => |editor| return editor,
+                else => return null,
+            }
+        } else return null;
+    }
+
+    fn getTopViewFilename(self: *Window) ?[]const u8 {
+        if (self.getTopViewIfEditor()) |editor|
+            return editor.buffer.getFilename()
+        else
+            return null;
+    }
+
     pub fn frame(self: *Window, events: []const c.SDL_Event) void {
         // figure out window size
         var w: c_int = undefined;
@@ -155,22 +176,12 @@ pub const Window = struct {
                     const sym = event.key.keysym;
                     if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
                         switch (sym.sym) {
-                            'q' => {
-                                switch (self.views.items[self.views.items.len - 1]) {
-                                    .Editor => {},
-                                    else => self.popView(),
-                                }
-                            },
+                            'q' => self.popView(),
                             'o' => {
-                                var init_path: []const u8 = "/home/jamie/";
-                                switch (self.views.items[self.views.items.len - 1]) {
-                                    .Editor => |editor| {
-                                        if (editor.buffer.getFilename()) |filename| {
-                                            init_path = std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch oom();
-                                        }
-                                    },
-                                    else => {},
-                                }
+                                const init_path = if (self.getTopViewFilename()) |filename|
+                                    std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch oom()
+                                else
+                                    "/home/jamie/";
                                 const file_opener = FileOpener.init(self.app, init_path);
                                 self.pushView(file_opener);
                                 handled = true;
@@ -181,13 +192,11 @@ pub const Window = struct {
                                 handled = true;
                             },
                             'n' => {
-                                switch (self.views.items[self.views.items.len - 1]) {
-                                    .Editor => |editor| {
-                                        const new_editor = Editor.init(self.app, editor.buffer, true, true);
-                                        const new_window = self.app.registerWindow(Window.init(self.app, .{ .Editor = new_editor }));
-                                        new_editor.top_pixel = editor.top_pixel;
-                                    },
-                                    else => {},
+                                if (self.getTopViewIfEditor()) |editor| {
+                                    const new_editor = Editor.init(self.app, editor.buffer, true, true);
+                                    new_editor.top_pixel = editor.top_pixel;
+                                    const new_window = self.app.registerWindow(Window.init(self.app));
+                                    new_window.pushView(new_editor);
                                 }
                                 handled = true;
                             },
@@ -206,23 +215,20 @@ pub const Window = struct {
                         switch (sym.sym) {
                             'f' => {
                                 var project_dir: []const u8 = "/home/jamie";
-                                switch (self.views.items[self.views.items.len - 1]) {
-                                    .Editor => |editor| {
-                                        if (editor.buffer.getFilename()) |filename| {
-                                            const dirname = std.fs.path.dirname(filename).?;
-                                            var root = dirname;
-                                            while (!meta.deepEqual(root, "/")) {
-                                                const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch oom();
-                                                if (std.fs.openFileAbsolute(git_path, .{})) |file| {
-                                                    file.close();
-                                                    break;
-                                                } else |_| {}
-                                                root = std.fs.path.dirname(root).?;
-                                            }
-                                            project_dir = if (meta.deepEqual(root, "/")) dirname else root;
+                                if (self.getTopViewIfEditor()) |editor| {
+                                    if (editor.buffer.getFilename()) |filename| {
+                                        const dirname = std.fs.path.dirname(filename).?;
+                                        var root = dirname;
+                                        while (!meta.deepEqual(root, "/")) {
+                                            const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch oom();
+                                            if (std.fs.openFileAbsolute(git_path, .{})) |file| {
+                                                file.close();
+                                                break;
+                                            } else |_| {}
+                                            root = std.fs.path.dirname(root).?;
                                         }
-                                    },
-                                    else => {},
+                                        project_dir = if (meta.deepEqual(root, "/")) dirname else root;
+                                    }
                                 }
                                 const project_searcher = ProjectSearcher.init(self.app, project_dir);
                                 self.pushView(project_searcher);
@@ -235,17 +241,11 @@ pub const Window = struct {
                 c.SDL_WINDOWEVENT => {
                     switch (event.window.event) {
                         c.SDL_WINDOWEVENT_FOCUS_LOST => {
-                            switch (self.views.items[self.views.items.len - 1]) {
-                                .Editor => |editor| editor.save(),
-                                else => {},
-                            }
+                            if (self.getTopViewIfEditor()) |editor| editor.save();
                             handled = true;
                         },
                         c.SDL_WINDOWEVENT_CLOSE => {
-                            switch (self.views.items[self.views.items.len - 1]) {
-                                .Editor => |editor| editor.save(),
-                                else => {},
-                            }
+                            if (self.getTopViewIfEditor()) |editor| editor.save();
                             self.deinit();
                             self.app.deregisterWindow(self);
                             return;
@@ -260,13 +260,17 @@ pub const Window = struct {
         }
 
         // run view frame
-        var view = self.views.items[self.views.items.len - 1];
-        switch (view) {
-            .Editor => |editor| editor.frame(self, window_rect, view_events.items),
-            .FileOpener => |file_opener| file_opener.frame(self, window_rect, view_events.items),
-            .ProjectFileOpener => |project_file_opener| project_file_opener.frame(self, window_rect, view_events.items),
-            .BufferSearcher => |buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
-            .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
+        if (self.views.items.len > 0) {
+            if (self.getTopView()) |view| {
+                switch (view) {
+                    .Editor => |editor| editor.frame(self, window_rect, view_events.items),
+                    .FileOpener => |file_opener| file_opener.frame(self, window_rect, view_events.items),
+                    .ProjectFileOpener => |project_file_opener| project_file_opener.frame(self, window_rect, view_events.items),
+                    .BufferSearcher => |buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
+                    .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
+                    .Launcher => |launcher| launcher.frame(self, window_rect, view_events.items),
+                }
+            }
         }
 
         // clean up after
@@ -274,13 +278,8 @@ pub const Window = struct {
 
         // set window title
         var window_title: [*c]const u8 = "";
-        switch (view) {
-            .Editor => |editor| {
-                if (editor.buffer.getFilename()) |filename| {
-                    window_title = std.mem.dupeZ(self.app.frame_allocator, u8, filename) catch oom();
-                }
-            },
-            else => {},
+        if (self.getTopViewFilename()) |filename| {
+            window_title = std.mem.dupeZ(self.app.frame_allocator, u8, filename) catch oom();
         }
         c.SDL_SetWindowTitle(self.sdl_window, window_title);
 
@@ -367,19 +366,18 @@ pub const Window = struct {
     // view api
 
     pub fn pushView(self: *Window, view_ptr: anytype) void {
-        switch (self.views.items[self.views.items.len - 1]) {
-            .Editor => |editor| editor.save(),
-            else => {},
-        }
+        if (self.getTopViewIfEditor()) |editor| editor.save();
         const tag_name = @typeName(@typeInfo(@TypeOf(view_ptr)).Pointer.child);
         const view = @unionInit(View, tag_name, view_ptr);
         self.views.append(view) catch oom();
     }
 
     pub fn popView(self: *Window) void {
-        const view = self.views.pop();
-        // can't clean up view right away because we might still be inside it's frame function
-        self.popped_views.append(view) catch oom();
+        if (self.views.items.len > 0) {
+            const view = self.views.pop();
+            // can't clean up view right away because we might still be inside it's frame function
+            self.popped_views.append(view) catch oom();
+        }
     }
 
     fn deinitPoppedViews(self: *Window) void {
@@ -474,20 +472,33 @@ pub const Window = struct {
     // util
 
     pub const SearcherLayout = struct {
-        preview: Rect,
         selector: Rect,
         input: Rect,
     };
 
     pub fn layoutSearcher(self: *Window, rect: Rect) SearcherLayout {
+        const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
         var all_rect = rect;
-        const preview_rect = all_rect.splitTop(@divTrunc(rect.h, 2), 0);
-        const border1_rect = all_rect.splitTop(@divTrunc(self.app.atlas.char_height, 8), 0);
-        const input_rect = all_rect.splitBottom(self.app.atlas.char_height, 0);
-        const border2_rect = all_rect.splitBottom(@divTrunc(self.app.atlas.char_height, 8), 0);
+        const input_rect = all_rect.splitTop(self.app.atlas.char_height, 0);
+        const border_rect = all_rect.splitTop(border_thickness, 0);
         const selector_rect = all_rect;
-        self.queueRect(border1_rect, style.text_color);
-        self.queueRect(border2_rect, style.text_color);
-        return .{ .preview = preview_rect, .selector = selector_rect, .input = input_rect };
+        self.queueRect(border_rect, style.text_color);
+        return .{ .selector = selector_rect, .input = input_rect };
+    }
+
+    pub const SearcherWithPreviewLayout = struct {
+        preview: Rect,
+        selector: Rect,
+        input: Rect,
+    };
+
+    pub fn layoutSearcherWithPreview(self: *Window, rect: Rect) SearcherWithPreviewLayout {
+        const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
+        var all_rect = rect;
+        const preview_rect = all_rect.splitTop(@divTrunc(max(0, rect.h - self.app.atlas.char_height - 2 * border_thickness), 2), 0);
+        const border_rect = all_rect.splitTop(border_thickness, 0);
+        const searcher_layout = self.layoutSearcher(all_rect);
+        self.queueRect(border_rect, style.text_color);
+        return .{ .preview = preview_rect, .selector = searcher_layout.selector, .input = searcher_layout.input };
     }
 };

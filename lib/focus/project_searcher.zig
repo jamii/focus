@@ -49,7 +49,7 @@ pub const ProjectSearcher = struct {
     }
 
     pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        const layout = window.layoutSearcher(rect);
+        const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
         self.input.frame(window, layout.input, events);

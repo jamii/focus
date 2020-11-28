@@ -10,6 +10,7 @@ pub const FileOpener = @import("./focus/file_opener.zig").FileOpener;
 pub const ProjectFileOpener = @import("./focus/project_file_opener.zig").ProjectFileOpener;
 pub const BufferSearcher = @import("./focus/buffer_searcher.zig").BufferSearcher;
 pub const ProjectSearcher = @import("./focus/project_searcher.zig").ProjectSearcher;
+pub const Launcher = @import("./focus/launcher.zig").Launcher;
 pub const Window = @import("./focus/window.zig").Window;
 pub const style = @import("./focus/style.zig");
 
@@ -38,13 +39,15 @@ pub const App = struct {
     // contains only buffers that were created from files
     // other buffers are just floating around but must be deinited by their owning view
     buffers: DeepHashMap([]const u8, *Buffer),
-    scratch_buffer: *Buffer,
     windows: ArrayList(*Window),
     frame_time_ms: i64,
     last_search_filter: []const u8,
     last_project_search_selected: usize,
 
     pub fn init(allocator: *Allocator) *App {
+        const args = std.process.argsAlloc(allocator) catch unreachable;
+        defer std.process.argsFree(allocator, args);
+
         if (c.SDL_Init(c.SDL_INIT_EVERYTHING) != 0)
             panic("SDL init failed: {s}", .{c.SDL_GetError()});
 
@@ -57,7 +60,6 @@ pub const App = struct {
             .frame_allocator = undefined,
             .atlas = atlas,
             .buffers = DeepHashMap([]const u8, *Buffer).init(allocator),
-            .scratch_buffer = undefined, // defined below
             .windows = ArrayList(*Window).init(allocator),
             .frame_time_ms = 0,
             .last_search_filter = "",
@@ -65,10 +67,15 @@ pub const App = struct {
         };
         self.frame_allocator = &self.frame_arena.allocator;
 
-        self.scratch_buffer = Buffer.initEmpty(self, .Real);
-        self.scratch_buffer.insert(0, "some initial text\nand some more\nshort\nre" ++ ("a" ** 1000) ++ "lly long" ++ ("abc\n" ** 10));
-        const editor = Editor.init(self, self.scratch_buffer, true, true);
-        const window = self.registerWindow(Window.init(self, .{ .Editor = editor }));
+        const window = self.registerWindow(Window.init(self));
+
+        for (args) |c_arg| {
+            const arg: []const u8 = c_arg;
+            if (meta.deepEqual(arg, "--launcher")) {
+                const launcher = Launcher.init(self);
+                window.pushView(launcher);
+            }
+        }
 
         return self;
     }
@@ -81,8 +88,6 @@ pub const App = struct {
             self.allocator.destroy(window);
         }
         self.windows.deinit();
-
-        self.scratch_buffer.deinit();
 
         var buffer_iter = self.buffers.iterator();
         while (buffer_iter.next()) |kv| {
@@ -101,6 +106,11 @@ pub const App = struct {
         if (builtin.mode == .Debug) {
             _ = @import("root").gpa.detectLeaks();
         }
+    }
+
+    pub fn quit(self: *App) noreturn {
+        self.deinit();
+        std.os.exit(0);
     }
 
     pub fn getBufferFromAbsoluteFilename(self: *App, absolute_filename: []const u8) *Buffer {
@@ -139,8 +149,7 @@ pub const App = struct {
             var event: c.SDL_Event = undefined;
             while (c.SDL_PollEvent(&event) != 0) {
                 if (event.type == c.SDL_QUIT) {
-                    self.deinit();
-                    std.os.exit(0);
+                    self.quit();
                 }
                 events.append(event) catch oom();
             }
@@ -154,7 +163,7 @@ pub const App = struct {
 
         // run window frames
         if (self.windows.items.len == 0) {
-            std.os.exit(0);
+            self.quit();
         }
         // copy window list because it might change during frame
         const current_windows = std.mem.dupe(self.frame_allocator, *Window, self.windows.items) catch oom();
@@ -173,7 +182,7 @@ pub const App = struct {
                 };
                 if (window_id_o) |window_id| {
                     if (window_id == c.SDL_GetWindowID(window.sdl_window) or
-                    // need to react to mouse up even if it happened outside the window
+                        // need to react to mouse up even if it happened outside the window
                         event.type == c.SDL_MOUSEBUTTONUP)
                     {
                         window_events.append(event) catch oom();
