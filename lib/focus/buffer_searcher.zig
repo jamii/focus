@@ -87,8 +87,9 @@ pub const BufferSearcher = struct {
         }
 
         // update selection
+        self.selector.selected = max(result_poss.items.len, 1) - 1;
         for (result_poss.items) |result_pos, i| {
-            if (self.selection_pos <= result_pos) {
+            if (self.selection_pos <= result_pos + filter.len) {
                 self.selector.selected = i;
                 break;
             }
@@ -97,7 +98,7 @@ pub const BufferSearcher = struct {
         // run selector frame
         const old_selected = self.selector.selected;
         const action = self.selector.frame(window, layout.selector, events, results.items);
-        if (self.selector.selected != old_selected and result_poss.items.len > 0) {
+        if (self.selector.selected != old_selected and self.selector.selected < result_poss.items.len) {
             self.selection_pos = result_poss.items[self.selector.selected];
         }
         switch (action) {
@@ -131,6 +132,7 @@ pub const BufferSearcher = struct {
                     var cursor = editor.getMainCursor();
                     editor.goPos(cursor, pos + filter.len);
                     editor.updatePos(&cursor.tail, pos);
+                    editor.last_center_pos = pos;
                 }
             },
             .SelectAll => {
@@ -138,6 +140,7 @@ pub const BufferSearcher = struct {
                     var cursor = if (i == 0) editor.getMainCursor() else editor.newCursor();
                     editor.goPos(cursor, pos + filter.len);
                     editor.updatePos(&cursor.tail, pos);
+                    editor.last_center_pos = pos;
                 }
             },
         }

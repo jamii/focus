@@ -104,6 +104,7 @@ pub const ProjectSearcher = struct {
                 self.preview_editor.goRealLine(cursor, line_number.? - 1);
                 self.preview_editor.setMark();
                 self.preview_editor.goRealLineEnd(cursor);
+                self.preview_editor.last_center_pos = cursor.head.pos;
                 // TODO centre cursor
             }
         }
@@ -120,6 +121,7 @@ pub const ProjectSearcher = struct {
             new_editor.goRealLine(cursor, line_number.? - 1);
             new_editor.setMark();
             new_editor.goRealLineEnd(cursor);
+            new_editor.last_center_pos = cursor.head.pos;
             //new_editor.prev_main_cursor_head_pos = cursor.head.pos;
             window.popView();
             window.pushView(new_editor);
