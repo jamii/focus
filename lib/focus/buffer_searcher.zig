@@ -15,6 +15,9 @@ pub const BufferSearcher = struct {
     preview_editor: *Editor,
     input: SingleLineEditor,
     selector: Selector,
+    // The position of the currently selected item, or the start pos if nothing was selected yet.
+    // This just helps preserve position in the editor when jumping in and out of the buffer searcher.
+    selection_pos: usize,
 
     pub fn init(app: *App, target_editor: *Editor) *BufferSearcher {
         const preview_editor = Editor.init(app, target_editor.buffer, false, false);
@@ -24,6 +27,7 @@ pub const BufferSearcher = struct {
         input.editor.setMark();
         input.editor.goRealLineEnd(input.editor.getMainCursor());
         const selector = Selector.init(app);
+        const selection_pos = target_editor.getMainCursor().head.pos;
         var self = app.allocator.create(BufferSearcher) catch oom();
         self.* = BufferSearcher{
             .app = app,
@@ -31,6 +35,7 @@ pub const BufferSearcher = struct {
             .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
+            .selection_pos = selection_pos,
         };
         return self;
     }
@@ -53,7 +58,7 @@ pub const BufferSearcher = struct {
         // TODO default to first result after target
         const filter = self.input.getText();
         var results = ArrayList([]const u8).init(self.app.frame_allocator);
-        var result_pos = ArrayList(usize).init(self.app.frame_allocator);
+        var result_poss = ArrayList(usize).init(self.app.frame_allocator);
         {
             const max_line_string = format(self.app.frame_allocator, "{}", .{self.preview_editor.buffer.countLines()});
             if (filter.len > 0) {
@@ -73,7 +78,7 @@ pub const BufferSearcher = struct {
                     result.appendSlice(selection) catch oom();
 
                     results.append(result.toOwnedSlice()) catch oom();
-                    result_pos.append(found_pos) catch oom();
+                    result_poss.append(found_pos) catch oom();
 
                     pos = found_pos + filter.len;
                     i += 1;
@@ -81,12 +86,24 @@ pub const BufferSearcher = struct {
             }
         }
 
+        // update selection
+        for (result_poss.items) |result_pos, i| {
+            if (self.selection_pos <= result_pos) {
+                self.selector.selected = i;
+                break;
+            }
+        }
+
         // run selector frame
+        const old_selected = self.selector.selected;
         const action = self.selector.frame(window, layout.selector, events, results.items);
+        if (self.selector.selected != old_selected) {
+            self.selection_pos = result_poss.items[self.selector.selected];
+        }
         switch (action) {
             .None, .SelectRaw => {},
             .SelectOne, .SelectAll => {
-                self.updateEditor(self.target_editor, action, result_pos.items, filter);
+                self.updateEditor(self.target_editor, action, result_poss.items, filter);
                 self.target_editor.top_pixel = self.preview_editor.top_pixel;
                 window.popView();
             },
@@ -97,27 +114,27 @@ pub const BufferSearcher = struct {
         self.app.last_search_filter = self.app.dupe(self.input.getText());
 
         // update preview
-        self.updateEditor(self.preview_editor, action, result_pos.items, filter);
+        self.updateEditor(self.preview_editor, action, result_poss.items, filter);
 
         // run preview frame
         self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 
-    fn updateEditor(self: *BufferSearcher, editor: *Editor, action: Selector.Action, result_pos: []usize, filter: []const u8) void {
+    fn updateEditor(self: *BufferSearcher, editor: *Editor, action: Selector.Action, result_poss: []usize, filter: []const u8) void {
         // TODO centre view on main cursor
         editor.collapseCursors();
         editor.setMark();
         switch (action) {
             .None, .SelectRaw, .SelectOne => {
-                if (result_pos.len != 0) {
-                    const pos = result_pos[self.selector.selected];
+                if (result_poss.len != 0) {
+                    const pos = result_poss[self.selector.selected];
                     var cursor = editor.getMainCursor();
                     editor.goPos(cursor, pos + filter.len);
                     editor.updatePos(&cursor.tail, pos);
                 }
             },
             .SelectAll => {
-                for (result_pos) |pos, i| {
+                for (result_poss) |pos, i| {
                     var cursor = if (i == 0) editor.getMainCursor() else editor.newCursor();
                     editor.goPos(cursor, pos + filter.len);
                     editor.updatePos(&cursor.tail, pos);
