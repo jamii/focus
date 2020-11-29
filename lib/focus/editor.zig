@@ -171,7 +171,7 @@ pub const Editor = struct {
                                 const buffer_searcher = BufferSearcher.init(self.app, self);
                                 window.pushView(buffer_searcher);
                             },
-                            'z' => self.undo(),
+                            'z' => self.undo(text_rect),
                             '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
                             c.SDLK_TAB => for (self.cursors.items) |*cursor| self.indent(cursor),
                             else => accept_textinput = true,
@@ -182,7 +182,7 @@ pub const Editor = struct {
                         sym.mod == c.KMOD_RCTRL | c.KMOD_RSHIFT)
                     {
                         switch (sym.sym) {
-                            'z' => self.redo(),
+                            'z' => self.redo(text_rect),
                             'd' => self.removeLastMatch(),
                             else => accept_textinput = true,
                         }
@@ -1034,24 +1034,26 @@ pub const Editor = struct {
         }
     }
 
-    pub fn undo(self: *Editor) void {
+    pub fn undo(self: *Editor, text_rect: Rect) void {
         const pos_o = self.buffer.undo();
         if (pos_o) |pos| {
             self.collapseCursors();
             self.clearMark();
             var cursor = self.getMainCursor();
             self.goPos(cursor, pos);
+            self.setCenterPos(text_rect, pos);
             cursor.tail = cursor.head;
         }
     }
 
-    pub fn redo(self: *Editor) void {
+    pub fn redo(self: *Editor, text_rect: Rect) void {
         const pos_o = self.buffer.redo();
         if (pos_o) |pos| {
             self.collapseCursors();
             self.clearMark();
             var cursor = self.getMainCursor();
             self.goPos(cursor, pos);
+            self.setCenterPos(text_rect, pos);
             cursor.tail = cursor.head;
         }
     }
