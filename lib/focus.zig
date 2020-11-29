@@ -234,9 +234,10 @@ pub const App = struct {
             var event: c.SDL_Event = undefined;
             while (c.SDL_PollEvent(&event) != 0) {
                 if (event.type == c.SDL_QUIT) {
-                    self.quit();
+                    // ignore - we're a daemon, we can have zero windows if we want to
+                } else {
+                    events.append(event) catch oom();
                 }
-                events.append(event) catch oom();
             }
         }
 
@@ -247,9 +248,6 @@ pub const App = struct {
         }
 
         // run window frames
-        if (self.windows.items.len == 0) {
-            self.quit();
-        }
         // copy window list because it might change during frame
         const current_windows = std.mem.dupe(self.frame_allocator, *Window, self.windows.items) catch oom();
         for (current_windows) |window| {
