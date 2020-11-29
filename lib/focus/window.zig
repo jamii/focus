@@ -28,6 +28,9 @@ pub const Window = struct {
     popped_views: ArrayList(View),
     close_after_frame: bool,
 
+    // client socket who opened this window, need to tell them when we close
+    client_address_o: ?focus.Address,
+
     sdl_window: *c.SDL_Window,
     width: Coord,
     height: Coord,
@@ -102,6 +105,8 @@ pub const Window = struct {
             .views = ArrayList(View).init(app.allocator),
             .popped_views = ArrayList(View).init(app.allocator),
             .close_after_frame = false,
+
+            .client_address_o = null,
 
             .sdl_window = sdl_window,
             .width = init_width,
@@ -331,6 +336,8 @@ pub const Window = struct {
         self.deinitPoppedViews();
         if (self.close_after_frame) {
             if (self.getTopViewIfEditor()) |editor| editor.save();
+            if (self.client_address_o) |client_address|
+                focus.sendReply(self.app.server_socket, client_address, 0);
             self.deinit();
             self.app.deregisterWindow(self);
         }

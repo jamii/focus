@@ -16,14 +16,25 @@ pub const style = @import("./focus/style.zig");
 
 usingnamespace common;
 
-pub const Request = enum {
+pub const Request = union(enum) {
     CreateEmptyWindow,
     CreateLauncherWindow,
+    CreateEditorWindow: []const u8,
+};
+
+// TODO this should just be std.net.Address, but it calculates the wrong address length for abstract domain sockets
+pub const Address = struct {
+    address: std.net.Address,
+    address_len: std.os.socklen_t,
+};
+
+pub const RequestAndClientAddress = struct {
+    request: Request,
+    client_address: Address,
 };
 
 pub const ServerSocket = struct {
-    address: std.net.Address,
-    address_len: u32,
+    address: Address,
     socket: std.os.socket_t,
     state: State,
 
@@ -50,8 +61,10 @@ pub fn createServerSocket() ServerSocket {
         else => panic("Failed to connect to unix socket: {}", .{err}),
     };
     return ServerSocket{
-        .address = address,
-        .address_len = address_len,
+        .address = .{
+            .address = address,
+            .address_len = address_len,
+        },
         .socket = socket,
         .state = state,
     };
@@ -66,35 +79,66 @@ pub fn createClientSocket() std.os.socket_t {
     var address = std.net.Address.initUnix("") catch |err| panic("Failed to init unix socket address: {}", .{err});
     const address_len = address.getOsSockLen();
     address.un.path[0] = 0;
-    const socket = std.os.socket(std.os.AF_UNIX, std.os.SOCK_DGRAM | std.os.SOCK_NONBLOCK, 0) catch |err| panic("Failed to create unix socket: {}", .{err});
+    const socket = std.os.socket(std.os.AF_UNIX, std.os.SOCK_DGRAM, 0) catch |err| panic("Failed to create unix socket: {}", .{err});
     std.os.bind(socket, &address.any, address_len) catch |err| panic("Failed to connect to unix socket: {}", .{err});
     return socket;
 }
 
 pub fn sendRequest(client_socket: std.os.socket_t, server_socket: ServerSocket, request: Request) void {
-    const len = std.os.sendto(client_socket, @tagName(request), 0, &server_socket.address.any, server_socket.address_len) catch |err| panic("Failed to send request: {}", .{err});
-    assert(len == @tagName(request).len);
+    const message = switch (request) {
+        .CreateEmptyWindow => "CreateEmptyWindow",
+        .CreateLauncherWindow => "CreateLauncherWindow",
+        .CreateEditorWindow => |filename| filename,
+    };
+    const len = std.os.sendto(client_socket, message, 0, &server_socket.address.address.any, server_socket.address.address_len) catch |err| panic("Failed to send request: {}", .{err});
+    assert(len == message.len);
 }
 
-pub fn receiveRequest(server_socket: ServerSocket) ?Request {
-    var buffer: [128]u8 = undefined;
-    const len = std.os.recv(server_socket.socket, &buffer, std.os.MSG_DONTWAIT) catch |err| {
+pub fn receiveRequest(buffer: []u8, server_socket: ServerSocket) ?RequestAndClientAddress {
+    var client_address: std.os.sockaddr = undefined;
+    // TODO have no idea if this is the correct value
+    var client_address_len: std.os.socklen_t = @sizeOf(std.os.sockaddr_un);
+    const len = std.os.recvfrom(server_socket.socket, buffer, std.os.MSG_DONTWAIT, &client_address, &client_address_len) catch |err| {
         switch (err) {
             error.WouldBlock => return null,
             else => panic("Failed to recv request: {}", .{err}),
         }
     };
     const message = buffer[0..len];
-    if (std.mem.eql(u8, message, "CreateEmptyWindow")) return .CreateEmptyWindow;
-    if (std.mem.eql(u8, message, "CreateLauncherWindow")) return .CreateLauncherWindow;
-    panic("Unrecognized request: {}", .{message});
+    const request = if (std.mem.eql(u8, message, "CreateEmptyWindow"))
+        .CreateEmptyWindow
+    else if (std.mem.eql(u8, message, "CreateLauncherWindow"))
+        .CreateLauncherWindow
+    else
+        Request{ .CreateEditorWindow = message };
+    return RequestAndClientAddress{
+        .request = request,
+        .client_address = .{
+            .address = .{ .any = client_address },
+            .address_len = client_address_len,
+        },
+    };
+}
+
+pub fn sendReply(server_socket: ServerSocket, client_address: Address, exit_code: u8) void {
+    _ = std.os.sendto(server_socket.socket, &[1]u8{exit_code}, 0, &client_address.address.any, client_address.address_len) catch |err| panic("Failed to send reply: {}", .{err});
+}
+
+// returns exit code
+pub fn waitReply(client_socket: std.os.socket_t) u8 {
+    var buffer: [1]u8 = undefined;
+    const len = std.os.recv(client_socket, &buffer, 0) catch |err| {
+        panic("Failed to recv reply: {}", .{err});
+    };
+    assert(len == 1);
+    return buffer[0];
 }
 
 const ns_per_frame = @divTrunc(1_000_000_000, 60);
 
 pub fn run(allocator: *Allocator, server_socket: ServerSocket, request: Request) void {
     var app = App.init(allocator, server_socket);
-    app.handleRequest(request);
+    app.handleRequest(request, null);
     var timer = std.time.Timer.start() catch panic("Couldn't start timer", .{});
     while (true) {
         _ = timer.lap();
@@ -200,7 +244,7 @@ pub const App = struct {
         self.allocator.destroy(window);
     }
 
-    pub fn handleRequest(self: *App, request: Request) void {
+    pub fn handleRequest(self: *App, request: Request, client_address_o: ?Address) void {
         switch (request) {
             .CreateEmptyWindow => {
                 const new_window = self.registerWindow(Window.init(self, .NotFloating));
@@ -213,6 +257,13 @@ pub const App = struct {
                 const launcher = Launcher.init(self);
                 new_window.pushView(launcher);
             },
+            .CreateEditorWindow => |filename| {
+                const new_window = self.registerWindow(Window.init(self, .Floating));
+                new_window.client_address_o = client_address_o;
+                const new_buffer = self.getBufferFromAbsoluteFilename(filename);
+                const new_editor = Editor.init(self, new_buffer, true, true);
+                new_window.pushView(new_editor);
+            },
         }
     }
 
@@ -224,8 +275,9 @@ pub const App = struct {
         self.frame_arena = ArenaAllocator.init(self.allocator);
 
         // check for requests
-        while (receiveRequest(self.server_socket)) |request| {
-            self.handleRequest(request);
+        var buffer = self.frame_allocator.alloc(u8, 256 * 1024) catch oom();
+        while (receiveRequest(buffer, self.server_socket)) |request_and_client_address| {
+            self.handleRequest(request_and_client_address.request, request_and_client_address.client_address);
         }
 
         // fetch events
