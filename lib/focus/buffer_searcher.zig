@@ -97,7 +97,7 @@ pub const BufferSearcher = struct {
         // run selector frame
         const old_selected = self.selector.selected;
         const action = self.selector.frame(window, layout.selector, events, results.items);
-        if (self.selector.selected != old_selected) {
+        if (self.selector.selected != old_selected and result_poss.items.len > 0) {
             self.selection_pos = result_poss.items[self.selector.selected];
         }
         switch (action) {

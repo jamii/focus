@@ -44,7 +44,7 @@ pub const Editor = struct {
     dragging: Dragging,
     // which pixel of the buffer is at the top of the viewport
     top_pixel: isize,
-    last_center_real_line: usize,
+    last_center_pos: usize,
     last_event_ms: i64,
     show_status_bar: bool,
     completer_o: ?Completer,
@@ -85,7 +85,7 @@ pub const Editor = struct {
             .marked = false,
             .dragging = .NotDragging,
             .top_pixel = 0,
-            .last_center_real_line = 0,
+            .last_center_pos = 0,
             .last_event_ms = app.frame_time_ms,
             .show_status_bar = show_status_bar,
             .completer_o = completer_o,
@@ -117,8 +117,8 @@ pub const Editor = struct {
 
         // if window layout has changed, set center line to whatever it was at end of last frame
         // TODO this implies that nothing messes with scroll position outside of frame, which is untrue for selector, but selector gets scrolled only by scrolling to keep cursor into view anyway
-        if (self.getCenterRealLine(text_rect) != self.last_center_real_line)
-            self.setCenterRealLine(text_rect, self.last_center_real_line);
+        if (self.getCenterPos(text_rect) != self.last_center_pos)
+            self.setCenterPos(text_rect, self.last_center_pos);
 
         var completer_event: enum {
             None,
@@ -539,7 +539,7 @@ pub const Editor = struct {
             window.queueText(status_rect.?, style.text_color, status_text);
         }
 
-        self.last_center_real_line = self.getCenterRealLine(text_rect);
+        self.last_center_pos = self.getCenterPos(text_rect);
     }
 
     pub fn updateCol(self: *Editor, point: *Point) void {
@@ -1056,16 +1056,14 @@ pub const Editor = struct {
         }
     }
 
-    fn getCenterRealLine(self: *Editor, text_rect: Rect) usize {
+    fn getCenterPos(self: *Editor, text_rect: Rect) usize {
         const wrapped_line = @intCast(usize, @divTrunc(self.top_pixel + @divTrunc(text_rect.h, 2), self.app.atlas.char_height));
         const pos = if (wrapped_line >= self.line_wrapped_buffer.countLines()) self.buffer.getBufferEnd() else self.line_wrapped_buffer.getPosForLine(wrapped_line);
-        const real_line = self.buffer.getLineColForPos(pos)[0];
-        return real_line;
+        return pos;
     }
 
-    fn setCenterRealLine(self: *Editor, text_rect: Rect, real_line: usize) void {
-        const pos = if (real_line >= self.buffer.countLines()) self.buffer.getBufferEnd() else self.buffer.getPosForLine(real_line);
-        const wrapped_line = self.line_wrapped_buffer.getLineColForPos(pos)[0];
+    fn setCenterPos(self: *Editor, text_rect: Rect, pos: usize) void {
+        const wrapped_line = self.line_wrapped_buffer.getLineColForPos(min(pos, self.buffer.getBufferEnd()))[0];
         const center_pixel = @intCast(isize, wrapped_line) * @intCast(isize, self.app.atlas.char_height);
         self.top_pixel = max(0, center_pixel - @divTrunc(text_rect.h, 2));
     }
