@@ -48,12 +48,12 @@ pub fn createServerSocket() ServerSocket {
     const socket_path = if (builtin.mode == .Debug)
         "#focus-debug"
     else
-        "#focus";
+        "#focus-stable";
     var address = std.net.Address.initUnix(socket_path) catch |err| panic("Failed to init unix socket address: {}", .{err});
     // have to get len before setting the null byte or returns wrong address
     const address_len = address.getOsSockLen();
     address.un.path[0] = 0;
-    const socket = std.os.socket(std.os.AF_UNIX, std.os.SOCK_DGRAM, 0) catch |err| panic("Failed to create unix socket: {}", .{err});
+    const socket = std.os.socket(std.os.AF_UNIX, std.os.SOCK_DGRAM | std.os.SOCK_CLOEXEC, 0) catch |err| panic("Failed to create unix socket: {}", .{err});
     const state: ServerSocket.State = if (std.os.bind(socket, &address.any, address_len))
         .Bound
     else |err| switch (err) {
