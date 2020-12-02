@@ -44,6 +44,31 @@ pub const ServerSocket = struct {
     };
 };
 
+pub fn daemonize() enum { Parent, Child } {
+    // https://stackoverflow.com/questions/17954432/creating-a-daemon-in-linux/17955149#17955149
+    if (std.os.fork()) |pid| {
+        if (pid != 0) return .Parent;
+    } else |err| {
+        panic("Failed to fork: {}", .{err});
+    }
+    {
+        const err = c.setsid();
+        if (err < 0) panic("Failed to setsid: {}", .{err});
+    }
+    // TODO
+    //c.signal(c.SIGCHLD, std.os.linux.SIG_IGN);
+    //c.signal(c.SIGHUP, std.os.linux.SIG_IGN);
+    if (std.os.fork()) |pid| {
+        if (pid != 0) std.os.exit(0);
+    } else |err| {
+        panic("Failed to fork: {}", .{err});
+    }
+    const old_umask = c.umask(0);
+    if (std.os.linux.chdir("/home/jamie/") < 0)
+        panic("Failed to chdir", .{});
+    return .Child;
+}
+
 pub fn createServerSocket() ServerSocket {
     const socket_path = if (builtin.mode == .Debug)
         "#focus-debug"
@@ -136,9 +161,8 @@ pub fn waitReply(client_socket: std.os.socket_t) u8 {
 
 const ns_per_frame = @divTrunc(1_000_000_000, 60);
 
-pub fn run(allocator: *Allocator, server_socket: ServerSocket, request: Request) void {
+pub fn run(allocator: *Allocator, server_socket: ServerSocket) void {
     var app = App.init(allocator, server_socket);
-    app.handleRequest(request, null);
     var timer = std.time.Timer.start() catch panic("Couldn't start timer", .{});
     while (true) {
         _ = timer.lap();
@@ -244,13 +268,15 @@ pub const App = struct {
         self.allocator.destroy(window);
     }
 
-    pub fn handleRequest(self: *App, request: Request, client_address_o: ?Address) void {
+    pub fn handleRequest(self: *App, request: Request, client_address: Address) void {
         switch (request) {
             .CreateEmptyWindow => {
                 const new_window = self.registerWindow(Window.init(self, .NotFloating));
+                new_window.client_address_o = client_address;
             },
             .CreateLauncherWindow => {
                 const new_window = self.registerWindow(Window.init(self, .Floating));
+                new_window.client_address_o = client_address;
                 // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
                 // without this, keypresses sometimes get sent to the current window instead of the new window
                 new_window.frame(&[0]c.SDL_Event{});
@@ -258,8 +284,8 @@ pub const App = struct {
                 new_window.pushView(launcher);
             },
             .CreateEditorWindow => |filename| {
-                const new_window = self.registerWindow(Window.init(self, .Floating));
-                new_window.client_address_o = client_address_o;
+                const new_window = self.registerWindow(Window.init(self, .NotFloating));
+                new_window.client_address_o = client_address;
                 const new_buffer = self.getBufferFromAbsoluteFilename(filename);
                 const new_editor = Editor.init(self, new_buffer, true, true);
                 new_window.pushView(new_editor);

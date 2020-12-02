@@ -6,6 +6,11 @@ pub const c = @cImport({
     @cInclude("SDL2/SDL_syswm.h");
     @cInclude("SDL2/SDL_opengl.h");
     @cInclude("SDL2/SDL_ttf.h");
+    @cInclude("unistd.h");
+    @cInclude("signal.h");
+    @cInclude("sys/types.h");
+    @cInclude("sys/stat.h");
+    @cInclude("syslog.h");
 });
 
 pub const builtin = @import("builtin");
