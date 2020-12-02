@@ -238,9 +238,9 @@ pub const Editor = struct {
                         const mouse_x = @intCast(Coord, button.x);
                         const mouse_y = @intCast(Coord, button.y);
                         if (text_rect.contains(mouse_x, mouse_y)) {
-                            const line = @divTrunc(self.top_pixel + mouse_y - text_rect.y, self.app.atlas.char_height);
+                            const line = @divTrunc(self.top_pixel + (mouse_y - text_rect.y), self.app.atlas.char_height);
                             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
-                            const pos = self.line_wrapped_buffer.getPosForLineCol(min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, max(line, 0))), @intCast(usize, max(col, 0)));
+                            const pos = self.line_wrapped_buffer.getPosForLineCol(min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, line)), @intCast(usize, col));
                             const mod = @enumToInt(c.SDL_GetModState());
                             if (mod == c.KMOD_LCTRL or mod == c.KMOD_RCTRL) {
                                 self.dragging = .CtrlDragging;
@@ -348,7 +348,8 @@ pub const Editor = struct {
             for (matching_poss) |matching_pos| {
                 const line_col = self.line_wrapped_buffer.getLineColForPos(matching_pos);
                 if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
-                    const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_col[0]) - visible_start_line) * self.app.atlas.char_height);
+                    const line_top_pixel = @intCast(Coord, line_col[0]) * self.app.atlas.char_height;
+                    const y = text_rect.y + @intCast(Coord, line_top_pixel - self.top_pixel);
                     const x = text_rect.x + @intCast(Coord, line_col[1]) * self.app.atlas.char_width;
                     window.queueRect(
                         .{
@@ -370,7 +371,8 @@ pub const Editor = struct {
             const line_range = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix];
             const line = self.buffer.bytes.items[line_range[0]..line_range[1]];
 
-            const y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(Coord, line_ix) - visible_start_line) * self.app.atlas.char_height);
+            const line_top_pixel = @intCast(Coord, line_ix) * self.app.atlas.char_height;
+            const y = text_rect.y + @intCast(Coord, line_top_pixel - self.top_pixel);
 
             for (self.cursors.items) |cursor| {
                 // draw cursor
