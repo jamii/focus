@@ -73,7 +73,7 @@ pub const Launcher = struct {
                 &[_][]const u8{ "bash", "-c", command },
                 self.app.frame_allocator,
             ) catch unreachable;
-            process.spawn() catch unreachable;
+            process.spawn() catch |err| panic("Failed to spawn {}: {}", .{ exe, err });
             window.close_after_frame = true;
         }
     }
