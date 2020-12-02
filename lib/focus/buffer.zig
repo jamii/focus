@@ -28,15 +28,32 @@ pub const Role = enum {
 // rare to have enough space to put more chars than this above the fold
 const max_preview_bytes = 200 * 500;
 
-pub const Edit = struct {
-    tag: enum {
-        Insert, Delete
-    },
-    data: struct {
+const Edit = union(enum) {
+    Insert: struct {
         start: usize,
         end: usize,
-        bytes: []const u8,
+        new_bytes: []const u8,
     },
+    Delete: struct {
+        start: usize,
+        end: usize,
+        old_bytes: []const u8,
+    },
+    Replace: struct {
+        old_bytes: []const u8,
+        new_bytes: []const u8,
+    },
+
+    fn deinit(self: Edit, allocator: *Allocator) void {
+        switch (self) {
+            .Insert => |data| allocator.free(data.new_bytes),
+            .Delete => |data| allocator.free(data.old_bytes),
+            .Replace => |data| {
+                allocator.free(data.new_bytes);
+                allocator.free(data.old_bytes);
+            },
+        }
+    }
 };
 
 pub const Buffer = struct {
@@ -83,7 +100,7 @@ pub const Buffer = struct {
         };
         self.load();
         // don't want the load on the undo stack
-        for (self.doing.items) |edit| self.app.allocator.free(edit.data.bytes);
+        for (self.doing.items) |edit| edit.deinit(self.app.allocator);
         self.doing.shrink(0);
         return self;
     }
@@ -101,16 +118,16 @@ pub const Buffer = struct {
         self.line_ranges.deinit();
 
         for (self.undos.items) |edits| {
-            for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+            for (edits) |edit| edit.deinit(self.app.allocator);
             self.app.allocator.free(edits);
         }
         self.undos.deinit();
 
-        for (self.doing.items) |edit| self.app.allocator.free(edit.data.bytes);
+        for (self.doing.items) |edit| edit.deinit(self.app.allocator);
         self.doing.deinit();
 
         for (self.redos.items) |edits| {
-            for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+            for (edits) |edit| edit.deinit(self.app.allocator);
             self.app.allocator.free(edits);
         }
         self.redos.deinit();
@@ -359,17 +376,34 @@ pub const Buffer = struct {
         }
     }
 
+    fn rawReplace(self: *Buffer, new_bytes: []const u8) void {
+        var line_colss = ArrayList([][2]usize).init(self.app.frame_allocator);
+        for (self.editors.items) |editor| {
+            line_colss.append(editor.updateBeforeReplace()) catch oom();
+        }
+        std.mem.reverse([][2]usize, line_colss.items);
+
+        self.bytes.resize(0) catch oom();
+        self.bytes.appendSlice(new_bytes) catch oom();
+
+        self.updateLineRanges();
+        self.modified_since_last_save = true;
+        for (self.editors.items) |editor| {
+            editor.updateAfterReplace(line_colss.pop());
+        }
+        self.updateCompletions();
+    }
+
     pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) void {
         self.doing.append(.{
-            .tag = .Insert,
-            .data = .{
+            .Insert = .{
                 .start = pos,
                 .end = pos + bytes.len,
-                .bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch oom(),
+                .new_bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch oom(),
             },
         }) catch oom();
         for (self.redos.items) |edits| {
-            for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+            for (edits) |edit| edit.deinit(self.app.allocator);
             self.app.allocator.free(edits);
         }
         self.redos.shrink(0);
@@ -378,15 +412,14 @@ pub const Buffer = struct {
 
     pub fn delete(self: *Buffer, start: usize, end: usize) void {
         self.doing.append(.{
-            .tag = .Delete,
-            .data = .{
+            .Delete = .{
                 .start = start,
                 .end = end,
-                .bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch oom(),
+                .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch oom(),
             },
         }) catch oom();
         for (self.redos.items) |edits| {
-            for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+            for (edits) |edit| edit.deinit(self.app.allocator);
             self.app.allocator.free(edits);
         }
         self.redos.shrink(0);
@@ -395,44 +428,20 @@ pub const Buffer = struct {
 
     pub fn replace(self: *Buffer, new_bytes: []const u8) void {
         if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
+            self.newUndoGroup();
             self.doing.append(.{
-                .tag = .Delete,
-                .data = .{
-                    .start = 0,
-                    .end = self.bytes.items.len,
-                    .bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items) catch oom(),
-                },
-            }) catch oom();
-            self.doing.append(.{
-                .tag = .Insert,
-                .data = .{
-                    .start = 0,
-                    .end = new_bytes.len,
-                    .bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch oom(),
+                .Replace = .{
+                    .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items) catch oom(),
+                    .new_bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch oom(),
                 },
             }) catch oom();
             for (self.redos.items) |edits| {
-                for (edits) |edit| self.app.allocator.free(edit.data.bytes);
+                for (edits) |edit| edit.deinit(self.app.allocator);
                 self.app.allocator.free(edits);
             }
             self.redos.shrink(0);
-
-            var line_colss = ArrayList([][2]usize).init(self.app.frame_allocator);
-            for (self.editors.items) |editor| {
-                line_colss.append(editor.updateBeforeReplace()) catch oom();
-            }
-            std.mem.reverse([][2]usize, line_colss.items);
-
-            self.bytes.resize(0) catch oom();
-            self.bytes.appendSlice(new_bytes) catch oom();
-
-            self.updateLineRanges();
-            self.modified_since_last_save = true;
-            for (self.editors.items) |editor| {
-                editor.updateAfterReplace(line_colss.pop());
-            }
-
-            self.updateCompletions();
+            self.rawReplace(new_bytes);
+            self.newUndoGroup();
         }
     }
 
@@ -449,14 +458,18 @@ pub const Buffer = struct {
         var pos: ?usize = null;
         if (self.undos.popOrNull()) |edits| {
             for (edits) |edit| {
-                switch (edit.tag) {
-                    .Insert => {
-                        self.rawDelete(edit.data.start, edit.data.end);
-                        pos = edit.data.start;
+                switch (edit) {
+                    .Insert => |data| {
+                        self.rawDelete(data.start, data.end);
+                        pos = data.start;
                     },
-                    .Delete => {
-                        self.rawInsert(edit.data.start, edit.data.bytes);
-                        pos = edit.data.end;
+                    .Delete => |data| {
+                        self.rawInsert(data.start, data.old_bytes);
+                        pos = data.end;
+                    },
+                    .Replace => |data| {
+                        self.rawReplace(data.old_bytes);
+                        // don't set pos
                     },
                 }
             }
@@ -470,14 +483,18 @@ pub const Buffer = struct {
         var pos: ?usize = null;
         if (self.redos.popOrNull()) |edits| {
             for (edits) |edit| {
-                switch (edit.tag) {
-                    .Insert => {
-                        self.rawInsert(edit.data.start, edit.data.bytes);
-                        pos = edit.data.end;
+                switch (edit) {
+                    .Insert => |data| {
+                        self.rawInsert(data.start, data.new_bytes);
+                        pos = data.end;
                     },
-                    .Delete => {
-                        self.rawDelete(edit.data.start, edit.data.end);
-                        pos = edit.data.start;
+                    .Delete => |data| {
+                        self.rawDelete(data.start, data.end);
+                        pos = data.start;
+                    },
+                    .Replace => |data| {
+                        self.rawReplace(data.new_bytes);
+                        // don't set pos
                     },
                 }
             }
