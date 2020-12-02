@@ -709,8 +709,8 @@ pub const Editor = struct {
         self.line_wrapped_buffer.update();
         for (self.cursors.items) |*cursor| {
             for (&[2]*Point{ &cursor.head, &cursor.tail }) |point| {
-                if (point.pos >= start and point.pos <= end) point.pos = start;
-                if (point.pos > end) point.pos -= (end - start);
+                if (point.pos >= start and point.pos < end) point.pos = start;
+                if (point.pos >= end) point.pos -= (end - start);
                 self.updateCol(point);
             }
         }
