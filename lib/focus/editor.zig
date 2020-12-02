@@ -166,7 +166,7 @@ pub const Editor = struct {
                                 self.clearMark();
                             },
                             'd' => self.addNextMatch(),
-                            's' => self.save(),
+                            's' => self.save(.User),
                             'f' => {
                                 const buffer_searcher = BufferSearcher.init(self.app, self);
                                 window.pushView(buffer_searcher);
@@ -1027,10 +1027,10 @@ pub const Editor = struct {
         }
     }
 
-    pub fn save(self: *Editor) void {
+    pub fn save(self: *Editor, source: Buffer.SaveSource) void {
         if (self.buffer.modified_since_last_save) {
             self.tryFormat();
-            self.buffer.save();
+            self.buffer.save(source);
         }
     }
 

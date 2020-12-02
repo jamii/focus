@@ -127,7 +127,7 @@ pub const Buffer = struct {
         mtime: i128,
     };
     fn tryLoad(self: *Buffer) !TryLoadResult {
-        const file = try std.fs.cwd().createFile(self.source.File.absolute_filename, .{ .read = true, .truncate = false });
+        const file = try std.fs.cwd().openFile(self.source.File.absolute_filename, .{});
         defer file.close();
 
         const mtime = (try file.stat()).mtime;
@@ -165,7 +165,16 @@ pub const Buffer = struct {
         switch (self.source) {
             .None => {},
             .File => |file_source| {
-                const file = std.fs.cwd().createFile(file_source.absolute_filename, .{ .read = true, .truncate = false }) catch |err| panic("{} while refreshing {s}", .{ err, file_source.absolute_filename });
+                const file = std.fs.cwd().openFile(file_source.absolute_filename, .{}) catch |err| {
+                    switch (err) {
+                        // if file has been deleted, leave buffer as is
+                        error.FileNotFound => {
+                            self.modified_since_last_save = true;
+                            return;
+                        },
+                        else => panic("{} while refreshing {s}", .{ err, file_source.absolute_filename }),
+                    }
+                };
                 defer file.close();
                 const stat = file.stat() catch |err| panic("{} while refreshing {s}", .{ err, file_source.absolute_filename });
                 if (stat.mtime != file_source.mtime) {
@@ -175,12 +184,37 @@ pub const Buffer = struct {
         }
     }
 
-    pub fn save(self: *Buffer) void {
+    pub const SaveSource = enum {
+        User,
+        Auto,
+    };
+    pub fn save(self: *Buffer, source: SaveSource) void {
         switch (self.source) {
             .None => {},
             .File => |*file_source| {
-                const file = std.fs.cwd().createFile(file_source.absolute_filename, .{ .read = false, .truncate = true }) catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
+                const file = switch (source) {
+                    .User => std.fs.cwd().createFile(file_source.absolute_filename, .{ .read = false, .truncate = true }) catch |err| {
+                        panic("{} while saving {s}", .{ err, file_source.absolute_filename });
+                    },
+                    .Auto => file: {
+                        if (std.fs.cwd().openFile(file_source.absolute_filename, .{ .read = false, .write = true })) |file| {
+                            file.setEndPos(0) catch |err| panic("{} while truncating {s}", .{ err, file_source.absolute_filename });
+                            file.seekTo(0) catch |err| panic("{} while truncating {s}", .{ err, file_source.absolute_filename });
+                            break :file file;
+                        } else |err| {
+                            switch (err) {
+                                // if file has been deleted, only save in response to C-s
+                                error.FileNotFound => {
+                                    self.modified_since_last_save = true;
+                                    return;
+                                },
+                                else => panic("{} while saving {s}", .{ err, file_source.absolute_filename }),
+                            }
+                        }
+                    },
+                };
                 defer file.close();
+
                 file.writeAll(self.bytes.items) catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 const stat = file.stat() catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 file_source.mtime = stat.mtime;

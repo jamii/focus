@@ -104,9 +104,18 @@ pub const FileOpener = struct {
                 filename.appendSlice(results.items[self.selector.selected]) catch oom();
             }
             if (filename.items.len > 0 and std.fs.path.isSep(filename.items[filename.items.len - 1])) {
-                // TODO mkdir?
+                if (action == .SelectRaw)
+                    std.fs.cwd().makeDir(filename.items) catch |err| {
+                        panic("{} while creating directory {}", .{ err, filename });
+                    };
                 self.input.setText(filename.items);
             } else {
+                if (action == .SelectRaw) {
+                    const file = std.fs.cwd().createFile(filename.items, .{ .truncate = false }) catch |err| {
+                        panic("{} while creating file {}", .{ err, filename });
+                    };
+                    file.close();
+                }
                 const new_buffer = self.app.getBufferFromAbsoluteFilename(filename.items);
                 const new_editor = Editor.init(self.app, new_buffer, true, true);
                 window.popView();

@@ -254,7 +254,7 @@ pub const Window = struct {
                 c.SDL_WINDOWEVENT => {
                     switch (event.window.event) {
                         c.SDL_WINDOWEVENT_FOCUS_LOST => {
-                            if (self.getTopViewIfEditor()) |editor| editor.save();
+                            if (self.getTopViewIfEditor()) |editor| editor.save(.Auto);
                             handled = true;
                         },
                         c.SDL_WINDOWEVENT_CLOSE => {
@@ -335,7 +335,7 @@ pub const Window = struct {
         // clean up
         self.deinitPoppedViews();
         if (self.close_after_frame) {
-            if (self.getTopViewIfEditor()) |editor| editor.save();
+            if (self.getTopViewIfEditor()) |editor| editor.save(.Auto);
             if (self.client_address_o) |client_address|
                 focus.sendReply(self.app.server_socket, client_address, 0);
             self.deinit();
@@ -391,7 +391,7 @@ pub const Window = struct {
     // view api
 
     pub fn pushView(self: *Window, view_ptr: anytype) void {
-        if (self.getTopViewIfEditor()) |editor| editor.save();
+        if (self.getTopViewIfEditor()) |editor| editor.save(.Auto);
         const tag_name = @typeName(@typeInfo(@TypeOf(view_ptr)).Pointer.child);
         const view = @unionInit(View, tag_name, view_ptr);
         self.views.append(view) catch oom();
@@ -409,7 +409,7 @@ pub const Window = struct {
         while (self.popped_views.items.len > 0) {
             const view = self.popped_views.pop();
             switch (view) {
-                .Editor => |editor| editor.save(),
+                .Editor => |editor| editor.save(.Auto),
                 else => {},
             }
             inline for (@typeInfo(ViewTag).Enum.fields) |field| {

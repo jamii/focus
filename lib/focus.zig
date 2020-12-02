@@ -250,6 +250,8 @@ pub const App = struct {
             return buffer;
         } else {
             const buffer = Buffer.initFromAbsoluteFilename(self, .Real, absolute_filename);
+            // buffer might be out of date if file was modified elsewhere
+            buffer.refresh();
             self.buffers.put(self.dupe(absolute_filename), buffer) catch oom();
             return buffer;
         }
