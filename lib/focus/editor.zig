@@ -967,13 +967,11 @@ pub const Editor = struct {
 
         // for each line in selection
         while (num_lines > 0) : (num_lines -= 1) {
-
             // find first non-whitespace char
             self.goRealLineStart(edit_cursor);
             var start = edit_cursor.head.pos;
             const end = self.buffer.getLineEnd(start);
             while (start < end and self.buffer.bytes.items[start] == ' ') : (start += 1) {}
-            if (start == end) continue;
 
             // insert or remove comment
             switch (action) {
@@ -981,7 +979,7 @@ pub const Editor = struct {
                     self.buffer.insert(start, comment_string);
                 },
                 .Remove => {
-                    if (end - start > comment_string.len and
+                    if (end - start >= comment_string.len and
                         meta.deepEqual(comment_string, self.buffer.bytes.items[start .. start + comment_string.len]))
                     {
                         self.buffer.delete(start, start + comment_string.len);
