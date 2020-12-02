@@ -72,8 +72,8 @@ pub const Launcher = struct {
             var process = std.ChildProcess.init(
                 &[_][]const u8{ "bash", "-c", command },
                 self.app.frame_allocator,
-            ) catch unreachable;
-            process.spawn() catch |err| panic("Failed to spawn {}: {}", .{ exe, err });
+            ) catch |err| panic("Failed to init {}: {}", .{ command, err });
+            process.spawn() catch |err| panic("Failed to spawn {}: {}", .{ command, err });
             window.close_after_frame = true;
         }
     }
