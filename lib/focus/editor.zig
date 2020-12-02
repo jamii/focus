@@ -191,8 +191,16 @@ pub const Editor = struct {
                             ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
                             'j' => for (self.cursors.items) |*cursor| self.goRealLineStart(cursor),
                             'l' => for (self.cursors.items) |*cursor| self.goRealLineEnd(cursor),
-                            'k' => for (self.cursors.items) |*cursor| self.goBufferEnd(cursor),
-                            'i' => for (self.cursors.items) |*cursor| self.goBufferStart(cursor),
+                            'k' => {
+                                for (self.cursors.items) |*cursor| self.goBufferEnd(cursor);
+                                // hardcode because we want to scroll even if cursor didn't move
+                                self.top_pixel = @intCast(Coord, self.buffer.countLines()) * self.app.atlas.char_height;
+                            },
+                            'i' => {
+                                for (self.cursors.items) |*cursor| self.goBufferStart(cursor);
+                                // hardcode because we want to scroll even if cursor didn't move
+                                self.top_pixel = 0;
+                            },
                             '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
                             else => accept_textinput = true,
                         }
