@@ -1089,6 +1089,5 @@ pub const Editor = struct {
         const wrapped_line = self.line_wrapped_buffer.getLineColForPos(min(pos, self.buffer.getBufferEnd()))[0];
         const center_pixel = @intCast(isize, wrapped_line) * @intCast(isize, self.app.atlas.char_height);
         self.top_pixel = max(0, center_pixel - @divTrunc(text_rect.h, 2));
-        dump(.{ "top", self.top_pixel, center_pixel, wrapped_line });
     }
 };
