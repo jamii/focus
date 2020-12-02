@@ -322,7 +322,13 @@ pub const Editor = struct {
 
         // calculate visible range
         // ensure we don't scroll off the top or bottom of the buffer
-        const max_pixels = @intCast(isize, self.line_wrapped_buffer.countLines()) * @intCast(isize, self.app.atlas.char_height);
+        const max_pixels = max(0,
+        // height of text
+            @intCast(isize, self.line_wrapped_buffer.countLines()) * @intCast(isize, self.app.atlas.char_height)
+        // - half a screen
+            - @divTrunc(text_rect.h, 2)
+        // - 1 pixel to ensure that center_pos is always within text if possible
+            - 1);
         if (self.top_pixel < 0) self.top_pixel = 0;
         if (self.top_pixel > max_pixels) self.top_pixel = max_pixels;
         const num_visible_lines = @divTrunc(text_rect.h, self.app.atlas.char_height) + @rem(@rem(text_rect.h, self.app.atlas.char_height), 1); // round up
@@ -517,7 +523,7 @@ pub const Editor = struct {
 
         // draw scrollbar
         {
-            const ratio = @intToFloat(f64, self.top_pixel) / @intToFloat(f64, max_pixels);
+            const ratio = if (max_pixels == 0) 0 else @intToFloat(f64, self.top_pixel) / @intToFloat(f64, max_pixels);
             const y = text_rect.y + min(@floatToInt(Coord, @intToFloat(f64, text_rect.h) * ratio), text_rect.h - self.app.atlas.char_height);
             var left_scroll_rect = left_gutter_rect;
             left_scroll_rect.y = y;
@@ -679,6 +685,8 @@ pub const Editor = struct {
                 }
             }
         }
+        if (self.last_center_pos > start)
+            self.last_center_pos += bytes.len;
     }
 
     pub fn delete(self: *Editor, start: usize, end: usize) void {
@@ -696,6 +704,10 @@ pub const Editor = struct {
                 self.updateCol(point);
             }
         }
+        if (self.last_center_pos > end)
+            self.last_center_pos -= end - start
+        else if (self.last_center_pos > start)
+            self.last_center_pos = start;
     }
 
     pub fn updateBeforeReplace(self: *Editor) [][2]usize {
@@ -712,6 +724,7 @@ pub const Editor = struct {
             const line_col = line_cols[i];
             self.goPos(cursor, self.buffer.getPosForLineCol(min(line_col[0], self.buffer.countLines() - 1), line_col[1]));
         }
+        self.last_center_pos = min(self.last_center_pos, self.buffer.getBufferEnd());
     }
 
     pub fn deleteSelection(self: *Editor, cursor: *Cursor) void {
@@ -1066,5 +1079,6 @@ pub const Editor = struct {
         const wrapped_line = self.line_wrapped_buffer.getLineColForPos(min(pos, self.buffer.getBufferEnd()))[0];
         const center_pixel = @intCast(isize, wrapped_line) * @intCast(isize, self.app.atlas.char_height);
         self.top_pixel = max(0, center_pixel - @divTrunc(text_rect.h, 2));
+        dump(.{ "top", self.top_pixel, center_pixel, wrapped_line });
     }
 };
