@@ -142,7 +142,7 @@ pub fn receiveRequest(buffer: []u8, server_socket: ServerSocket) ?RequestAndClie
 }
 
 pub fn sendReply(server_socket: ServerSocket, client_address: Address, exit_code: u8) void {
-    _ = std.os.sendto(server_socket.socket, &[1]u8{exit_code}, 0, &client_address.address.any, client_address.address_len) catch |err| panic("Failed to send reply: {}", .{err});
+    _ = std.os.sendto(server_socket.socket, &[1]u8{exit_code}, 0, &client_address.address.any, client_address.address_len) catch |err| warn("Failed to send reply: {}\n", .{err});
 }
 
 // returns exit code
