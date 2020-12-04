@@ -147,23 +147,18 @@ pub const Buffer = struct {
         const file = try std.fs.cwd().openFile(self.source.File.absolute_filename, .{});
         defer file.close();
 
-        const mtime = (try file.stat()).mtime;
+        const stat = try file.stat();
+        var num_bytes = stat.size;
+        if (self.role == .Preview) num_bytes = min(num_bytes, max_preview_bytes);
 
-        const chunk_size = 1024;
-        var buf = self.app.frame_allocator.alloc(u8, chunk_size) catch oom();
-        var bytes = ArrayList(u8).init(self.app.frame_allocator);
-
-        while (true) {
-            const len = try file.readAll(buf);
-            // worth handling oom here for big files
-            try bytes.appendSlice(buf[0..len]);
-            if (len < chunk_size) break;
-            if (self.role == .Preview and bytes.items.len >= max_preview_bytes) break;
-        }
+        var bytes = self.app.frame_allocator.alloc(u8, num_bytes) catch oom();
+        const len = try file.readAll(bytes);
+        // TODO can this fail if the file was truncated between stat and read?
+        assert(len == bytes.len);
 
         return TryLoadResult{
-            .bytes = bytes.toOwnedSlice(),
-            .mtime = mtime,
+            .bytes = bytes,
+            .mtime = stat.mtime,
         };
     }
 
