@@ -500,10 +500,7 @@ pub const Buffer = struct {
     }
 
     pub fn countLines(self: *Buffer) usize {
-        var lines: usize = 0;
-        var iter = std.mem.split(self.bytes.items, "\n");
-        while (iter.next()) |_| lines += 1;
-        return lines;
+        return self.line_ranges.items.len;
     }
 
     pub fn getFilename(self: *Buffer) ?[]const u8 {
