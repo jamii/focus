@@ -17,8 +17,10 @@ const Action = union(enum) {
 
 pub fn main() void {
     const allocator = if (builtin.mode == .Debug) &gpa.allocator else std.heap.c_allocator;
+    var arena = focus.common.ArenaAllocator.init(allocator);
 
-    const args = std.process.argsAlloc(allocator) catch unreachable;
+    const args = std.process.argsAlloc(&arena.allocator) catch focus.common.oom();
+
     var be_angel = false;
     var action: Action = .{ .Request = .CreateEmptyWindow };
     for (args[1..]) |c_arg| {
@@ -32,13 +34,13 @@ pub fn main() void {
                 focus.common.panic("Unrecognized arg: {}", .{arg});
             }
         } else {
-            const absolute_filename = std.fs.path.resolve(allocator, &[_][]const u8{arg}) catch focus.common.oom();
+            const absolute_filename = std.fs.path.resolve(&arena.allocator, &[_][]const u8{arg}) catch focus.common.oom();
             action = .{ .Request = .{ .CreateEditorWindow = absolute_filename } };
         }
     }
-    std.process.argsFree(allocator, args);
 
-    const server_socket = focus.createServerSocket();
+    const socket_path = focus.common.format(&arena.allocator, "#{}", .{args[0]});
+    const server_socket = focus.createServerSocket(socket_path);
 
     switch (action) {
         .Angel => {
@@ -60,13 +62,10 @@ pub fn main() void {
             // ask the main process to do something
             const client_socket = focus.createClientSocket();
             focus.sendRequest(client_socket, server_socket, request);
-            switch (request) {
-                .CreateEmptyWindow, .CreateLauncherWindow => {},
-                .CreateEditorWindow => |filename| allocator.free(filename),
-            }
 
             // wait until it's done
             const exit_code = focus.waitReply(client_socket);
+            arena.deinit();
             std.os.exit(exit_code);
         },
     }

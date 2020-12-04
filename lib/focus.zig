@@ -69,11 +69,7 @@ pub fn daemonize() enum { Parent, Child } {
     return .Child;
 }
 
-pub fn createServerSocket() ServerSocket {
-    const socket_path = if (builtin.mode == .Debug)
-        "#focus-debug"
-    else
-        "#focus-stable";
+pub fn createServerSocket(socket_path: []const u8) ServerSocket {
     var address = std.net.Address.initUnix(socket_path) catch |err| panic("Failed to init unix socket address: {}", .{err});
     // have to get len before setting the null byte or returns wrong address
     const address_len = address.getOsSockLen();
