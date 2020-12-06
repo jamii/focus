@@ -98,10 +98,8 @@ pub const Buffer = struct {
                 .mtime = 0,
             },
         };
-        self.load();
-        // don't want the load on the undo stack
-        for (self.doing.items) |edit| edit.deinit(self.app.allocator);
-        self.doing.shrink(0);
+        self.load(.Init);
+        self.undos.resize(0) catch oom();
         return self;
     }
 
@@ -162,9 +160,12 @@ pub const Buffer = struct {
         };
     }
 
-    fn load(self: *Buffer) void {
+    fn load(self: *Buffer, kind: enum { Init, Refresh }) void {
         if (self.tryLoad()) |result| {
-            self.replace(result.bytes);
+            switch (kind) {
+                .Init => self.rawReplace(result.bytes),
+                .Refresh => self.replace(result.bytes),
+            }
             self.source.File.mtime = result.mtime;
         } else |err| {
             const message = format(self.app.frame_allocator, "{} while loading {s}", .{ err, self.getFilename() });
@@ -190,7 +191,7 @@ pub const Buffer = struct {
                 defer file.close();
                 const stat = file.stat() catch |err| panic("{} while refreshing {s}", .{ err, file_source.absolute_filename });
                 if (stat.mtime != file_source.mtime) {
-                    self.load();
+                    self.load(.Refresh);
                 }
             },
         }
