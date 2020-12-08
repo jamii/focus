@@ -17,6 +17,7 @@ pub const builtin = @import("builtin");
 pub const std = @import("std");
 pub const warn = std.debug.warn;
 pub const assert = std.debug.assert;
+pub const expect = std.testing.expect;
 pub const max = std.math.max;
 pub const min = std.math.min;
 pub const Allocator = std.mem.Allocator;
@@ -162,6 +163,10 @@ pub fn subSaturating(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
     } else {
         return a - b;
     }
+}
+
+pub fn last(slice: anytype) @TypeOf(slice).Pointer.child {
+    return slice[slice.len - 1];
 }
 
 // --------------------------------------------------------------------------------
