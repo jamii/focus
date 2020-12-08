@@ -18,6 +18,7 @@ pub const std = @import("std");
 pub const warn = std.debug.warn;
 pub const assert = std.debug.assert;
 pub const expect = std.testing.expect;
+pub const expectEqual = std.testing.expectEqual;
 pub const max = std.math.max;
 pub const min = std.math.min;
 pub const Allocator = std.mem.Allocator;

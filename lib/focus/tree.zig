@@ -33,6 +33,13 @@ pub const Node = packed struct {
         return self.getParent().?.findChild(self);
     }
 
+    fn printInto(self: *Node, output: *ArrayList(u8), num_bytes: usize) void {
+        switch (self.tag) {
+            .Leaf => Leaf.fromNode(self).printInto(output, num_bytes),
+            .Branch => Branch.fromNode(self).printInto(output, num_bytes),
+        }
+    }
+
     fn debugInto(self: *Node, output: *ArrayList(u8), indent: usize, num_bytes: usize) void {
         switch (self.tag) {
             .Leaf => Leaf.fromNode(self).debugInto(output, indent, num_bytes),
@@ -70,7 +77,11 @@ pub const Leaf = struct {
         };
     }
 
-    fn debugInto(self: *Leaf, output: *ArrayList(u8), indent: usize, num_bytes: usize) void {
+    fn printInto(self: Leaf, output: *ArrayList(u8), num_bytes: usize) void {
+        output.appendSlice(self.bytes[0..num_bytes]) catch oom();
+    }
+
+    fn debugInto(self: Leaf, output: *ArrayList(u8), indent: usize, num_bytes: usize) void {
         output.appendNTimes(' ', indent) catch oom();
         std.fmt.format(output.outStream(), "{}\n", .{num_bytes}) catch oom();
     }
@@ -148,7 +159,14 @@ pub const Branch = struct {
         return num_bytes;
     }
 
-    fn debugInto(self: *Branch, output: *ArrayList(u8), indent: usize, num_bytes: usize) void {
+    fn printInto(self: Branch, output: *ArrayList(u8), num_bytes: usize) void {
+        var child_ix: usize = 0;
+        while (child_ix < self.num_children.*) : (child_ix += 1) {
+            self.children[child_ix].printInto(output, self.num_bytes[child_ix]);
+        }
+    }
+
+    fn debugInto(self: Branch, output: *ArrayList(u8), indent: usize, num_bytes: usize) void {
         output.appendNTimes(' ', indent) catch oom();
         output.appendSlice("*\n") catch oom();
         var child_ix: usize = 0;
@@ -322,7 +340,7 @@ pub const Tree = struct {
         return new_leaf;
     }
 
-    fn getDepth(self: *Tree) usize {
+    fn getDepth(self: *const Tree) usize {
         var depth: usize = 0;
         var node = self.root.node;
         while (node.tag == .Branch) {
@@ -332,20 +350,32 @@ pub const Tree = struct {
         return depth;
     }
 
-    fn debugInto(self: *Tree, output: *ArrayList(u8)) void {
+    fn printInto(self: *const Tree, output: *ArrayList(u8)) void {
+        self.root.printInto(output, 0);
+    }
+
+    fn debugInto(self: *const Tree, output: *ArrayList(u8)) void {
         self.root.debugInto(output, 0, 0);
     }
 };
+
+fn testEqual(tree: *const Tree, input: []const u8) void {
+    var output = ArrayList(u8).init(std.testing.allocator);
+    defer output.deinit();
+    tree.printInto(&output);
+    expect(std.mem.eql(u8, input, output.items));
+}
 
 test "tree insert" {
     // TODO deinit
     var arena = ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
+    // TODO embed is super slow
+    const cm: []const u8 = @embedFile("/home/jamie/huge.js");
+
+    // all at once
     var tree = Tree.init(&arena.allocator);
-    tree.insert(0, @embedFile("/home/jamie/huge.js"));
-    var output = ArrayList(u8).init(&arena.allocator);
-    tree.debugInto(&output);
-    std.debug.print("\n{}", .{output.items});
-    dump(tree.getDepth());
+    tree.insert(0, cm);
+    testEqual(&tree, cm);
 }
