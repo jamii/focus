@@ -22,6 +22,13 @@ pub const Node = packed struct {
     parent: ?*Node,
     tag: packed enum(u8) { Leaf, Branch },
 
+    fn deinit(self: *Node, allocator: *Allocator) void {
+        switch (self.tag) {
+            .Leaf => Leaf.fromNode(self).deinit(allocator),
+            .Branch => Branch.fromNode(self).deinit(allocator),
+        }
+    }
+
     fn getParent(self: Node) ?Branch {
         if (self.parent) |parent_node|
             return Branch.fromNode(parent_node)
@@ -46,6 +53,13 @@ pub const Node = packed struct {
             .Branch => Branch.fromNode(self).debugInto(output, indent, num_bytes),
         }
     }
+
+    fn validate(self: *Node) void {
+        switch (self.tag) {
+            .Leaf => Leaf.fromNode(self).validate(),
+            .Branch => Branch.fromNode(self).validate(),
+        }
+    }
 };
 
 pub const Leaf = struct {
@@ -66,6 +80,14 @@ pub const Leaf = struct {
         return fromNode(node);
     }
 
+    fn deinit(
+        self: Leaf,
+        allocator: *Allocator,
+    ) void {
+        const page = @ptrCast(*[page_size]u8, self.node);
+        allocator.free(page);
+    }
+
     const bytes_offset = @sizeOf(Node);
 
     fn fromNode(node: *Node) Leaf {
@@ -77,14 +99,22 @@ pub const Leaf = struct {
         };
     }
 
+    pub fn updateNumBytes(self: Leaf, num_bytes: usize) void {
+        const parent = self.node.getParent().?;
+        var child_ix = parent.findChild(self.node);
+        parent.num_bytes[child_ix] = num_bytes;
+        parent.updateSpine();
+    }
+
     fn printInto(self: Leaf, output: *ArrayList(u8), num_bytes: usize) void {
         output.appendSlice(self.bytes[0..num_bytes]) catch oom();
     }
 
     fn debugInto(self: Leaf, output: *ArrayList(u8), indent: usize, num_bytes: usize) void {
-        output.appendNTimes(' ', indent) catch oom();
-        std.fmt.format(output.outStream(), "{}\n", .{num_bytes}) catch oom();
+        std.fmt.format(output.outStream(), " {}", .{num_bytes}) catch oom();
     }
+
+    fn validate(self: Leaf) void {}
 };
 
 pub const Branch = struct {
@@ -106,13 +136,25 @@ pub const Branch = struct {
     }
 
     fn init(allocator: *Allocator) Branch {
-        const page = allocator.allocWithOptions(usize, page_size, @alignOf(usize), null) catch oom();
+        const page = allocator.allocWithOptions(u8, page_size, @alignOf(usize), null) catch oom();
         const node = @ptrCast(*Node, page);
         node.parent = null;
         node.tag = .Branch;
         var self = fromNode(node);
         self.num_children.* = 0;
         return self;
+    }
+
+    fn deinit(
+        self: Branch,
+        allocator: *Allocator,
+    ) void {
+        var child_ix: usize = 0;
+        while (child_ix < self.num_children.*) : (child_ix += 1) {
+            self.children[child_ix].deinit(allocator);
+        }
+        const page = @ptrCast(*[page_size]u8, self.node);
+        allocator.free(page);
     }
 
     const num_children_offset = alignTo(Offset, @sizeOf(Node));
@@ -150,6 +192,16 @@ pub const Branch = struct {
         self.num_bytes[child_ix] = num_bytes;
         self.num_children.* += 1;
         child.parent = self.node;
+        self.updateSpine();
+    }
+
+    pub fn updateSpine(self: Branch) void {
+        var branch = self;
+        while (branch.node.getParent()) |parent| {
+            const child_ix = parent.findChild(branch.node);
+            parent.num_bytes[child_ix] = branch.getNumBytes();
+            branch = parent;
+        }
     }
 
     pub fn getNumBytes(self: Branch) usize {
@@ -167,11 +219,25 @@ pub const Branch = struct {
     }
 
     fn debugInto(self: Branch, output: *ArrayList(u8), indent: usize, num_bytes: usize) void {
+        output.append('\n') catch oom();
         output.appendNTimes(' ', indent) catch oom();
-        output.appendSlice("*\n") catch oom();
+        std.fmt.format(output.outStream(), "* [{}]", .{self.getNumBytes()}) catch oom();
         var child_ix: usize = 0;
         while (child_ix < self.num_children.*) : (child_ix += 1) {
             self.children[child_ix].debugInto(output, indent + 4, self.num_bytes[child_ix]);
+        }
+    }
+
+    fn validate(self: Branch) void {
+        if (self.node.getParent()) |parent| {
+            const child_ix = parent.findChild(self.node);
+            assert(self.getNumBytes() == parent.num_bytes[child_ix]);
+        }
+        var child_ix: usize = 0;
+        while (child_ix < self.num_children.*) : (child_ix += 1) {
+            assert(self.children[child_ix].parent == self.node);
+            assert(self.num_bytes[child_ix] > 0);
+            self.children[child_ix].validate();
         }
     }
 };
@@ -195,6 +261,10 @@ pub const Tree = struct {
         };
     }
 
+    pub fn deinit(self: Tree) void {
+        self.root.deinit(self.allocator);
+    }
+
     pub fn getPointForPos(self: *Tree, pos: usize, which: enum { Earliest, Latest }) ?Point {
         var node = self.root.node;
         var pos_remaining = pos;
@@ -210,12 +280,12 @@ pub const Tree = struct {
                     node = branch.children[child_ix];
                     continue :node;
                 }
-                pos_remaining -= num_child_bytes;
                 child_ix += 1;
                 if (child_ix == num_children) {
                     node = branch.children[child_ix - 1];
                     continue :node;
                 }
+                pos_remaining -= num_child_bytes;
             }
         }
         return if (pos_remaining > num_child_bytes)
@@ -242,7 +312,10 @@ pub const Tree = struct {
             const leaf_child_ix = point.leaf.node.findInParent();
             const num_leaf_bytes = point.leaf.node.getParent().?.num_bytes[leaf_child_ix];
 
-            if (bytes.len < point.leaf.bytes.len - num_leaf_bytes) {
+            //dump(.{ leaf_child_ix, num_leaf_bytes, bytes_stack.items });
+
+            if (bytes.len <= point.leaf.bytes.len - num_leaf_bytes) {
+                dump("a");
                 // insert in this leaf
                 std.mem.copyBackwards(
                     u8,
@@ -254,20 +327,27 @@ pub const Tree = struct {
                     point.leaf.bytes[point.offset .. point.offset + bytes.len],
                     bytes,
                 );
-                point.leaf.node.getParent().?.num_bytes[leaf_child_ix] = num_leaf_bytes + bytes.len;
-            } else {
-                // copy bytes after point onto the insert stack
+                point.leaf.updateNumBytes(num_leaf_bytes + bytes.len);
+                point.offset += @intCast(Leaf.Offset, bytes.len);
+            } else if (point.offset < num_leaf_bytes) {
+                dump("b");
+                // copy bytes after point onto the insert stack and try again
                 const new_bytes = std.mem.dupe(&arena.allocator, u8, point.leaf.bytes[point.offset..num_leaf_bytes]) catch oom();
+                point.leaf.updateNumBytes(point.offset);
                 bytes_stack.append(new_bytes) catch oom();
-
+                bytes_stack.append(bytes) catch oom();
+            }
+            // TODO handle case where insert is at end of leaf and next leaf has space?
+            else {
+                dump("c");
                 // insert what we can in this leaf
                 const num_insert_bytes = min(point.leaf.bytes.len - point.offset, bytes.len);
                 std.mem.copy(
                     u8,
-                    point.leaf.bytes,
+                    point.leaf.bytes[point.offset..],
                     bytes[0..num_insert_bytes],
                 );
-                point.leaf.node.getParent().?.num_bytes[leaf_child_ix] = point.leaf.bytes.len;
+                point.leaf.updateNumBytes(point.leaf.bytes.len);
 
                 // push any remaining bytes back onto insert stack
                 if (num_insert_bytes < bytes.len) {
@@ -308,17 +388,16 @@ pub const Tree = struct {
                 );
                 new_branch.num_children.* = branch.num_children.* - split_point;
                 branch.num_children.* = split_point;
+                for (new_branch.children[0..new_branch.num_children.*]) |child| {
+                    child.parent = new_branch.node;
+                }
+                branch.updateSpine();
 
                 // insert node
                 if (child_ix < split_point)
                     branch.insertChild(child_ix + 1, node, num_bytes)
                 else
                     new_branch.insertChild(child_ix - split_point + 1, node, num_bytes);
-
-                // update branch parent
-                if (branch.node.getParent()) |parent| {
-                    parent.num_bytes[parent.findChild(branch.node)] = branch.getNumBytes();
-                }
 
                 if (branch.node.getParent()) |parent| {
                     // if have parent, insert new_branch into parent in next loop iteration
@@ -357,25 +436,74 @@ pub const Tree = struct {
     fn debugInto(self: *const Tree, output: *ArrayList(u8)) void {
         self.root.debugInto(output, 0, 0);
     }
+
+    fn validate(self: *const Tree) void {
+        self.root.validate();
+    }
 };
 
 fn testEqual(tree: *const Tree, input: []const u8) void {
     var output = ArrayList(u8).init(std.testing.allocator);
     defer output.deinit();
     tree.printInto(&output);
-    expect(std.mem.eql(u8, input, output.items));
+    var i: usize = 0;
+    while (i < min(input.len, output.items.len)) : (i += 1) {
+        if (input[i] != output.items[i]) {
+            panic("Mismatch at byte {}: {c} vs {c}", .{ i, input[i], output.items[i] });
+        }
+    }
+    expectEqual(input.len, output.items.len);
 }
 
-test "tree insert" {
-    // TODO deinit
-    var arena = ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+test "tree insert all at once" {
+    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
+    defer std.testing.allocator.free(cm);
 
-    // TODO embed is super slow
-    const cm: []const u8 = @embedFile("/home/jamie/huge.js");
-
-    // all at once
-    var tree = Tree.init(&arena.allocator);
+    var tree = Tree.init(std.testing.allocator);
+    defer tree.deinit();
     tree.insert(0, cm);
+    tree.validate();
     testEqual(&tree, cm);
+    expectEqual(tree.getDepth(), 2);
 }
+
+test "tree insert forwards" {
+    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
+    defer std.testing.allocator.free(cm);
+
+    var tree = Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    var i: usize = 0;
+    while (i < cm.len) : (i += 107) {
+        tree.insert(i, cm[i..min(i + 107, cm.len)]);
+    }
+    tree.validate();
+    testEqual(&tree, cm);
+    expectEqual(tree.getDepth(), 2);
+}
+
+test "tree insert backwards" {
+    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
+    defer std.testing.allocator.free(cm);
+
+    var tree = Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    var i: usize = 0;
+    while (i < cm.len) : (i += 107) {
+        tree.insert(0, cm[if (cm.len - i > 107) cm.len - i - 107 else 0 .. cm.len - i]);
+        dump(i + 107);
+        var output = ArrayList(u8).init(std.testing.allocator);
+        defer output.deinit();
+        tree.debugInto(&output);
+        dump(output.items);
+        testEqual(&tree, cm[cm.len - i - 107 .. cm.len]);
+    }
+    tree.validate();
+    testEqual(&tree, cm);
+    expectEqual(tree.getDepth(), 2);
+}
+
+// TODO
+// * [4494] 4087 107 107 107 86"
+// this is an argument for splitting nodes in half instead of filling them?
+// invariant - no under-half-full nodes if total num_bytes > half node?
