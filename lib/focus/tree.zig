@@ -1,7 +1,7 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
 
-// TODO try PackedIntArray
+// TODO try PackedIntArray for Offset etc
 // TODO Leaf/Branch can be done much nicer with packed structs once they are less buggy
 
 const page_size = 4 * 1024;
@@ -236,7 +236,7 @@ pub const Branch = struct {
         var child_ix: usize = 0;
         while (child_ix < self.num_children.*) : (child_ix += 1) {
             assert(self.children[child_ix].parent == self.node);
-            assert(self.num_bytes[child_ix] > 0);
+            assert(self.num_bytes[child_ix] >= @divTrunc(Leaf.max_bytes, 2));
             self.children[child_ix].validate();
         }
     }
@@ -298,75 +298,64 @@ pub const Tree = struct {
     }
 
     pub fn insert(self: *Tree, start: usize, _bytes: []const u8) void {
-        var arena = ArenaAllocator.init(self.allocator);
-        defer arena.deinit();
-
         // find start point
         var point = self.getPointForPos(start, .Earliest).?;
 
         // make a stack of bytes to insert
-        var bytes_stack = ArrayList([]const u8).initCapacity(&arena.allocator, 2) catch oom();
+        var bytes_stack = ArrayList([]const u8).initCapacity(self.allocator, 2) catch oom();
+        defer bytes_stack.deinit();
         bytes_stack.append(_bytes) catch oom();
 
         while (bytes_stack.popOrNull()) |bytes| {
             const leaf_child_ix = point.leaf.node.findInParent();
             const num_leaf_bytes = point.leaf.node.getParent().?.num_bytes[leaf_child_ix];
 
-            //dump(.{ leaf_child_ix, num_leaf_bytes, bytes_stack.items });
+            // insert what we can here
+            const num_insert_bytes = min(point.leaf.bytes.len - num_leaf_bytes, bytes.len);
+            std.mem.copyBackwards(
+                u8,
+                point.leaf.bytes[point.offset + num_insert_bytes .. num_leaf_bytes + num_insert_bytes],
+                point.leaf.bytes[point.offset..num_leaf_bytes],
+            );
+            std.mem.copy(
+                u8,
+                point.leaf.bytes[point.offset .. point.offset + num_insert_bytes],
+                bytes[0..num_insert_bytes],
+            );
+            point.offset += @intCast(Leaf.Offset, num_insert_bytes);
 
-            if (bytes.len <= point.leaf.bytes.len - num_leaf_bytes) {
-                dump("a");
-                // insert in this leaf
-                std.mem.copyBackwards(
-                    u8,
-                    point.leaf.bytes[point.offset + bytes.len .. num_leaf_bytes + bytes.len],
-                    point.leaf.bytes[point.offset..num_leaf_bytes],
-                );
+            if (num_insert_bytes == bytes.len) {
+                point.leaf.updateNumBytes(num_leaf_bytes + num_insert_bytes);
+            } else {
+                // push remaining bytes back onto stack
+                bytes_stack.append(bytes[num_insert_bytes..]) catch oom();
+
+                // split leaf
+                const halfway = @divTrunc(Leaf.max_bytes, 2);
+                const new_leaf = self.insertLeafAfter(point.leaf);
                 std.mem.copy(
                     u8,
-                    point.leaf.bytes[point.offset .. point.offset + bytes.len],
-                    bytes,
+                    new_leaf.bytes,
+                    point.leaf.bytes[halfway..],
                 );
-                point.leaf.updateNumBytes(num_leaf_bytes + bytes.len);
-                point.offset += @intCast(Leaf.Offset, bytes.len);
-            } else if (point.offset < num_leaf_bytes) {
-                dump("b");
-                // copy bytes after point onto the insert stack and try again
-                const new_bytes = std.mem.dupe(&arena.allocator, u8, point.leaf.bytes[point.offset..num_leaf_bytes]) catch oom();
-                point.leaf.updateNumBytes(point.offset);
-                bytes_stack.append(new_bytes) catch oom();
-                bytes_stack.append(bytes) catch oom();
-            }
-            // TODO handle case where insert is at end of leaf and next leaf has space?
-            else {
-                dump("c");
-                // insert what we can in this leaf
-                const num_insert_bytes = min(point.leaf.bytes.len - point.offset, bytes.len);
-                std.mem.copy(
-                    u8,
-                    point.leaf.bytes[point.offset..],
-                    bytes[0..num_insert_bytes],
-                );
-                point.leaf.updateNumBytes(point.leaf.bytes.len);
+                point.leaf.updateNumBytes(halfway);
+                new_leaf.updateNumBytes(Leaf.max_bytes - halfway);
 
-                // push any remaining bytes back onto insert stack
-                if (num_insert_bytes < bytes.len) {
-                    bytes_stack.append(bytes[num_insert_bytes..]) catch oom();
+                // adjust point
+                if (point.offset >= halfway) {
+                    point.leaf = new_leaf;
+                    point.offset -= halfway;
                 }
-
-                // insert a new leaf somewhere and start there in the next loop iteration
-                const new_leaf = self.insertLeaf(point);
-                point = .{ .leaf = new_leaf, .offset = 0 };
             }
         }
     }
 
-    fn insertLeaf(self: *Tree, point: Point) Leaf {
+    fn insertLeafAfter(self: *Tree, after: Leaf) Leaf {
         const new_leaf = Leaf.init(self.allocator);
         var node = new_leaf.node;
         var num_bytes: usize = 0;
-        var child_ix = point.leaf.node.findInParent();
-        var branch = point.leaf.node.getParent().?;
+        var child_ix = after.node.findInParent();
+        var branch = after.node.getParent().?;
         while (true) {
             if (branch.num_children.* < branch.children.len) {
                 // insert node
@@ -438,7 +427,13 @@ pub const Tree = struct {
     }
 
     fn validate(self: *const Tree) void {
-        self.root.validate();
+        const total_bytes = self.root.getNumBytes();
+        if (total_bytes < @divTrunc(Leaf.max_bytes, 2)) {
+            assert(self.root.num_children.* == 1);
+            assert(self.root.children[0].tag == .Leaf);
+        } else {
+            self.root.validate();
+        }
     }
 };
 
@@ -464,7 +459,7 @@ test "tree insert all at once" {
     tree.insert(0, cm);
     tree.validate();
     testEqual(&tree, cm);
-    expectEqual(tree.getDepth(), 2);
+    expectEqual(tree.getDepth(), 3);
 }
 
 test "tree insert forwards" {
@@ -479,7 +474,7 @@ test "tree insert forwards" {
     }
     tree.validate();
     testEqual(&tree, cm);
-    expectEqual(tree.getDepth(), 2);
+    expectEqual(tree.getDepth(), 3);
 }
 
 test "tree insert backwards" {
@@ -491,19 +486,9 @@ test "tree insert backwards" {
     var i: usize = 0;
     while (i < cm.len) : (i += 107) {
         tree.insert(0, cm[if (cm.len - i > 107) cm.len - i - 107 else 0 .. cm.len - i]);
-        dump(i + 107);
-        var output = ArrayList(u8).init(std.testing.allocator);
-        defer output.deinit();
-        tree.debugInto(&output);
-        dump(output.items);
         testEqual(&tree, cm[cm.len - i - 107 .. cm.len]);
     }
     tree.validate();
     testEqual(&tree, cm);
-    expectEqual(tree.getDepth(), 2);
+    expectEqual(tree.getDepth(), 3);
 }
-
-// TODO
-// * [4494] 4087 107 107 107 86"
-// this is an argument for splitting nodes in half instead of filling them?
-// invariant - no under-half-full nodes if total num_bytes > half node?
