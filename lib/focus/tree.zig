@@ -301,17 +301,13 @@ pub const Tree = struct {
         // find start point
         var point = self.getPointForPos(start, .Earliest).?;
 
-        // make a stack of bytes to insert
-        var bytes_stack = ArrayList([]const u8).initCapacity(self.allocator, 2) catch oom();
-        defer bytes_stack.deinit();
-        bytes_stack.append(_bytes) catch oom();
-
-        while (bytes_stack.popOrNull()) |bytes| {
+        var bytes = _bytes;
+        while (true) {
             const leaf_child_ix = point.leaf.node.findInParent();
             const num_leaf_bytes = point.leaf.node.getParent().?.num_bytes[leaf_child_ix];
 
             // insert what we can here
-            const num_insert_bytes = min(point.leaf.bytes.len - num_leaf_bytes, bytes.len);
+            const num_insert_bytes = min(Leaf.max_bytes - num_leaf_bytes, bytes.len);
             std.mem.copyBackwards(
                 u8,
                 point.leaf.bytes[point.offset + num_insert_bytes .. num_leaf_bytes + num_insert_bytes],
@@ -324,12 +320,13 @@ pub const Tree = struct {
             );
             point.offset += @intCast(Leaf.Offset, num_insert_bytes);
 
-            if (num_insert_bytes == bytes.len) {
-                point.leaf.updateNumBytes(num_leaf_bytes + num_insert_bytes);
-            } else {
-                // push remaining bytes back onto stack
-                bytes_stack.append(bytes[num_insert_bytes..]) catch oom();
+            // save remaining bytes for next loop iter
+            bytes = bytes[num_insert_bytes..];
 
+            if (bytes.len == 0) {
+                point.leaf.updateNumBytes(num_leaf_bytes + num_insert_bytes);
+                break;
+            } else {
                 // split leaf
                 const halfway = @divTrunc(Leaf.max_bytes, 2);
                 const new_leaf = self.insertLeafAfter(point.leaf);
@@ -494,5 +491,3 @@ test "tree insert backwards" {
 
 // TODO for delete, suppose we delete each leaf down to 1 byte and then start inserting somewhere. how unbalanced can the tree get?
 // rebalance when branch.num_bytes / branch.num_children hits some threshold?
-
-// TODO don't need bytestack anymore
