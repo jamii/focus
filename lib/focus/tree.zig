@@ -438,7 +438,7 @@ pub const Tree = struct {
 };
 
 fn testEqual(tree: *const Tree, input: []const u8) void {
-    var output = ArrayList(u8).init(std.testing.allocator);
+    var output = ArrayList(u8).initCapacity(std.testing.allocator, input.len) catch oom();
     defer output.deinit();
     tree.printInto(&output);
     var i: usize = 0;
@@ -486,9 +486,13 @@ test "tree insert backwards" {
     var i: usize = 0;
     while (i < cm.len) : (i += 107) {
         tree.insert(0, cm[if (cm.len - i > 107) cm.len - i - 107 else 0 .. cm.len - i]);
-        testEqual(&tree, cm[cm.len - i - 107 .. cm.len]);
     }
     tree.validate();
     testEqual(&tree, cm);
     expectEqual(tree.getDepth(), 3);
 }
+
+// TODO for delete, suppose we delete each leaf down to 1 byte and then start inserting somewhere. how unbalanced can the tree get?
+// rebalance when branch.num_bytes / branch.num_children hits some threshold?
+
+// TODO don't need bytestack anymore
