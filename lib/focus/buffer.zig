@@ -264,11 +264,6 @@ pub const Buffer = struct {
         return .{ line, pos - line_range[0] };
     }
 
-    pub fn searchBackwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
-        const bytes = self.bytes.items[0..pos];
-        return if (std.mem.lastIndexOf(u8, bytes, needle)) |result_pos| result_pos + needle.len else null;
-    }
-
     pub fn searchForwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
         const bytes = self.bytes.items[pos..];
         return if (std.mem.indexOf(u8, bytes, needle)) |result_pos| result_pos + pos else null;
@@ -320,11 +315,13 @@ pub const Buffer = struct {
     }
 
     pub fn getLineStart(self: *Buffer, pos: usize) usize {
-        return self.searchBackwards(pos, "\n") orelse 0;
+        const line = self.getLineColForPos(pos)[0];
+        return self.line_ranges.items[line][0];
     }
 
     pub fn getLineEnd(self: *Buffer, pos: usize) usize {
-        return self.searchForwards(pos, "\n") orelse self.getBufferEnd();
+        const line = self.getLineColForPos(pos)[0];
+        return self.line_ranges.items[line][1];
     }
 
     // TODO pass outStream instead of Allocator for easy concat/sentinel? but costs more allocations?

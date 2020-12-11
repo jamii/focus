@@ -869,7 +869,8 @@ pub const Editor = struct {
         const range = self.getSelectionRange(cursor);
         {
             var pos = range[0];
-            while (self.buffer.searchForwards(pos, "\n")) |new_pos| {
+            while (true) {
+                const new_pos = self.buffer.getLineEnd(pos);
                 if (new_pos >= range[1]) break;
                 num_lines += 1;
                 pos = new_pos + 1;
@@ -971,7 +972,8 @@ pub const Editor = struct {
         const range = self.getSelectionRange(cursor);
         {
             var pos = range[0];
-            while (self.buffer.searchForwards(pos, "\n")) |new_pos| {
+            while (true) {
+                const new_pos = self.buffer.getLineEnd(pos);
                 if (new_pos >= range[1]) break;
                 num_lines += 1;
                 pos = new_pos + 1;
