@@ -1,5 +1,6 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
+const meta = focus.meta;
 
 // TODO how unbalanced can this get?
 // TODO try PackedIntArray for Offset etc
@@ -104,53 +105,6 @@ const Leaf = struct {
         const child_ix = parent.findChild(self.node);
         parent.num_bytes[child_ix] = num_bytes;
         parent.updateSpine();
-    }
-
-    fn nextLeaf(self: Leaf) ?Leaf {
-        var node = self.node;
-
-        // go up
-        while (true) {
-            if (node.getParent()) |parent| {
-                const child_ix = parent.findChild(node);
-                if (child_ix + 1 < parent.num_children.*) {
-                    // go down
-                    var child = parent.children[child_ix + 1];
-                    while (child.tag == .Branch) {
-                        child = Branch.fromNode(child).children[0];
-                    }
-                    return Leaf.fromNode(child);
-                } else {
-                    node = parent.node;
-                }
-            } else {
-                return null;
-            }
-        }
-    }
-
-    fn prevLeaf(self: Leaf) ?Leaf {
-        var node = self.node;
-
-        // go up
-        while (true) {
-            if (node.getParent()) |parent| {
-                const child_ix = parent.findChild(node);
-                if (child_ix > 0) {
-                    // go down
-                    var child = parent.children[child_ix - 1];
-                    while (child.tag == .Branch) {
-                        const branch = Branch.fromNode(node);
-                        node = branch.children[branch.num_children.* - 1];
-                    }
-                    return Leaf.fromNode(child);
-                } else {
-                    node = parent.node;
-                }
-            } else {
-                return null;
-            }
-        }
     }
 
     fn debugInto(self: Leaf, output: *ArrayList(u8), indent: usize) void {}
@@ -314,8 +268,52 @@ const Branch = struct {
 };
 
 const Point = struct {
+    pos: usize,
     leaf: Leaf,
+    num_leaf_bytes: Leaf.Offset,
     offset: Leaf.Offset,
+
+    fn seekNextLeaf(self: *Point) ?Leaf {
+        var node = self.leaf.node;
+
+        self.pos += self.num_leaf_bytes - self.offset;
+
+        // go up
+        while (true) {
+            if (node.getParent()) |parent| {
+                const child_ix = parent.findChild(node);
+                if (child_ix + 1 >= parent.num_children.*) {
+                    // keep going up
+                    node = parent.node;
+                } else {
+                    // go down
+                    var child = parent.children[child_ix + 1];
+                    var num_bytes = parent.num_bytes[child_ix + 1];
+                    while (child.tag == .Branch) {
+                        const branch = Branch.fromNode(child);
+                        child = branch.children[0];
+                        num_bytes = branch.num_bytes[0];
+                    }
+                    self.leaf = Leaf.fromNode(child);
+                    self.num_leaf_bytes = @intCast(Leaf.Offset, num_bytes);
+                    self.offset = 0;
+                    return self.leaf;
+                }
+            } else {
+                return null;
+            }
+        }
+    }
+
+    fn seekNextByte(self: *Point) ?u8 {
+        if (self.offset >= self.num_leaf_bytes) {
+            if (self.seekNextLeaf() == null) return null;
+        }
+        const byte = self.leaf.bytes[self.offset];
+        self.pos += 1;
+        self.offset += 1;
+        return byte;
+    }
 };
 
 const Tree = struct {
@@ -363,7 +361,9 @@ const Tree = struct {
             null
         else
             .{
+                .pos = pos,
                 .leaf = Leaf.fromNode(node),
+                .num_leaf_bytes = @intCast(Leaf.Offset, node.getNumBytesFromParent()),
                 .offset = @intCast(Leaf.Offset, pos_remaining),
             };
     }
@@ -532,6 +532,27 @@ const Tree = struct {
         return Leaf.fromNode(node);
     }
 
+    fn searchForwards(self: Tree, start: usize, needle: []const u8) ?usize {
+        assert(needle.len > 0);
+        var start_point = self.getPointForPos(start, .Latest).?;
+        const needle_start_char = needle[0];
+        while (start_point.seekNextByte()) |haystack_start_char| {
+            if (haystack_start_char == needle_start_char) {
+                var end_point = start_point;
+                var is_match = true;
+                for (needle[1..]) |needle_char| {
+                    if (end_point.seekNextByte()) |haystack_char|
+                        if (haystack_char == needle_char)
+                            continue;
+                    is_match = false;
+                    break;
+                }
+                if (is_match) return start_point.pos - 1;
+            }
+        }
+        return null;
+    }
+
     fn getTotalBytes(self: Tree) usize {
         return self.root.sumNumBytes();
     }
@@ -685,4 +706,37 @@ test "tree delete backwards" {
     }
     tree.validate();
     testEqual(&tree, cm[halfway..]);
+}
+
+test "search forwards" {
+    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
+    defer std.testing.allocator.free(cm);
+
+    var tree = Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    tree.insert(0, cm);
+
+    const needle = "className";
+
+    var expected = ArrayList(usize).init(std.testing.allocator);
+    defer expected.deinit();
+    {
+        var start: usize = 0;
+        while (std.mem.indexOfPos(u8, cm, start, needle)) |pos| {
+            expected.append(pos) catch oom();
+            start = pos + 1;
+        }
+    }
+
+    var actual = ArrayList(usize).init(std.testing.allocator);
+    defer actual.deinit();
+    {
+        var start: usize = 0;
+        while (tree.searchForwards(start, needle)) |pos| {
+            actual.append(pos) catch oom();
+            start = pos + 1;
+        }
+    }
+
+    assert(meta.deepEqual(expected.items, actual.items));
 }
