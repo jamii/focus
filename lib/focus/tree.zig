@@ -1,6 +1,7 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
 
+// TODO how unbalanced can this get?
 // TODO try PackedIntArray for Offset etc
 // TODO Leaf/Branch can be done much nicer with packed structs once they are less buggy
 
@@ -36,15 +37,14 @@ const Node = packed struct {
             return null;
     }
 
-    fn findInParent(self: *Node) Branch.Offset {
-        return self.getParent().?.findChild(self);
+    fn getNumBytesFromParent(self: *Node) usize {
+        const parent = self.getParent().?;
+        const child_ix = parent.findChild(self);
+        return parent.num_bytes[child_ix];
     }
 
-    fn printInto(self: *Node, output: *ArrayList(u8), num_bytes: usize) void {
-        switch (self.tag) {
-            .Leaf => Leaf.fromNode(self).printInto(output, num_bytes),
-            .Branch => Branch.fromNode(self).printInto(output, num_bytes),
-        }
+    fn findInParent(self: *Node) Branch.Offset {
+        return self.getParent().?.findChild(self);
     }
 
     fn debugInto(self: *Node, output: *ArrayList(u8), indent: usize) void {
@@ -57,7 +57,7 @@ const Node = packed struct {
     fn validate(self: *Node) void {
         switch (self.tag) {
             .Leaf => Leaf.fromNode(self).validate(),
-            .Branch => Branch.fromNode(self).validate(),
+            .Branch => Branch.fromNode(self).validate(false),
         }
     }
 };
@@ -101,13 +101,56 @@ const Leaf = struct {
 
     fn updateNumBytes(self: Leaf, num_bytes: usize) void {
         const parent = self.node.getParent().?;
-        var child_ix = parent.findChild(self.node);
+        const child_ix = parent.findChild(self.node);
         parent.num_bytes[child_ix] = num_bytes;
         parent.updateSpine();
     }
 
-    fn printInto(self: Leaf, output: *ArrayList(u8), num_bytes: usize) void {
-        output.appendSlice(self.bytes[0..num_bytes]) catch oom();
+    fn nextLeaf(self: Leaf) ?Leaf {
+        var node = self.node;
+
+        // go up
+        while (true) {
+            if (node.getParent()) |parent| {
+                const child_ix = parent.findChild(node);
+                if (child_ix + 1 < parent.num_children.*) {
+                    // go down
+                    var child = parent.children[child_ix + 1];
+                    while (child.tag == .Branch) {
+                        child = Branch.fromNode(child).children[0];
+                    }
+                    return Leaf.fromNode(child);
+                } else {
+                    node = parent.node;
+                }
+            } else {
+                return null;
+            }
+        }
+    }
+
+    fn prevLeaf(self: Leaf) ?Leaf {
+        var node = self.node;
+
+        // go up
+        while (true) {
+            if (node.getParent()) |parent| {
+                const child_ix = parent.findChild(node);
+                if (child_ix > 0) {
+                    // go down
+                    var child = parent.children[child_ix - 1];
+                    while (child.tag == .Branch) {
+                        const branch = Branch.fromNode(node);
+                        node = branch.children[branch.num_children.* - 1];
+                    }
+                    return Leaf.fromNode(child);
+                } else {
+                    node = parent.node;
+                }
+            } else {
+                return null;
+            }
+        }
     }
 
     fn debugInto(self: Leaf, output: *ArrayList(u8), indent: usize) void {}
@@ -226,29 +269,22 @@ const Branch = struct {
         var branch = self;
         while (branch.node.getParent()) |parent| {
             const child_ix = parent.findChild(branch.node);
-            parent.num_bytes[child_ix] = branch.getNumBytes();
+            parent.num_bytes[child_ix] = branch.sumNumBytes();
             branch = parent;
         }
     }
 
-    fn getNumBytes(self: Branch) usize {
+    fn sumNumBytes(self: Branch) usize {
         var num_bytes: usize = 0;
         for (self.num_bytes[0..self.num_children.*]) |n|
             num_bytes += n;
         return num_bytes;
     }
 
-    fn printInto(self: Branch, output: *ArrayList(u8), num_bytes: usize) void {
-        var child_ix: usize = 0;
-        while (child_ix < self.num_children.*) : (child_ix += 1) {
-            self.children[child_ix].printInto(output, self.num_bytes[child_ix]);
-        }
-    }
-
     fn debugInto(self: Branch, output: *ArrayList(u8), indent: usize) void {
         output.append('\n') catch oom();
         output.appendNTimes(' ', indent) catch oom();
-        std.fmt.format(output.outStream(), "* num_children={} num_bytes={}=[", .{ self.num_children.*, self.getNumBytes() }) catch oom();
+        std.fmt.format(output.outStream(), "* num_children={} num_bytes={}=[", .{ self.num_children.*, self.sumNumBytes() }) catch oom();
         for (self.num_bytes[0..self.num_children.*]) |n, i| {
             const sep: []const u8 = if (i == 0) "" else ", ";
             std.fmt.format(output.outStream(), "{}{}", .{ sep, n }) catch oom();
@@ -259,10 +295,13 @@ const Branch = struct {
         }
     }
 
-    fn validate(self: Branch) void {
+    fn validate(self: Branch, is_root: bool) void {
         if (self.node.getParent()) |parent| {
             const child_ix = parent.findChild(self.node);
-            assert(self.getNumBytes() == parent.num_bytes[child_ix]);
+            assert(self.sumNumBytes() == parent.num_bytes[child_ix]);
+        }
+        if (!is_root) {
+            assert(self.num_children.* >= @divTrunc(Branch.max_children, 2));
         }
         var child_ix: usize = 0;
         while (child_ix < self.num_children.*) : (child_ix += 1) {
@@ -296,7 +335,7 @@ const Tree = struct {
         self.root.deinit(self.allocator);
     }
 
-    fn getPointForPos(self: *Tree, pos: usize, which: enum { Earliest, Latest }) ?Point {
+    fn getPointForPos(self: Tree, pos: usize, which: enum { Earliest, Latest }) ?Point {
         var node = self.root.node;
         var pos_remaining = pos;
         var num_child_bytes: usize = undefined;
@@ -335,7 +374,7 @@ const Tree = struct {
         var bytes = _bytes;
         while (bytes.len > 0) {
             const leaf_child_ix = point.leaf.node.findInParent();
-            const num_leaf_bytes = point.leaf.node.getParent().?.num_bytes[leaf_child_ix];
+            const num_leaf_bytes = point.leaf.node.getNumBytesFromParent();
 
             // insert what we can here
             const num_insert_bytes = min(Leaf.max_bytes - num_leaf_bytes, bytes.len);
@@ -419,7 +458,7 @@ const Tree = struct {
                 if (branch.node.getParent()) |parent| {
                     // if have parent, insert new_branch into parent in next loop iteration
                     node = new_branch.node;
-                    num_bytes = new_branch.getNumBytes();
+                    num_bytes = new_branch.sumNumBytes();
                     child_ix = branch.node.findInParent();
                     branch = parent;
                     continue;
@@ -427,8 +466,8 @@ const Tree = struct {
                     // if no parent, make one and insert branch and new_branch
                     const new_parent = Branch.init(self.allocator);
                     self.root = new_parent;
-                    new_parent.insertChild(0, branch.node, branch.getNumBytes());
-                    new_parent.insertChild(1, new_branch.node, new_branch.getNumBytes());
+                    new_parent.insertChild(0, branch.node, branch.sumNumBytes());
+                    new_parent.insertChild(1, new_branch.node, new_branch.sumNumBytes());
                     break;
                 }
             }
@@ -439,7 +478,7 @@ const Tree = struct {
     fn delete(self: *Tree, start: usize, _end: usize) void {
         var end = _end;
 
-        var total_bytes = self.root.getNumBytes();
+        var total_bytes = self.root.sumNumBytes();
         assert(start <= end);
         assert(end <= total_bytes);
 
@@ -448,7 +487,7 @@ const Tree = struct {
             // find start point
             const point = self.getPointForPos(start, .Latest).?;
             const leaf_child_ix = point.leaf.node.findInParent();
-            var num_leaf_bytes = point.leaf.node.getParent().?.num_bytes[leaf_child_ix];
+            var num_leaf_bytes = point.leaf.node.getNumBytesFromParent();
 
             // delete what we can here
             var num_delete_bytes = min(end - start, num_leaf_bytes - point.offset);
@@ -475,7 +514,28 @@ const Tree = struct {
         }
     }
 
-    fn getDepth(self: *const Tree) usize {
+    fn startLeaf(self: Tree) Leaf {
+        var node = self.root.node;
+        while (node.tag == .Branch) {
+            node = Branch.fromNode(node).children[0];
+        }
+        return Leaf.fromNode(node);
+    }
+
+    fn endLeaf(self: Tree) Leaf {
+        var node = self.root.node;
+        while (node.tag == .Branch) {
+            const branch = Branch.fromNode(node);
+            node = branch.children[branch.num_children.* - 1];
+        }
+        return Leaf.fromNode(node);
+    }
+
+    fn getTotalBytes(self: Tree) usize {
+        return self.root.sumNumBytes();
+    }
+
+    fn getDepth(self: Tree) usize {
         var depth: usize = 0;
         var node = self.root.node;
         while (node.tag == .Branch) {
@@ -485,16 +545,29 @@ const Tree = struct {
         return depth;
     }
 
-    fn printInto(self: *const Tree, output: *ArrayList(u8)) void {
-        self.root.printInto(output, 0);
+    fn copyInto(self: Tree, output: *ArrayList(u8), _start: usize, end: usize) void {
+        var start = _start;
+        var point = self.getPointForPos(start, .Latest).?;
+
+        while (true) {
+            const num_leaf_bytes = point.leaf.node.getNumBytesFromParent();
+            const num_copy_bytes = min(end - start, num_leaf_bytes - point.offset);
+            output.appendSlice(point.leaf.bytes[point.offset..num_leaf_bytes]) catch oom();
+            start += num_leaf_bytes;
+
+            if (start >= end) break;
+
+            point.leaf = point.leaf.nextLeaf().?;
+            point.offset = 0;
+        }
     }
 
-    fn debugInto(self: *const Tree, output: *ArrayList(u8)) void {
+    fn debugInto(self: Tree, output: *ArrayList(u8)) void {
         self.root.debugInto(output, 0);
     }
 
-    fn validate(self: *const Tree) void {
-        const total_bytes = self.root.getNumBytes();
+    fn validate(self: Tree) void {
+        const total_bytes = self.root.sumNumBytes();
         if (total_bytes < @divTrunc(Leaf.max_bytes, 2)) {
             var branch = self.root;
             while (true) {
@@ -506,7 +579,7 @@ const Tree = struct {
                 }
             }
         } else {
-            self.root.validate();
+            self.root.validate(true);
         }
     }
 };
@@ -514,7 +587,7 @@ const Tree = struct {
 fn testEqual(tree: *const Tree, input: []const u8) void {
     var output = ArrayList(u8).initCapacity(std.testing.allocator, input.len) catch oom();
     defer output.deinit();
-    tree.printInto(&output);
+    tree.copyInto(&output, 0, tree.getTotalBytes());
     var i: usize = 0;
     while (i < min(input.len, output.items.len)) : (i += 1) {
         if (input[i] != output.items[i]) {
@@ -545,8 +618,8 @@ test "tree insert forwards" {
     var i: usize = 0;
     while (i < cm.len) : (i += 107) {
         tree.insert(i, cm[i..min(i + 107, cm.len)]);
+        tree.validate();
     }
-    tree.validate();
     testEqual(&tree, cm);
     expectEqual(tree.getDepth(), 3);
 }
@@ -560,8 +633,8 @@ test "tree insert backwards" {
     var i: usize = 0;
     while (i < cm.len) : (i += 107) {
         tree.insert(0, cm[if (cm.len - i > 107) cm.len - i - 107 else 0 .. cm.len - i]);
+        tree.validate();
     }
-    tree.validate();
     testEqual(&tree, cm);
     expectEqual(tree.getDepth(), 3);
 }
@@ -575,7 +648,6 @@ test "tree delete all at once" {
     tree.insert(0, cm);
 
     tree.delete(0, cm.len);
-
     tree.validate();
     testEqual(&tree, "");
 }
@@ -591,9 +663,8 @@ test "tree delete forwards" {
     var i: usize = 0;
     while (i < cm.len) : (i += 107) {
         tree.delete(0, min(107, cm.len - i));
+        tree.validate();
     }
-
-    tree.validate();
     testEqual(&tree, "");
 }
 
@@ -608,8 +679,7 @@ test "tree delete backwards" {
     var i: usize = 0;
     while (i < cm.len) : (i += 107) {
         tree.delete(if (cm.len - i > 107) cm.len - i - 107 else 0, cm.len - i);
+        tree.validate();
     }
-
-    tree.validate();
     testEqual(&tree, "");
 }
