@@ -374,15 +374,12 @@ const Tree = struct {
 
         var bytes = _bytes;
         while (bytes.len > 0) {
-            const leaf_child_ix = point.leaf.node.findInParent();
-            const num_leaf_bytes = point.leaf.node.getNumBytesFromParent();
-
             // insert what we can here
-            const num_insert_bytes = min(Leaf.max_bytes - num_leaf_bytes, bytes.len);
+            const num_insert_bytes = min(Leaf.max_bytes - point.num_leaf_bytes, bytes.len);
             std.mem.copyBackwards(
                 u8,
-                point.leaf.bytes[point.offset + num_insert_bytes .. num_leaf_bytes + num_insert_bytes],
-                point.leaf.bytes[point.offset..num_leaf_bytes],
+                point.leaf.bytes[point.offset + num_insert_bytes .. point.num_leaf_bytes + num_insert_bytes],
+                point.leaf.bytes[point.offset..point.num_leaf_bytes],
             );
             std.mem.copy(
                 u8,
@@ -390,12 +387,13 @@ const Tree = struct {
                 bytes[0..num_insert_bytes],
             );
             point.offset += @intCast(Leaf.Offset, num_insert_bytes);
+            point.num_leaf_bytes += @intCast(Leaf.Offset, num_insert_bytes);
 
             // save remaining bytes for next loop iter
             bytes = bytes[num_insert_bytes..];
 
             if (bytes.len == 0) {
-                point.leaf.updateNumBytes(num_leaf_bytes + num_insert_bytes);
+                point.leaf.updateNumBytes(point.num_leaf_bytes);
                 break;
             } else {
                 // split leaf
@@ -412,7 +410,10 @@ const Tree = struct {
                 // adjust point
                 if (point.offset >= halfway) {
                     point.leaf = new_leaf;
+                    point.num_leaf_bytes = Leaf.max_bytes - halfway;
                     point.offset -= halfway;
+                } else {
+                    point.num_leaf_bytes = halfway;
                 }
             }
         }
@@ -484,31 +485,29 @@ const Tree = struct {
         assert(end <= total_bytes);
 
         while (start < end) {
-
             // find start point
-            const point = self.getPointForPos(start, .Latest).?;
-            const leaf_child_ix = point.leaf.node.findInParent();
-            var num_leaf_bytes = point.leaf.node.getNumBytesFromParent();
+            var point = self.getPointForPos(start, .Latest).?;
 
             // delete what we can here
-            var num_delete_bytes = min(end - start, num_leaf_bytes - point.offset);
+            var num_delete_bytes = min(end - start, point.num_leaf_bytes - point.offset);
             std.mem.copy(
                 u8,
                 point.leaf.bytes[point.offset..],
-                point.leaf.bytes[point.offset + num_delete_bytes .. num_leaf_bytes],
+                point.leaf.bytes[point.offset + num_delete_bytes .. point.num_leaf_bytes],
             );
 
             end -= num_delete_bytes;
-            num_leaf_bytes -= num_delete_bytes;
+            point.num_leaf_bytes -= num_delete_bytes;
             total_bytes -= num_delete_bytes;
 
-            if (num_leaf_bytes >= @divTrunc(Leaf.max_bytes, 2) or total_bytes < @divTrunc(Leaf.max_bytes, 2)) {
-                point.leaf.updateNumBytes(num_leaf_bytes);
+            if (point.num_leaf_bytes >= @divTrunc(Leaf.max_bytes, 2) or total_bytes < @divTrunc(Leaf.max_bytes, 2)) {
+                point.leaf.updateNumBytes(point.num_leaf_bytes);
             } else {
                 // leaf is underfull, remove it and insert bytes into sibling
                 var removed = ArrayList(*Node).initCapacity(self.allocator, 16) catch oom();
+                const leaf_child_ix = point.leaf.node.findInParent();
                 point.leaf.node.getParent().?.removeChild(leaf_child_ix, &removed);
-                self.insert(start - point.offset, point.leaf.bytes[0..num_leaf_bytes]);
+                self.insert(start - point.offset, point.leaf.bytes[0..point.num_leaf_bytes]);
                 for (removed.items) |node| node.deinit(self.allocator);
                 removed.deinit();
             }
@@ -567,20 +566,18 @@ const Tree = struct {
         return depth;
     }
 
-    fn copyInto(self: Tree, output: *ArrayList(u8), _start: usize, end: usize) void {
-        var start = _start;
+    fn writeInto(self: Tree, writer: anytype, start: usize, end: usize) !void {
         var point = self.getPointForPos(start, .Latest).?;
 
+        var num_remaining_write_bytes = end - start;
         while (true) {
-            const num_leaf_bytes = point.leaf.node.getNumBytesFromParent();
-            const num_copy_bytes = min(end - start, num_leaf_bytes - point.offset);
-            output.appendSlice(point.leaf.bytes[point.offset..num_leaf_bytes]) catch oom();
-            start += num_leaf_bytes;
+            const num_write_bytes = min(num_remaining_write_bytes, point.num_leaf_bytes - point.offset);
+            try writer.writeAll(point.leaf.bytes[point.offset .. point.offset + num_write_bytes]);
+            num_remaining_write_bytes -= num_write_bytes;
 
-            if (start >= end) break;
+            if (num_remaining_write_bytes == 0) break;
 
-            point.leaf = point.leaf.nextLeaf().?;
-            point.offset = 0;
+            _ = point.seekNextLeaf().?;
         }
     }
 
@@ -609,7 +606,7 @@ const Tree = struct {
 fn testEqual(tree: *const Tree, input: []const u8) void {
     var output = ArrayList(u8).initCapacity(std.testing.allocator, input.len) catch oom();
     defer output.deinit();
-    tree.copyInto(&output, 0, tree.getTotalBytes());
+    tree.writeInto(output.writer(), 0, tree.getTotalBytes()) catch unreachable;
     var i: usize = 0;
     while (i < min(input.len, output.items.len)) : (i += 1) {
         if (input[i] != output.items[i]) {
