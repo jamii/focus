@@ -267,13 +267,25 @@ const Branch = struct {
     }
 };
 
-const Point = struct {
+pub const Point = struct {
+    // Always points at a byte, unless we're at the end of the tree
     pos: usize,
     leaf: Leaf,
     num_leaf_bytes: Leaf.Offset,
     offset: Leaf.Offset,
 
-    fn seekNextLeaf(self: *Point) ?Leaf {
+    fn isAtEnd(self: Point) bool {
+        return self.offset == self.num_leaf_bytes;
+    }
+
+    fn getNextByte(self: *Point) u8 {
+        assert(!self.isAtEnd());
+        return self.leaf.bytes[self.offset];
+    }
+
+    const Seek = enum { Found, NotFound };
+
+    fn seekNextLeaf(self: *Point) Seek {
         var node = self.leaf.node;
 
         self.pos += self.num_leaf_bytes - self.offset;
@@ -297,26 +309,68 @@ const Point = struct {
                     self.leaf = Leaf.fromNode(child);
                     self.num_leaf_bytes = @intCast(Leaf.Offset, num_bytes);
                     self.offset = 0;
-                    return self.leaf;
+                    return .Found;
                 }
             } else {
-                return null;
+                return .NotFound;
             }
         }
     }
 
-    fn seekNextByte(self: *Point) ?u8 {
-        if (self.offset >= self.num_leaf_bytes) {
-            if (self.seekNextLeaf() == null) return null;
+    fn seekNextByte(self: *Point) Seek {
+        if (self.offset >= self.num_leaf_bytes - 1) {
+            if (self.seekNextLeaf() == .NotFound) return .NotFound;
+        } else {
+            self.pos += 1;
+            self.offset += 1;
         }
-        const byte = self.leaf.bytes[self.offset];
-        self.pos += 1;
-        self.offset += 1;
-        return byte;
+        return .Found;
+    }
+
+    fn seekPrevLeaf(self: *Point) Seek {
+        var node = self.leaf.node;
+
+        self.pos -= self.offset;
+
+        // go up
+        while (true) {
+            if (node.getParent()) |parent| {
+                const child_ix = parent.findChild(node);
+                if (child_ix == 0) {
+                    // keep going up
+                    node = parent.node;
+                } else {
+                    // go down
+                    var child = parent.children[child_ix - 1];
+                    var num_bytes = parent.num_bytes[child_ix - 1];
+                    while (child.tag == .Branch) {
+                        const branch = Branch.fromNode(child);
+                        child = branch.children[branch.num_children.* - 1];
+                        num_bytes = branch.num_bytes[branch.num_children.* - 1];
+                    }
+                    self.leaf = Leaf.fromNode(child);
+                    self.num_leaf_bytes = @intCast(Leaf.Offset, num_bytes);
+                    self.offset = @intCast(Leaf.Offset, num_bytes) - 1;
+                    return .Found;
+                }
+            } else {
+                return .NotFound;
+            }
+        }
+    }
+
+    fn seekPrevByte(self: *Point) Seek {
+        if (self.offset == 0) {
+            if (self.seekPrevLeaf() == .NotFound) return .NotFound;
+        } else {
+            self.pos -= 1;
+            self.offset -= 1;
+        }
+        return .Found;
     }
 };
 
-const Tree = struct {
+pub const Tree = struct {
     allocator: *Allocator,
     root: Branch,
 
@@ -334,7 +388,7 @@ const Tree = struct {
         self.root.deinit(self.allocator);
     }
 
-    fn getPointForPos(self: Tree, pos: usize, which: enum { Earliest, Latest }) ?Point {
+    pub fn getPointForPos(self: Tree, pos: usize) ?Point {
         var node = self.root.node;
         var pos_remaining = pos;
         var num_child_bytes: usize = undefined;
@@ -345,7 +399,7 @@ const Tree = struct {
             var child_ix: usize = 0;
             while (true) {
                 num_child_bytes = num_bytes[child_ix];
-                if (pos_remaining < num_child_bytes or (which == .Earliest and pos_remaining == num_child_bytes)) {
+                if (pos_remaining < num_child_bytes) {
                     node = branch.children[child_ix];
                     continue :node;
                 }
@@ -368,9 +422,9 @@ const Tree = struct {
             };
     }
 
-    fn insert(self: *Tree, start: usize, _bytes: []const u8) void {
+    pub fn insert(self: *Tree, start: usize, _bytes: []const u8) void {
         // find start point
-        var point = self.getPointForPos(start, .Earliest).?;
+        var point = self.getPointForPos(start).?;
 
         var bytes = _bytes;
         while (bytes.len > 0) {
@@ -477,7 +531,7 @@ const Tree = struct {
         return new_leaf;
     }
 
-    fn delete(self: *Tree, start: usize, _end: usize) void {
+    pub fn delete(self: *Tree, start: usize, _end: usize) void {
         var end = _end;
 
         var total_bytes = self.root.sumNumBytes();
@@ -486,7 +540,7 @@ const Tree = struct {
 
         while (start < end) {
             // find start point
-            var point = self.getPointForPos(start, .Latest).?;
+            var point = self.getPointForPos(start).?;
 
             // delete what we can here
             var num_delete_bytes = min(end - start, point.num_leaf_bytes - point.offset);
@@ -531,25 +585,27 @@ const Tree = struct {
         return Leaf.fromNode(node);
     }
 
-    fn searchForwards(self: Tree, start: usize, needle: []const u8) ?usize {
+    pub fn searchForwards(self: Tree, start: usize, needle: []const u8) ?usize {
         assert(needle.len > 0);
-        var start_point = self.getPointForPos(start, .Latest).?;
+        var start_point = self.getPointForPos(start).?;
+        if (start_point.isAtEnd()) return null;
         const needle_start_char = needle[0];
-        while (start_point.seekNextByte()) |haystack_start_char| {
+        while (true) {
+            const haystack_start_char = start_point.getNextByte();
             if (haystack_start_char == needle_start_char) {
                 var end_point = start_point;
                 var is_match = true;
                 for (needle[1..]) |needle_char| {
-                    if (end_point.seekNextByte()) |haystack_char|
-                        if (haystack_char == needle_char)
+                    if (end_point.seekNextByte() == .Found)
+                        if (end_point.getNextByte() == needle_char)
                             continue;
                     is_match = false;
                     break;
                 }
-                if (is_match) return start_point.pos - 1;
+                if (is_match) return start_point.pos;
             }
+            if (start_point.seekNextByte() == .NotFound) return null;
         }
-        return null;
     }
 
     fn getTotalBytes(self: Tree) usize {
@@ -566,8 +622,32 @@ const Tree = struct {
         return depth;
     }
 
+    pub fn copy(self: Tree, allocator: *Allocator, start: usize, end: usize) []const u8 {
+        var buffer = allocator.alloc(u8, end - start) catch oom();
+        self.copyInto(buffer, start);
+        return buffer;
+    }
+
+    pub fn copyInto(self: Tree, buffer: []u8, start: usize) void {
+        var point = self.getPointForPos(start).?;
+
+        while (true) {
+            const num_copy_bytes = min(buffer.len, point.num_leaf_bytes - point.offset);
+            std.mem.copy(
+                u8,
+                buffer,
+                point.leaf.bytes[point.offset .. point.offset + num_copy_bytes],
+            );
+            buffer = buffer[num_copy_bytes..];
+
+            if (buffer.len == 0) break;
+
+            assert(point.seekNextLeaf() != .NotFound);
+        }
+    }
+
     fn writeInto(self: Tree, writer: anytype, start: usize, end: usize) !void {
-        var point = self.getPointForPos(start, .Latest).?;
+        var point = self.getPointForPos(start).?;
 
         var num_remaining_write_bytes = end - start;
         while (true) {
@@ -577,7 +657,7 @@ const Tree = struct {
 
             if (num_remaining_write_bytes == 0) break;
 
-            _ = point.seekNextLeaf().?;
+            assert(point.seekNextLeaf() != .NotFound);
         }
     }
 
