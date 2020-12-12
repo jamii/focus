@@ -51,8 +51,7 @@ pub const SingleLineEditor = struct {
     }
 
     pub fn getText(self: *SingleLineEditor) []const u8 {
-        // TODO should this copy?
-        return self.buffer.bytes.items;
+        return self.buffer.tree.copy(self.app.frame_allocator, 0, self.buffer.getBufferEnd());
     }
 
     pub fn setText(self: *SingleLineEditor, text: []const u8) void {

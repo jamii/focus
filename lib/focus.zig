@@ -1,6 +1,7 @@
 pub const common = @import("./focus/common.zig");
 pub const meta = @import("./focus/meta.zig");
 pub const Atlas = @import("./focus/atlas.zig").Atlas;
+pub const Tree = @import("./focus/tree.zig").Tree;
 pub const Buffer = @import("./focus/buffer.zig").Buffer;
 pub const LineWrappedBuffer = @import("./focus/line_wrapped_buffer.zig").LineWrappedBuffer;
 pub const Editor = @import("./focus/editor.zig").Editor;

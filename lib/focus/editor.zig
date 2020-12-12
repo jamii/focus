@@ -377,7 +377,7 @@ pub const Editor = struct {
         const max_line_ix = min(@intCast(usize, max(visible_end_line + 1, 0)), self.line_wrapped_buffer.wrapped_line_ranges.items.len);
         while (line_ix < max_line_ix) : (line_ix += 1) {
             const line_range = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix];
-            const line = self.buffer.bytes.items[line_range[0]..line_range[1]];
+            const line = self.buffer.copy(self.app.frame_allocator, line_range[0], line_range[1]);
 
             const line_top_pixel = @intCast(Coord, line_ix) * self.app.atlas.char_height;
             const y = text_rect.y + @intCast(Coord, line_top_pixel - self.top_pixel);
@@ -797,7 +797,7 @@ pub const Editor = struct {
 
     pub fn dupeSelection(self: *Editor, allocator: *Allocator, cursor: *Cursor) []const u8 {
         const range = self.getSelectionRange(cursor);
-        return self.buffer.dupe(allocator, range[0], range[1]);
+        return self.buffer.tree.copy(allocator, range[0], range[1]);
     }
 
     // TODO clipboard stack on app
@@ -893,11 +893,10 @@ pub const Editor = struct {
             // work out current indent
             self.goRealLineStart(edit_cursor);
             const this_line_start_pos = edit_cursor.head.pos;
-            var this_indent: usize = 0;
-            while (this_line_start_pos + this_indent < self.buffer.bytes.items.len and self.buffer.bytes.items[this_line_start_pos + this_indent] == ' ') {
-                this_indent += 1;
-            }
-            const line_start_char = if (this_line_start_pos + this_indent < self.buffer.bytes.items.len) self.buffer.bytes.items[this_line_start_pos + this_indent] else 0;
+            var this_line_start_point = self.buffer.tree.getPointForPos(this_line_start_pos).?;
+            while (!this_line_start_point.isAtEnd() and this_line_start_point.getNextByte() == ' ') : (_ = this_line_start_point.seekNextByte()) {}
+            const this_indent = this_line_start_point.pos - this_line_start_pos;
+            const line_start_char = if (!this_line_start_point.isAtEnd()) this_line_start_point.getNextByte() else 0;
 
             // work out prev line indent
             var prev_indent: usize = 0;
@@ -909,20 +908,24 @@ pub const Editor = struct {
                     var start = edit_cursor.head.pos;
                     const end = self.buffer.getLineEnd(edit_cursor.head.pos);
                     var is_blank = true;
-                    while (start < end) : (start += 1) {
-                        if (self.buffer.bytes.items[start] != ' ') is_blank = false;
+                    var point = self.buffer.tree.getPointForPos(start).?;
+                    while (point.pos < end) : (_ = point.seekNextByte()) {
+                        if (point.getNextByte() != ' ') {
+                            is_blank = false;
+                            break;
+                        }
                     }
                     if (!is_blank or start == 0) break;
                 }
 
                 const line_end_pos = self.buffer.getLineEnd(edit_cursor.head.pos);
-                const line_end_char = if (line_end_pos > 0 and line_end_pos - 1 < self.buffer.bytes.items.len) self.buffer.bytes.items[line_end_pos - 1] else 0;
+                const line_end_char = if (line_end_pos > 0 and line_end_pos - 1 < self.buffer.getBufferEnd()) self.buffer.tree.getPointForPos(line_end_pos - 1).?.getNextByte() else 0;
 
                 self.goRealLineStart(edit_cursor);
                 const prev_line_start_pos = edit_cursor.head.pos;
-                while (prev_line_start_pos + prev_indent < self.buffer.bytes.items.len and self.buffer.bytes.items[prev_line_start_pos + prev_indent] == ' ') {
-                    prev_indent += 1;
-                }
+                var prev_line_start_point = self.buffer.tree.getPointForPos(prev_line_start_pos).?;
+                while (!prev_line_start_point.isAtEnd() and prev_line_start_point.getNextByte() == ' ') : (_ = prev_line_start_point.seekNextByte()) {}
+                prev_indent = prev_line_start_point.pos - prev_line_start_pos;
 
                 // add extra indent when opening a block
                 // TODO this is kind of fragile
@@ -994,9 +997,11 @@ pub const Editor = struct {
         while (num_lines > 0) : (num_lines -= 1) {
             // find first non-whitespace char
             self.goRealLineStart(edit_cursor);
-            var start = edit_cursor.head.pos;
+            var line_start = edit_cursor.head.pos;
+            var point = self.buffer.tree.getPointForPos(line_start).?;
+            while (!point.isAtEnd() and point.getNextByte() == ' ') : (_ = point.seekNextByte()) {}
+            const start = point.pos;
             const end = self.buffer.getLineEnd(start);
-            while (start < end and self.buffer.bytes.items[start] == ' ') : (start += 1) {}
 
             // insert or remove comment
             switch (action) {
@@ -1005,7 +1010,7 @@ pub const Editor = struct {
                 },
                 .Remove => {
                     if (end - start >= comment_string.len and
-                        meta.deepEqual(comment_string, self.buffer.bytes.items[start .. start + comment_string.len]))
+                        meta.deepEqual(comment_string, self.buffer.tree.copy(self.app.frame_allocator, start, start + comment_string.len)))
                     {
                         self.buffer.delete(start, start + comment_string.len);
                     }
@@ -1035,7 +1040,7 @@ pub const Editor = struct {
         process.stdout_behavior = .Pipe;
         process.stderr_behavior = .Pipe;
         process.spawn() catch |err| panic("Error spawning zig fmt: {}", .{err});
-        process.stdin.?.outStream().writeAll(self.buffer.bytes.items) catch |err| panic("Error writing to zig fmt: {}", .{err});
+        self.buffer.tree.writeInto(process.stdin.?.writer(), 0, self.buffer.getBufferEnd()) catch |err| panic("Error writing to zig fmt: {}", .{err});
         process.stdin.?.close();
         process.stdin = null;
         // NOTE this is fragile - currently zig fmt closes stdout before stderr so this works but reading the other way round will sometimes block

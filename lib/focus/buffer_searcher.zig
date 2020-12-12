@@ -67,7 +67,7 @@ pub const BufferSearcher = struct {
                 while (self.preview_editor.buffer.searchForwards(pos, filter)) |found_pos| {
                     const start = self.preview_editor.buffer.getLineStart(found_pos);
                     const end = self.preview_editor.buffer.getLineEnd(found_pos + filter.len);
-                    const selection = self.preview_editor.buffer.dupe(self.app.frame_allocator, start, end);
+                    const selection = self.preview_editor.buffer.tree.copy(self.app.frame_allocator, start, end);
                     assert(selection[0] != '\n' and selection[selection.len - 1] != '\n');
 
                     var result = ArrayList(u8).init(self.app.frame_allocator);

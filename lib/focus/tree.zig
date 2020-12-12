@@ -274,18 +274,18 @@ pub const Point = struct {
     num_leaf_bytes: Leaf.Offset,
     offset: Leaf.Offset,
 
-    fn isAtEnd(self: Point) bool {
+    pub fn isAtEnd(self: Point) bool {
         return self.offset == self.num_leaf_bytes;
     }
 
-    fn getNextByte(self: *Point) u8 {
+    pub fn getNextByte(self: *Point) u8 {
         assert(!self.isAtEnd());
         return self.leaf.bytes[self.offset];
     }
 
     const Seek = enum { Found, NotFound };
 
-    fn seekNextLeaf(self: *Point) Seek {
+    pub fn seekNextLeaf(self: *Point) Seek {
         var node = self.leaf.node;
 
         self.pos += self.num_leaf_bytes - self.offset;
@@ -312,13 +312,14 @@ pub const Point = struct {
                     return .Found;
                 }
             } else {
+                self.offset = self.num_leaf_bytes;
                 return .NotFound;
             }
         }
     }
 
-    fn seekNextByte(self: *Point) Seek {
-        if (self.offset >= self.num_leaf_bytes - 1) {
+    pub fn seekNextByte(self: *Point) Seek {
+        if (self.offset + 1 >= self.num_leaf_bytes) {
             if (self.seekNextLeaf() == .NotFound) return .NotFound;
         } else {
             self.pos += 1;
@@ -327,7 +328,7 @@ pub const Point = struct {
         return .Found;
     }
 
-    fn seekPrevLeaf(self: *Point) Seek {
+    pub fn seekPrevLeaf(self: *Point) Seek {
         var node = self.leaf.node;
 
         self.pos -= self.offset;
@@ -354,12 +355,13 @@ pub const Point = struct {
                     return .Found;
                 }
             } else {
+                self.offset = 0;
                 return .NotFound;
             }
         }
     }
 
-    fn seekPrevByte(self: *Point) Seek {
+    pub fn seekPrevByte(self: *Point) Seek {
         if (self.offset == 0) {
             if (self.seekPrevLeaf() == .NotFound) return .NotFound;
         } else {
@@ -374,7 +376,7 @@ pub const Tree = struct {
     allocator: *Allocator,
     root: Branch,
 
-    fn init(allocator: *Allocator) Tree {
+    pub fn init(allocator: *Allocator) Tree {
         var branch = Branch.init(allocator);
         var leaf = Leaf.init(allocator);
         branch.insertChild(0, leaf.node, 0);
@@ -384,7 +386,7 @@ pub const Tree = struct {
         };
     }
 
-    fn deinit(self: Tree) void {
+    pub fn deinit(self: Tree) void {
         self.root.deinit(self.allocator);
     }
 
@@ -608,7 +610,7 @@ pub const Tree = struct {
         }
     }
 
-    fn getTotalBytes(self: Tree) usize {
+    pub fn getTotalBytes(self: Tree) usize {
         return self.root.sumNumBytes();
     }
 
@@ -628,7 +630,9 @@ pub const Tree = struct {
         return buffer;
     }
 
-    pub fn copyInto(self: Tree, buffer: []u8, start: usize) void {
+    pub fn copyInto(self: Tree, _buffer: []u8, start: usize) void {
+        var buffer = _buffer;
+
         var point = self.getPointForPos(start).?;
 
         while (true) {
@@ -646,7 +650,7 @@ pub const Tree = struct {
         }
     }
 
-    fn writeInto(self: Tree, writer: anytype, start: usize, end: usize) !void {
+    pub fn writeInto(self: Tree, writer: anytype, start: usize, end: usize) !void {
         var point = self.getPointForPos(start).?;
 
         var num_remaining_write_bytes = end - start;

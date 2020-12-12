@@ -3,6 +3,7 @@ usingnamespace focus.common;
 const App = focus.App;
 const Editor = focus.Editor;
 const meta = focus.meta;
+const Tree = focus.Tree;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 
 pub const BufferSource = union(enum) {
@@ -59,7 +60,7 @@ const Edit = union(enum) {
 pub const Buffer = struct {
     app: *App,
     source: BufferSource,
-    bytes: ArrayList(u8),
+    tree: Tree,
     undos: ArrayList([]Edit),
     doing: ArrayList(Edit),
     redos: ArrayList([]Edit),
@@ -75,7 +76,7 @@ pub const Buffer = struct {
         self.* = Buffer{
             .app = app,
             .source = .None,
-            .bytes = ArrayList(u8).init(app.allocator),
+            .tree = Tree.init(app.allocator),
             .undos = ArrayList([]Edit).init(app.allocator),
             .doing = ArrayList(Edit).init(app.allocator),
             .redos = ArrayList([]Edit).init(app.allocator),
@@ -130,7 +131,7 @@ pub const Buffer = struct {
         }
         self.redos.deinit();
 
-        self.bytes.deinit();
+        self.tree.deinit();
 
         self.source.deinit(self.app);
 
@@ -163,6 +164,7 @@ pub const Buffer = struct {
     fn load(self: *Buffer, kind: enum { Init, Refresh }) void {
         if (self.tryLoad()) |result| {
             switch (kind) {
+                // TODO load directly into a tree?
                 .Init => self.rawReplace(result.bytes),
                 .Refresh => self.replace(result.bytes),
             }
@@ -228,7 +230,7 @@ pub const Buffer = struct {
                 };
                 defer file.close();
 
-                file.writeAll(self.bytes.items) catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
+                self.tree.writeInto(file.writer(), 0, self.tree.getTotalBytes()) catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 const stat = file.stat() catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 file_source.mtime = stat.mtime;
                 self.modified_since_last_save = false;
@@ -237,7 +239,7 @@ pub const Buffer = struct {
     }
 
     pub fn getBufferEnd(self: *Buffer) usize {
-        return self.bytes.items.len;
+        return self.tree.getTotalBytes();
     }
 
     pub fn getPosForLine(self: *Buffer, line: usize) usize {
@@ -265,8 +267,7 @@ pub const Buffer = struct {
     }
 
     pub fn searchForwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
-        const bytes = self.bytes.items[pos..];
-        return if (std.mem.indexOf(u8, bytes, needle)) |result_pos| result_pos + pos else null;
+        return self.tree.searchForwards(pos, needle);
     }
 
     pub fn isCloseParen(char: u8) bool {
@@ -278,39 +279,44 @@ pub const Buffer = struct {
     }
 
     fn matchParenBackwards(self: *Buffer, pos: usize) ?usize {
-        const bytes = self.bytes.items;
+        var point = self.tree.getPointForPos(pos).?;
         var num_closing: usize = 0;
-        var search_pos = pos;
-        while (search_pos > 0) : (search_pos -= 1) {
-            const char = bytes[search_pos];
+        while (true) {
+            if (point.seekPrevByte() == .NotFound) break;
+            const char = point.getNextByte();
             if (isCloseParen(char)) num_closing += 1;
             if (isOpenParen(char)) num_closing -= 1;
-            if (num_closing == 0) return search_pos;
+            if (num_closing == 0) return point.pos;
         }
         return null;
     }
 
     fn matchParenForwards(self: *Buffer, pos: usize) ?usize {
-        const bytes = self.bytes.items;
-        const len = bytes.len;
+        var point = self.tree.getPointForPos(pos).?;
         var num_opening: usize = 0;
-        var search_pos = pos;
-        while (search_pos < len) : (search_pos += 1) {
-            const char = bytes[search_pos];
+        while (true) {
+            const char = point.getNextByte();
             if (isCloseParen(char)) num_opening -= 1;
             if (isOpenParen(char)) num_opening += 1;
-            if (num_opening == 0) return search_pos;
+            if (num_opening == 0) return point.pos;
+            if (point.seekNextByte() == .NotFound) break;
         }
         return null;
     }
 
     pub fn matchParen(self: *Buffer, pos: usize) ?[2]usize {
-        if (pos < self.bytes.items.len and isOpenParen(self.bytes.items[pos]))
-            if (self.matchParenForwards(pos)) |matching_pos|
-                return [2]usize{ pos, matching_pos };
-        if (pos > 0 and isCloseParen(self.bytes.items[pos - 1]))
-            if (self.matchParenBackwards(pos - 1)) |matching_pos|
-                return [2]usize{ pos - 1, matching_pos };
+        var point = self.tree.getPointForPos(pos).?;
+        if (pos < self.getBufferEnd()) {
+            if (isOpenParen(point.getNextByte()))
+                if (self.matchParenForwards(pos)) |matching_pos|
+                    return [2]usize{ pos, matching_pos };
+        }
+        if (pos > 0) {
+            _ = point.seekPrevByte();
+            if (isCloseParen(point.getNextByte()))
+                if (self.matchParenBackwards(pos)) |matching_pos|
+                    return [2]usize{ pos - 1, matching_pos };
+        }
         return null;
     }
 
@@ -324,11 +330,8 @@ pub const Buffer = struct {
         return self.line_ranges.items[line][1];
     }
 
-    // TODO pass outStream instead of Allocator for easy concat/sentinel? but costs more allocations?
-    pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) []const u8 {
-        assert(start <= end);
-        assert(end <= self.bytes.items.len);
-        return std.mem.dupe(allocator, u8, self.bytes.items[start..end]) catch oom();
+    pub fn copy(self: *Buffer, allocator: *Allocator, start: usize, end: usize) []const u8 {
+        return self.tree.copy(allocator, start, end);
     }
 
     fn rawInsert(self: *Buffer, pos: usize, bytes: []const u8) void {
@@ -336,9 +339,7 @@ pub const Buffer = struct {
         const line_end = self.getLineEnd(pos);
         self.removeRangeFromCompletions(line_start, line_end);
 
-        self.bytes.resize(self.bytes.items.len + bytes.len) catch oom();
-        std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
-        std.mem.copy(u8, self.bytes.items[pos..], bytes);
+        self.tree.insert(pos, bytes);
 
         self.addRangeToCompletions(line_start, line_end + bytes.len);
 
@@ -351,14 +352,13 @@ pub const Buffer = struct {
 
     fn rawDelete(self: *Buffer, start: usize, end: usize) void {
         assert(start <= end);
-        assert(end <= self.bytes.items.len);
+        assert(end <= self.getBufferEnd());
 
         const line_start = self.getLineStart(start);
         const line_end = self.getLineEnd(end);
         self.removeRangeFromCompletions(line_start, line_end);
 
-        std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
-        self.bytes.shrink(self.bytes.items.len - (end - start));
+        self.tree.delete(start, end);
 
         self.addRangeToCompletions(line_start, line_end - (end - start));
 
@@ -376,8 +376,9 @@ pub const Buffer = struct {
         }
         std.mem.reverse([][2]usize, line_colss.items);
 
-        self.bytes.resize(0) catch oom();
-        self.bytes.appendSlice(new_bytes) catch oom();
+        self.tree.deinit();
+        self.tree = Tree.init(self.app.allocator);
+        self.tree.insert(0, new_bytes);
 
         self.updateLineRanges();
         self.modified_since_last_save = true;
@@ -408,7 +409,7 @@ pub const Buffer = struct {
             .Delete = .{
                 .start = start,
                 .end = end,
-                .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch oom(),
+                .old_bytes = self.tree.copy(self.app.allocator, start, end),
             },
         }) catch oom();
         for (self.redos.items) |edits| {
@@ -420,22 +421,20 @@ pub const Buffer = struct {
     }
 
     pub fn replace(self: *Buffer, new_bytes: []const u8) void {
-        if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
-            self.newUndoGroup();
-            self.doing.append(.{
-                .Replace = .{
-                    .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items) catch oom(),
-                    .new_bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch oom(),
-                },
-            }) catch oom();
-            for (self.redos.items) |edits| {
-                for (edits) |edit| edit.deinit(self.app.allocator);
-                self.app.allocator.free(edits);
-            }
-            self.redos.shrink(0);
-            self.rawReplace(new_bytes);
-            self.newUndoGroup();
+        self.newUndoGroup();
+        self.doing.append(.{
+            .Replace = .{
+                .old_bytes = self.tree.copy(self.app.allocator, 0, self.tree.getTotalBytes()),
+                .new_bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch oom(),
+            },
+        }) catch oom();
+        for (self.redos.items) |edits| {
+            for (edits) |edit| edit.deinit(self.app.allocator);
+            self.app.allocator.free(edits);
         }
+        self.redos.shrink(0);
+        self.rawReplace(new_bytes);
+        self.newUndoGroup();
     }
 
     pub fn newUndoGroup(self: *Buffer) void {
@@ -508,46 +507,38 @@ pub const Buffer = struct {
         };
     }
 
-    pub fn getChar(self: *Buffer, pos: usize) u8 {
-        return self.bytes.items[pos];
-    }
-
     fn isLikeIdent(byte: u8) bool {
         return (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or (byte == '_');
     }
 
     fn updateLineRanges(self: *Buffer) void {
-        var line_ranges = &self.line_ranges;
-        const bytes = self.bytes.items;
-        const len = bytes.len;
+        const line_ranges = &self.line_ranges;
+        line_ranges.resize(0) catch oom();
 
-        self.line_ranges.resize(0) catch oom();
-
-        var start: usize = 0;
-        while (start <= len) {
-            var end = start;
-            while (end < len and bytes[end] != '\n') : (end += 1) {}
-            line_ranges.append(.{ start, end }) catch oom();
-            start = end + 1;
+        var point = self.tree.getPointForPos(0).?;
+        while (true) {
+            const start = point.pos;
+            while (!point.isAtEnd() and point.getNextByte() != '\n') : (_ = point.seekNextByte()) {}
+            line_ranges.append(.{ start, point.pos }) catch oom();
+            if (point.isAtEnd()) break;
+            _ = point.seekNextByte();
         }
     }
 
     fn updateCompletions(self: *Buffer) void {
         if (self.role == .Preview) return;
 
-        for (self.completions.items) |completion| self.app.allocator.free(completion);
-        self.completions.resize(0) catch oom();
-
-        const bytes = self.bytes.items;
-        const len = bytes.len;
         const completions = &self.completions;
-        var start: usize = 0;
-        while (start < len) {
-            var end = start;
-            while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
-            if (end > start) completions.append(self.app.dupe(bytes[start..end])) catch oom();
-            start = end + 1;
-            while (start < len and !isLikeIdent(bytes[start])) : (start += 1) {}
+        for (completions.items) |completion| self.app.allocator.free(completion);
+        completions.resize(0) catch oom();
+
+        var point = self.tree.getPointForPos(0).?;
+        while (!point.isAtEnd()) {
+            const start = point.pos;
+            while (!point.isAtEnd() and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+            if (point.pos > start)
+                completions.append(self.tree.copy(self.app.allocator, start, point.pos)) catch oom();
+            while (!point.isAtEnd() and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
         }
 
         std.sort.sort([]const u8, completions.items, {}, struct {
@@ -558,15 +549,14 @@ pub const Buffer = struct {
     }
 
     fn removeRangeFromCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
-        const bytes = self.bytes.items;
         const completions = &self.completions;
-        var start = range_start;
-        while (start < range_end) {
-            var end = start;
-            while (end < range_end and isLikeIdent(bytes[end])) : (end += 1) {}
-            if (end > start) {
+        var point = self.tree.getPointForPos(range_start).?;
+        while (point.pos < range_end) {
+            const start = point.pos;
+            while (point.pos < range_end and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+            if (point.pos > start) {
                 const completions_items = completions.items;
-                const completion = bytes[start..end];
+                const completion = self.tree.copy(self.app.frame_allocator, start, point.pos);
                 var left: usize = 0;
                 var right: usize = completions_items.len;
 
@@ -580,27 +570,25 @@ pub const Buffer = struct {
                         }
                     }
                     // completion should definitely exist in the list
-                    @panic("how");
+                    @panic("Tried to remove non-existent completion");
                 };
 
                 const removed = completions.orderedRemove(pos);
                 self.app.allocator.free(removed);
             }
-            start = end + 1;
-            while (start < range_end and !isLikeIdent(bytes[start])) : (start += 1) {}
+            while (point.pos < range_end and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
         }
     }
 
     fn addRangeToCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
-        const bytes = self.bytes.items;
         const completions = &self.completions;
-        var start = range_start;
-        while (start < range_end) {
-            var end = start;
-            while (end < range_end and isLikeIdent(bytes[end])) : (end += 1) {}
-            if (end > start) {
+        var point = self.tree.getPointForPos(range_start).?;
+        while (point.pos < range_end) {
+            const start = point.pos;
+            while (point.pos < range_end and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+            if (point.pos > start) {
                 const completions_items = completions.items;
-                const completion = bytes[start..end];
+                const completion = self.tree.copy(self.app.allocator, start, point.pos);
                 var left: usize = 0;
                 var right: usize = completions_items.len;
 
@@ -613,19 +601,17 @@ pub const Buffer = struct {
                             .lt => right = mid,
                         }
                     }
-                    // completion might not be in the list, but there is where it should be added
+                    // completion might not be in the list, but this is where it should be added
                     break :pos left;
                 };
 
-                completions.insert(pos, self.app.dupe(completion)) catch oom();
+                completions.insert(pos, completion) catch oom();
             }
-            start = end + 1;
-            while (start < range_end and !isLikeIdent(bytes[start])) : (start += 1) {}
+            while (point.pos < range_end and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
         }
     }
 
     pub fn getCompletionsInto(self: *Buffer, prefix: []const u8, results: *ArrayList([]const u8)) void {
-        const bytes = self.bytes.items;
         const completions = &self.completions;
         const completions_items = completions.items;
         var left: usize = 0;
@@ -654,36 +640,55 @@ pub const Buffer = struct {
     }
 
     pub fn getCompletionsPrefix(self: *Buffer, pos: usize) []const u8 {
-        const bytes = self.bytes.items;
-        var start = pos;
-        while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
-        return bytes[start..pos];
+        var point = self.tree.getPointForPos(pos).?;
+        const start = start: {
+            while (true) {
+                if (point.seekPrevByte() == .NotFound)
+                    break :start point.pos;
+                if (!isLikeIdent(point.getNextByte()))
+                    break :start point.pos + 1;
+            }
+        };
+        return self.tree.copy(self.app.frame_allocator, start, pos);
     }
 
     pub fn getCompletionsToken(self: *Buffer, pos: usize) []const u8 {
-        const bytes = self.bytes.items;
-        const len = bytes.len;
-        var start = pos;
-        while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
-        var end = pos;
-        while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
-        return bytes[start..end];
+        var start_point = self.tree.getPointForPos(pos).?;
+        var end_point = start_point;
+
+        const start = start: {
+            while (true) {
+                if (start_point.seekPrevByte() == .NotFound)
+                    break :start start_point.pos;
+                if (!isLikeIdent(start_point.getNextByte()))
+                    break :start start_point.pos + 1;
+            }
+        };
+
+        while (!end_point.isAtEnd() and isLikeIdent(end_point.getNextByte())) : (_ = end_point.seekNextByte()) {}
+        const end = end_point.pos;
+
+        return self.tree.copy(self.app.frame_allocator, start, end);
     }
 
     pub fn insertCompletion(self: *Buffer, pos: usize, completion: []const u8) void {
-        const bytes = self.bytes.items;
-        const len = bytes.len;
-
         // get range of current token
-        var start = pos;
-        while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
-        var end = pos;
-        while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
+        var start_point = self.tree.getPointForPos(pos).?;
+        var end_point = start_point;
+        const start = start: {
+            while (true) {
+                if (start_point.seekPrevByte() == .NotFound)
+                    break :start start_point.pos;
+                if (!isLikeIdent(start_point.getNextByte()))
+                    break :start start_point.pos + 1;
+            }
+        };
+        while (!end_point.isAtEnd() and isLikeIdent(end_point.getNextByte())) : (_ = end_point.seekNextByte()) {}
+        const end = end_point.pos;
 
         // replace completion
-        // (insert before delete so completion gets duped before self.completions updates)
+        self.delete(start, end);
         self.insert(start, completion);
-        self.delete(start + completion.len, end + completion.len);
     }
 
     pub fn registerEditor(self: *Buffer, editor: *Editor) void {
