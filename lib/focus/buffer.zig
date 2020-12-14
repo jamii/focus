@@ -65,7 +65,6 @@ pub const Buffer = struct {
     doing: ArrayList(Edit),
     redos: ArrayList([]Edit),
     modified_since_last_save: bool,
-    line_ranges: ArrayList([2]usize),
     completions: ArrayList([]const u8),
     // editors must unregister before buffer deinits
     editors: ArrayList(*Editor),
@@ -81,12 +80,10 @@ pub const Buffer = struct {
             .doing = ArrayList(Edit).init(app.allocator),
             .redos = ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
-            .line_ranges = ArrayList([2]usize).init(app.allocator),
             .completions = ArrayList([]const u8).init(app.allocator),
             .editors = ArrayList(*Editor).init(app.allocator),
             .role = role,
         };
-        self.updateLineRanges();
         return self;
     }
 
@@ -113,8 +110,6 @@ pub const Buffer = struct {
 
         for (self.completions.items) |completion| self.app.allocator.free(completion);
         self.completions.deinit();
-
-        self.line_ranges.deinit();
 
         for (self.undos.items) |edits| {
             for (edits) |edit| edit.deinit(self.app.allocator);
@@ -243,27 +238,22 @@ pub const Buffer = struct {
     }
 
     pub fn getPosForLine(self: *Buffer, line: usize) usize {
-        return self.line_ranges.items[line][0];
+        return self.tree.getPointForLineStart(line).?.pos;
     }
 
     // TODO should handle line out of range too?
     /// Panics on line out of range. Handles col out of range by truncating to end of line.
     pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
-        const line_range = self.line_ranges.items[line];
-        return line_range[0] + min(col, line_range[1] - line_range[0]);
+        const start_point = self.tree.getPointForLineStart(line).?;
+        var end_point = start_point;
+        _ = end_point.searchForwards("\n");
+        return start_point.pos + min(col, end_point.pos - start_point.pos);
     }
 
     pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
-        // TODO avoid hacky fake key
-        const line = std.sort.binarySearch([2]usize, [2]usize{ pos, pos }, self.line_ranges.items, {}, struct {
-            fn compare(_: void, key: [2]usize, item: [2]usize) std.math.Order {
-                if (key[0] < item[0]) return .lt;
-                if (key[0] > item[1]) return .gt;
-                return .eq;
-            }
-        }.compare).?;
-        const line_range = self.line_ranges.items[line];
-        return .{ line, pos - line_range[0] };
+        var point = self.tree.getPointForPos(pos).?;
+        if (point.searchBackwards("\n") == .Found) _ = point.seekNextByte();
+        return .{ point.getLine(), pos - point.pos };
     }
 
     pub fn searchForwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
@@ -321,13 +311,15 @@ pub const Buffer = struct {
     }
 
     pub fn getLineStart(self: *Buffer, pos: usize) usize {
-        const line = self.getLineColForPos(pos)[0];
-        return self.line_ranges.items[line][0];
+        var point = self.tree.getPointForPos(pos).?;
+        if (point.searchBackwards("\n") == .Found) _ = point.seekNextByte();
+        return point.pos;
     }
 
     pub fn getLineEnd(self: *Buffer, pos: usize) usize {
-        const line = self.getLineColForPos(pos)[0];
-        return self.line_ranges.items[line][1];
+        var point = self.tree.getPointForPos(pos).?;
+        _ = point.searchForwards("\n");
+        return point.pos;
     }
 
     pub fn copy(self: *Buffer, allocator: *Allocator, start: usize, end: usize) []const u8 {
@@ -343,7 +335,6 @@ pub const Buffer = struct {
 
         self.addRangeToCompletions(line_start, line_end + bytes.len);
 
-        self.updateLineRanges();
         self.modified_since_last_save = true;
         for (self.editors.items) |editor| {
             editor.updateAfterInsert(pos, bytes);
@@ -362,7 +353,6 @@ pub const Buffer = struct {
 
         self.addRangeToCompletions(line_start, line_end - (end - start));
 
-        self.updateLineRanges();
         self.modified_since_last_save = true;
         for (self.editors.items) |editor| {
             editor.updateAfterDelete(start, end);
@@ -380,7 +370,6 @@ pub const Buffer = struct {
         self.tree = Tree.init(self.app.allocator);
         self.tree.insert(0, new_bytes);
 
-        self.updateLineRanges();
         self.modified_since_last_save = true;
         for (self.editors.items) |editor| {
             editor.updateAfterReplace(line_colss.pop());
@@ -497,7 +486,7 @@ pub const Buffer = struct {
     }
 
     pub fn countLines(self: *Buffer) usize {
-        return self.line_ranges.items.len;
+        return self.tree.getTotalNewlines() + 1;
     }
 
     pub fn getFilename(self: *Buffer) ?[]const u8 {
@@ -511,104 +500,90 @@ pub const Buffer = struct {
         return (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or (byte == '_');
     }
 
-    fn updateLineRanges(self: *Buffer) void {
-        const line_ranges = &self.line_ranges;
-        line_ranges.resize(0) catch oom();
-
-        var point = self.tree.getPointForPos(0).?;
-        while (true) {
-            const start = point.pos;
-            while (!point.isAtEnd() and point.getNextByte() != '\n') : (_ = point.seekNextByte()) {}
-            line_ranges.append(.{ start, point.pos }) catch oom();
-            if (point.isAtEnd()) break;
-            _ = point.seekNextByte();
-        }
-    }
-
     fn updateCompletions(self: *Buffer) void {
-        if (self.role == .Preview) return;
-
-        const completions = &self.completions;
-        for (completions.items) |completion| self.app.allocator.free(completion);
-        completions.resize(0) catch oom();
-
-        var point = self.tree.getPointForPos(0).?;
-        while (!point.isAtEnd()) {
-            const start = point.pos;
-            while (!point.isAtEnd() and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
-            if (point.pos > start)
-                completions.append(self.tree.copy(self.app.allocator, start, point.pos)) catch oom();
-            while (!point.isAtEnd() and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
-        }
-
-        std.sort.sort([]const u8, completions.items, {}, struct {
-            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-                return std.mem.lessThan(u8, a, b);
-            }
-        }.lessThan);
+        //if (self.role == .Preview) return;
+        //
+        //const completions = &self.completions;
+        //for (completions.items) |completion| self.app.allocator.free(completion);
+        //completions.resize(0) catch oom();
+        //
+        //var point = self.tree.getPointForPos(0).?;
+        //while (!point.isAtEnd()) {
+        //const start = point.pos;
+        //while (!point.isAtEnd() and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //if (point.pos > start)
+        //completions.append(self.tree.copy(self.app.allocator, start, point.pos)) catch oom();
+        //while (!point.isAtEnd() and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //}
+        //
+        //std.sort.sort([]const u8, completions.items, {}, struct {
+        //fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+        //return std.mem.lessThan(u8, a, b);
+        //}
+        //}.lessThan);
     }
 
     fn removeRangeFromCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
-        const completions = &self.completions;
-        var point = self.tree.getPointForPos(range_start).?;
-        while (point.pos < range_end) {
-            const start = point.pos;
-            while (point.pos < range_end and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
-            if (point.pos > start) {
-                const completions_items = completions.items;
-                const completion = self.tree.copy(self.app.frame_allocator, start, point.pos);
-                var left: usize = 0;
-                var right: usize = completions_items.len;
-
-                const pos = pos: {
-                    while (left < right) {
-                        const mid = left + (right - left) / 2;
-                        switch (std.mem.order(u8, completion, completions_items[mid])) {
-                            .eq => break :pos mid,
-                            .gt => left = mid + 1,
-                            .lt => right = mid,
-                        }
-                    }
-                    // completion should definitely exist in the list
-                    @panic("Tried to remove non-existent completion");
-                };
-
-                const removed = completions.orderedRemove(pos);
-                self.app.allocator.free(removed);
-            }
-            while (point.pos < range_end and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
-        }
+        //const completions = &self.completions;
+        //var point = self.tree.getPointForPos(range_start).?;
+        //while (point.pos < range_end) {
+        //const start = point.pos;
+        //while (point.pos < range_end and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //if (point.pos > start) {
+        //const completions_items = completions.items;
+        //const completion = self.tree.copy(self.app.frame_allocator, start, point.pos);
+        //var left: usize = 0;
+        //var right: usize = completions_items.len;
+        //
+        //const pos = pos: {
+        //while (left < right) {
+        //const mid = left + (right - left) / 2;
+        //switch (std.mem.order(u8, completion, completions_items[mid])) {
+        //.eq => break :pos mid,
+        //.gt => left = mid + 1,
+        //.lt => right = mid,
+        //}
+        //}
+        //// completion should definitely exist in the list
+        //@panic("Tried to remove non-existent completion");
+        //};
+        //
+        //const removed = completions.orderedRemove(pos);
+        //self.app.allocator.free(removed);
+        //}
+        //while (point.pos < range_end and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //}
     }
 
     fn addRangeToCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
-        const completions = &self.completions;
-        var point = self.tree.getPointForPos(range_start).?;
-        while (point.pos < range_end) {
-            const start = point.pos;
-            while (point.pos < range_end and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
-            if (point.pos > start) {
-                const completions_items = completions.items;
-                const completion = self.tree.copy(self.app.allocator, start, point.pos);
-                var left: usize = 0;
-                var right: usize = completions_items.len;
-
-                const pos = pos: {
-                    while (left < right) {
-                        const mid = left + (right - left) / 2;
-                        switch (std.mem.order(u8, completion, completions_items[mid])) {
-                            .eq => break :pos mid,
-                            .gt => left = mid + 1,
-                            .lt => right = mid,
-                        }
-                    }
-                    // completion might not be in the list, but this is where it should be added
-                    break :pos left;
-                };
-
-                completions.insert(pos, completion) catch oom();
-            }
-            while (point.pos < range_end and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
-        }
+        //const completions = &self.completions;
+        //var point = self.tree.getPointForPos(range_start).?;
+        //while (point.pos < range_end) {
+        //const start = point.pos;
+        //while (point.pos < range_end and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //if (point.pos > start) {
+        //const completions_items = completions.items;
+        //const completion = self.tree.copy(self.app.allocator, start, point.pos);
+        //var left: usize = 0;
+        //var right: usize = completions_items.len;
+        //
+        //const pos = pos: {
+        //while (left < right) {
+        //const mid = left + (right - left) / 2;
+        //switch (std.mem.order(u8, completion, completions_items[mid])) {
+        //.eq => break :pos mid,
+        //.gt => left = mid + 1,
+        //.lt => right = mid,
+        //}
+        //}
+        //// completion might not be in the list, but this is where it should be added
+        //break :pos left;
+        //};
+        //
+        //completions.insert(pos, completion) catch oom();
+        //}
+        //while (point.pos < range_end and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //}
     }
 
     pub fn getCompletionsInto(self: *Buffer, prefix: []const u8, results: *ArrayList([]const u8)) void {

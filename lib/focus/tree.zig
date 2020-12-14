@@ -404,6 +404,7 @@ pub const Point = struct {
     }
 
     pub fn searchForwards(self: *Point, needle: []const u8) Seek {
+        assert(needle.len > 0);
         if (self.isAtEnd()) return .NotFound;
         const needle_start_char = needle[0];
         while (true) {
@@ -422,6 +423,46 @@ pub const Point = struct {
             }
             if (self.seekNextByte() == .NotFound) return .NotFound;
         }
+    }
+
+    pub fn searchBackwards(self: *Point, needle: []const u8) Seek {
+        assert(needle.len > 0);
+        const needle_start_char = needle[0];
+        while (true) {
+            if (self.seekPrevByte() == .NotFound) return .NotFound;
+            const haystack_start_char = self.getNextByte();
+            if (haystack_start_char == needle_start_char) {
+                var end_point = self.*;
+                var is_match = true;
+                for (needle[1..]) |needle_char| {
+                    if (end_point.seekNextByte() == .Found)
+                        if (end_point.getNextByte() == needle_char)
+                            continue;
+                    is_match = false;
+                    break;
+                }
+                if (is_match) return .Found;
+            }
+        }
+    }
+
+    pub fn getLine(self: Point) usize {
+        var line: usize = 0;
+        for (self.leaf.bytes[0..self.offset]) |char|
+            line += @boolToInt(char == '\n');
+        var branch = self.leaf.node.getParent().?;
+        var child_ix = branch.findChild(self.leaf.node);
+        while (true) {
+            for (branch.num_newlines[0..child_ix]) |n|
+                line += n;
+            if (branch.node.getParent()) |parent| {
+                child_ix = parent.findChild(branch.node);
+                branch = parent;
+            } else {
+                break;
+            }
+        }
+        return line;
     }
 };
 
@@ -700,7 +741,6 @@ pub const Tree = struct {
     }
 
     pub fn searchForwards(self: Tree, start: usize, needle: []const u8) ?usize {
-        assert(needle.len > 0);
         var point = self.getPointForPos(start).?;
         switch (point.searchForwards(needle)) {
             .Found => return point.pos,
@@ -708,8 +748,20 @@ pub const Tree = struct {
         }
     }
 
+    pub fn searchBackwards(self: Tree, start: usize, needle: []const u8) ?usize {
+        var point = self.getPointForPos(start).?;
+        switch (point.searchBackwards(needle)) {
+            .Found => return point.pos,
+            .NotFound => return null,
+        }
+    }
+
     pub fn getTotalBytes(self: Tree) usize {
         return self.root.sumNumBytes();
+    }
+
+    pub fn getTotalNewlines(self: Tree) usize {
+        return self.root.sumNumNewlines();
     }
 
     fn getDepth(self: Tree) usize {
@@ -920,6 +972,39 @@ test "search forwards" {
     assert(meta.deepEqual(expected.items, actual.items));
 }
 
+test "search backwards" {
+    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
+    defer std.testing.allocator.free(cm);
+
+    var tree = Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    tree.insert(0, cm);
+
+    const needle = "className";
+
+    var expected = ArrayList(usize).init(std.testing.allocator);
+    defer expected.deinit();
+    {
+        var start: usize = 0;
+        while (std.mem.indexOfPos(u8, cm, start, needle)) |pos| {
+            expected.append(pos) catch oom();
+            start = pos + 1;
+        }
+    }
+
+    var actual = ArrayList(usize).init(std.testing.allocator);
+    defer actual.deinit();
+    {
+        var start: usize = 0;
+        while (tree.searchForwards(start, needle)) |pos| {
+            actual.append(pos) catch oom();
+            start = pos + 1;
+        }
+    }
+
+    assert(meta.deepEqual(expected.items, actual.items));
+}
+
 test "get line start" {
     const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
     defer std.testing.allocator.free(cm);
@@ -942,6 +1027,7 @@ test "get line start" {
     for (expected.items) |pos, line| {
         const point = tree.getPointForLineStart(line).?;
         expectEqual(pos, point.pos);
+        expectEqual(line, point.getLine());
     }
 
     expectEqual(tree.getPointForLineStart(expected.items.len), null);
