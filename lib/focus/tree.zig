@@ -3,7 +3,6 @@ usingnamespace focus.common;
 const meta = focus.meta;
 
 // TODO how unbalanced can this get?
-// TODO try PackedIntArray for Offset etc
 // TODO Leaf/Branch can be done much nicer with packed structs once they are less buggy
 
 const page_size = 4 * 1024;
@@ -403,6 +402,27 @@ pub const Point = struct {
         }
         return .Found;
     }
+
+    pub fn searchForwards(self: *Point, needle: []const u8) Seek {
+        if (self.isAtEnd()) return .NotFound;
+        const needle_start_char = needle[0];
+        while (true) {
+            const haystack_start_char = self.getNextByte();
+            if (haystack_start_char == needle_start_char) {
+                var end_point = self.*;
+                var is_match = true;
+                for (needle[1..]) |needle_char| {
+                    if (end_point.seekNextByte() == .Found)
+                        if (end_point.getNextByte() == needle_char)
+                            continue;
+                    is_match = false;
+                    break;
+                }
+                if (is_match) return .Found;
+            }
+            if (self.seekNextByte() == .NotFound) return .NotFound;
+        }
+    }
 };
 
 pub const Tree = struct {
@@ -455,6 +475,58 @@ pub const Tree = struct {
                 .num_leaf_bytes = @intCast(Leaf.Offset, node.getNumBytesFromParent()),
                 .offset = @intCast(Leaf.Offset, pos_remaining),
             };
+    }
+
+    pub fn getPointForLineStart(self: Tree, line: usize) ?Point {
+        var node = self.root.node;
+        var pos: usize = 0;
+        var lines_remaining = line;
+        var num_child_newlines: usize = undefined;
+        node: while (node.tag == .Branch) {
+            const branch = Branch.fromNode(node);
+            const num_children = branch.num_children.*;
+            const num_newlines = branch.num_newlines;
+            var child_ix: usize = 0;
+            while (true) {
+                num_child_newlines = num_newlines[child_ix];
+                if (lines_remaining <= num_child_newlines) {
+                    node = branch.children[child_ix];
+                    continue :node;
+                }
+                child_ix += 1;
+                if (child_ix == num_children) {
+                    node = branch.children[child_ix - 1];
+                    continue :node;
+                }
+                lines_remaining -= num_child_newlines;
+                pos += branch.num_bytes[child_ix - 1];
+            }
+        }
+
+        if (lines_remaining > num_child_newlines)
+            return null;
+
+        const leaf = Leaf.fromNode(node);
+        const num_leaf_bytes = @intCast(Leaf.Offset, node.getNumBytesFromParent());
+        var offset: usize = 0;
+        while (lines_remaining > 0) : (lines_remaining -= 1) {
+            offset = std.mem.indexOfScalarPos(u8, leaf.bytes[0..num_leaf_bytes], offset, '\n').? + 1;
+        }
+
+        var point = Point{
+            .pos = pos + offset,
+            .leaf = leaf,
+            .num_leaf_bytes = num_leaf_bytes,
+            .offset = @intCast(Leaf.Offset, offset),
+        };
+
+        if (offset == num_leaf_bytes) {
+            point.pos -= 1;
+            point.offset -= 1;
+            _ = point.seekNextByte();
+        }
+
+        return point;
     }
 
     pub fn insert(self: *Tree, start: usize, _bytes: []const u8) void {
@@ -629,24 +701,10 @@ pub const Tree = struct {
 
     pub fn searchForwards(self: Tree, start: usize, needle: []const u8) ?usize {
         assert(needle.len > 0);
-        var start_point = self.getPointForPos(start).?;
-        if (start_point.isAtEnd()) return null;
-        const needle_start_char = needle[0];
-        while (true) {
-            const haystack_start_char = start_point.getNextByte();
-            if (haystack_start_char == needle_start_char) {
-                var end_point = start_point;
-                var is_match = true;
-                for (needle[1..]) |needle_char| {
-                    if (end_point.seekNextByte() == .Found)
-                        if (end_point.getNextByte() == needle_char)
-                            continue;
-                    is_match = false;
-                    break;
-                }
-                if (is_match) return start_point.pos;
-            }
-            if (start_point.seekNextByte() == .NotFound) return null;
+        var point = self.getPointForPos(start).?;
+        switch (point.searchForwards(needle)) {
+            .Found => return point.pos,
+            .NotFound => return null,
         }
     }
 
@@ -860,4 +918,70 @@ test "search forwards" {
     }
 
     assert(meta.deepEqual(expected.items, actual.items));
+}
+
+test "get line start" {
+    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
+    defer std.testing.allocator.free(cm);
+
+    var tree = Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    tree.insert(0, cm);
+
+    var expected = ArrayList(usize).init(std.testing.allocator);
+    defer expected.deinit();
+    {
+        var start: usize = 0;
+        expected.append(0) catch oom();
+        while (std.mem.indexOfScalarPos(u8, cm, start, '\n')) |pos| {
+            expected.append(pos + 1) catch oom();
+            start = pos + 1;
+        }
+    }
+
+    for (expected.items) |pos, line| {
+        const point = tree.getPointForLineStart(line).?;
+        expectEqual(pos, point.pos);
+    }
+
+    expectEqual(tree.getPointForLineStart(expected.items.len), null);
+}
+
+test "get awkward line start" {
+    var tree = Tree.init(std.testing.allocator);
+    defer tree.deinit();
+    {
+        var i: usize = 0;
+        while (i < @divTrunc(Leaf.max_bytes, 2) - 1) : (i += 1) {
+            tree.insert(i, " ");
+        }
+        tree.insert(i, "\n");
+    }
+
+    {
+        expectEqual(tree.getPointForLineStart(0).?.pos, 0);
+        const point = tree.getPointForLineStart(1).?;
+        // point is at end of leaf
+        expectEqual(point.pos, tree.getTotalBytes());
+        expectEqual(point.offset, @intCast(u16, tree.getTotalBytes()));
+    }
+
+    // split branch
+    while (tree.root.num_children.* == 1) {
+        tree.insert(tree.getTotalBytes(), " ");
+    }
+    // newline is at end of leaf
+    const leaf0 = Leaf.fromNode(tree.root.children[0]);
+    expectEqual(
+        leaf0.bytes[tree.root.num_bytes[0] - 1],
+        '\n',
+    );
+
+    {
+        expectEqual(tree.getPointForLineStart(0).?.pos, 0);
+        const point = tree.getPointForLineStart(1).?;
+        // point is at beginning of new leaf
+        expectEqual(point.pos, @divTrunc(Leaf.max_bytes, 2));
+        expectEqual(point.offset, 0);
+    }
 }
