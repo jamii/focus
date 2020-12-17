@@ -3,21 +3,9 @@ usingnamespace focus.common;
 const meta = focus.meta;
 
 // TODO how unbalanced can this get?
-// TODO Leaf/Branch can be done much nicer with packed structs once they are less buggy
+// TODO Leaf/Branch can be done with packed structs once they are less buggy
 
 const page_size = 4 * 1024;
-
-fn roundDownTo(i: usize, mod: usize) usize {
-    return mod * @divTrunc(i, mod);
-}
-
-fn roundUpTo(i: usize, mod: usize) usize {
-    return mod * (@divTrunc(i, mod) + if (@mod(i, mod) > 0) @intCast(usize, 1) else 0);
-}
-
-fn alignTo(comptime T: type, address: usize) usize {
-    return roundUpTo(address, @alignOf(T));
-}
 
 const Node = packed struct {
     parent: ?*Node,
@@ -25,14 +13,14 @@ const Node = packed struct {
 
     fn deinit(self: *Node, allocator: *Allocator) void {
         switch (self.tag) {
-            .Leaf => Leaf.fromNode(self).deinit(allocator),
-            .Branch => Branch.fromNode(self).deinit(allocator),
+            .Leaf => self.asLeaf().deinit(allocator),
+            .Branch => self.asBranch().deinit(allocator),
         }
     }
 
-    fn getParent(self: Node) ?Branch {
+    fn getParent(self: *Node) ?*Branch {
         if (self.parent) |parent_node|
-            return Branch.fromNode(parent_node)
+            return @fieldParentPtr(Branch, "node", parent_node)
         else
             return null;
     }
@@ -47,61 +35,56 @@ const Node = packed struct {
         return self.getParent().?.findChild(self);
     }
 
+    fn asLeaf(self: *Node) *Leaf {
+        assert(self.tag == .Leaf);
+        return @fieldParentPtr(Leaf, "node", self);
+    }
+
+    fn asBranch(self: *Node) *Branch {
+        assert(self.tag == .Branch);
+        return @fieldParentPtr(Branch, "node", self);
+    }
+
     fn debugInto(self: *Node, output: *ArrayList(u8), indent: usize) void {
         switch (self.tag) {
-            .Leaf => Leaf.fromNode(self).debugInto(output, indent),
-            .Branch => Branch.fromNode(self).debugInto(output, indent),
+            .Leaf => self.asLeaf().debugInto(output, indent),
+            .Branch => self.asBranch().debugInto(output, indent),
         }
     }
 
     fn validate(self: *Node) void {
         switch (self.tag) {
-            .Leaf => Leaf.fromNode(self).validate(),
-            .Branch => Branch.fromNode(self).validate(false),
+            .Leaf => self.asLeaf().validate(),
+            .Branch => self.asBranch().validate(false),
         }
     }
 };
 
 const Leaf = struct {
-    node: *Node,
-    bytes: *[max_bytes]u8,
+    node: Node,
+    bytes: [max_bytes]u8,
 
     const max_bytes = page_size - @sizeOf(Node);
     const Offset = u16;
     comptime {
+        assert(@sizeOf(Leaf) == page_size);
         assert(std.math.maxInt(Offset) > max_bytes);
     }
 
-    fn init(allocator: *Allocator) Leaf {
-        const page = allocator.alloc(u8, page_size) catch oom();
-        const node = @ptrCast(*Node, page);
-        node.parent = null;
-        node.tag = .Leaf;
-        return fromNode(node);
+    fn init(allocator: *Allocator) *Leaf {
+        const self = allocator.create(Leaf) catch oom();
+        self.node.parent = null;
+        self.node.tag = .Leaf;
+        return self;
     }
 
-    fn deinit(
-        self: Leaf,
-        allocator: *Allocator,
-    ) void {
-        const page = @ptrCast(*[page_size]u8, self.node);
-        allocator.free(page);
+    fn deinit(self: *Leaf, allocator: *Allocator) void {
+        allocator.destroy(self);
     }
 
-    const bytes_offset = @sizeOf(Node);
-
-    fn fromNode(node: *Node) Leaf {
-        assert(node.tag == .Leaf);
-        var address = @ptrToInt(node);
-        return .{
-            .node = node,
-            .bytes = @intToPtr(*[max_bytes]u8, address + bytes_offset),
-        };
-    }
-
-    fn updateSpine(self: Leaf, num_bytes: usize) void {
+    fn updateSpine(self: *Leaf, num_bytes: usize) void {
         const parent = self.node.getParent().?;
-        const child_ix = parent.findChild(self.node);
+        const child_ix = parent.findChild(&self.node);
         parent.num_bytes[child_ix] = num_bytes;
         var num_newlines: usize = 0;
         for (self.bytes[0..num_bytes]) |char|
@@ -110,20 +93,20 @@ const Leaf = struct {
         parent.updateSpine();
     }
 
-    fn debugInto(self: Leaf, output: *ArrayList(u8), indent: usize) void {}
+    fn debugInto(self: *Leaf, output: *ArrayList(u8), indent: usize) void {}
 
-    fn validate(self: Leaf) void {}
+    fn validate(self: *Leaf) void {}
 };
 
 const Branch = struct {
-    node: *Node,
-    num_children: *Offset,
-    children: *[max_children]*Node,
-    num_bytes: *[max_children]usize,
-    num_newlines: *[max_children]usize,
+    node: Node,
+    num_children: Offset,
+    children: [max_children]*Node,
+    num_bytes: [max_children]usize,
+    num_newlines: [max_children]usize,
 
     const max_children = @divTrunc(
-        page_size - alignTo(usize, @sizeOf(Node) + @sizeOf(Offset)),
+        page_size - @sizeOf(Node) + @sizeOf(Offset),
         // children
         @sizeOf(*Node) +
             // num_bytes
@@ -133,103 +116,84 @@ const Branch = struct {
     );
     const Offset = u8;
     comptime {
+        assert(@sizeOf(Branch) == page_size);
         assert(std.math.maxInt(Offset) > max_children);
     }
 
-    fn init(allocator: *Allocator) Branch {
-        const page = allocator.allocWithOptions(u8, page_size, @alignOf(usize), null) catch oom();
-        const node = @ptrCast(*Node, page);
-        node.parent = null;
-        node.tag = .Branch;
-        var self = fromNode(node);
-        self.num_children.* = 0;
+    fn init(allocator: *Allocator) *Branch {
+        const self = allocator.create(Branch) catch oom();
+        self.node.parent = null;
+        self.node.tag = .Branch;
+        self.num_children = 0;
         return self;
     }
 
     fn deinit(
-        self: Branch,
+        self: *Branch,
         allocator: *Allocator,
     ) void {
         var child_ix: usize = 0;
-        while (child_ix < self.num_children.*) : (child_ix += 1) {
+        while (child_ix < self.num_children) : (child_ix += 1) {
             self.children[child_ix].deinit(allocator);
         }
-        const page = @ptrCast(*[page_size]u8, self.node);
-        allocator.free(page);
+        allocator.destroy(self);
     }
 
-    const num_children_offset = alignTo(Offset, @sizeOf(Node));
-    const children_offset = alignTo(*Node, num_children_offset + @sizeOf(Offset));
-    const num_bytes_offset = alignTo(usize, children_offset + @sizeOf([max_children]*Node));
-    const num_newlines_offset = alignTo(usize, num_bytes_offset + @sizeOf([max_children]usize));
-
-    fn fromNode(node: *Node) Branch {
-        assert(node.tag == .Branch);
-        var address = @ptrToInt(node);
-        return .{
-            .node = node,
-            .num_children = @intToPtr(*Offset, address + num_children_offset),
-            .children = @intToPtr(*[max_children]*Node, address + children_offset),
-            .num_bytes = @intToPtr(*[max_children]usize, address + num_bytes_offset),
-            .num_newlines = @intToPtr(*[max_children]usize, address + num_newlines_offset),
-        };
+    fn findChild(self: *Branch, child: *Node) Offset {
+        return @intCast(Offset, std.mem.indexOfScalar(*Node, self.children[0..self.num_children], child).?);
     }
 
-    fn findChild(self: Branch, child: *Node) Offset {
-        return @intCast(Offset, std.mem.indexOfScalar(*Node, self.children[0..self.num_children.*], child).?);
-    }
-
-    fn insertChild(self: Branch, child_ix: usize, child: *Node, num_bytes: usize, num_newlines: usize) void {
-        assert(self.num_children.* < Branch.max_children);
+    fn insertChild(self: *Branch, child_ix: usize, child: *Node, num_bytes: usize, num_newlines: usize) void {
+        assert(self.num_children < Branch.max_children);
         std.mem.copyBackwards(
             *Node,
             self.children[child_ix + 1 ..],
-            self.children[child_ix..self.num_children.*],
+            self.children[child_ix..self.num_children],
         );
         std.mem.copyBackwards(
             usize,
             self.num_bytes[child_ix + 1 ..],
-            self.num_bytes[child_ix..self.num_children.*],
+            self.num_bytes[child_ix..self.num_children],
         );
         std.mem.copyBackwards(
             usize,
             self.num_newlines[child_ix + 1 ..],
-            self.num_newlines[child_ix..self.num_children.*],
+            self.num_newlines[child_ix..self.num_children],
         );
         self.children[child_ix] = child;
         self.num_bytes[child_ix] = num_bytes;
         self.num_newlines[child_ix] = num_newlines;
-        self.num_children.* += 1;
-        child.parent = self.node;
+        self.num_children += 1;
+        child.parent = &self.node;
         self.updateSpine();
     }
 
-    fn removeChild(self: Branch, _child_ix: usize, removed: *ArrayList(*Node)) void {
+    fn removeChild(self: *Branch, _child_ix: usize, removed: *ArrayList(*Node)) void {
         var branch = self;
         var child_ix = _child_ix;
         while (true) {
-            assert(child_ix < branch.num_children.*);
+            assert(child_ix < branch.num_children);
             removed.append(branch.children[child_ix]) catch oom();
             std.mem.copy(
                 *Node,
                 branch.children[child_ix..],
-                branch.children[child_ix + 1 .. branch.num_children.*],
+                branch.children[child_ix + 1 .. branch.num_children],
             );
             std.mem.copy(
                 usize,
                 branch.num_bytes[child_ix..],
-                branch.num_bytes[child_ix + 1 .. branch.num_children.*],
+                branch.num_bytes[child_ix + 1 .. branch.num_children],
             );
             std.mem.copy(
                 usize,
                 branch.num_newlines[child_ix..],
-                branch.num_newlines[child_ix + 1 .. branch.num_children.*],
+                branch.num_newlines[child_ix + 1 .. branch.num_children],
             );
-            branch.num_children.* -= 1;
-            if (branch.num_children.* == 0) {
+            branch.num_children -= 1;
+            if (branch.num_children == 0) {
                 // if getParent is null, then we just deleted the last leaf node, which shouldn't happen
                 const parent = branch.node.getParent().?;
-                child_ix = parent.findChild(branch.node);
+                child_ix = parent.findChild(&branch.node);
                 branch = parent;
             } else {
                 branch.updateSpine();
@@ -238,57 +202,57 @@ const Branch = struct {
         }
     }
 
-    fn updateSpine(self: Branch) void {
+    fn updateSpine(self: *Branch) void {
         var branch = self;
         while (branch.node.getParent()) |parent| {
-            const child_ix = parent.findChild(branch.node);
+            const child_ix = parent.findChild(&branch.node);
             parent.num_bytes[child_ix] = branch.sumNumBytes();
             parent.num_newlines[child_ix] = branch.sumNumNewlines();
             branch = parent;
         }
     }
 
-    fn sumNumBytes(self: Branch) usize {
+    fn sumNumBytes(self: *Branch) usize {
         var num_bytes: usize = 0;
-        for (self.num_bytes[0..self.num_children.*]) |n|
+        for (self.num_bytes[0..self.num_children]) |n|
             num_bytes += n;
         return num_bytes;
     }
 
-    fn sumNumNewlines(self: Branch) usize {
+    fn sumNumNewlines(self: *Branch) usize {
         var num_newlines: usize = 0;
-        for (self.num_newlines[0..self.num_children.*]) |n|
+        for (self.num_newlines[0..self.num_children]) |n|
             num_newlines += n;
         return num_newlines;
     }
 
-    fn debugInto(self: Branch, output: *ArrayList(u8), indent: usize) void {
+    fn debugInto(self: *Branch, output: *ArrayList(u8), indent: usize) void {
         output.append('\n') catch oom();
         output.appendNTimes(' ', indent) catch oom();
-        std.fmt.format(output.outStream(), "* num_children={} num_bytes/num_newlines={}/{}=[", .{ self.num_children.*, self.sumNumBytes(), self.sumNumNewlines }) catch oom();
-        for (self.num_bytes[0..self.num_children.*]) |n, i| {
+        std.fmt.format(output.outStream(), "* num_children={} num_bytes/num_newlines={}/{}=[", .{ self.num_children, self.sumNumBytes(), self.sumNumNewlines }) catch oom();
+        for (self.num_bytes[0..self.num_children]) |n, i| {
             const sep: []const u8 = if (i == 0) "" else ", ";
             std.fmt.format(output.outStream(), "{}{}/{}", .{ sep, n, self.num_newlines[i] }) catch oom();
         }
         std.fmt.format(output.outStream(), "]", .{}) catch oom();
-        for (self.children[0..self.num_children.*]) |child| {
+        for (self.children[0..self.num_children]) |child| {
             child.debugInto(output, indent + 4);
         }
     }
 
-    fn validate(self: Branch, is_root: bool) void {
+    fn validate(self: *Branch, is_root: bool) void {
         if (self.node.getParent()) |parent| {
-            const child_ix = parent.findChild(self.node);
+            const child_ix = parent.findChild(&self.node);
             assert(self.sumNumBytes() == parent.num_bytes[child_ix]);
             assert(self.sumNumNewlines() == parent.num_newlines[child_ix]);
         }
         // TODO rebalance underfull branches
         //if (!is_root) {
-        //assert(self.num_children.* >= @divTrunc(Branch.max_children, 2));
+        //assert(self.num_children >= @divTrunc(Branch.max_children, 2));
         //}
         var child_ix: usize = 0;
-        while (child_ix < self.num_children.*) : (child_ix += 1) {
-            assert(self.children[child_ix].parent == self.node);
+        while (child_ix < self.num_children) : (child_ix += 1) {
+            assert(self.children[child_ix].parent == &self.node);
             assert(self.num_bytes[child_ix] >= @divTrunc(Leaf.max_bytes, 2));
             self.children[child_ix].validate();
         }
@@ -298,7 +262,7 @@ const Branch = struct {
 pub const Point = struct {
     // Always points at a byte, unless we're at the end of the tree
     pos: usize,
-    leaf: Leaf,
+    leaf: *Leaf,
     num_leaf_bytes: Leaf.Offset,
     offset: Leaf.Offset,
 
@@ -318,7 +282,7 @@ pub const Point = struct {
     const Seek = enum { Found, NotFound };
 
     pub fn seekNextLeaf(self: *Point) Seek {
-        var node = self.leaf.node;
+        var node = &self.leaf.node;
 
         self.pos += self.num_leaf_bytes - self.offset;
 
@@ -326,19 +290,19 @@ pub const Point = struct {
         while (true) {
             if (node.getParent()) |parent| {
                 const child_ix = parent.findChild(node);
-                if (child_ix + 1 >= parent.num_children.*) {
+                if (child_ix + 1 >= parent.num_children) {
                     // keep going up
-                    node = parent.node;
+                    node = &parent.node;
                 } else {
                     // go down
                     var child = parent.children[child_ix + 1];
                     var num_bytes = parent.num_bytes[child_ix + 1];
                     while (child.tag == .Branch) {
-                        const branch = Branch.fromNode(child);
+                        const branch = child.asBranch();
                         child = branch.children[0];
                         num_bytes = branch.num_bytes[0];
                     }
-                    self.leaf = Leaf.fromNode(child);
+                    self.leaf = child.asLeaf();
                     self.num_leaf_bytes = @intCast(Leaf.Offset, num_bytes);
                     self.offset = 0;
                     return .Found;
@@ -361,7 +325,7 @@ pub const Point = struct {
     }
 
     pub fn seekPrevLeaf(self: *Point) Seek {
-        var node = self.leaf.node;
+        var node = &self.leaf.node;
 
         self.pos -= self.offset;
 
@@ -371,17 +335,17 @@ pub const Point = struct {
                 const child_ix = parent.findChild(node);
                 if (child_ix == 0) {
                     // keep going up
-                    node = parent.node;
+                    node = &parent.node;
                 } else {
                     // go down
                     var child = parent.children[child_ix - 1];
                     var num_bytes = parent.num_bytes[child_ix - 1];
                     while (child.tag == .Branch) {
-                        const branch = Branch.fromNode(child);
-                        child = branch.children[branch.num_children.* - 1];
-                        num_bytes = branch.num_bytes[branch.num_children.* - 1];
+                        const branch = child.asBranch();
+                        child = branch.children[branch.num_children - 1];
+                        num_bytes = branch.num_bytes[branch.num_children - 1];
                     }
-                    self.leaf = Leaf.fromNode(child);
+                    self.leaf = child.asLeaf();
                     self.num_leaf_bytes = @intCast(Leaf.Offset, num_bytes);
                     self.offset = @intCast(Leaf.Offset, num_bytes) - 1;
                     return .Found;
@@ -451,12 +415,12 @@ pub const Point = struct {
         for (self.leaf.bytes[0..self.offset]) |char|
             line += @boolToInt(char == '\n');
         var branch = self.leaf.node.getParent().?;
-        var child_ix = branch.findChild(self.leaf.node);
+        var child_ix = branch.findChild(&self.leaf.node);
         while (true) {
             for (branch.num_newlines[0..child_ix]) |n|
                 line += n;
             if (branch.node.getParent()) |parent| {
-                child_ix = parent.findChild(branch.node);
+                child_ix = parent.findChild(&branch.node);
                 branch = parent;
             } else {
                 break;
@@ -468,12 +432,12 @@ pub const Point = struct {
 
 pub const Tree = struct {
     allocator: *Allocator,
-    root: Branch,
+    root: *Branch,
 
     pub fn init(allocator: *Allocator) Tree {
         var branch = Branch.init(allocator);
         var leaf = Leaf.init(allocator);
-        branch.insertChild(0, leaf.node, 0, 0);
+        branch.insertChild(0, &leaf.node, 0, 0);
         return .{
             .allocator = allocator,
             .root = branch,
@@ -485,12 +449,12 @@ pub const Tree = struct {
     }
 
     pub fn getPointForPos(self: Tree, pos: usize) ?Point {
-        var node = self.root.node;
+        var node = &self.root.node;
         var pos_remaining = pos;
         var num_child_bytes: usize = undefined;
         node: while (node.tag == .Branch) {
-            const branch = Branch.fromNode(node);
-            const num_children = branch.num_children.*;
+            const branch = node.asBranch();
+            const num_children = branch.num_children;
             const num_bytes = branch.num_bytes;
             var child_ix: usize = 0;
             while (true) {
@@ -512,20 +476,20 @@ pub const Tree = struct {
         else
             .{
                 .pos = pos,
-                .leaf = Leaf.fromNode(node),
+                .leaf = node.asLeaf(),
                 .num_leaf_bytes = @intCast(Leaf.Offset, node.getNumBytesFromParent()),
                 .offset = @intCast(Leaf.Offset, pos_remaining),
             };
     }
 
     pub fn getPointForLineStart(self: Tree, line: usize) ?Point {
-        var node = self.root.node;
+        var node = &self.root.node;
         var pos: usize = 0;
         var lines_remaining = line;
         var num_child_newlines: usize = undefined;
         node: while (node.tag == .Branch) {
-            const branch = Branch.fromNode(node);
-            const num_children = branch.num_children.*;
+            const branch = node.asBranch();
+            const num_children = branch.num_children;
             const num_newlines = branch.num_newlines;
             var child_ix: usize = 0;
             while (true) {
@@ -547,7 +511,7 @@ pub const Tree = struct {
         if (lines_remaining > num_child_newlines)
             return null;
 
-        const leaf = Leaf.fromNode(node);
+        const leaf = node.asLeaf();
         const num_leaf_bytes = @intCast(Leaf.Offset, node.getNumBytesFromParent());
         var offset: usize = 0;
         while (lines_remaining > 0) : (lines_remaining -= 1) {
@@ -603,7 +567,7 @@ pub const Tree = struct {
                 const new_leaf = self.insertLeafAfter(point.leaf);
                 std.mem.copy(
                     u8,
-                    new_leaf.bytes,
+                    new_leaf.bytes[0..],
                     point.leaf.bytes[halfway..],
                 );
                 point.leaf.updateSpine(halfway);
@@ -621,15 +585,15 @@ pub const Tree = struct {
         }
     }
 
-    fn insertLeafAfter(self: *Tree, after: Leaf) Leaf {
+    fn insertLeafAfter(self: *Tree, after: *Leaf) *Leaf {
         const new_leaf = Leaf.init(self.allocator);
-        var node = new_leaf.node;
+        var node = &new_leaf.node;
         var num_bytes: usize = 0;
         var num_newlines: usize = 0;
         var child_ix = after.node.findInParent();
         var branch = after.node.getParent().?;
         while (true) {
-            if (branch.num_children.* < branch.children.len) {
+            if (branch.num_children < branch.children.len) {
                 // insert node
                 branch.insertChild(child_ix + 1, node, num_bytes, num_newlines);
                 break;
@@ -639,23 +603,23 @@ pub const Tree = struct {
                 const split_point = @divTrunc(Branch.max_children, 2);
                 std.mem.copy(
                     *Node,
-                    new_branch.children,
+                    new_branch.children[0..],
                     branch.children[split_point..],
                 );
                 std.mem.copy(
                     usize,
-                    new_branch.num_bytes,
+                    new_branch.num_bytes[0..],
                     branch.num_bytes[split_point..],
                 );
                 std.mem.copy(
                     usize,
-                    new_branch.num_newlines,
+                    new_branch.num_newlines[0..],
                     branch.num_newlines[split_point..],
                 );
-                new_branch.num_children.* = branch.num_children.* - @intCast(u8, split_point);
-                branch.num_children.* = split_point;
-                for (new_branch.children[0..new_branch.num_children.*]) |child| {
-                    child.parent = new_branch.node;
+                new_branch.num_children = branch.num_children - @intCast(u8, split_point);
+                branch.num_children = split_point;
+                for (new_branch.children[0..new_branch.num_children]) |child| {
+                    child.parent = &new_branch.node;
                 }
                 branch.updateSpine();
 
@@ -667,7 +631,7 @@ pub const Tree = struct {
 
                 if (branch.node.getParent()) |parent| {
                     // if have parent, insert new_branch into parent in next loop iteration
-                    node = new_branch.node;
+                    node = &new_branch.node;
                     num_bytes = new_branch.sumNumBytes();
                     num_newlines = new_branch.sumNumNewlines();
                     child_ix = branch.node.findInParent();
@@ -677,8 +641,8 @@ pub const Tree = struct {
                     // if no parent, make one and insert branch and new_branch
                     const new_parent = Branch.init(self.allocator);
                     self.root = new_parent;
-                    new_parent.insertChild(0, branch.node, branch.sumNumBytes(), branch.sumNumNewlines());
-                    new_parent.insertChild(1, new_branch.node, new_branch.sumNumBytes(), new_branch.sumNumNewlines());
+                    new_parent.insertChild(0, &branch.node, branch.sumNumBytes(), branch.sumNumNewlines());
+                    new_parent.insertChild(1, &new_branch.node, new_branch.sumNumBytes(), new_branch.sumNumNewlines());
                     break;
                 }
             }
@@ -724,20 +688,20 @@ pub const Tree = struct {
     }
 
     fn startLeaf(self: Tree) Leaf {
-        var node = self.root.node;
+        var node = &self.root.node;
         while (node.tag == .Branch) {
-            node = Branch.fromNode(node).children[0];
+            node = node.asBranch().children[0];
         }
-        return Leaf.fromNode(node);
+        return node.asLeaf();
     }
 
     fn endLeaf(self: Tree) Leaf {
-        var node = self.root.node;
+        var node = &self.root.node;
         while (node.tag == .Branch) {
-            const branch = Branch.fromNode(node);
-            node = branch.children[branch.num_children.* - 1];
+            const branch = node.asBranch();
+            node = branch.children[branch.num_children - 1];
         }
-        return Leaf.fromNode(node);
+        return node.asLeaf();
     }
 
     pub fn searchForwards(self: Tree, start: usize, needle: []const u8) ?usize {
@@ -766,10 +730,10 @@ pub const Tree = struct {
 
     fn getDepth(self: Tree) usize {
         var depth: usize = 0;
-        var node = self.root.node;
+        var node = &self.root.node;
         while (node.tag == .Branch) {
             depth += 1;
-            node = Branch.fromNode(node).children[0];
+            node = node.asBranch().children[0];
         }
         return depth;
     }
@@ -824,11 +788,11 @@ pub const Tree = struct {
         if (total_bytes < @divTrunc(Leaf.max_bytes, 2)) {
             var branch = self.root;
             while (true) {
-                assert(branch.num_children.* == 1);
+                assert(branch.num_children == 1);
                 const child = branch.children[0];
                 switch (child.tag) {
                     .Leaf => break,
-                    .Branch => branch = Branch.fromNode(child),
+                    .Branch => branch = child.asBranch(),
                 }
             }
         } else {
@@ -1053,13 +1017,13 @@ test "get awkward line start" {
     }
 
     // split branch
-    while (tree.root.num_children.* == 1) {
+    while (tree.root.num_children == 1) {
         tree.insert(tree.getTotalBytes(), " ");
     }
     // newline is at end of leaf
-    const leaf0 = Leaf.fromNode(tree.root.children[0]);
+    const leaf = tree.root.children[0].asLeaf();
     expectEqual(
-        leaf0.bytes[tree.root.num_bytes[0] - 1],
+        leaf.bytes[tree.root.num_bytes[0] - 1],
         '\n',
     );
 
