@@ -63,8 +63,9 @@ const Node = packed struct {
 const Leaf = struct {
     node: Node,
     bytes: [max_bytes]u8,
+    newlines: ArrayList(Offset),
 
-    const max_bytes = page_size - @sizeOf(Node);
+    const max_bytes = page_size - @sizeOf(Node) - @sizeOf(ArrayList(Offset));
     const Offset = u16;
     comptime {
         assert(@sizeOf(Leaf) == page_size);
@@ -75,10 +76,12 @@ const Leaf = struct {
         const self = allocator.create(Leaf) catch oom();
         self.node.parent = null;
         self.node.tag = .Leaf;
+        self.newlines = ArrayList(Offset).init(allocator);
         return self;
     }
 
     fn deinit(self: *Leaf, allocator: *Allocator) void {
+        self.newlines.deinit();
         allocator.destroy(self);
     }
 
@@ -86,10 +89,13 @@ const Leaf = struct {
         const parent = self.node.getParent().?;
         const child_ix = parent.findChild(&self.node);
         parent.num_bytes[child_ix] = num_bytes;
-        var num_newlines: usize = 0;
-        for (self.bytes[0..num_bytes]) |char|
-            num_newlines += @boolToInt(char == '\n');
-        parent.num_newlines[child_ix] = num_newlines;
+        self.newlines.resize(0) catch oom();
+        for (self.bytes[0..num_bytes]) |char, offset| {
+            if (char == '\n') {
+                self.newlines.append(@intCast(Offset, offset)) catch oom();
+            }
+        }
+        parent.num_newlines[child_ix] = self.newlines.items.len;
         parent.updateSpine();
     }
 
