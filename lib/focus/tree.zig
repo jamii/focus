@@ -2,1042 +2,627 @@ const focus = @import("../focus.zig");
 usingnamespace focus.common;
 const meta = focus.meta;
 
+pub const TreeConfig = struct {
+    children_per_branch: usize,
+    BranchState: type,
+    items_per_leaf: usize,
+    LeafState: type,
+    Item: type,
+};
+
 // TODO how unbalanced can this get?
 // TODO Leaf/Branch can be done with packed structs once they are less buggy
-
-const page_size = 4 * 1024;
-
-const Node = packed struct {
-    parent: ?*Node,
-    tag: packed enum(u8) { Leaf, Branch },
-
-    fn deinit(self: *Node, allocator: *Allocator) void {
-        switch (self.tag) {
-            .Leaf => self.asLeaf().deinit(allocator),
-            .Branch => self.asBranch().deinit(allocator),
-        }
-    }
-
-    fn getParent(self: *Node) ?*Branch {
-        if (self.parent) |parent_node|
-            return @fieldParentPtr(Branch, "node", parent_node)
-        else
-            return null;
-    }
-
-    fn getNumBytesFromParent(self: *Node) usize {
-        const parent = self.getParent().?;
-        const child_ix = parent.findChild(self);
-        return parent.num_bytes[child_ix];
-    }
-
-    fn findInParent(self: *Node) Branch.Offset {
-        return self.getParent().?.findChild(self);
-    }
-
-    fn asLeaf(self: *Node) *Leaf {
-        assert(self.tag == .Leaf);
-        return @fieldParentPtr(Leaf, "node", self);
-    }
-
-    fn asBranch(self: *Node) *Branch {
-        assert(self.tag == .Branch);
-        return @fieldParentPtr(Branch, "node", self);
-    }
-
-    fn debugInto(self: *Node, output: *ArrayList(u8), indent: usize) void {
-        switch (self.tag) {
-            .Leaf => self.asLeaf().debugInto(output, indent),
-            .Branch => self.asBranch().debugInto(output, indent),
-        }
-    }
-
-    fn validate(self: *Node) void {
-        switch (self.tag) {
-            .Leaf => self.asLeaf().validate(),
-            .Branch => self.asBranch().validate(false),
-        }
-    }
-};
-
-const Leaf = struct {
-    node: Node,
-    bytes: [max_bytes]u8,
-    newlines: ArrayList(Offset),
-
-    const max_bytes = page_size - @sizeOf(Node) - @sizeOf(ArrayList(Offset));
-    const Offset = u16;
-    comptime {
-        assert(@sizeOf(Leaf) == page_size);
-        assert(std.math.maxInt(Offset) > max_bytes);
-    }
-
-    fn init(allocator: *Allocator) *Leaf {
-        const self = allocator.create(Leaf) catch oom();
-        self.node.parent = null;
-        self.node.tag = .Leaf;
-        self.newlines = ArrayList(Offset).init(allocator);
-        return self;
-    }
-
-    fn deinit(self: *Leaf, allocator: *Allocator) void {
-        self.newlines.deinit();
-        allocator.destroy(self);
-    }
-
-    fn updateSpine(self: *Leaf, num_bytes: usize) void {
-        const parent = self.node.getParent().?;
-        const child_ix = parent.findChild(&self.node);
-        parent.num_bytes[child_ix] = num_bytes;
-        self.newlines.resize(0) catch oom();
-        for (self.bytes[0..num_bytes]) |char, offset| {
-            if (char == '\n') {
-                self.newlines.append(@intCast(Offset, offset)) catch oom();
-            }
-        }
-        parent.num_newlines[child_ix] = self.newlines.items.len;
-        parent.updateSpine();
-    }
-
-    fn debugInto(self: *Leaf, output: *ArrayList(u8), indent: usize) void {}
-
-    fn validate(self: *Leaf) void {}
-};
-
-const Branch = struct {
-    node: Node,
-    num_children: Offset,
-    children: [max_children]*Node,
-    num_bytes: [max_children]usize,
-    num_newlines: [max_children]usize,
-
-    const max_children = @divTrunc(
-        page_size - @sizeOf(Node) + @sizeOf(Offset),
-        // children
-        @sizeOf(*Node) +
-            // num_bytes
-            @sizeOf(*usize) +
-            // num_newlines
-            @sizeOf(*usize),
-    );
-    const Offset = u8;
-    comptime {
-        assert(@sizeOf(Branch) == page_size);
-        assert(std.math.maxInt(Offset) > max_children);
-    }
-
-    fn init(allocator: *Allocator) *Branch {
-        const self = allocator.create(Branch) catch oom();
-        self.node.parent = null;
-        self.node.tag = .Branch;
-        self.num_children = 0;
-        return self;
-    }
-
-    fn deinit(
-        self: *Branch,
+pub fn Tree(comptime _config: TreeConfig) type {
+    return struct {
         allocator: *Allocator,
-    ) void {
-        var child_ix: usize = 0;
-        while (child_ix < self.num_children) : (child_ix += 1) {
-            self.children[child_ix].deinit(allocator);
-        }
-        allocator.destroy(self);
-    }
+        root: *Branch,
 
-    fn findChild(self: *Branch, child: *Node) Offset {
-        return @intCast(Offset, std.mem.indexOfScalar(*Node, self.children[0..self.num_children], child).?);
-    }
+        const TreeSelf = @This();
+        pub const config = _config;
 
-    fn insertChild(self: *Branch, child_ix: usize, child: *Node, num_bytes: usize, num_newlines: usize) void {
-        assert(self.num_children < Branch.max_children);
-        std.mem.copyBackwards(
-            *Node,
-            self.children[child_ix + 1 ..],
-            self.children[child_ix..self.num_children],
-        );
-        std.mem.copyBackwards(
-            usize,
-            self.num_bytes[child_ix + 1 ..],
-            self.num_bytes[child_ix..self.num_children],
-        );
-        std.mem.copyBackwards(
-            usize,
-            self.num_newlines[child_ix + 1 ..],
-            self.num_newlines[child_ix..self.num_children],
-        );
-        self.children[child_ix] = child;
-        self.num_bytes[child_ix] = num_bytes;
-        self.num_newlines[child_ix] = num_newlines;
-        self.num_children += 1;
-        child.parent = &self.node;
-        self.updateSpine();
-    }
-
-    fn removeChild(self: *Branch, _child_ix: usize, removed: *ArrayList(*Node)) void {
-        var branch = self;
-        var child_ix = _child_ix;
-        while (true) {
-            assert(child_ix < branch.num_children);
-            removed.append(branch.children[child_ix]) catch oom();
-            std.mem.copy(
-                *Node,
-                branch.children[child_ix..],
-                branch.children[child_ix + 1 .. branch.num_children],
-            );
-            std.mem.copy(
-                usize,
-                branch.num_bytes[child_ix..],
-                branch.num_bytes[child_ix + 1 .. branch.num_children],
-            );
-            std.mem.copy(
-                usize,
-                branch.num_newlines[child_ix..],
-                branch.num_newlines[child_ix + 1 .. branch.num_children],
-            );
-            branch.num_children -= 1;
-            if (branch.num_children == 0) {
-                // if getParent is null, then we just deleted the last leaf node, which shouldn't happen
-                const parent = branch.node.getParent().?;
-                child_ix = parent.findChild(&branch.node);
-                branch = parent;
-            } else {
-                branch.updateSpine();
-                break;
-            }
-        }
-    }
-
-    fn updateSpine(self: *Branch) void {
-        var branch = self;
-        while (branch.node.getParent()) |parent| {
-            const child_ix = parent.findChild(&branch.node);
-            parent.num_bytes[child_ix] = branch.sumNumBytes();
-            parent.num_newlines[child_ix] = branch.sumNumNewlines();
-            branch = parent;
-        }
-    }
-
-    fn sumNumBytes(self: *Branch) usize {
-        var num_bytes: usize = 0;
-        for (self.num_bytes[0..self.num_children]) |n|
-            num_bytes += n;
-        return num_bytes;
-    }
-
-    fn sumNumNewlines(self: *Branch) usize {
-        var num_newlines: usize = 0;
-        for (self.num_newlines[0..self.num_children]) |n|
-            num_newlines += n;
-        return num_newlines;
-    }
-
-    fn debugInto(self: *Branch, output: *ArrayList(u8), indent: usize) void {
-        output.append('\n') catch oom();
-        output.appendNTimes(' ', indent) catch oom();
-        std.fmt.format(output.outStream(), "* num_children={} num_bytes/num_newlines={}/{}=[", .{ self.num_children, self.sumNumBytes(), self.sumNumNewlines }) catch oom();
-        for (self.num_bytes[0..self.num_children]) |n, i| {
-            const sep: []const u8 = if (i == 0) "" else ", ";
-            std.fmt.format(output.outStream(), "{}{}/{}", .{ sep, n, self.num_newlines[i] }) catch oom();
-        }
-        std.fmt.format(output.outStream(), "]", .{}) catch oom();
-        for (self.children[0..self.num_children]) |child| {
-            child.debugInto(output, indent + 4);
-        }
-    }
-
-    fn validate(self: *Branch, is_root: bool) void {
-        if (self.node.getParent()) |parent| {
-            const child_ix = parent.findChild(&self.node);
-            assert(self.sumNumBytes() == parent.num_bytes[child_ix]);
-            assert(self.sumNumNewlines() == parent.num_newlines[child_ix]);
-        }
-        // TODO rebalance underfull branches
-        //if (!is_root) {
-        //assert(self.num_children >= @divTrunc(Branch.max_children, 2));
-        //}
-        var child_ix: usize = 0;
-        while (child_ix < self.num_children) : (child_ix += 1) {
-            assert(self.children[child_ix].parent == &self.node);
-            assert(self.num_bytes[child_ix] >= @divTrunc(Leaf.max_bytes, 2));
-            self.children[child_ix].validate();
-        }
-    }
-};
-
-pub const Point = struct {
-    // Always points at a byte, unless we're at the end of the tree
-    pos: usize,
-    leaf: *Leaf,
-    num_leaf_bytes: Leaf.Offset,
-    offset: Leaf.Offset,
-
-    pub fn isAtStart(self: Point) bool {
-        return self.pos == 0;
-    }
-
-    pub fn isAtEnd(self: Point) bool {
-        return self.offset == self.num_leaf_bytes;
-    }
-
-    pub fn getNextByte(self: *Point) u8 {
-        assert(!self.isAtEnd());
-        return self.leaf.bytes[self.offset];
-    }
-
-    const Seek = enum { Found, NotFound };
-
-    pub fn seekNextLeaf(self: *Point) Seek {
-        var node = &self.leaf.node;
-
-        self.pos += self.num_leaf_bytes - self.offset;
-
-        // go up
-        while (true) {
-            if (node.getParent()) |parent| {
-                const child_ix = parent.findChild(node);
-                if (child_ix + 1 >= parent.num_children) {
-                    // keep going up
-                    node = &parent.node;
-                } else {
-                    // go down
-                    var child = parent.children[child_ix + 1];
-                    var num_bytes = parent.num_bytes[child_ix + 1];
-                    while (child.tag == .Branch) {
-                        const branch = child.asBranch();
-                        child = branch.children[0];
-                        num_bytes = branch.num_bytes[0];
-                    }
-                    self.leaf = child.asLeaf();
-                    self.num_leaf_bytes = @intCast(Leaf.Offset, num_bytes);
-                    self.offset = 0;
-                    return .Found;
-                }
-            } else {
-                self.offset = self.num_leaf_bytes;
-                return .NotFound;
-            }
-        }
-    }
-
-    pub fn seekNextByte(self: *Point) Seek {
-        if (self.offset + 1 >= self.num_leaf_bytes) {
-            if (self.seekNextLeaf() == .NotFound) return .NotFound;
-        } else {
-            self.pos += 1;
-            self.offset += 1;
-        }
-        return .Found;
-    }
-
-    pub fn seekPrevLeaf(self: *Point) Seek {
-        var node = &self.leaf.node;
-
-        self.pos -= self.offset;
-
-        // go up
-        while (true) {
-            if (node.getParent()) |parent| {
-                const child_ix = parent.findChild(node);
-                if (child_ix == 0) {
-                    // keep going up
-                    node = &parent.node;
-                } else {
-                    // go down
-                    var child = parent.children[child_ix - 1];
-                    var num_bytes = parent.num_bytes[child_ix - 1];
-                    while (child.tag == .Branch) {
-                        const branch = child.asBranch();
-                        child = branch.children[branch.num_children - 1];
-                        num_bytes = branch.num_bytes[branch.num_children - 1];
-                    }
-                    self.leaf = child.asLeaf();
-                    self.num_leaf_bytes = @intCast(Leaf.Offset, num_bytes);
-                    self.offset = @intCast(Leaf.Offset, num_bytes) - 1;
-                    return .Found;
-                }
-            } else {
-                self.offset = 0;
-                return .NotFound;
-            }
-        }
-    }
-
-    pub fn seekPrevByte(self: *Point) Seek {
-        if (self.offset == 0) {
-            if (self.seekPrevLeaf() == .NotFound) return .NotFound;
-        } else {
-            self.pos -= 1;
-            self.offset -= 1;
-        }
-        return .Found;
-    }
-
-    pub fn searchForwards(self: *Point, needle: []const u8) Seek {
-        assert(needle.len > 0);
-        if (self.isAtEnd()) return .NotFound;
-        const needle_start_char = needle[0];
-        while (true) {
-            const haystack_start_char = self.getNextByte();
-            if (haystack_start_char == needle_start_char) {
-                var end_point = self.*;
-                var is_match = true;
-                for (needle[1..]) |needle_char| {
-                    if (end_point.seekNextByte() == .Found)
-                        if (end_point.getNextByte() == needle_char)
-                            continue;
-                    is_match = false;
-                    break;
-                }
-                if (is_match) return .Found;
-            }
-            if (self.seekNextByte() == .NotFound) return .NotFound;
-        }
-    }
-
-    pub fn searchBackwards(self: *Point, needle: []const u8) Seek {
-        assert(needle.len > 0);
-        const needle_start_char = needle[0];
-        while (true) {
-            if (self.seekPrevByte() == .NotFound) return .NotFound;
-            const haystack_start_char = self.getNextByte();
-            if (haystack_start_char == needle_start_char) {
-                var end_point = self.*;
-                var is_match = true;
-                for (needle[1..]) |needle_char| {
-                    if (end_point.seekNextByte() == .Found)
-                        if (end_point.getNextByte() == needle_char)
-                            continue;
-                    is_match = false;
-                    break;
-                }
-                if (is_match) return .Found;
-            }
-        }
-    }
-
-    pub fn getLine(self: Point) usize {
-        var line: usize = 0;
-        for (self.leaf.bytes[0..self.offset]) |char|
-            line += @boolToInt(char == '\n');
-        var branch = self.leaf.node.getParent().?;
-        var child_ix = branch.findChild(&self.leaf.node);
-        while (true) {
-            for (branch.num_newlines[0..child_ix]) |n|
-                line += n;
-            if (branch.node.getParent()) |parent| {
-                child_ix = parent.findChild(&branch.node);
-                branch = parent;
-            } else {
-                break;
-            }
-        }
-        return line;
-    }
-};
-
-pub const Tree = struct {
-    allocator: *Allocator,
-    root: *Branch,
-
-    pub fn init(allocator: *Allocator) Tree {
-        var branch = Branch.init(allocator);
-        var leaf = Leaf.init(allocator);
-        branch.insertChild(0, &leaf.node, 0, 0);
-        return .{
-            .allocator = allocator,
-            .root = branch,
-        };
-    }
-
-    pub fn deinit(self: Tree) void {
-        self.root.deinit(self.allocator);
-    }
-
-    pub fn getPointForPos(self: Tree, pos: usize) ?Point {
-        var node = &self.root.node;
-        var pos_remaining = pos;
-        var num_child_bytes: usize = undefined;
-        node: while (node.tag == .Branch) {
-            const branch = node.asBranch();
-            const num_children = branch.num_children;
-            const num_bytes = branch.num_bytes;
-            var child_ix: usize = 0;
-            while (true) {
-                num_child_bytes = num_bytes[child_ix];
-                if (pos_remaining < num_child_bytes) {
-                    node = branch.children[child_ix];
-                    continue :node;
-                }
-                child_ix += 1;
-                if (child_ix == num_children) {
-                    node = branch.children[child_ix - 1];
-                    continue :node;
-                }
-                pos_remaining -= num_child_bytes;
-            }
-        }
-        return if (pos_remaining > num_child_bytes)
-            null
-        else
-            .{
-                .pos = pos,
-                .leaf = node.asLeaf(),
-                .num_leaf_bytes = @intCast(Leaf.Offset, node.getNumBytesFromParent()),
-                .offset = @intCast(Leaf.Offset, pos_remaining),
+        pub fn init(allocator: *Allocator) TreeSelf {
+            var branch = Branch.init(allocator);
+            var leaf = Leaf.init(allocator);
+            branch.insertChild(0, &leaf.node);
+            return .{
+                .allocator = allocator,
+                .root = branch,
             };
-    }
-
-    pub fn getPointForLineStart(self: Tree, line: usize) ?Point {
-        var node = &self.root.node;
-        var pos: usize = 0;
-        var lines_remaining = line;
-        var num_child_newlines: usize = undefined;
-        node: while (node.tag == .Branch) {
-            const branch = node.asBranch();
-            const num_children = branch.num_children;
-            const num_newlines = branch.num_newlines;
-            var child_ix: usize = 0;
-            while (true) {
-                num_child_newlines = num_newlines[child_ix];
-                if (lines_remaining <= num_child_newlines) {
-                    node = branch.children[child_ix];
-                    continue :node;
-                }
-                child_ix += 1;
-                if (child_ix == num_children) {
-                    node = branch.children[child_ix - 1];
-                    continue :node;
-                }
-                lines_remaining -= num_child_newlines;
-                pos += branch.num_bytes[child_ix - 1];
-            }
         }
 
-        if (lines_remaining > num_child_newlines)
-            return null;
-
-        const leaf = node.asLeaf();
-        const num_leaf_bytes = @intCast(Leaf.Offset, node.getNumBytesFromParent());
-        var offset: usize = 0;
-        while (lines_remaining > 0) : (lines_remaining -= 1) {
-            offset = std.mem.indexOfScalarPos(u8, leaf.bytes[0..num_leaf_bytes], offset, '\n').? + 1;
+        pub fn deinit(self: TreeSelf) void {
+            self.root.deinit(self.allocator);
         }
 
-        var point = Point{
-            .pos = pos + offset,
-            .leaf = leaf,
-            .num_leaf_bytes = num_leaf_bytes,
-            .offset = @intCast(Leaf.Offset, offset),
-        };
-
-        if (offset == num_leaf_bytes) {
-            point.pos -= 1;
-            point.offset -= 1;
-            _ = point.seekNextByte();
-        }
-
-        return point;
-    }
-
-    pub fn insert(self: *Tree, start: usize, _bytes: []const u8) void {
-        // find start point
-        var point = self.getPointForPos(start).?;
-
-        var bytes = _bytes;
-        while (bytes.len > 0) {
-            // insert what we can here
-            const num_insert_bytes = min(Leaf.max_bytes - point.num_leaf_bytes, bytes.len);
-            std.mem.copyBackwards(
-                u8,
-                point.leaf.bytes[point.offset + num_insert_bytes .. point.num_leaf_bytes + num_insert_bytes],
-                point.leaf.bytes[point.offset..point.num_leaf_bytes],
-            );
-            std.mem.copy(
-                u8,
-                point.leaf.bytes[point.offset .. point.offset + num_insert_bytes],
-                bytes[0..num_insert_bytes],
-            );
-            point.offset += @intCast(Leaf.Offset, num_insert_bytes);
-            point.num_leaf_bytes += @intCast(Leaf.Offset, num_insert_bytes);
-
-            // save remaining bytes for next loop iter
-            bytes = bytes[num_insert_bytes..];
-
-            if (bytes.len == 0) {
-                point.leaf.updateSpine(point.num_leaf_bytes);
-                break;
-            } else {
-                // split leaf
-                const halfway = @divTrunc(Leaf.max_bytes, 2);
-                const new_leaf = self.insertLeafAfter(point.leaf);
-                std.mem.copy(
-                    u8,
-                    new_leaf.bytes[0..],
-                    point.leaf.bytes[halfway..],
-                );
-                point.leaf.updateSpine(halfway);
-                new_leaf.updateSpine(Leaf.max_bytes - halfway);
-
-                // adjust point
-                if (point.offset >= halfway) {
-                    point.leaf = new_leaf;
-                    point.num_leaf_bytes = Leaf.max_bytes - halfway;
-                    point.offset -= halfway;
-                } else {
-                    point.num_leaf_bytes = halfway;
-                }
-            }
-        }
-    }
-
-    fn insertLeafAfter(self: *Tree, after: *Leaf) *Leaf {
-        const new_leaf = Leaf.init(self.allocator);
-        var node = &new_leaf.node;
-        var num_bytes: usize = 0;
-        var num_newlines: usize = 0;
-        var child_ix = after.node.findInParent();
-        var branch = after.node.getParent().?;
-        while (true) {
-            if (branch.num_children < branch.children.len) {
-                // insert node
-                branch.insertChild(child_ix + 1, node, num_bytes, num_newlines);
-                break;
-            } else {
-                // split off a new branch
-                const new_branch = Branch.init(self.allocator);
-                const split_point = @divTrunc(Branch.max_children, 2);
-                std.mem.copy(
-                    *Node,
-                    new_branch.children[0..],
-                    branch.children[split_point..],
+        pub fn insert(self: *TreeSelf, point: *Point, _items: []const config.Item) void {
+            var items = _items;
+            while (items.len > 0) {
+                // insert what we can here
+                const num_insert_items = min(config.items_per_leaf - point.leaf.num_items, items.len);
+                std.mem.copyBackwards(
+                    config.Item,
+                    point.leaf.items[point.offset + num_insert_items .. point.leaf.num_items + num_insert_items],
+                    point.leaf.items[point.offset..point.leaf.num_items],
                 );
                 std.mem.copy(
-                    usize,
-                    new_branch.num_bytes[0..],
-                    branch.num_bytes[split_point..],
+                    config.Item,
+                    point.leaf.items[point.offset .. point.offset + num_insert_items],
+                    items[0..num_insert_items],
                 );
-                std.mem.copy(
-                    usize,
-                    new_branch.num_newlines[0..],
-                    branch.num_newlines[split_point..],
-                );
-                new_branch.num_children = branch.num_children - @intCast(u8, split_point);
-                branch.num_children = split_point;
-                for (new_branch.children[0..new_branch.num_children]) |child| {
-                    child.parent = &new_branch.node;
-                }
-                branch.updateSpine();
+                point.pos += num_insert_items;
+                point.offset += @intCast(Leaf.Offset, num_insert_items);
+                point.leaf.num_items += @intCast(Leaf.Offset, num_insert_items);
 
-                // insert node
-                if (child_ix < split_point)
-                    branch.insertChild(child_ix + 1, node, num_bytes, num_newlines)
-                else
-                    new_branch.insertChild(child_ix - split_point + 1, node, num_bytes, num_newlines);
+                // save remaining items for next loop iter
+                items = items[num_insert_items..];
 
-                if (branch.node.getParent()) |parent| {
-                    // if have parent, insert new_branch into parent in next loop iteration
-                    node = &new_branch.node;
-                    num_bytes = new_branch.sumNumBytes();
-                    num_newlines = new_branch.sumNumNewlines();
-                    child_ix = branch.node.findInParent();
-                    branch = parent;
-                    continue;
-                } else {
-                    // if no parent, make one and insert branch and new_branch
-                    const new_parent = Branch.init(self.allocator);
-                    self.root = new_parent;
-                    new_parent.insertChild(0, &branch.node, branch.sumNumBytes(), branch.sumNumNewlines());
-                    new_parent.insertChild(1, &new_branch.node, new_branch.sumNumBytes(), new_branch.sumNumNewlines());
+                if (items.len == 0) {
+                    point.leaf.updateSpine();
                     break;
+                } else {
+                    // split leaf
+                    const halfway = @divTrunc(config.items_per_leaf, 2);
+                    const new_leaf = self.insertLeafAfter(point.leaf);
+                    std.mem.copy(
+                        config.Item,
+                        new_leaf.items[0..],
+                        point.leaf.items[halfway..],
+                    );
+                    point.leaf.num_items = halfway;
+                    point.leaf.updateSpine();
+                    new_leaf.num_items = config.items_per_leaf - halfway;
+                    new_leaf.updateSpine();
+
+                    // adjust point
+                    if (point.offset >= halfway) {
+                        point.leaf = new_leaf;
+                        point.offset -= @intCast(Leaf.Offset, halfway);
+                    }
                 }
             }
         }
-        return new_leaf;
-    }
 
-    pub fn delete(self: *Tree, start: usize, _end: usize) void {
-        var end = _end;
+        fn insertLeafAfter(self: *TreeSelf, after: *Leaf) *Leaf {
+            const new_leaf = Leaf.init(self.allocator);
+            var node = &new_leaf.node;
+            var child_ix = after.node.findInParent();
+            var branch = after.node.getParent().?;
+            while (true) {
+                if (branch.num_children < branch.children.len) {
+                    // insert node
+                    branch.insertChild(child_ix + 1, node);
+                    break;
+                } else {
+                    // split off a new branch
+                    const new_branch = Branch.init(self.allocator);
+                    const split_point = @divTrunc(config.children_per_branch, 2);
+                    std.mem.copy(
+                        *Node,
+                        new_branch.children[0..],
+                        branch.children[split_point..],
+                    );
+                    std.mem.copy(
+                        config.BranchState,
+                        new_branch.state[0..],
+                        branch.state[split_point..],
+                    );
+                    new_branch.num_children = branch.num_children - @intCast(Branch.Offset, split_point);
+                    branch.num_children = split_point;
+                    for (new_branch.children[0..new_branch.num_children]) |child| {
+                        child.parent = &new_branch.node;
+                    }
 
-        var total_bytes = self.root.sumNumBytes();
-        assert(start <= end);
-        assert(end <= total_bytes);
+                    // insert node
+                    if (child_ix < split_point) {
+                        // calls branch.updateSpine()
+                        branch.insertChild(child_ix + 1, node);
+                    } else {
+                        branch.updateSpine();
+                        new_branch.insertChild(child_ix - split_point + 1, node);
+                    }
 
-        while (start < end) {
-            // find start point
+                    if (branch.node.getParent()) |parent| {
+                        // if have parent, insert new_branch into parent in next loop iteration
+                        node = &new_branch.node;
+                        child_ix = branch.node.findInParent();
+                        branch = parent;
+                        continue;
+                    } else {
+                        // if no parent, make one and insert branch and new_branch
+                        const new_parent = Branch.init(self.allocator);
+                        self.root = new_parent;
+                        new_parent.insertChild(0, &branch.node);
+                        new_parent.insertChild(1, &new_branch.node);
+                        break;
+                    }
+                }
+            }
+            return new_leaf;
+        }
+
+        pub fn delete(self: *TreeSelf, point: *Point, num_items: usize) void {
+            var num_items_remaining = num_items;
+
+            while (num_items_remaining > 0) {
+                // can only reach this state if we delete past the end of the tree
+                assert(point.leaf.num_items > 0);
+
+                // delete what we can here
+                var num_delete_items = min(num_items_remaining, point.leaf.num_items - point.offset);
+                std.mem.copy(
+                    config.Item,
+                    point.leaf.items[point.offset..],
+                    point.leaf.items[point.offset + num_delete_items .. point.leaf.num_items],
+                );
+
+                num_items_remaining -= num_delete_items;
+                point.leaf.num_items -= num_delete_items;
+
+                if (point.leaf.num_items >= @divTrunc(config.items_per_leaf, 2) or point.leaf.isOnlyLeaf()) {
+                    point.leaf.updateSpine();
+                } else {
+                    // leaf is underfull, remove it and insert items into sibling
+                    const leaf = point.leaf;
+                    if (point.seekPrevLeaf() == .NotFound) {
+                        _ = point.seekNextLeaf();
+                        point.pos -= leaf.num_items;
+                    }
+                    var removed = ArrayList(*Node).initCapacity(self.allocator, 16) catch oom();
+                    const leaf_child_ix = leaf.node.findInParent();
+                    leaf.node.getParent().?.removeChild(leaf_child_ix, &removed);
+                    self.insert(point, leaf.items[0..point.leaf.num_items]);
+                    for (removed.items) |node| node.deinit(self.allocator);
+                    removed.deinit();
+                }
+            }
+        }
+
+        fn getStartLeaf(self: TreeSelf) *Leaf {
+            var node = &self.root.node;
+            while (node.tag == .Branch) {
+                node = node.asBranch().children[0];
+            }
+            return node.asLeaf();
+        }
+
+        fn getEndLeaf(self: TreeSelf) *Leaf {
+            var node = &self.root.node;
+            while (node.tag == .Branch) {
+                const branch = node.asBranch();
+                node = branch.children[branch.num_children - 1];
+            }
+            return node.asLeaf();
+        }
+
+        pub fn getDepth(self: TreeSelf) usize {
+            var depth: usize = 0;
+            var node = &self.root.node;
+            while (node.tag == .Branch) {
+                depth += 1;
+                node = node.asBranch().children[0];
+            }
+            return depth;
+        }
+
+        pub fn copy(self: TreeSelf, allocator: *Allocator, start: usize, end: usize) []const config.Item {
+            var buffer = allocator.alloc(config.Item, end - start) catch oom();
+            self.copyInto(buffer, start);
+            return buffer;
+        }
+
+        pub fn copyInto(self: TreeSelf, _buffer: []config.Item, start: usize) void {
+            var buffer = _buffer;
+
             var point = self.getPointForPos(start).?;
 
-            // delete what we can here
-            var num_delete_bytes = min(end - start, point.num_leaf_bytes - point.offset);
-            std.mem.copy(
-                u8,
-                point.leaf.bytes[point.offset..],
-                point.leaf.bytes[point.offset + num_delete_bytes .. point.num_leaf_bytes],
-            );
+            while (true) {
+                const num_copy_items = min(buffer.len, point.leaf.num_items - point.offset);
+                std.mem.copy(
+                    config.Item,
+                    buffer,
+                    point.leaf.items[point.offset .. point.offset + num_copy_items],
+                );
+                buffer = buffer[num_copy_items..];
 
-            end -= num_delete_bytes;
-            point.num_leaf_bytes -= num_delete_bytes;
-            total_bytes -= num_delete_bytes;
+                if (buffer.len == 0) break;
 
-            if (point.num_leaf_bytes >= @divTrunc(Leaf.max_bytes, 2) or total_bytes < @divTrunc(Leaf.max_bytes, 2)) {
-                point.leaf.updateSpine(point.num_leaf_bytes);
-            } else {
-                // leaf is underfull, remove it and insert bytes into sibling
-                var removed = ArrayList(*Node).initCapacity(self.allocator, 16) catch oom();
-                const leaf_child_ix = point.leaf.node.findInParent();
-                point.leaf.node.getParent().?.removeChild(leaf_child_ix, &removed);
-                self.insert(start - point.offset, point.leaf.bytes[0..point.num_leaf_bytes]);
-                for (removed.items) |node| node.deinit(self.allocator);
-                removed.deinit();
+                assert(point.seekNextLeaf() != .NotFound);
             }
         }
-    }
 
-    fn startLeaf(self: Tree) Leaf {
-        var node = &self.root.node;
-        while (node.tag == .Branch) {
-            node = node.asBranch().children[0];
+        fn debugInto(self: TreeSelf, output: *ArrayList(u8)) void {
+            self.root.debugInto(output, 0);
         }
-        return node.asLeaf();
-    }
 
-    fn endLeaf(self: Tree) Leaf {
-        var node = &self.root.node;
-        while (node.tag == .Branch) {
-            const branch = node.asBranch();
-            node = branch.children[branch.num_children - 1];
+        pub fn validate(self: TreeSelf) void {
+            const leaf = self.getStartLeaf();
+            if (leaf.isOnlyLeaf()) {
+                var branch = self.root;
+                while (branch.children[0].tag == .Branch) {
+                    assert(branch.children[0].parent == &branch.node);
+                    branch = branch.children[0].asBranch();
+                }
+                assert(leaf.num_items < @divTrunc(config.items_per_leaf, 2));
+            } else {
+                self.root.validate(true);
+            }
         }
-        return node.asLeaf();
-    }
 
-    pub fn searchForwards(self: Tree, start: usize, needle: []const u8) ?usize {
-        var point = self.getPointForPos(start).?;
-        switch (point.searchForwards(needle)) {
-            .Found => return point.pos,
-            .NotFound => return null,
-        }
-    }
+        pub const Node = struct {
+            parent: ?*Node,
+            tag: enum(u8) { Leaf, Branch },
 
-    pub fn searchBackwards(self: Tree, start: usize, needle: []const u8) ?usize {
-        var point = self.getPointForPos(start).?;
-        switch (point.searchBackwards(needle)) {
-            .Found => return point.pos,
-            .NotFound => return null,
-        }
-    }
-
-    pub fn getTotalBytes(self: Tree) usize {
-        return self.root.sumNumBytes();
-    }
-
-    pub fn getTotalNewlines(self: Tree) usize {
-        return self.root.sumNumNewlines();
-    }
-
-    fn getDepth(self: Tree) usize {
-        var depth: usize = 0;
-        var node = &self.root.node;
-        while (node.tag == .Branch) {
-            depth += 1;
-            node = node.asBranch().children[0];
-        }
-        return depth;
-    }
-
-    pub fn copy(self: Tree, allocator: *Allocator, start: usize, end: usize) []const u8 {
-        var buffer = allocator.alloc(u8, end - start) catch oom();
-        self.copyInto(buffer, start);
-        return buffer;
-    }
-
-    pub fn copyInto(self: Tree, _buffer: []u8, start: usize) void {
-        var buffer = _buffer;
-
-        var point = self.getPointForPos(start).?;
-
-        while (true) {
-            const num_copy_bytes = min(buffer.len, point.num_leaf_bytes - point.offset);
-            std.mem.copy(
-                u8,
-                buffer,
-                point.leaf.bytes[point.offset .. point.offset + num_copy_bytes],
-            );
-            buffer = buffer[num_copy_bytes..];
-
-            if (buffer.len == 0) break;
-
-            assert(point.seekNextLeaf() != .NotFound);
-        }
-    }
-
-    pub fn writeInto(self: Tree, writer: anytype, start: usize, end: usize) !void {
-        var point = self.getPointForPos(start).?;
-
-        var num_remaining_write_bytes = end - start;
-        while (true) {
-            const num_write_bytes = min(num_remaining_write_bytes, point.num_leaf_bytes - point.offset);
-            try writer.writeAll(point.leaf.bytes[point.offset .. point.offset + num_write_bytes]);
-            num_remaining_write_bytes -= num_write_bytes;
-
-            if (num_remaining_write_bytes == 0) break;
-
-            assert(point.seekNextLeaf() != .NotFound);
-        }
-    }
-
-    fn debugInto(self: Tree, output: *ArrayList(u8)) void {
-        self.root.debugInto(output, 0);
-    }
-
-    fn validate(self: Tree) void {
-        const total_bytes = self.root.sumNumBytes();
-        if (total_bytes < @divTrunc(Leaf.max_bytes, 2)) {
-            var branch = self.root;
-            while (true) {
-                assert(branch.num_children == 1);
-                const child = branch.children[0];
-                switch (child.tag) {
-                    .Leaf => break,
-                    .Branch => branch = child.asBranch(),
+            fn deinit(self: *Node, allocator: *Allocator) void {
+                switch (self.tag) {
+                    .Leaf => self.asLeaf().deinit(allocator),
+                    .Branch => self.asBranch().deinit(allocator),
                 }
             }
-        } else {
-            self.root.validate(true);
-        }
-    }
-};
 
-fn testEqual(tree: *const Tree, input: []const u8) void {
-    var output = ArrayList(u8).initCapacity(std.testing.allocator, input.len) catch oom();
-    defer output.deinit();
-    tree.writeInto(output.writer(), 0, tree.getTotalBytes()) catch unreachable;
-    var i: usize = 0;
-    while (i < min(input.len, output.items.len)) : (i += 1) {
-        if (input[i] != output.items[i]) {
-            panic("Mismatch at byte {}: {c} vs {c}", .{ i, input[i], output.items[i] });
-        }
-    }
-    expectEqual(input.len, output.items.len);
-}
+            pub fn getParent(self: *Node) ?*Branch {
+                if (self.parent) |parent_node|
+                    return @fieldParentPtr(Branch, "node", parent_node)
+                else
+                    return null;
+            }
 
-test "tree insert all at once" {
-    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
-    defer std.testing.allocator.free(cm);
+            pub fn findInParent(self: *Node) Branch.Offset {
+                return self.getParent().?.findChild(self);
+            }
 
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    tree.insert(0, cm);
-    tree.validate();
-    testEqual(&tree, cm);
-    expectEqual(tree.getDepth(), 3);
-}
+            pub fn asLeaf(self: *Node) *Leaf {
+                assert(self.tag == .Leaf);
+                return @fieldParentPtr(Leaf, "node", self);
+            }
 
-test "tree insert forwards" {
-    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
-    defer std.testing.allocator.free(cm);
+            pub fn asBranch(self: *Node) *Branch {
+                assert(self.tag == .Branch);
+                return @fieldParentPtr(Branch, "node", self);
+            }
 
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    var i: usize = 0;
-    while (i < cm.len) : (i += 107) {
-        tree.insert(i, cm[i..min(i + 107, cm.len)]);
-    }
-    tree.validate();
-    testEqual(&tree, cm);
-    expectEqual(tree.getDepth(), 3);
-}
+            fn debugInto(self: *Node, output: *ArrayList(u8), indent: usize) void {
+                switch (self.tag) {
+                    .Leaf => self.asLeaf().debugInto(output, indent),
+                    .Branch => self.asBranch().debugInto(output, indent),
+                }
+            }
 
-test "tree insert backwards" {
-    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
-    defer std.testing.allocator.free(cm);
+            fn validate(self: *Node) void {
+                switch (self.tag) {
+                    .Leaf => self.asLeaf().validate(),
+                    .Branch => self.asBranch().validate(false),
+                }
+            }
+        };
 
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    var i: usize = 0;
-    while (i < cm.len) : (i += 107) {
-        tree.insert(0, cm[if (cm.len - i > 107) cm.len - i - 107 else 0 .. cm.len - i]);
-    }
-    tree.validate();
-    testEqual(&tree, cm);
-    expectEqual(tree.getDepth(), 3);
-}
+        pub const Leaf = struct {
+            node: Node,
+            num_items: Offset,
+            items: [config.items_per_leaf](config.Item),
+            state: config.LeafState,
 
-test "tree delete all at once" {
-    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
-    defer std.testing.allocator.free(cm);
+            pub const Offset = offset: {
+                for (.{ u8, u16, u32, u64 }) |PotentialOffset| {
+                    if (std.math.maxInt(PotentialOffset) > config.items_per_leaf) {
+                        break :offset PotentialOffset;
+                    }
+                }
+                unreachable;
+            };
 
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    tree.insert(0, cm);
+            fn init(allocator: *Allocator) *Leaf {
+                const self = allocator.create(Leaf) catch oom();
+                self.node.parent = null;
+                self.node.tag = .Leaf;
+                self.num_items = 0;
+                self.state = config.LeafState.init(allocator);
+                return self;
+            }
 
-    tree.delete(0, cm.len);
-    tree.validate();
-    testEqual(&tree, "");
-}
+            fn deinit(self: *Leaf, allocator: *Allocator) void {
+                self.state.deinit(allocator);
+                allocator.destroy(self);
+            }
 
-test "tree delete forwards" {
-    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
-    defer std.testing.allocator.free(cm);
+            fn updateSpine(self: *Leaf) void {
+                const parent = self.node.getParent().?;
+                const child_ix = parent.findChild(&self.node);
+                self.state.update(self);
+                parent.state[child_ix].update(&self.node);
+                parent.updateSpine();
+            }
 
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    tree.insert(0, cm);
+            fn isOnlyLeaf(self: *Leaf) bool {
+                var node = &self.node;
+                while (node.getParent()) |parent| {
+                    if (parent.num_children != 1) return false;
+                    node = &parent.node;
+                }
+                return true;
+            }
 
-    const halfway = @divTrunc(cm.len, 2);
-    var i: usize = 0;
-    while (i < halfway) : (i += 107) {
-        tree.delete(0, min(107, halfway - i));
-    }
-    tree.validate();
-    testEqual(&tree, cm[halfway..]);
-}
+            fn debugInto(self: *const Leaf, output: *ArrayList(u8), indent: usize) void {}
 
-test "tree delete backwards" {
-    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
-    defer std.testing.allocator.free(cm);
+            fn validate(self: *const Leaf) void {
+                assert(self.num_items >= @divTrunc(config.items_per_leaf, 2));
+            }
+        };
 
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    tree.insert(0, cm);
+        pub const Branch = struct {
+            node: Node,
+            num_children: Offset,
+            children: [config.children_per_branch]*Node,
+            state: [config.children_per_branch](config.BranchState),
 
-    const halfway = @divTrunc(cm.len, 2);
-    var i: usize = 0;
-    while (i < halfway) : (i += 107) {
-        tree.delete(if (halfway - i > 107) halfway - i - 107 else 0, halfway - i);
-    }
-    tree.validate();
-    testEqual(&tree, cm[halfway..]);
-}
+            pub const Offset = offset: {
+                for (.{ u8, u16, u32, u64 }) |PotentialOffset| {
+                    if (std.math.maxInt(PotentialOffset) > config.children_per_branch) {
+                        break :offset PotentialOffset;
+                    }
+                }
+                unreachable;
+            };
 
-test "search forwards" {
-    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
-    defer std.testing.allocator.free(cm);
+            fn init(allocator: *Allocator) *Branch {
+                const self = allocator.create(Branch) catch oom();
+                self.node.parent = null;
+                self.node.tag = .Branch;
+                self.num_children = 0;
+                return self;
+            }
 
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    tree.insert(0, cm);
+            fn deinit(
+                self: *Branch,
+                allocator: *Allocator,
+            ) void {
+                var child_ix: usize = 0;
+                while (child_ix < self.num_children) : (child_ix += 1) {
+                    self.children[child_ix].deinit(allocator);
+                }
+                allocator.destroy(self);
+            }
 
-    const needle = "className";
+            pub fn findChild(self: *Branch, child: *Node) Offset {
+                return @intCast(Offset, std.mem.indexOfScalar(*Node, self.children[0..self.num_children], child).?);
+            }
 
-    var expected = ArrayList(usize).init(std.testing.allocator);
-    defer expected.deinit();
-    {
-        var start: usize = 0;
-        while (std.mem.indexOfPos(u8, cm, start, needle)) |pos| {
-            expected.append(pos) catch oom();
-            start = pos + 1;
-        }
-    }
+            fn insertChild(self: *Branch, child_ix: usize, child: *Node) void {
+                assert(self.num_children < config.children_per_branch);
+                std.mem.copyBackwards(
+                    *Node,
+                    self.children[child_ix + 1 ..],
+                    self.children[child_ix..self.num_children],
+                );
+                std.mem.copyBackwards(
+                    config.BranchState,
+                    self.state[child_ix + 1 ..],
+                    self.state[child_ix..self.num_children],
+                );
+                self.children[child_ix] = child;
+                self.state[child_ix] = config.BranchState.init();
+                self.state[child_ix].update(child);
+                self.num_children += 1;
+                child.parent = &self.node;
+                self.updateSpine();
+            }
 
-    var actual = ArrayList(usize).init(std.testing.allocator);
-    defer actual.deinit();
-    {
-        var start: usize = 0;
-        while (tree.searchForwards(start, needle)) |pos| {
-            actual.append(pos) catch oom();
-            start = pos + 1;
-        }
-    }
+            fn removeChild(self: *Branch, _child_ix: usize, removed: *ArrayList(*Node)) void {
+                var branch = self;
+                var child_ix = _child_ix;
+                while (true) {
+                    assert(child_ix < branch.num_children);
+                    removed.append(branch.children[child_ix]) catch oom();
+                    std.mem.copy(
+                        *Node,
+                        branch.children[child_ix..],
+                        branch.children[child_ix + 1 .. branch.num_children],
+                    );
+                    std.mem.copy(
+                        config.BranchState,
+                        branch.state[child_ix..],
+                        branch.state[child_ix + 1 .. branch.num_children],
+                    );
+                    branch.num_children -= 1;
+                    if (branch.num_children == 0) {
+                        // if getParent is null, then we just deleted the last leaf node, which shouldn't happen
+                        const parent = branch.node.getParent().?;
+                        child_ix = parent.findChild(&branch.node);
+                        branch = parent;
+                    } else {
+                        branch.updateSpine();
+                        break;
+                    }
+                }
+            }
 
-    assert(meta.deepEqual(expected.items, actual.items));
-}
+            fn updateSpine(self: *Branch) void {
+                var branch = self;
+                while (branch.node.getParent()) |parent| {
+                    const child_ix = parent.findChild(&branch.node);
+                    parent.state[child_ix].update(&branch.node);
+                    branch = parent;
+                }
+            }
 
-test "search backwards" {
-    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
-    defer std.testing.allocator.free(cm);
+            fn debugInto(self: *const Branch, output: *ArrayList(u8), indent: usize) void {
+                output.append('\n') catch oom();
+                output.appendNTimes(' ', indent) catch oom();
+                std.fmt.format(output.outStream(), "* num_children={} [", .{self.num_children}) catch oom();
+                for (self.num_items[0..self.num_children]) |n, i| {
+                    const sep: []const u8 = if (i == 0) "" else ", ";
+                    std.fmt.format(output.outStream(), "{}{}/{}", .{ sep, n, self.state[i] }) catch oom();
+                }
+                std.fmt.format(output.outStream(), "]", .{}) catch oom();
+                for (self.children[0..self.num_children]) |child| {
+                    child.debugInto(output, indent + 4);
+                }
+            }
 
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    tree.insert(0, cm);
+            fn validate(self: *Branch, is_root: bool) void {
+                if (is_root) {
+                    assert(self.node.parent == null);
+                } else {
+                    const parent = self.node.getParent().?;
+                    const child_ix = parent.findChild(&self.node);
+                    var valid_state = config.BranchState.init();
+                    valid_state.update(&self.node);
+                    assert(meta.deepEqual(parent.state[child_ix], valid_state));
+                }
+                // TODO rebalance underfull branches
+                //if (!is_root) {
+                //assert(self.num_children >= @divTrunc(config.children_per_branch, 2));
+                //}
+                var child_ix: usize = 0;
+                while (child_ix < self.num_children) : (child_ix += 1) {
+                    assert(self.children[child_ix].parent == &self.node);
+                    self.children[child_ix].validate();
+                }
+            }
+        };
 
-    const needle = "className";
+        pub const Point = struct {
+            // Always points at a byte, unless we're at the end of the tree
+            pos: usize,
+            leaf: *Leaf,
+            offset: Leaf.Offset,
 
-    var expected = ArrayList(usize).init(std.testing.allocator);
-    defer expected.deinit();
-    {
-        var start: usize = 0;
-        while (std.mem.indexOfPos(u8, cm, start, needle)) |pos| {
-            expected.append(pos) catch oom();
-            start = pos + 1;
-        }
-    }
+            pub fn isAtStart(self: Point) bool {
+                return self.pos == 0;
+            }
 
-    var actual = ArrayList(usize).init(std.testing.allocator);
-    defer actual.deinit();
-    {
-        var start: usize = 0;
-        while (tree.searchForwards(start, needle)) |pos| {
-            actual.append(pos) catch oom();
-            start = pos + 1;
-        }
-    }
+            pub fn isAtEnd(self: Point) bool {
+                return self.offset == self.leaf.num_items;
+            }
 
-    assert(meta.deepEqual(expected.items, actual.items));
-}
+            pub fn getNextItem(self: *Point) config.Item {
+                assert(!self.isAtEnd());
+                return self.leaf.items[self.offset];
+            }
 
-test "get line start" {
-    const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
-    defer std.testing.allocator.free(cm);
+            const Seek = enum { Found, NotFound };
 
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    tree.insert(0, cm);
+            pub fn seekNextLeaf(self: *Point) Seek {
+                var node = &self.leaf.node;
 
-    var expected = ArrayList(usize).init(std.testing.allocator);
-    defer expected.deinit();
-    {
-        var start: usize = 0;
-        expected.append(0) catch oom();
-        while (std.mem.indexOfScalarPos(u8, cm, start, '\n')) |pos| {
-            expected.append(pos + 1) catch oom();
-            start = pos + 1;
-        }
-    }
+                self.pos += self.leaf.num_items - self.offset;
 
-    for (expected.items) |pos, line| {
-        const point = tree.getPointForLineStart(line).?;
-        expectEqual(pos, point.pos);
-        expectEqual(line, point.getLine());
-    }
+                // go up
+                while (true) {
+                    if (node.getParent()) |parent| {
+                        const child_ix = parent.findChild(node);
+                        if (child_ix + 1 >= parent.num_children) {
+                            // keep going up
+                            node = &parent.node;
+                        } else {
+                            // go down
+                            var child = parent.children[child_ix + 1];
+                            while (child.tag == .Branch) {
+                                const branch = child.asBranch();
+                                child = branch.children[0];
+                            }
+                            self.leaf = child.asLeaf();
+                            self.offset = 0;
+                            return .Found;
+                        }
+                    } else {
+                        self.offset = self.leaf.num_items;
+                        return .NotFound;
+                    }
+                }
+            }
 
-    expectEqual(tree.getPointForLineStart(expected.items.len), null);
-}
+            pub fn seekNextItem(self: *Point) Seek {
+                if (self.offset + 1 >= self.leaf.num_items) {
+                    if (self.seekNextLeaf() == .NotFound) return .NotFound;
+                } else {
+                    self.pos += 1;
+                    self.offset += 1;
+                }
+                return .Found;
+            }
 
-test "get awkward line start" {
-    var tree = Tree.init(std.testing.allocator);
-    defer tree.deinit();
-    {
-        var i: usize = 0;
-        while (i < @divTrunc(Leaf.max_bytes, 2) - 1) : (i += 1) {
-            tree.insert(i, " ");
-        }
-        tree.insert(i, "\n");
-    }
+            pub fn seekPrevLeaf(self: *Point) Seek {
+                var node = &self.leaf.node;
 
-    {
-        expectEqual(tree.getPointForLineStart(0).?.pos, 0);
-        const point = tree.getPointForLineStart(1).?;
-        // point is at end of leaf
-        expectEqual(point.pos, tree.getTotalBytes());
-        expectEqual(point.offset, @intCast(u16, tree.getTotalBytes()));
-    }
+                self.pos -= self.offset;
 
-    // split branch
-    while (tree.root.num_children == 1) {
-        tree.insert(tree.getTotalBytes(), " ");
-    }
-    // newline is at end of leaf
-    const leaf = tree.root.children[0].asLeaf();
-    expectEqual(
-        leaf.bytes[tree.root.num_bytes[0] - 1],
-        '\n',
-    );
+                // go up
+                while (true) {
+                    if (node.getParent()) |parent| {
+                        const child_ix = parent.findChild(node);
+                        if (child_ix == 0) {
+                            // keep going up
+                            node = &parent.node;
+                        } else {
+                            // go down
+                            var child = parent.children[child_ix - 1];
+                            while (child.tag == .Branch) {
+                                const branch = child.asBranch();
+                                child = branch.children[branch.num_children - 1];
+                            }
+                            self.leaf = child.asLeaf();
+                            self.offset = @intCast(Leaf.Offset, self.leaf.num_items) - 1;
+                            return .Found;
+                        }
+                    } else {
+                        self.offset = 0;
+                        return .NotFound;
+                    }
+                }
+            }
 
-    {
-        expectEqual(tree.getPointForLineStart(0).?.pos, 0);
-        const point = tree.getPointForLineStart(1).?;
-        // point is at beginning of new leaf
-        expectEqual(point.pos, @divTrunc(Leaf.max_bytes, 2));
-        expectEqual(point.offset, 0);
-    }
+            pub fn seekPrevItem(self: *Point) Seek {
+                if (self.offset == 0) {
+                    if (self.seekPrevLeaf() == .NotFound) return .NotFound;
+                } else {
+                    self.pos -= 1;
+                    self.offset -= 1;
+                }
+                return .Found;
+            }
+
+            pub fn searchForwards(self: *Point, needle: []const config.Item) Seek {
+                assert(needle.len > 0);
+                if (self.isAtEnd()) return .NotFound;
+                const needle_start_item = needle[0];
+                while (true) {
+                    const haystack_start_item = self.getNextItem();
+                    if (haystack_start_item == needle_start_item) {
+                        var end_point = self.*;
+                        var is_match = true;
+                        for (needle[1..]) |needle_item| {
+                            if (end_point.seekNextItem() == .Found)
+                                if (end_point.getNextItem() == needle_item)
+                                    continue;
+                            is_match = false;
+                            break;
+                        }
+                        if (is_match) return .Found;
+                    }
+                    if (self.seekNextItem() == .NotFound) return .NotFound;
+                }
+            }
+
+            pub fn searchBackwards(self: *Point, needle: []const config.Item) Seek {
+                assert(needle.len > 0);
+                const needle_start_item = needle[0];
+                while (true) {
+                    if (self.seekPrevItem() == .NotFound) return .NotFound;
+                    const haystack_start_item = self.getNextItem();
+                    if (haystack_start_item == needle_start_item) {
+                        var end_point = self.*;
+                        var is_match = true;
+                        for (needle[1..]) |needle_item| {
+                            if (end_point.seekNextItem() == .Found)
+                                if (end_point.getNextItem() == needle_item)
+                                    continue;
+                            is_match = false;
+                            break;
+                        }
+                        if (is_match) return .Found;
+                    }
+                }
+            }
+        };
+    };
 }
