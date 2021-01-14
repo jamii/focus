@@ -4,7 +4,7 @@ const meta = focus.meta;
 const Tree = focus.Tree;
 const TreeConfig = focus.TreeConfig;
 
-const BufferTree = buffer_tree: {
+const BufferTreeInner = buffer_tree_inner: {
     var config = TreeConfig{
         .children_per_branch = 128,
         .BranchState = BranchState,
@@ -18,26 +18,27 @@ const BufferTree = buffer_tree: {
     while (@sizeOf(Tree(config).Leaf) > 4 * 1024) {
         config.items_per_leaf -= 1;
     }
-    break :buffer_tree Tree(config);
+    break :buffer_tree_inner Tree(config);
 };
 
 // manually break this circular dependency
 const LeafOffset = u16;
 comptime {
-    assert(BufferTree.Leaf.Offset == LeafOffset);
+    assert(BufferTreeInner.Leaf.Offset == LeafOffset);
 }
 
 const BranchState = struct {
     num_bytes: usize,
     num_newlines: usize,
-    const Self = @This();
-    pub fn init() Self {
+
+    pub fn init() BranchState {
         return .{
             .num_bytes = 0,
             .num_newlines = 0,
         };
     }
-    pub fn update(self: *Self, node: *BufferTree.Node) void {
+
+    pub fn update(self: *BranchState, node: *BufferTreeInner.Node) void {
         switch (node.tag) {
             .Leaf => {
                 const leaf = node.asLeaf();
@@ -59,16 +60,18 @@ const BranchState = struct {
 
 const LeafState = struct {
     newlines: ArrayList(LeafOffset),
-    const Self = @This();
-    pub fn init(allocator: *Allocator) Self {
+
+    pub fn init(allocator: *Allocator) LeafState {
         return .{
             .newlines = ArrayList(LeafOffset).init(allocator),
         };
     }
-    pub fn deinit(self: *Self, allocator: *Allocator) void {
+
+    pub fn deinit(self: *LeafState, allocator: *Allocator) void {
         self.newlines.deinit();
     }
-    pub fn update(self: *Self, leaf: *const BufferTree.Leaf) void {
+
+    pub fn update(self: *LeafState, leaf: *const BufferTreeInner.Leaf) void {
         self.newlines.resize(0) catch oom();
         for (leaf.items) |char, i|
             if (char == '\n')
@@ -76,166 +79,180 @@ const LeafState = struct {
     }
 };
 
-pub fn insert(tree: *BufferTree, pos: usize, bytes: []const u8) void {
-    var point = getPointForPos(tree.*, pos).?;
-    tree.insert(&point, bytes);
-}
+const BufferTree = struct {
+    inner: BufferTreeInner,
 
-pub fn delete(tree: *BufferTree, start: usize, end: usize) void {
-    var point = getPointForPos(tree.*, start).?;
-    tree.delete(&point, end - start);
-}
-
-pub fn getPointForPos(tree: BufferTree, pos: usize) ?BufferTree.Point {
-    var node = &tree.root.node;
-    var pos_remaining = pos;
-    node: while (node.tag == .Branch) {
-        const branch = node.asBranch();
-        var child_ix: usize = 0;
-        while (true) {
-            const num_child_bytes = branch.state[child_ix].num_bytes;
-            if (pos_remaining < num_child_bytes) {
-                node = branch.children[child_ix];
-                continue :node;
-            }
-            child_ix += 1;
-            if (child_ix == branch.num_children) {
-                node = branch.children[child_ix - 1];
-                continue :node;
-            }
-            pos_remaining -= num_child_bytes;
-        }
-    }
-    const leaf = node.asLeaf();
-
-    return if (pos_remaining > leaf.num_items)
-        null
-    else
-        .{
-            .pos = pos,
-            .leaf = leaf,
-            .offset = @intCast(BufferTree.Leaf.Offset, pos_remaining),
+    pub fn init(allocator: *Allocator) BufferTree {
+        return .{
+            .inner = BufferTreeInner.init(allocator),
         };
-}
+    }
 
-pub fn getPointForLineStart(tree: BufferTree, line: usize) ?BufferTree.Point {
-    var node = &tree.root.node;
-    var pos: usize = 0;
-    var lines_remaining = line;
-    node: while (node.tag == .Branch) {
-        const branch = node.asBranch();
-        var child_ix: usize = 0;
+    pub fn deinit(self: *BufferTree) void {
+        self.inner.deinit();
+    }
+
+    pub fn insert(self: *BufferTree, pos: usize, bytes: []const u8) void {
+        var point = self.getPointForPos(pos).?;
+        self.inner.insert(&point, bytes);
+    }
+
+    pub fn delete(self: *BufferTree, start: usize, end: usize) void {
+        var point = self.getPointForPos(start).?;
+        self.inner.delete(&point, end - start);
+    }
+
+    pub fn getPointForPos(self: BufferTree, pos: usize) ?BufferTreeInner.Point {
+        var node = &self.inner.root.node;
+        var pos_remaining = pos;
+        node: while (node.tag == .Branch) {
+            const branch = node.asBranch();
+            var child_ix: usize = 0;
+            while (true) {
+                const num_child_bytes = branch.state[child_ix].num_bytes;
+                if (pos_remaining < num_child_bytes) {
+                    node = branch.children[child_ix];
+                    continue :node;
+                }
+                child_ix += 1;
+                if (child_ix == branch.num_children) {
+                    node = branch.children[child_ix - 1];
+                    continue :node;
+                }
+                pos_remaining -= num_child_bytes;
+            }
+        }
+        const leaf = node.asLeaf();
+
+        return if (pos_remaining > leaf.num_items)
+            null
+        else
+            .{
+                .pos = pos,
+                .leaf = leaf,
+                .offset = @intCast(BufferTreeInner.Leaf.Offset, pos_remaining),
+            };
+    }
+
+    pub fn getPointForLineStart(self: BufferTree, line: usize) ?BufferTreeInner.Point {
+        var node = &self.inner.root.node;
+        var pos: usize = 0;
+        var lines_remaining = line;
+        node: while (node.tag == .Branch) {
+            const branch = node.asBranch();
+            var child_ix: usize = 0;
+            while (true) {
+                if (lines_remaining <= branch.state[child_ix].num_newlines) {
+                    node = branch.children[child_ix];
+                    continue :node;
+                }
+                child_ix += 1;
+                if (child_ix == branch.num_children) {
+                    node = branch.children[child_ix - 1];
+                    continue :node;
+                }
+                lines_remaining -= branch.state[child_ix - 1].num_newlines;
+                pos += branch.state[child_ix - 1].num_bytes;
+            }
+        }
+        const leaf = node.asLeaf();
+
+        if (lines_remaining > leaf.state.newlines.items.len)
+            return null;
+        const offset = leaf.state.newlines.items[lines_remaining] + 1;
+
+        var point = BufferTreeInner.Point{
+            .pos = pos + offset,
+            .leaf = leaf,
+            .offset = offset,
+        };
+
+        // if we're right at the end of the leaf, try going to the start of the next leaf to maintain Point invariants
+        if (offset == leaf.num_items and leaf.num_items > 0) {
+            _ = point.seekPrevItem();
+            _ = point.seekNextItem();
+        }
+
+        return point;
+    }
+
+    pub fn searchForwards(self: BufferTree, start: usize, needle: []const u8) ?usize {
+        var point = self.getPointForPos(start).?;
+        switch (point.searchForwards(needle)) {
+            .Found => return point.pos,
+            .NotFound => return null,
+        }
+    }
+
+    pub fn searchBackwards(self: BufferTree, start: usize, needle: []const u8) ?usize {
+        var point = self.getPointForPos(start).?;
+        switch (point.searchBackwards(needle)) {
+            .Found => return point.pos,
+            .NotFound => return null,
+        }
+    }
+
+    pub fn getLine(point: BufferTreeInner.Point) usize {
+        var line: usize = 0;
+        for (point.leaf.state.newlines.items) |offset| {
+            if (offset > point.offset) break;
+            line += 1;
+        }
+        var branch = point.leaf.node.getParent().?;
+        var child_ix = branch.findChild(&point.leaf.node);
         while (true) {
-            if (lines_remaining <= branch.state[child_ix].num_newlines) {
-                node = branch.children[child_ix];
-                continue :node;
+            for (branch.state[0..child_ix]) |state|
+                line += state.num_newlines;
+            if (branch.node.getParent()) |parent| {
+                child_ix = parent.findChild(&branch.node);
+                branch = parent;
+            } else {
+                break;
             }
-            child_ix += 1;
-            if (child_ix == branch.num_children) {
-                node = branch.children[child_ix - 1];
-                continue :node;
+        }
+        return line;
+    }
+
+    pub fn writeInto(self: BufferTree, writer: anytype, start: usize, end: usize) !void {
+        var point = self.getPointForPos(start).?;
+
+        var num_remaining_write_items = end - start;
+        while (true) {
+            const num_write_items = min(num_remaining_write_items, point.leaf.num_items - point.offset);
+            try writer.writeAll(point.leaf.items[point.offset .. point.offset + num_write_items]);
+            num_remaining_write_items -= num_write_items;
+
+            if (num_remaining_write_items == 0) break;
+
+            assert(point.seekNextLeaf() != .NotFound);
+        }
+    }
+
+    fn testEqual(self: BufferTree, input: []const u8) void {
+        var output = ArrayList(u8).initCapacity(std.testing.allocator, input.len) catch oom();
+        defer output.deinit();
+        self.writeInto(output.writer(), 0, self.getTotalBytes()) catch unreachable;
+        var i: usize = 0;
+        while (i < min(input.len, output.items.len)) : (i += 1) {
+            if (input[i] != output.items[i]) {
+                panic("Mismatch at byte {}: {c} vs {c}", .{ i, input[i], output.items[i] });
             }
-            lines_remaining -= branch.state[child_ix - 1].num_newlines;
-            pos += branch.state[child_ix - 1].num_bytes;
         }
-    }
-    const leaf = node.asLeaf();
-
-    if (lines_remaining > leaf.state.newlines.items.len)
-        return null;
-    const offset = leaf.state.newlines.items[lines_remaining] + 1;
-
-    var point = BufferTree.Point{
-        .pos = pos + offset,
-        .leaf = leaf,
-        .offset = offset,
-    };
-
-    // if we're right at the end of the leaf, try going to the start of the next leaf to maintain Point invariants
-    if (offset == leaf.num_items and leaf.num_items > 0) {
-        _ = point.seekPrevItem();
-        _ = point.seekNextItem();
+        expectEqual(input.len, output.items.len);
     }
 
-    return point;
-}
-
-pub fn searchForwards(tree: BufferTree, start: usize, needle: []const u8) ?usize {
-    var point = getPointForPos(tree, start).?;
-    switch (point.searchForwards(needle)) {
-        .Found => return point.pos,
-        .NotFound => return null,
+    pub fn getTotalBytes(self: BufferTree) usize {
+        var num_bytes: usize = 0;
+        for (self.inner.root.state[0..self.inner.root.num_children]) |state| num_bytes += state.num_bytes;
+        return num_bytes;
     }
-}
 
-pub fn searchBackwards(tree: BufferTree, start: usize, needle: []const u8) ?usize {
-    var point = getPointForPos(tree, start).?;
-    switch (point.searchBackwards(needle)) {
-        .Found => return point.pos,
-        .NotFound => return null,
+    pub fn getTotalNewlines(self: BufferTree) usize {
+        var num_newlines: usize = 0;
+        for (self.inner.root.state[0..self.inner.root.num_children]) |state| num_newlines += state.num_newlines;
+        return num_newlines;
     }
-}
-
-pub fn getLine(point: BufferTree.Point) usize {
-    var line: usize = 0;
-    for (point.leaf.state.newlines.items) |offset| {
-        if (offset > point.offset) break;
-        line += 1;
-    }
-    var branch = point.leaf.node.getParent().?;
-    var child_ix = branch.findChild(&point.leaf.node);
-    while (true) {
-        for (branch.state[0..child_ix]) |state|
-            line += state.num_newlines;
-        if (branch.node.getParent()) |parent| {
-            child_ix = parent.findChild(&branch.node);
-            branch = parent;
-        } else {
-            break;
-        }
-    }
-    return line;
-}
-
-pub fn writeInto(tree: BufferTree, writer: anytype, start: usize, end: usize) !void {
-    var point = getPointForPos(tree, start).?;
-
-    var num_remaining_write_items = end - start;
-    while (true) {
-        const num_write_items = min(num_remaining_write_items, point.leaf.num_items - point.offset);
-        try writer.writeAll(point.leaf.items[point.offset .. point.offset + num_write_items]);
-        num_remaining_write_items -= num_write_items;
-
-        if (num_remaining_write_items == 0) break;
-
-        assert(point.seekNextLeaf() != .NotFound);
-    }
-}
-
-fn testEqual(tree: BufferTree, input: []const u8) void {
-    var output = ArrayList(u8).initCapacity(std.testing.allocator, input.len) catch oom();
-    defer output.deinit();
-    writeInto(tree, output.writer(), 0, getTotalBytes(tree)) catch unreachable;
-    var i: usize = 0;
-    while (i < min(input.len, output.items.len)) : (i += 1) {
-        if (input[i] != output.items[i]) {
-            panic("Mismatch at byte {}: {c} vs {c}", .{ i, input[i], output.items[i] });
-        }
-    }
-    expectEqual(input.len, output.items.len);
-}
-
-pub fn getTotalBytes(tree: BufferTree) usize {
-    var num_bytes: usize = 0;
-    for (tree.root.state[0..tree.root.num_children]) |state| num_bytes += state.num_bytes;
-    return num_bytes;
-}
-
-pub fn getTotalNewlines(tree: BufferTree) usize {
-    var num_newlines: usize = 0;
-    for (tree.root.state[0..tree.root.num_children]) |state| num_newlines += state.num_newlines;
-    return num_newlines;
-}
+};
 
 test "tree insert all at once" {
     const cm: []const u8 = (std.fs.cwd().openFile("/home/jamie/huge.js", .{}) catch unreachable).readToEndAlloc(std.testing.allocator, std.math.maxInt(usize)) catch unreachable;
@@ -243,10 +260,10 @@ test "tree insert all at once" {
 
     var tree = BufferTree.init(std.testing.allocator);
     defer tree.deinit();
-    insert(&tree, 0, cm);
-    tree.validate();
-    testEqual(tree, cm);
-    expectEqual(tree.getDepth(), 3);
+    tree.insert(0, cm);
+    tree.inner.validate();
+    tree.testEqual(cm);
+    expectEqual(tree.inner.getDepth(), 3);
 }
 
 test "tree insert forwards" {
@@ -257,11 +274,11 @@ test "tree insert forwards" {
     defer tree.deinit();
     var i: usize = 0;
     while (i < cm.len) : (i += 107) {
-        insert(&tree, i, cm[i..min(i + 107, cm.len)]);
+        tree.insert(i, cm[i..min(i + 107, cm.len)]);
     }
-    tree.validate();
-    testEqual(tree, cm);
-    expectEqual(tree.getDepth(), 3);
+    tree.inner.validate();
+    tree.testEqual(cm);
+    expectEqual(tree.inner.getDepth(), 3);
 }
 
 test "tree insert backwards" {
@@ -272,11 +289,11 @@ test "tree insert backwards" {
     defer tree.deinit();
     var i: usize = 0;
     while (i < cm.len) : (i += 107) {
-        insert(&tree, 0, cm[if (cm.len - i > 107) cm.len - i - 107 else 0 .. cm.len - i]);
+        tree.insert(0, cm[if (cm.len - i > 107) cm.len - i - 107 else 0 .. cm.len - i]);
     }
-    tree.validate();
-    testEqual(tree, cm);
-    expectEqual(tree.getDepth(), 3);
+    tree.inner.validate();
+    tree.testEqual(cm);
+    expectEqual(tree.inner.getDepth(), 3);
 }
 
 test "tree delete all at once" {
@@ -285,11 +302,11 @@ test "tree delete all at once" {
 
     var tree = BufferTree.init(std.testing.allocator);
     defer tree.deinit();
-    insert(&tree, 0, cm);
+    tree.insert(0, cm);
 
-    delete(&tree, 0, cm.len);
-    tree.validate();
-    testEqual(tree, "");
+    tree.delete(0, cm.len);
+    tree.inner.validate();
+    tree.testEqual("");
 }
 
 test "tree delete forwards" {
@@ -298,15 +315,15 @@ test "tree delete forwards" {
 
     var tree = BufferTree.init(std.testing.allocator);
     defer tree.deinit();
-    insert(&tree, 0, cm);
+    tree.insert(0, cm);
 
     const halfway = @divTrunc(cm.len, 2);
     var i: usize = 0;
     while (i < halfway) : (i += 107) {
-        delete(&tree, 0, min(107, halfway - i));
+        tree.delete(0, min(107, halfway - i));
     }
-    tree.validate();
-    testEqual(tree, cm[halfway..]);
+    tree.inner.validate();
+    tree.testEqual(cm[halfway..]);
 }
 
 test "tree delete backwards" {
@@ -315,15 +332,15 @@ test "tree delete backwards" {
 
     var tree = BufferTree.init(std.testing.allocator);
     defer tree.deinit();
-    insert(&tree, 0, cm);
+    tree.insert(0, cm);
 
     const halfway = @divTrunc(cm.len, 2);
     var i: usize = 0;
     while (i < halfway) : (i += 107) {
-        delete(&tree, if (halfway - i > 107) halfway - i - 107 else 0, halfway - i);
+        tree.delete(if (halfway - i > 107) halfway - i - 107 else 0, halfway - i);
     }
-    tree.validate();
-    testEqual(tree, cm[halfway..]);
+    tree.inner.validate();
+    tree.testEqual(cm[halfway..]);
 }
 
 test "search forwards" {
@@ -332,7 +349,7 @@ test "search forwards" {
 
     var tree = BufferTree.init(std.testing.allocator);
     defer tree.deinit();
-    insert(&tree, 0, cm);
+    tree.insert(0, cm);
 
     const needle = "className";
 
@@ -350,7 +367,7 @@ test "search forwards" {
     defer actual.deinit();
     {
         var start: usize = 0;
-        while (searchForwards(tree, start, needle)) |pos| {
+        while (tree.searchForwards(start, needle)) |pos| {
             actual.append(pos) catch oom();
             start = pos + 1;
         }
@@ -365,7 +382,7 @@ test "search backwards" {
 
     var tree = BufferTree.init(std.testing.allocator);
     defer tree.deinit();
-    insert(&tree, 0, cm);
+    tree.insert(0, cm);
 
     const needle = "className";
 
@@ -382,8 +399,8 @@ test "search backwards" {
     var actual = ArrayList(usize).init(std.testing.allocator);
     defer actual.deinit();
     {
-        var start: usize = getTotalBytes(tree);
-        while (searchBackwards(tree, start, needle)) |pos| {
+        var start: usize = tree.getTotalBytes();
+        while (tree.searchBackwards(start, needle)) |pos| {
             actual.append(pos) catch oom();
             start = pos + 1;
         }
@@ -398,7 +415,7 @@ test "get line start" {
 
     var tree = BufferTree.init(std.testing.allocator);
     defer tree.deinit();
-    insert(&tree, 0, cm);
+    tree.insert(0, cm);
 
     var expected = ArrayList(usize).init(std.testing.allocator);
     defer expected.deinit();
@@ -412,12 +429,12 @@ test "get line start" {
     }
 
     for (expected.items) |pos, line| {
-        const point = getPointForLineStart(tree, line).?;
+        const point = tree.getPointForLineStart(line).?;
         expectEqual(pos, point.pos);
-        expectEqual(line, getLine(point));
+        expectEqual(line, BufferTree.getLine(point));
     }
 
-    expectEqual(getPointForLineStart(tree, expected.items.len), null);
+    expectEqual(tree.getPointForLineStart(expected.items.len), null);
 }
 
 test "get awkward line start" {
@@ -425,36 +442,36 @@ test "get awkward line start" {
     defer tree.deinit();
     {
         var i: usize = 0;
-        while (i < @divTrunc(BufferTree.config.items_per_leaf, 2) - 1) : (i += 1) {
-            insert(&tree, i, " ");
+        while (i < @divTrunc(BufferTreeInner.config.items_per_leaf, 2) - 1) : (i += 1) {
+            tree.insert(i, " ");
         }
-        insert(&tree, i, "\n");
+        tree.insert(i, "\n");
     }
 
     {
-        expectEqual(getPointForLineStart(tree, 0).?.pos, 0);
-        const point = getPointForLineStart(tree, 1).?;
+        expectEqual(tree.getPointForLineStart(0).?.pos, 0);
+        const point = tree.getPointForLineStart(1).?;
         // point is at end of leaf
-        expectEqual(point.pos, getTotalBytes(tree));
-        expectEqual(point.offset, @intCast(u16, getTotalBytes(tree)));
+        expectEqual(point.pos, tree.getTotalBytes());
+        expectEqual(point.offset, @intCast(u16, tree.getTotalBytes()));
     }
 
     // split branch
-    while (tree.root.num_children == 1) {
-        insert(&tree, getTotalBytes(tree), " ");
+    while (tree.inner.root.num_children == 1) {
+        tree.insert(tree.getTotalBytes(), " ");
     }
     // newline is at end of leaf
-    const leaf = tree.root.children[0].asLeaf();
+    const leaf = tree.inner.root.children[0].asLeaf();
     expectEqual(
-        leaf.items[tree.root.state[0].num_bytes - 1],
+        leaf.items[tree.inner.root.state[0].num_bytes - 1],
         '\n',
     );
 
     {
-        expectEqual(getPointForLineStart(tree, 0).?.pos, 0);
-        const point = getPointForLineStart(tree, 1).?;
+        expectEqual(tree.getPointForLineStart(0).?.pos, 0);
+        const point = tree.getPointForLineStart(1).?;
         // point is at beginning of new leaf
-        expectEqual(point.pos, @divTrunc(BufferTree.config.items_per_leaf, 2));
+        expectEqual(point.pos, @divTrunc(BufferTreeInner.config.items_per_leaf, 2));
         expectEqual(point.offset, 0);
     }
 }
