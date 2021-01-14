@@ -204,29 +204,26 @@ pub fn Tree(comptime _config: TreeConfig) type {
             return depth;
         }
 
-        pub fn copy(self: TreeSelf, allocator: *Allocator, start: usize, end: usize) []const config.Item {
-            var buffer = allocator.alloc(config.Item, end - start) catch oom();
+        pub fn copy(self: TreeSelf, allocator: *Allocator, start: *Point, len: usize) []const config.Item {
+            var buffer = allocator.alloc(config.Item, len) catch oom();
             self.copyInto(buffer, start);
             return buffer;
         }
 
-        pub fn copyInto(self: TreeSelf, _buffer: []config.Item, start: usize) void {
+        pub fn copyInto(self: TreeSelf, _buffer: []config.Item, start: *Point) void {
             var buffer = _buffer;
-
-            var point = self.getPointForPos(start).?;
-
             while (true) {
-                const num_copy_items = min(buffer.len, point.leaf.num_items - point.offset);
+                const num_copy_items = min(buffer.len, start.leaf.num_items - start.offset);
                 std.mem.copy(
                     config.Item,
                     buffer,
-                    point.leaf.items[point.offset .. point.offset + num_copy_items],
+                    start.leaf.items[start.offset .. start.offset + num_copy_items],
                 );
                 buffer = buffer[num_copy_items..];
 
                 if (buffer.len == 0) break;
 
-                assert(point.seekNextLeaf() != .NotFound);
+                assert(start.seekNextLeaf() != .NotFound);
             }
         }
 

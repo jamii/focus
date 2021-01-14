@@ -79,7 +79,7 @@ const LeafState = struct {
     }
 };
 
-const BufferTree = struct {
+pub const BufferTree = struct {
     inner: BufferTreeInner,
 
     pub fn init(allocator: *Allocator) BufferTree {
@@ -100,6 +100,11 @@ const BufferTree = struct {
     pub fn delete(self: *BufferTree, start: usize, end: usize) void {
         var point = self.getPointForPos(start).?;
         self.inner.delete(&point, end - start);
+    }
+
+    pub fn copy(self: *BufferTree, allocator: *Allocator, start: usize, end: usize) []const u8 {
+        var point = self.getPointForPos(start).?;
+        return self.inner.copy(allocator, &point, end - start);
     }
 
     pub fn getPointForPos(self: BufferTree, pos: usize) ?BufferTreeInner.Point {

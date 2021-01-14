@@ -3,7 +3,7 @@ usingnamespace focus.common;
 const App = focus.App;
 const Editor = focus.Editor;
 const meta = focus.meta;
-const Tree = focus.Tree;
+const BufferTree = focus.BufferTree;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 
 pub const BufferSource = union(enum) {
@@ -60,7 +60,7 @@ const Edit = union(enum) {
 pub const Buffer = struct {
     app: *App,
     source: BufferSource,
-    tree: Tree,
+    tree: BufferTree,
     undos: ArrayList([]Edit),
     doing: ArrayList(Edit),
     redos: ArrayList([]Edit),
@@ -75,7 +75,7 @@ pub const Buffer = struct {
         self.* = Buffer{
             .app = app,
             .source = .None,
-            .tree = Tree.init(app.allocator),
+            .tree = BufferTree.init(app.allocator),
             .undos = ArrayList([]Edit).init(app.allocator),
             .doing = ArrayList(Edit).init(app.allocator),
             .redos = ArrayList([]Edit).init(app.allocator),
@@ -252,8 +252,8 @@ pub const Buffer = struct {
 
     pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
         var point = self.tree.getPointForPos(pos).?;
-        if (point.searchBackwards("\n") == .Found) _ = point.seekNextByte();
-        return .{ point.getLine(), pos - point.pos };
+        if (point.searchBackwards("\n") == .Found) _ = point.seekNextItem();
+        return .{ BufferTree.getLine(point), pos - point.pos };
     }
 
     pub fn searchForwards(self: *Buffer, pos: usize, needle: []const u8) ?usize {
@@ -272,8 +272,8 @@ pub const Buffer = struct {
         var point = self.tree.getPointForPos(pos).?;
         var num_closing: usize = 0;
         while (true) {
-            if (point.seekPrevByte() == .NotFound) break;
-            const char = point.getNextByte();
+            if (point.seekPrevItem() == .NotFound) break;
+            const char = point.getNextItem();
             if (isCloseParen(char)) num_closing += 1;
             if (isOpenParen(char)) num_closing -= 1;
             if (num_closing == 0) return point.pos;
@@ -285,11 +285,11 @@ pub const Buffer = struct {
         var point = self.tree.getPointForPos(pos).?;
         var num_opening: usize = 0;
         while (true) {
-            const char = point.getNextByte();
+            const char = point.getNextItem();
             if (isCloseParen(char)) num_opening -= 1;
             if (isOpenParen(char)) num_opening += 1;
             if (num_opening == 0) return point.pos;
-            if (point.seekNextByte() == .NotFound) break;
+            if (point.seekNextItem() == .NotFound) break;
         }
         return null;
     }
@@ -297,13 +297,13 @@ pub const Buffer = struct {
     pub fn matchParen(self: *Buffer, pos: usize) ?[2]usize {
         var point = self.tree.getPointForPos(pos).?;
         if (pos < self.getBufferEnd()) {
-            if (isOpenParen(point.getNextByte()))
+            if (isOpenParen(point.getNextItem()))
                 if (self.matchParenForwards(pos)) |matching_pos|
                     return [2]usize{ pos, matching_pos };
         }
         if (pos > 0) {
-            _ = point.seekPrevByte();
-            if (isCloseParen(point.getNextByte()))
+            _ = point.seekPrevItem();
+            if (isCloseParen(point.getNextItem()))
                 if (self.matchParenBackwards(pos)) |matching_pos|
                     return [2]usize{ pos - 1, matching_pos };
         }
@@ -312,7 +312,7 @@ pub const Buffer = struct {
 
     pub fn getLineStart(self: *Buffer, pos: usize) usize {
         var point = self.tree.getPointForPos(pos).?;
-        if (point.searchBackwards("\n") == .Found) _ = point.seekNextByte();
+        if (point.searchBackwards("\n") == .Found) _ = point.seekNextItem();
         return point.pos;
     }
 
@@ -367,7 +367,7 @@ pub const Buffer = struct {
         std.mem.reverse([][2]usize, line_colss.items);
 
         self.tree.deinit();
-        self.tree = Tree.init(self.app.allocator);
+        self.tree = BufferTree.init(self.app.allocator);
         self.tree.insert(0, new_bytes);
 
         self.modified_since_last_save = true;
@@ -510,10 +510,10 @@ pub const Buffer = struct {
         //var point = self.tree.getPointForPos(0).?;
         //while (!point.isAtEnd()) {
         //const start = point.pos;
-        //while (!point.isAtEnd() and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //while (!point.isAtEnd() and isLikeIdent(point.getNextItem())) : (_ = point.seekNextItem()) {}
         //if (point.pos > start)
         //completions.append(self.tree.copy(self.app.allocator, start, point.pos)) catch oom();
-        //while (!point.isAtEnd() and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //while (!point.isAtEnd() and !isLikeIdent(point.getNextItem())) : (_ = point.seekNextItem()) {}
         //}
         //
         //std.sort.sort([]const u8, completions.items, {}, struct {
@@ -528,7 +528,7 @@ pub const Buffer = struct {
         //var point = self.tree.getPointForPos(range_start).?;
         //while (point.pos < range_end) {
         //const start = point.pos;
-        //while (point.pos < range_end and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //while (point.pos < range_end and isLikeIdent(point.getNextItem())) : (_ = point.seekNextItem()) {}
         //if (point.pos > start) {
         //const completions_items = completions.items;
         //const completion = self.tree.copy(self.app.frame_allocator, start, point.pos);
@@ -551,7 +551,7 @@ pub const Buffer = struct {
         //const removed = completions.orderedRemove(pos);
         //self.app.allocator.free(removed);
         //}
-        //while (point.pos < range_end and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //while (point.pos < range_end and !isLikeIdent(point.getNextItem())) : (_ = point.seekNextItem()) {}
         //}
     }
 
@@ -560,7 +560,7 @@ pub const Buffer = struct {
         //var point = self.tree.getPointForPos(range_start).?;
         //while (point.pos < range_end) {
         //const start = point.pos;
-        //while (point.pos < range_end and isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //while (point.pos < range_end and isLikeIdent(point.getNextItem())) : (_ = point.seekNextItem()) {}
         //if (point.pos > start) {
         //const completions_items = completions.items;
         //const completion = self.tree.copy(self.app.allocator, start, point.pos);
@@ -582,7 +582,7 @@ pub const Buffer = struct {
         //
         //completions.insert(pos, completion) catch oom();
         //}
-        //while (point.pos < range_end and !isLikeIdent(point.getNextByte())) : (_ = point.seekNextByte()) {}
+        //while (point.pos < range_end and !isLikeIdent(point.getNextItem())) : (_ = point.seekNextItem()) {}
         //}
     }
 
@@ -618,9 +618,9 @@ pub const Buffer = struct {
         var point = self.tree.getPointForPos(pos).?;
         const start = start: {
             while (true) {
-                if (point.seekPrevByte() == .NotFound)
+                if (point.seekPrevItem() == .NotFound)
                     break :start point.pos;
-                if (!isLikeIdent(point.getNextByte()))
+                if (!isLikeIdent(point.getNextItem()))
                     break :start point.pos + 1;
             }
         };
@@ -633,14 +633,14 @@ pub const Buffer = struct {
 
         const start = start: {
             while (true) {
-                if (start_point.seekPrevByte() == .NotFound)
+                if (start_point.seekPrevItem() == .NotFound)
                     break :start start_point.pos;
-                if (!isLikeIdent(start_point.getNextByte()))
+                if (!isLikeIdent(start_point.getNextItem()))
                     break :start start_point.pos + 1;
             }
         };
 
-        while (!end_point.isAtEnd() and isLikeIdent(end_point.getNextByte())) : (_ = end_point.seekNextByte()) {}
+        while (!end_point.isAtEnd() and isLikeIdent(end_point.getNextItem())) : (_ = end_point.seekNextItem()) {}
         const end = end_point.pos;
 
         return self.tree.copy(self.app.frame_allocator, start, end);
@@ -652,13 +652,13 @@ pub const Buffer = struct {
         var end_point = start_point;
         const start = start: {
             while (true) {
-                if (start_point.seekPrevByte() == .NotFound)
+                if (start_point.seekPrevItem() == .NotFound)
                     break :start start_point.pos;
-                if (!isLikeIdent(start_point.getNextByte()))
+                if (!isLikeIdent(start_point.getNextItem()))
                     break :start start_point.pos + 1;
             }
         };
-        while (!end_point.isAtEnd() and isLikeIdent(end_point.getNextByte())) : (_ = end_point.seekNextByte()) {}
+        while (!end_point.isAtEnd() and isLikeIdent(end_point.getNextItem())) : (_ = end_point.seekNextItem()) {}
         const end = end_point.pos;
 
         // replace completion

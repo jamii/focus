@@ -894,9 +894,9 @@ pub const Editor = struct {
             self.goRealLineStart(edit_cursor);
             const this_line_start_pos = edit_cursor.head.pos;
             var this_line_start_point = self.buffer.tree.getPointForPos(this_line_start_pos).?;
-            while (!this_line_start_point.isAtEnd() and this_line_start_point.getNextByte() == ' ') : (_ = this_line_start_point.seekNextByte()) {}
+            while (!this_line_start_point.isAtEnd() and this_line_start_point.getNextItem() == ' ') : (_ = this_line_start_point.seekNextItem()) {}
             const this_indent = this_line_start_point.pos - this_line_start_pos;
-            const line_start_char = if (!this_line_start_point.isAtEnd()) this_line_start_point.getNextByte() else 0;
+            const line_start_char = if (!this_line_start_point.isAtEnd()) this_line_start_point.getNextItem() else 0;
 
             // work out prev line indent
             var prev_indent: usize = 0;
@@ -909,8 +909,8 @@ pub const Editor = struct {
                     const end = self.buffer.getLineEnd(edit_cursor.head.pos);
                     var is_blank = true;
                     var point = self.buffer.tree.getPointForPos(start).?;
-                    while (point.pos < end) : (_ = point.seekNextByte()) {
-                        if (point.getNextByte() != ' ') {
+                    while (point.pos < end) : (_ = point.seekNextItem()) {
+                        if (point.getNextItem() != ' ') {
                             is_blank = false;
                             break;
                         }
@@ -919,12 +919,12 @@ pub const Editor = struct {
                 }
 
                 const line_end_pos = self.buffer.getLineEnd(edit_cursor.head.pos);
-                const line_end_char = if (line_end_pos > 0 and line_end_pos - 1 < self.buffer.getBufferEnd()) self.buffer.tree.getPointForPos(line_end_pos - 1).?.getNextByte() else 0;
+                const line_end_char = if (line_end_pos > 0 and line_end_pos - 1 < self.buffer.getBufferEnd()) self.buffer.tree.getPointForPos(line_end_pos - 1).?.getNextItem() else 0;
 
                 self.goRealLineStart(edit_cursor);
                 const prev_line_start_pos = edit_cursor.head.pos;
                 var prev_line_start_point = self.buffer.tree.getPointForPos(prev_line_start_pos).?;
-                while (!prev_line_start_point.isAtEnd() and prev_line_start_point.getNextByte() == ' ') : (_ = prev_line_start_point.seekNextByte()) {}
+                while (!prev_line_start_point.isAtEnd() and prev_line_start_point.getNextItem() == ' ') : (_ = prev_line_start_point.seekNextItem()) {}
                 prev_indent = prev_line_start_point.pos - prev_line_start_pos;
 
                 // add extra indent when opening a block
@@ -999,7 +999,7 @@ pub const Editor = struct {
             self.goRealLineStart(edit_cursor);
             var line_start = edit_cursor.head.pos;
             var point = self.buffer.tree.getPointForPos(line_start).?;
-            while (!point.isAtEnd() and point.getNextByte() == ' ') : (_ = point.seekNextByte()) {}
+            while (!point.isAtEnd() and point.getNextItem() == ' ') : (_ = point.seekNextItem()) {}
             const start = point.pos;
             const end = self.buffer.getLineEnd(start);
 

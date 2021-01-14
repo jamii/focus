@@ -47,7 +47,7 @@ pub const LineWrappedBuffer = struct {
                                 line_end = maybe_line_end.pos;
                                 break;
                             }
-                            const char = maybe_line_end.getNextByte();
+                            const char = maybe_line_end.getNextItem();
                             if (maybe_line_end.pos - line_start > self.max_chars_per_line) {
                                 // if we haven't soft wrapped yet, hard wrap before this char, otherwise use soft wrap
                                 if (line_end == line_start) {
@@ -60,7 +60,7 @@ pub const LineWrappedBuffer = struct {
                                 line_end = maybe_line_end.pos;
                                 break;
                             }
-                            _ = maybe_line_end.seekNextByte();
+                            _ = maybe_line_end.seekNextItem();
                             if (char == ' ') {
                                 // commit to including this char
                                 line_end = maybe_line_end.pos;
@@ -75,7 +75,7 @@ pub const LineWrappedBuffer = struct {
             }
 
             if (point.isAtEnd()) break;
-            _ = point.seekNextByte();
+            _ = point.seekNextItem();
         }
     }
 
