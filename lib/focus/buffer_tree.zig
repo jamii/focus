@@ -162,7 +162,7 @@ pub const BufferTree = struct {
         }
         const leaf = node.asLeaf();
 
-        if (lines_remaining > leaf.state.newlines.items.len)
+        if (lines_remaining >= leaf.state.newlines.items.len)
             return null;
         const offset = leaf.state.newlines.items[lines_remaining] + 1;
 

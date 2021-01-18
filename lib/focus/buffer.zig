@@ -241,10 +241,10 @@ pub const Buffer = struct {
         return self.tree.getPointForLineStart(line).?.pos;
     }
 
-    // TODO should handle line out of range too?
-    /// Panics on line out of range. Handles col out of range by truncating to end of line.
+    /// Handles line out of range by returning end of file.
+    /// Handles col out of range by returning end of line.
     pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
-        const start_point = self.tree.getPointForLineStart(line).?;
+        const start_point = self.tree.getPointForLineStart(line) orelse return self.getBufferEnd();
         var end_point = start_point;
         _ = end_point.searchForwards("\n");
         return start_point.pos + min(col, end_point.pos - start_point.pos);
