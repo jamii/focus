@@ -252,7 +252,6 @@ pub const Buffer = struct {
 
     pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
         var point = self.tree.getPointForPos(pos).?;
-        if (point.searchBackwards("\n") == .Found) _ = point.seekNextItem();
         return .{ BufferTree.getLine(point), pos - point.pos };
     }
 

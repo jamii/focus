@@ -142,12 +142,13 @@ pub const BufferTree = struct {
     pub fn getPointForLineStart(self: BufferTree, line: usize) ?BufferTreeInner.Point {
         var node = &self.inner.root.node;
         var pos: usize = 0;
-        var lines_remaining = line;
+        var newlines_remaining = line;
+
         node: while (node.tag == .Branch) {
             const branch = node.asBranch();
             var child_ix: usize = 0;
             while (true) {
-                if (lines_remaining <= branch.state[child_ix].num_newlines) {
+                if (newlines_remaining <= branch.state[child_ix].num_newlines) {
                     node = branch.children[child_ix];
                     continue :node;
                 }
@@ -156,15 +157,19 @@ pub const BufferTree = struct {
                     node = branch.children[child_ix - 1];
                     continue :node;
                 }
-                lines_remaining -= branch.state[child_ix - 1].num_newlines;
+                newlines_remaining -= branch.state[child_ix - 1].num_newlines;
                 pos += branch.state[child_ix - 1].num_bytes;
             }
         }
         const leaf = node.asLeaf();
 
-        if (lines_remaining >= leaf.state.newlines.items.len)
+        if (newlines_remaining >= leaf.state.newlines.items.len)
+            // past the end of the tree
             return null;
-        const offset = leaf.state.newlines.items[lines_remaining] + 1;
+        const offset = if (newlines_remaining == 0)
+            0
+        else
+            leaf.state.newlines.items[newlines_remaining - 1] + 1;
 
         var point = BufferTreeInner.Point{
             .pos = pos + offset,
@@ -200,7 +205,7 @@ pub const BufferTree = struct {
     pub fn getLine(point: BufferTreeInner.Point) usize {
         var line: usize = 0;
         for (point.leaf.state.newlines.items) |offset| {
-            if (offset > point.offset) break;
+            if (offset >= point.offset) break;
             line += 1;
         }
         var branch = point.leaf.node.getParent().?;
