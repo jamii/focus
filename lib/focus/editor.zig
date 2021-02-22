@@ -194,7 +194,7 @@ pub const Editor = struct {
                             'k' => {
                                 for (self.cursors.items) |*cursor| self.goBufferEnd(cursor);
                                 // hardcode because we want to scroll even if cursor didn't move
-                                self.top_pixel = @intCast(Coord, self.buffer.countLines()) * self.app.atlas.char_height;
+                                self.top_pixel = @intCast(Coord, self.line_wrapped_buffer.countLines()) * self.app.atlas.char_height;
                             },
                             'i' => {
                                 for (self.cursors.items) |*cursor| self.goBufferStart(cursor);
