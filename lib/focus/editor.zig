@@ -851,6 +851,8 @@ pub const Editor = struct {
                 .head = .{ .pos = pos + selection.len, .col = 0 },
                 .tail = .{ .pos = pos, .col = 0 },
             };
+            if (main_cursor.head.pos < main_cursor.tail.pos)
+                std.mem.swap(Point, &cursor.head, &cursor.tail);
             self.updateCol(&cursor.head);
             self.updateCol(&cursor.tail);
             self.cursors.append(cursor) catch oom();
