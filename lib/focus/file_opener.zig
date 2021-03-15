@@ -53,6 +53,7 @@ pub const FileOpener = struct {
 
         // get and filter completions
         var results = ArrayList([]const u8).init(self.app.frame_allocator);
+        var results_err_o: ?std.fs.Dir.OpenError = null;
         {
             const path = self.input.getText();
             var dirname_o: ?[]const u8 = null;
@@ -68,16 +69,19 @@ pub const FileOpener = struct {
                 }
             }
             if (dirname_o) |dirname| {
-                var dir = std.fs.cwd().openDir(dirname, .{ .iterate = true }) catch |err| panic("{} while opening dir: {s}", .{ err, dirname });
-                defer dir.close();
-                var dir_iter = dir.iterate();
-                while (dir_iter.next() catch |err| panic("{} while iterating dir {s}", .{ err, dirname })) |entry| {
-                    if (std.mem.startsWith(u8, entry.name, basename)) {
-                        var result = ArrayList(u8).init(self.app.frame_allocator);
-                        result.appendSlice(entry.name) catch oom();
-                        if (entry.kind == .Directory) result.append('/') catch oom();
-                        results.append(result.toOwnedSlice()) catch oom();
+                if (std.fs.cwd().openDir(dirname, .{ .iterate = true })) |*dir| {
+                    defer dir.close();
+                    var dir_iter = dir.iterate();
+                    while (dir_iter.next() catch |err| panic("{} while iterating dir {s}", .{ err, dirname })) |entry| {
+                        if (std.mem.startsWith(u8, entry.name, basename)) {
+                            var result = ArrayList(u8).init(self.app.frame_allocator);
+                            result.appendSlice(entry.name) catch oom();
+                            if (entry.kind == .Directory) result.append('/') catch oom();
+                            results.append(result.toOwnedSlice()) catch oom();
+                        }
                     }
+                } else |err| {
+                    results_err_o = err;
                 }
             }
         }
@@ -88,7 +92,13 @@ pub const FileOpener = struct {
         }.lessThan);
 
         // run selector frame
-        const action = self.selector.frame(window, layout.selector, events, results.items);
+        var action: Selector.Action = .None;
+        if (results_err_o) |results_err| {
+            const error_text = format(self.app.frame_allocator, "Error opening directory: {}", .{results_err});
+            window.queueText(layout.selector, style.error_text_color, error_text);
+        } else {
+            action = self.selector.frame(window, layout.selector, events, results.items);
+        }
 
         const path = self.input.getText();
         const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
