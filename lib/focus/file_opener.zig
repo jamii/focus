@@ -57,15 +57,18 @@ pub const FileOpener = struct {
             const path = self.input.getText();
             var dirname_o: ?[]const u8 = null;
             var basename: []const u8 = "";
-            if (path.len > 0 and std.fs.path.isSep(path[path.len - 1])) {
-                dirname_o = path[0 .. path.len - 1];
-                basename = "";
-            } else {
-                dirname_o = std.fs.path.dirname(path);
-                basename = std.fs.path.basename(path);
+            dump(std.fs.path.dirname(path));
+            if (path.len > 0) {
+                if (std.fs.path.isSep(path[path.len - 1])) {
+                    dirname_o = path;
+                    basename = "";
+                } else {
+                    dirname_o = std.fs.path.dirname(path);
+                    basename = std.fs.path.basename(path);
+                }
             }
             if (dirname_o) |dirname| {
-                var dir = std.fs.cwd().openDir(dirname, .{ .iterate = true }) catch |err| panic("{} while opening dir {s}", .{ err, dirname });
+                var dir = std.fs.cwd().openDir(dirname, .{ .iterate = true }) catch |err| panic("{} while opening dir: {s}", .{ err, dirname });
                 defer dir.close();
                 var dir_iter = dir.iterate();
                 while (dir_iter.next() catch |err| panic("{} while iterating dir {s}", .{ err, dirname })) |entry| {
@@ -95,28 +98,24 @@ pub const FileOpener = struct {
 
         // maybe open file
         if (action == .SelectRaw or action == .SelectOne) {
-            var filename = ArrayList(u8).init(self.app.frame_allocator);
-            if (action == .SelectRaw) {
-                filename.appendSlice(self.input.getText()) catch oom();
-            } else {
-                filename.appendSlice(dirname) catch oom();
-                filename.append('/') catch oom();
-                filename.appendSlice(results.items[self.selector.selected]) catch oom();
-            }
-            if (filename.items.len > 0 and std.fs.path.isSep(filename.items[filename.items.len - 1])) {
+            const filename: []const u8 = if (action == .SelectRaw)
+                std.mem.dupe(self.app.frame_allocator, u8, self.input.getText()) catch oom()
+            else
+                std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, results.items[self.selector.selected] }) catch oom();
+            if (filename.len > 0 and std.fs.path.isSep(filename[filename.len - 1])) {
                 if (action == .SelectRaw)
-                    std.fs.cwd().makeDir(filename.items) catch |err| {
+                    std.fs.cwd().makeDir(filename) catch |err| {
                         panic("{} while creating directory {}", .{ err, filename });
                     };
-                self.input.setText(filename.items);
+                self.input.setText(filename);
             } else {
                 if (action == .SelectRaw) {
-                    const file = std.fs.cwd().createFile(filename.items, .{ .truncate = false }) catch |err| {
+                    const file = std.fs.cwd().createFile(filename, .{ .truncate = false }) catch |err| {
                         panic("{} while creating file {}", .{ err, filename });
                     };
                     file.close();
                 }
-                const new_buffer = self.app.getBufferFromAbsoluteFilename(filename.items);
+                const new_buffer = self.app.getBufferFromAbsoluteFilename(filename);
                 const new_editor = Editor.init(self.app, new_buffer, true, true);
                 window.popView();
                 window.pushView(new_editor);
@@ -136,11 +135,8 @@ pub const FileOpener = struct {
                 const empty_buffer = Buffer.initEmpty(self.app, .Preview);
                 self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
             } else {
-                var filename = ArrayList(u8).init(self.app.frame_allocator);
-                filename.appendSlice(dirname) catch oom();
-                filename.append('/') catch oom();
-                filename.appendSlice(selected) catch oom();
-                const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .Preview, filename.items);
+                const filename = std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, selected }) catch oom();
+                const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .Preview, filename);
                 self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
             }
         }
