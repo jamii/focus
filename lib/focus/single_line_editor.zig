@@ -29,10 +29,13 @@ pub const SingleLineEditor = struct {
     }
 
     pub fn frame(self: *SingleLineEditor, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        // filter out return presses
+        // filter out multiline events
         var editor_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
         for (events) |event| {
-            if (event.type == c.SDL_KEYDOWN and event.key.keysym.sym == c.SDLK_RETURN) continue;
+            if (event.type == c.SDL_KEYDOWN) {
+                if (event.key.keysym.sym == c.SDLK_RETURN) continue;
+                if ((event.key.keysym.mod == c.KMOD_LALT or event.key.keysym.mod == c.KMOD_RALT) and (event.key.keysym.sym == 'k' or event.key.keysym.sym == 'i')) continue;
+            }
             editor_events.append(event) catch oom();
         }
 
