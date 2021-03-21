@@ -58,7 +58,6 @@ pub const FileOpener = struct {
             const path = self.input.getText();
             var dirname_o: ?[]const u8 = null;
             var basename: []const u8 = "";
-            dump(std.fs.path.dirname(path));
             if (path.len > 0) {
                 if (std.fs.path.isSep(path[path.len - 1])) {
                     dirname_o = path;
