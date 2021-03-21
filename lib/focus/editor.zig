@@ -333,11 +333,11 @@ pub const Editor = struct {
         // ensure we don't scroll off the top or bottom of the buffer
         const max_pixels = max(0,
         // height of text
-            @intCast(isize, self.line_wrapped_buffer.countLines()) * @intCast(isize, self.app.atlas.char_height)
+        @intCast(isize, self.line_wrapped_buffer.countLines()) * @intCast(isize, self.app.atlas.char_height)
         // - half a screen
-            - @divTrunc(text_rect.h, 2)
+        - @divTrunc(text_rect.h, 2)
         // - 1 pixel to ensure that center_pos is always within text if possible
-            - 1);
+        - 1);
         if (self.top_pixel < 0) self.top_pixel = 0;
         if (self.top_pixel > max_pixels) self.top_pixel = max_pixels;
         const num_visible_lines = @divTrunc(text_rect.h, self.app.atlas.char_height) + @rem(@rem(text_rect.h, self.app.atlas.char_height), 1); // round up
@@ -966,7 +966,7 @@ pub const Editor = struct {
         const comment_string: []const u8 = if (std.mem.endsWith(u8, filename, ".zig"))
             "//"
         else
-        // don't know how to comment this lang
+            // don't know how to comment this lang
             return;
 
         // figure out how many lines we're going to comment _before_ we start changing them
