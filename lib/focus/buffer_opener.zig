@@ -18,8 +18,12 @@ pub const BufferOpener = struct {
     pub fn init(app: *App) *BufferOpener {
         const empty_buffer = Buffer.initEmpty(app, .Preview);
         const preview_editor = Editor.init(app, empty_buffer, false, false);
-        const input = SingleLineEditor.init(app, "");
-        const selector = Selector.init(app);
+        const input = SingleLineEditor.init(app, app.last_file_filter);
+        input.editor.goRealLineStart(input.editor.getMainCursor());
+        input.editor.setMark();
+        input.editor.goRealLineEnd(input.editor.getMainCursor());
+        var selector = Selector.init(app);
+        selector.selected = app.last_buffer_opener_selected;
 
         const self = app.allocator.create(BufferOpener) catch oom();
         self.* = BufferOpener{
@@ -65,6 +69,11 @@ pub const BufferOpener = struct {
             window.popView();
             window.pushView(new_editor);
         }
+
+        // set cached search text
+        self.app.allocator.free(self.app.last_file_filter);
+        self.app.last_file_filter = self.app.dupe(self.input.getText());
+        self.app.last_buffer_opener_selected = self.selector.selected;
 
         // update preview
         self.preview_editor.deinit();

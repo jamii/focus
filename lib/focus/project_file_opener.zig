@@ -31,8 +31,12 @@ pub const ProjectFileOpener = struct {
     pub fn init(app: *App) *ProjectFileOpener {
         const empty_buffer = Buffer.initEmpty(app, .Preview);
         const preview_editor = Editor.init(app, empty_buffer, false, false);
-        const input = SingleLineEditor.init(app, "");
-        const selector = Selector.init(app);
+        const input = SingleLineEditor.init(app, app.last_file_filter);
+        input.editor.goRealLineStart(input.editor.getMainCursor());
+        input.editor.setMark();
+        input.editor.goRealLineEnd(input.editor.getMainCursor());
+        var selector = Selector.init(app);
+        selector.selected = app.last_project_file_opener_selected;
 
         var paths = ArrayList([]const u8).init(app.allocator);
         for (projects) |project| {
@@ -104,6 +108,11 @@ pub const ProjectFileOpener = struct {
                 window.pushView(new_editor);
             }
         }
+
+        // set cached search text
+        self.app.allocator.free(self.app.last_file_filter);
+        self.app.last_file_filter = self.app.dupe(self.input.getText());
+        self.app.last_project_file_opener_selected = self.selector.selected;
 
         // update preview
         const buffer = self.preview_editor.buffer;

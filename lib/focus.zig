@@ -190,8 +190,12 @@ pub const App = struct {
     buffers: DeepHashMap([]const u8, *Buffer),
     windows: ArrayList(*Window),
     frame_time_ms: i64,
+    // used for both buffer_searcher and project_searcher
     last_search_filter: []const u8,
     last_project_search_selected: usize,
+    last_file_filter: []const u8,
+    last_project_file_opener_selected: usize,
+    last_buffer_opener_selected: usize,
 
     pub fn init(allocator: *Allocator, server_socket: ServerSocket) *App {
         if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0)
@@ -211,6 +215,9 @@ pub const App = struct {
             .frame_time_ms = 0,
             .last_search_filter = "",
             .last_project_search_selected = 0,
+            .last_file_filter = "",
+            .last_project_file_opener_selected = 0,
+            .last_buffer_opener_selected = 0,
         };
         self.frame_allocator = &self.frame_arena.allocator;
 
@@ -218,6 +225,7 @@ pub const App = struct {
     }
 
     pub fn deinit(self: *App) void {
+        self.allocator.free(self.last_file_filter);
         self.allocator.free(self.last_search_filter);
 
         for (self.windows.items) |window| {
