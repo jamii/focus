@@ -806,6 +806,7 @@ pub const Editor = struct {
     // could use wl-paste -w 'focus-copy'
 
     pub fn copy(self: *Editor, cursor: *Cursor) void {
+        if (cursor.head.pos == cursor.tail.pos) return;
         const text = self.dupeSelection(self.app.frame_allocator, cursor);
         const textZ = std.mem.dupeZ(self.app.frame_allocator, u8, text) catch oom();
         if (c.SDL_SetClipboardText(textZ) != 0) {
