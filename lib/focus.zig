@@ -8,6 +8,7 @@ pub const SingleLineEditor = @import("./focus/single_line_editor.zig").SingleLin
 pub const Selector = @import("./focus/selector.zig").Selector;
 pub const FileOpener = @import("./focus/file_opener.zig").FileOpener;
 pub const ProjectFileOpener = @import("./focus/project_file_opener.zig").ProjectFileOpener;
+pub const BufferOpener = @import("./focus/buffer_opener.zig").BufferOpener;
 pub const BufferSearcher = @import("./focus/buffer_searcher.zig").BufferSearcher;
 pub const ProjectSearcher = @import("./focus/project_searcher.zig").ProjectSearcher;
 pub const Launcher = @import("./focus/launcher.zig").Launcher;

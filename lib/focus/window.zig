@@ -6,6 +6,7 @@ const App = focus.App;
 const Editor = focus.Editor;
 const FileOpener = focus.FileOpener;
 const ProjectFileOpener = focus.ProjectFileOpener;
+const BufferOpener = focus.BufferOpener;
 const BufferSearcher = focus.BufferSearcher;
 const ProjectSearcher = focus.ProjectSearcher;
 const Launcher = focus.Launcher;
@@ -15,6 +16,7 @@ pub const View = union(enum) {
     Editor: *Editor,
     FileOpener: *FileOpener,
     ProjectFileOpener: *ProjectFileOpener,
+    BufferOpener: *BufferOpener,
     BufferSearcher: *BufferSearcher,
     ProjectSearcher: *ProjectSearcher,
     Launcher: *Launcher,
@@ -247,6 +249,11 @@ pub const Window = struct {
                                 self.pushView(project_searcher);
                                 handled = true;
                             },
+                            'p' => {
+                                const buffer_opener = BufferOpener.init(self.app);
+                                self.pushView(buffer_opener);
+                                handled = true;
+                            },
                             else => {},
                         }
                     }
@@ -276,6 +283,7 @@ pub const Window = struct {
                 .Editor => |editor| editor.frame(self, window_rect, view_events.items),
                 .FileOpener => |file_opener| file_opener.frame(self, window_rect, view_events.items),
                 .ProjectFileOpener => |project_file_opener| project_file_opener.frame(self, window_rect, view_events.items),
+                .BufferOpener => |buffer_opener| buffer_opener.frame(self, window_rect, view_events.items),
                 .BufferSearcher => |buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
                 .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
                 .Launcher => |launcher| launcher.frame(self, window_rect, view_events.items),
@@ -435,7 +443,7 @@ pub const Window = struct {
             var src = if (char < self.app.atlas.char_to_rect.len)
                 self.app.atlas.char_to_rect[char]
             else
-                // TODO tofu
+            // TODO tofu
                 self.app.atlas.white_rect;
             const max_w = max(0, max_x - dst.x);
             const max_h = max(0, max_y - dst.y);
