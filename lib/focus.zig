@@ -44,7 +44,7 @@ pub const ServerSocket = struct {
     };
 };
 
-pub fn daemonize() enum { Parent, Child } {
+pub fn daemonize(log_filename: []const u8) enum { Parent, Child } {
     // https://stackoverflow.com/questions/17954432/creating-a-daemon-in-linux/17955149#17955149
     if (std.os.fork()) |pid| {
         if (pid != 0) return .Parent;
@@ -66,6 +66,14 @@ pub fn daemonize() enum { Parent, Child } {
     const old_umask = c.umask(0);
     if (std.os.linux.chdir("/home/jamie/") < 0)
         panic("Failed to chdir", .{});
+
+    // redirect stdout/err to log
+    const log = std.fs.cwd().createFile(log_filename, .{ .read = false, .truncate = false }) catch |err| panic("Failed to open log file ({}): {}", .{ log_filename, err });
+    log.seekFromEnd(0) catch |err| panic("Failed to seek to end of log file: {}", .{err});
+    _ = std.os.dup2(log.handle, std.io.getStdOut().handle) catch |err| panic("Failed to redirect stdout to log: {}", .{err});
+    _ = std.os.dup2(log.handle, std.io.getStdErr().handle) catch |err| panic("Failed to redirect stderr to log: {}", .{err});
+    std.debug.print("\n\nFocus daemon started at {}\n", .{std.time.timestamp()});
+
     return .Child;
 }
 

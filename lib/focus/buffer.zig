@@ -169,7 +169,7 @@ pub const Buffer = struct {
             self.source.File.mtime = result.mtime;
         } else |err| {
             const message = format(self.app.frame_allocator, "{} while loading {s}", .{ err, self.getFilename() });
-            dump(message);
+            std.debug.print("{s}\n", .{message});
             self.replace(message);
         }
     }

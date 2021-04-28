@@ -52,7 +52,8 @@ pub fn main() void {
         .Request => |request| {
             // if we successfully bound the socket then we need to create the daemon
             if (server_socket.state == .Bound) {
-                if (focus.daemonize() == .Child) {
+                const log_filename = focus.common.format(&arena.allocator, "/home/jamie/.log/{}.log", .{std.fs.path.basename(args[0])});
+                if (focus.daemonize(log_filename) == .Child) {
                     focus.run(allocator, server_socket);
                     // run doesn't return
                     unreachable;
