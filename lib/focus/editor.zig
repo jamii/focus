@@ -972,6 +972,8 @@ pub const Editor = struct {
             "#"
         else if (std.mem.endsWith(u8, filename, ".jl"))
             "#"
+        else if (std.mem.endsWith(u8, filename, ".js"))
+            "//"
         else
         // don't know how to comment this lang
             return;
