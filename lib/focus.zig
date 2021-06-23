@@ -284,28 +284,29 @@ pub const App = struct {
     }
 
     pub fn handleRequest(self: *App, request: Request, client_address: Address) void {
+        var new_window: *Window = undefined;
         switch (request) {
             .CreateEmptyWindow => {
-                const new_window = self.registerWindow(Window.init(self, .NotFloating));
+                new_window = self.registerWindow(Window.init(self, .NotFloating));
                 new_window.client_address_o = client_address;
             },
             .CreateLauncherWindow => {
-                const new_window = self.registerWindow(Window.init(self, .Floating));
+                new_window = self.registerWindow(Window.init(self, .Floating));
                 new_window.client_address_o = client_address;
-                // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
-                // without this, keypresses sometimes get sent to the current window instead of the new window
-                new_window.frame(&[0]c.SDL_Event{});
                 const launcher = Launcher.init(self);
                 new_window.pushView(launcher);
             },
             .CreateEditorWindow => |filename| {
-                const new_window = self.registerWindow(Window.init(self, .NotFloating));
+                new_window = self.registerWindow(Window.init(self, .NotFloating));
                 new_window.client_address_o = client_address;
                 const new_buffer = self.getBufferFromAbsoluteFilename(filename);
                 const new_editor = Editor.init(self, new_buffer, true, true);
                 new_window.pushView(new_editor);
             },
         }
+        // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
+        // without this, keypresses sometimes get sent to the current window instead of the new window
+        new_window.frame(&[0]c.SDL_Event{});
     }
 
     pub fn frame(self: *App) void {
