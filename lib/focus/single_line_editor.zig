@@ -28,7 +28,9 @@ pub const SingleLineEditor = struct {
         self.buffer.deinit();
     }
 
-    pub fn frame(self: *SingleLineEditor, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *SingleLineEditor, window: *Window, rect: Rect, events: []const c.SDL_Event) enum { Changed, Unchanged } {
+        const prev_text = self.app.dupe(self.getText());
+
         // filter out multiline events
         var editor_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
         for (events) |event| {
@@ -51,6 +53,8 @@ pub const SingleLineEditor = struct {
                 self.editor.delete(pos, pos + 1);
             }
         }
+
+        return if (std.mem.eql(u8, prev_text, self.getText())) .Unchanged else .Changed;
     }
 
     pub fn getText(self: *SingleLineEditor) []const u8 {

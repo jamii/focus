@@ -18,6 +18,7 @@ pub const BufferSearcher = struct {
     // The position of the currently selected item, or the start pos if nothing was selected yet.
     // This just helps preserve position in the editor when jumping in and out of the buffer searcher.
     selection_pos: usize,
+    init_selection_pos: usize,
 
     pub fn init(app: *App, target_editor: *Editor) *BufferSearcher {
         const preview_editor = Editor.init(app, target_editor.buffer, false, false);
@@ -36,6 +37,7 @@ pub const BufferSearcher = struct {
             .input = input,
             .selector = selector,
             .selection_pos = selection_pos,
+            .init_selection_pos = selection_pos,
         };
         return self;
     }
@@ -52,7 +54,8 @@ pub const BufferSearcher = struct {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
-        self.input.frame(window, layout.input, events);
+        const input_changed = self.input.frame(window, layout.input, events);
+        if (input_changed == .Changed) self.selection_pos = self.init_selection_pos;
 
         // search buffer
         // TODO default to first result after target

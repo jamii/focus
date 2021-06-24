@@ -56,7 +56,8 @@ pub const Launcher = struct {
         const layout = window.layoutSearcher(rect);
 
         // run input frame
-        self.input.frame(window, layout.input, events);
+        const input_changed = self.input.frame(window, layout.input, events);
+        if (input_changed == .Changed) self.selector.selected = 0;
 
         // filter exes
         const filtered_exes = fuzzy_search(self.app.frame_allocator, self.exes, self.input.getText());

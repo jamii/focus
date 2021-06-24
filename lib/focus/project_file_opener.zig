@@ -87,7 +87,8 @@ pub const ProjectFileOpener = struct {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
-        self.input.frame(window, layout.input, events);
+        const input_changed = self.input.frame(window, layout.input, events);
+        if (input_changed == .Changed) self.selector.selected = 0;
 
         // filter paths
         const filtered_paths = fuzzy_search(self.app.frame_allocator, self.paths, self.input.getText());

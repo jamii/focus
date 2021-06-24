@@ -52,7 +52,8 @@ pub const ProjectSearcher = struct {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
-        self.input.frame(window, layout.input, events);
+        const input_changed = self.input.frame(window, layout.input, events);
+        if (input_changed == .Changed) self.selector.selected = 0;
 
         // get and filter results
         var results = ArrayList([]const u8).init(self.app.frame_allocator);
