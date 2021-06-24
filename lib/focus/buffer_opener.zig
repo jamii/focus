@@ -18,12 +18,13 @@ pub const BufferOpener = struct {
     pub fn init(app: *App) *BufferOpener {
         const empty_buffer = Buffer.initEmpty(app, .Preview);
         const preview_editor = Editor.init(app, empty_buffer, false, false);
-        const input = SingleLineEditor.init(app, app.last_file_filter);
+        const input = SingleLineEditor.init(app, "");
+        // const input = SingleLineEditor.init(app, app.last_file_filter);
         input.editor.goRealLineStart(input.editor.getMainCursor());
         input.editor.setMark();
         input.editor.goRealLineEnd(input.editor.getMainCursor());
         var selector = Selector.init(app);
-        selector.selected = app.last_buffer_opener_selected;
+        // selector.selected = app.last_buffer_opener_selected;
 
         const self = app.allocator.create(BufferOpener) catch oom();
         self.* = BufferOpener{
@@ -49,14 +50,27 @@ pub const BufferOpener = struct {
         const input_changed = self.input.frame(window, layout.input, events);
         if (input_changed == .Changed) self.selector.selected = 0;
 
-        // filter paths
+        // get buffer paths
         var paths = ArrayList([]const u8).init(self.app.frame_allocator);
         {
+            const Entry = @TypeOf(self.app.buffers).Entry;
+            var entries = ArrayList(*Entry).init(self.app.frame_allocator);
             var buffers_iter = self.app.buffers.iterator();
             while (buffers_iter.next()) |kv| {
+                entries.append(kv) catch oom();
+            }
+            // sort by most recently focused
+            std.sort.sort(*Entry, entries.items, {}, (struct {
+                fn lessThan(_: void, a: *Entry, b: *Entry) bool {
+                    return b.value.last_focused_ms < a.value.last_focused_ms;
+                }
+            }).lessThan);
+            for (entries.items) |kv| {
                 paths.append(kv.key) catch oom();
             }
         }
+
+        // filter paths
         const filtered_paths = fuzzy_search(self.app.frame_allocator, paths.items, self.input.getText());
 
         // run selector frame

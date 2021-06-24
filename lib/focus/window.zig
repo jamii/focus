@@ -277,6 +277,13 @@ pub const Window = struct {
             if (!handled) view_events.append(event) catch oom();
         }
 
+        // check focus
+        const window_flags = c.SDL_GetWindowFlags(self.sdl_window);
+        if (@intCast(c_int, window_flags) & (c.SDL_WINDOW_INPUT_FOCUS | c.SDL_WINDOW_MOUSE_FOCUS) != 0) {
+            if (self.getTopViewIfEditor()) |editor|
+                editor.buffer.last_focused_ms = self.app.frame_time_ms;
+        }
+
         // run view frame
         if (self.getTopView()) |view| {
             switch (view) {

@@ -69,6 +69,7 @@ pub const Buffer = struct {
     // editors must unregister before buffer deinits
     editors: ArrayList(*Editor),
     role: Role,
+    last_focused_ms: i64,
 
     pub fn initEmpty(app: *App, role: Role) *Buffer {
         const self = app.allocator.create(Buffer) catch oom();
@@ -84,6 +85,7 @@ pub const Buffer = struct {
             .completions = ArrayList([]const u8).init(app.allocator),
             .editors = ArrayList(*Editor).init(app.allocator),
             .role = role,
+            .last_focused_ms = 0,
         };
         self.updateLineRanges();
         return self;
