@@ -39,6 +39,7 @@ pub const LineWrappedBuffer = struct {
             while (true) {
                 var line_end = line_start;
                 var maybe_line_end = line_end;
+                var seen_non_whitespace = false;
                 {
                     while (true) {
                         if (maybe_line_end >= real_line_end) {
@@ -60,8 +61,11 @@ pub const LineWrappedBuffer = struct {
                         }
                         maybe_line_end += 1;
                         if (char == ' ') {
-                            // commit to including this char
-                            line_end = maybe_line_end;
+                            if (seen_non_whitespace)
+                                // commit to including this char
+                                line_end = maybe_line_end;
+                        } else {
+                            seen_non_whitespace = true;
                         }
                         // otherwise keep looking ahead
                     }
