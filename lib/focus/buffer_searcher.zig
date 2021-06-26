@@ -107,7 +107,7 @@ pub const BufferSearcher = struct {
         switch (action) {
             .None, .SelectRaw => {},
             .SelectOne, .SelectAll => {
-                self.updateEditor(self.target_editor, action, result_poss.items, filter);
+                self.updateEditor(self.target_editor, rect, action, result_poss.items, filter);
                 self.target_editor.top_pixel = self.preview_editor.top_pixel;
                 window.popView();
             },
@@ -118,13 +118,13 @@ pub const BufferSearcher = struct {
         self.app.last_search_filter = self.app.dupe(self.input.getText());
 
         // update preview
-        self.updateEditor(self.preview_editor, action, result_poss.items, filter);
+        self.updateEditor(self.preview_editor, layout.preview, action, result_poss.items, filter);
 
         // run preview frame
         self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
     }
 
-    fn updateEditor(self: *BufferSearcher, editor: *Editor, action: Selector.Action, result_poss: []usize, filter: []const u8) void {
+    fn updateEditor(self: *BufferSearcher, editor: *Editor, editor_rect: Rect, action: Selector.Action, result_poss: []usize, filter: []const u8) void {
         // TODO centre view on main cursor
         editor.collapseCursors();
         editor.setMark();
@@ -135,7 +135,7 @@ pub const BufferSearcher = struct {
                     var cursor = editor.getMainCursor();
                     editor.goPos(cursor, pos + filter.len);
                     editor.updatePos(&cursor.tail, pos);
-                    editor.last_center_pos = pos;
+                    editor.setCenterAtPos(pos);
                 }
             },
             .SelectAll => {
@@ -143,7 +143,7 @@ pub const BufferSearcher = struct {
                     var cursor = if (i == 0) editor.getMainCursor() else editor.newCursor();
                     editor.goPos(cursor, pos + filter.len);
                     editor.updatePos(&cursor.tail, pos);
-                    editor.last_center_pos = pos;
+                    editor.setCenterAtPos(pos);
                 }
             },
         }

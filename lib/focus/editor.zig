@@ -44,7 +44,8 @@ pub const Editor = struct {
     dragging: Dragging,
     // which pixel of the buffer is at the top of the viewport
     top_pixel: isize,
-    last_center_pos: usize,
+    last_center_wrapped_line: usize,
+    wanted_center_pos: ?usize,
     last_event_ms: i64,
     show_status_bar: bool,
     completer_o: ?Completer,
@@ -85,7 +86,8 @@ pub const Editor = struct {
             .marked = false,
             .dragging = .NotDragging,
             .top_pixel = 0,
-            .last_center_pos = 0,
+            .last_center_wrapped_line = 0,
+            .wanted_center_pos = null,
             .last_event_ms = app.frame_time_ms,
             .show_status_bar = show_status_bar,
             .completer_o = completer_o,
@@ -115,10 +117,16 @@ pub const Editor = struct {
             self.line_wrapped_buffer.update();
         }
 
+        // if someone asked us to scroll a pos to center, do so
+        if (self.wanted_center_pos) |wanted_center_pos| {
+            self.scrollPosToCenter(text_rect, wanted_center_pos);
+            self.wanted_center_pos = null;
+        }
+
         // if window layout has changed, set center line to whatever it was at end of last frame
-        // TODO this implies that nothing messes with scroll position outside of frame, which is untrue for selector, but selector gets scrolled only by scrolling to keep cursor into view anyway
-        if (self.getCenterPos(text_rect) != self.last_center_pos)
-            self.setCenterPos(text_rect, self.last_center_pos);
+        // NOTE this implies that nothing messes with scroll position outside of frame
+        if (self.getCenterWrappedLine(text_rect) != self.last_center_wrapped_line)
+            self.scrollWrappedLineToCenter(text_rect, self.last_center_wrapped_line);
 
         var completer_event: enum {
             None,
@@ -320,13 +328,7 @@ pub const Editor = struct {
         // if cursor moved, scroll it into editor
         if (self.getMainCursor().head.pos != self.prev_main_cursor_head_pos) {
             self.prev_main_cursor_head_pos = self.getMainCursor().head.pos;
-            const bottom_pixel = self.top_pixel + text_rect.h;
-            const cursor_top_pixel = @intCast(isize, self.line_wrapped_buffer.getLineColForPos(self.getMainCursor().head.pos)[0]) * @intCast(isize, self.app.atlas.char_height);
-            const cursor_bottom_pixel = cursor_top_pixel + @intCast(isize, self.app.atlas.char_height);
-            if (cursor_top_pixel > bottom_pixel - @intCast(isize, self.app.atlas.char_height))
-                self.top_pixel = cursor_top_pixel - @intCast(isize, text_rect.h) + @intCast(isize, self.app.atlas.char_height);
-            if (cursor_bottom_pixel <= self.top_pixel + @intCast(isize, self.app.atlas.char_height))
-                self.top_pixel = cursor_top_pixel;
+            self.scrollPosIntoView(text_rect, self.getMainCursor().head.pos);
         }
 
         // calculate visible range
@@ -556,7 +558,7 @@ pub const Editor = struct {
             window.queueText(status_rect.?, style.text_color, status_text);
         }
 
-        self.last_center_pos = self.getCenterPos(text_rect);
+        self.last_center_wrapped_line = self.getCenterWrappedLine(text_rect);
     }
 
     pub fn updateCol(self: *Editor, point: *Point) void {
@@ -696,8 +698,6 @@ pub const Editor = struct {
                 }
             }
         }
-        if (self.last_center_pos > start)
-            self.last_center_pos += bytes.len;
     }
 
     pub fn delete(self: *Editor, start: usize, end: usize) void {
@@ -715,10 +715,6 @@ pub const Editor = struct {
                 self.updateCol(point);
             }
         }
-        if (self.last_center_pos > end)
-            self.last_center_pos -= end - start
-        else if (self.last_center_pos > start)
-            self.last_center_pos = start;
     }
 
     pub fn updateBeforeReplace(self: *Editor) [][2]usize {
@@ -735,7 +731,6 @@ pub const Editor = struct {
             const line_col = line_cols[i];
             self.goPos(cursor, self.buffer.getPosForLineCol(min(line_col[0], self.buffer.countLines() - 1), line_col[1]));
         }
-        self.last_center_pos = min(self.last_center_pos, self.buffer.getBufferEnd());
     }
 
     pub fn deleteSelection(self: *Editor, cursor: *Cursor) void {
@@ -1074,7 +1069,7 @@ pub const Editor = struct {
             self.clearMark();
             var cursor = self.getMainCursor();
             self.goPos(cursor, pos);
-            self.setCenterPos(text_rect, pos);
+            self.scrollPosToCenter(text_rect, pos);
             cursor.tail = cursor.head;
         }
     }
@@ -1086,20 +1081,38 @@ pub const Editor = struct {
             self.clearMark();
             var cursor = self.getMainCursor();
             self.goPos(cursor, pos);
-            self.setCenterPos(text_rect, pos);
+            self.scrollPosToCenter(text_rect, pos);
             cursor.tail = cursor.head;
         }
     }
 
-    fn getCenterPos(self: *Editor, text_rect: Rect) usize {
-        const wrapped_line = @intCast(usize, @divTrunc(self.top_pixel + @divTrunc(text_rect.h, 2), self.app.atlas.char_height));
-        const pos = if (wrapped_line >= self.line_wrapped_buffer.countLines()) self.buffer.getBufferEnd() else self.line_wrapped_buffer.getPosForLine(wrapped_line);
-        return pos;
+    fn getCenterWrappedLine(self: *Editor, text_rect: Rect) usize {
+        return @intCast(usize, @divTrunc(self.top_pixel + @divTrunc(text_rect.h, 2), self.app.atlas.char_height));
     }
 
-    fn setCenterPos(self: *Editor, text_rect: Rect, pos: usize) void {
-        const wrapped_line = self.line_wrapped_buffer.getLineColForPos(min(pos, self.buffer.getBufferEnd()))[0];
+    // Can't scroll until frame, because might not have updated line wrapping yet
+    pub fn setCenterAtPos(self: *Editor, pos: usize) void {
+        self.wanted_center_pos = pos;
+    }
+
+    fn scrollWrappedLineToCenter(self: *Editor, text_rect: Rect, wrapped_line: usize) void {
         const center_pixel = @intCast(isize, wrapped_line) * @intCast(isize, self.app.atlas.char_height);
         self.top_pixel = max(0, center_pixel - @divTrunc(text_rect.h, 2));
+        self.last_center_wrapped_line = wrapped_line;
+    }
+
+    fn scrollPosToCenter(self: *Editor, text_rect: Rect, pos: usize) void {
+        const wrapped_line = self.line_wrapped_buffer.getLineColForPos(min(pos, self.buffer.getBufferEnd()))[0];
+        self.scrollWrappedLineToCenter(text_rect, wrapped_line);
+    }
+
+    fn scrollPosIntoView(self: *Editor, text_rect: Rect, pos: usize) void {
+        const bottom_pixel = self.top_pixel + text_rect.h;
+        const cursor_top_pixel = @intCast(isize, self.line_wrapped_buffer.getLineColForPos(pos)[0]) * @intCast(isize, self.app.atlas.char_height);
+        const cursor_bottom_pixel = cursor_top_pixel + @intCast(isize, self.app.atlas.char_height);
+        if (cursor_top_pixel > bottom_pixel - @intCast(isize, self.app.atlas.char_height))
+            self.top_pixel = cursor_top_pixel - @intCast(isize, text_rect.h) + @intCast(isize, self.app.atlas.char_height);
+        if (cursor_bottom_pixel <= self.top_pixel + @intCast(isize, self.app.atlas.char_height))
+            self.top_pixel = cursor_top_pixel;
     }
 };
