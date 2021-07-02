@@ -44,7 +44,7 @@ pub const Editor = struct {
     dragging: Dragging,
     // which pixel of the buffer is at the top of the viewport
     top_pixel: isize,
-    last_center_wrapped_line: usize,
+    last_text_rect_h: Coord,
     wanted_center_pos: ?usize,
     last_event_ms: i64,
     show_status_bar: bool,
@@ -86,7 +86,7 @@ pub const Editor = struct {
             .marked = false,
             .dragging = .NotDragging,
             .top_pixel = 0,
-            .last_center_wrapped_line = 0,
+            .last_text_rect_h = 0,
             .wanted_center_pos = null,
             .last_event_ms = app.frame_time_ms,
             .show_status_bar = show_status_bar,
@@ -110,11 +110,14 @@ pub const Editor = struct {
         const left_gutter_rect = text_rect.splitLeft(self.app.atlas.char_width, 0);
         const right_gutter_rect = text_rect.splitRight(self.app.atlas.char_width, 0);
 
-        // window width might have changed
+        // if window width has changed, need to update line wrapping and keep viewport at same pos
         const max_chars_per_line = @intCast(usize, @divTrunc(text_rect.w, self.app.atlas.char_width));
         if (self.line_wrapped_buffer.max_chars_per_line != max_chars_per_line) {
+            const prev_center_wrapped_line = @intCast(usize, @divTrunc(self.top_pixel + @divTrunc(self.last_text_rect_h, 2), self.app.atlas.char_height));
+            const prev_center_pos = self.line_wrapped_buffer.getPosForLine(min(self.line_wrapped_buffer.countLines() - 1, prev_center_wrapped_line));
             self.line_wrapped_buffer.max_chars_per_line = max_chars_per_line;
             self.line_wrapped_buffer.update();
+            self.scrollPosToCenter(text_rect, prev_center_pos);
         }
 
         // if someone asked us to scroll a pos to center, do so
@@ -122,17 +125,6 @@ pub const Editor = struct {
             self.scrollPosToCenter(text_rect, wanted_center_pos);
             self.wanted_center_pos = null;
         }
-
-        // if window layout has changed, set center line to whatever it was at end of last frame
-        // NOTE this implies that nothing messes with scroll position outside of frame
-        if (self.getCenterWrappedLine(text_rect) != self.last_center_wrapped_line)
-            self.scrollWrappedLineToCenter(text_rect, self.last_center_wrapped_line);
-
-        var completer_event: enum {
-            None,
-            Down,
-            Up,
-        } = .None;
 
         // maybe start a new undo group
         // TODO should this be buffer.last_event_ms? or even just internal to buffer?
@@ -145,6 +137,11 @@ pub const Editor = struct {
         // if the keydown is mapped to a command, we'll do that and ignore the textinput
         // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
         var accept_textinput = false;
+        var completer_event: enum {
+            None,
+            Down,
+            Up,
+        } = .None;
         for (events) |event| {
             self.last_event_ms = self.app.frame_time_ms;
             switch (event.type) {
@@ -558,7 +555,7 @@ pub const Editor = struct {
             window.queueText(status_rect.?, style.text_color, status_text);
         }
 
-        self.last_center_wrapped_line = self.getCenterWrappedLine(text_rect);
+        self.last_text_rect_h = text_rect.h;
     }
 
     pub fn updateCol(self: *Editor, point: *Point) void {
@@ -1086,11 +1083,7 @@ pub const Editor = struct {
         }
     }
 
-    fn getCenterWrappedLine(self: *Editor, text_rect: Rect) usize {
-        return @intCast(usize, @divTrunc(self.top_pixel + @divTrunc(text_rect.h, 2), self.app.atlas.char_height));
-    }
-
-    // Can't scroll until frame, because might not have updated line wrapping yet
+    // Can't actually change scroll until frame, because might not have updated line wrapping yet
     pub fn setCenterAtPos(self: *Editor, pos: usize) void {
         self.wanted_center_pos = pos;
     }
@@ -1098,7 +1091,6 @@ pub const Editor = struct {
     fn scrollWrappedLineToCenter(self: *Editor, text_rect: Rect, wrapped_line: usize) void {
         const center_pixel = @intCast(isize, wrapped_line) * @intCast(isize, self.app.atlas.char_height);
         self.top_pixel = max(0, center_pixel - @divTrunc(text_rect.h, 2));
-        self.last_center_wrapped_line = wrapped_line;
     }
 
     fn scrollPosToCenter(self: *Editor, text_rect: Rect, pos: usize) void {
