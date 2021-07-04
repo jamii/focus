@@ -35,12 +35,14 @@ pub fn build(b: *Builder) !void {
 fn includeCommon(exe: *std.build.LibExeObjStep) !void {
     exe.setMainPkgPath("./");
     exe.linkSystemLibrary("c");
-    try includeNix(exe, "NIX_LIBGL_DEV");
     exe.linkSystemLibrary("GL");
-    try includeNix(exe, "NIX_SDL2_DEV");
     exe.linkSystemLibrary("SDL2");
-    try includeNix(exe, "NIX_SDL2_TTF_DEV");
     exe.linkSystemLibrary("SDL2_ttf");
+    try includeNix(exe, "NIX_LIBGL_DEV");
+    try includeNix(exe, "NIX_XORGPROTO_DEV");
+    try includeNix(exe, "NIX_LIBX11_DEV");
+    try includeNix(exe, "NIX_SDL2_DEV");
+    try includeNix(exe, "NIX_SDL2_TTF_DEV");
     exe.setOutputDir("./zig-cache");
 }
 

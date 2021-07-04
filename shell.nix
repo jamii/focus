@@ -2,11 +2,7 @@
 
 let
 
-  nixpkgs = builtins.fetchTarball {
-    name = "nixos-20.09";
-    url = "https://github.com/NixOS/nixpkgs/archive/20.09.tar.gz";
-    sha256 = "1wg61h4gndm3vcprdcg7rc4s1v3jkm5xd7lw8r2f67w502y94gcy";
-  };
+  nixpkgs = <nixpkgs>;
 
   hostPkgs = import nixpkgs {};
 
@@ -58,6 +54,8 @@ hostPkgs.mkShell rec {
     hostPkgs.pkg-config
     hostPkgs.patchelf
     targetPkgs.libGL.all
+    targetPkgs.xorg.libX11.dev
+    targetPkgs.xlibs.xorgproto
     targetPkgs.SDL2.all
     targetPkgs.SDL2_ttf.all
   ];
@@ -67,6 +65,8 @@ hostPkgs.mkShell rec {
   NIX_SDL2_LIB=targetPkgs.SDL2;
   NIX_SDL2_TTF_LIB=targetPkgs.SDL2_ttf;
   NIX_LIBGL_DEV=targetPkgs.libGL.dev;
+  NIX_LIBX11_DEV=targetPkgs.xorg.libX11.dev;
+  NIX_XORGPROTO_DEV=targetPkgs.xlibs.xorgproto;
   NIX_SDL2_DEV=targetPkgs.SDL2.dev;
   NIX_SDL2_TTF_DEV=targetPkgs.SDL2_ttf; # no .dev
   # TODO with SDL_VIDEODRIVER=wayland, SDL doesn't seem to respect xkb settings eg caps vs ctrl
