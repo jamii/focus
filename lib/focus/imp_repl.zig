@@ -7,13 +7,14 @@ const Editor = focus.Editor;
 const Window = focus.Window;
 const style = focus.style;
 const Selector = focus.Selector;
+const imp = @import("../../imp/lib/imp.zig");
 
 pub const ImpRepl = struct {
     app: *App,
     result_editor: *Editor,
 
     program: []const u8,
-    result: ?usize,
+    result_o: ?[]const u8,
 
     pub fn init(app: *App) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .Real);
@@ -24,7 +25,7 @@ pub const ImpRepl = struct {
             .app = app,
             .result_editor = result_editor,
             .program = "",
-            .result = null,
+            .result_o = null,
         };
         return self;
     }
@@ -37,15 +38,24 @@ pub const ImpRepl = struct {
     pub fn setProgram(self: *ImpRepl, program: []const u8) void {
         self.app.allocator.free(self.program);
         self.program = self.app.dupe(program);
-        self.result = null;
+        if (self.result_o) |result| self.app.allocator.free(result);
+        self.result_o = null;
     }
 
     pub fn frame(self: *ImpRepl, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        if (self.result == null) {
-            self.result = self.program.len;
+        if (self.result_o == null) {
+            var arena = ArenaAllocator.init(self.app.allocator);
+            defer arena.deinit();
+            var error_info: ?imp.lang.InterpretErrorInfo = null;
+            const result = imp.lang.interpret(&arena, self.program, &error_info);
+            var result_buffer = ArrayList(u8).init(self.app.allocator);
+            if (result) |type_and_set|
+                type_and_set.dumpInto(&arena.allocator, result_buffer.writer()) catch oom()
+            else |err|
+                imp.lang.InterpretErrorInfo.dumpInto(error_info, err, result_buffer.writer()) catch oom();
+            self.result_o = result_buffer.toOwnedSlice();
+            self.result_editor.buffer.replace(self.result_o.?);
         }
-        const result = format(self.app.frame_allocator, "{}", .{self.result});
-        self.result_editor.buffer.replace(result);
         self.result_editor.frame(window, rect, events);
     }
 };
