@@ -65,12 +65,11 @@ pub fn daemonize(log_filename: []const u8) enum { Parent, Child } {
     } else |err| {
         panic("Failed to fork: {}", .{err});
     }
-    const old_umask = c.umask(0);
     if (std.os.linux.chdir("/home/jamie/") < 0)
         panic("Failed to chdir", .{});
 
     // redirect stdout/err to log
-    const log = std.fs.cwd().createFile(log_filename, .{ .read = false, .truncate = false }) catch |err| panic("Failed to open log file ({}): {}", .{ log_filename, err });
+    const log = std.fs.cwd().createFile(log_filename, .{ .read = false, .truncate = false }) catch |err| panic("Failed to open log file ({s}): {}", .{ log_filename, err });
     log.seekFromEnd(0) catch |err| panic("Failed to seek to end of log file: {}", .{err});
     _ = std.os.dup2(log.handle, std.io.getStdOut().handle) catch |err| panic("Failed to redirect stdout to log: {}", .{err});
     _ = std.os.dup2(log.handle, std.io.getStdErr().handle) catch |err| panic("Failed to redirect stderr to log: {}", .{err});
@@ -236,9 +235,9 @@ pub const App = struct {
         self.windows.deinit();
 
         var buffer_iter = self.buffers.iterator();
-        while (buffer_iter.next()) |kv| {
-            self.allocator.free(kv.key);
-            kv.value.deinit();
+        while (buffer_iter.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            entry.value_ptr.deinit();
         }
         self.buffers.deinit();
 
@@ -338,8 +337,8 @@ pub const App = struct {
 
         // refresh buffers
         var buffer_iter = self.buffers.iterator();
-        while (buffer_iter.next()) |kv| {
-            kv.value.refresh();
+        while (buffer_iter.next()) |entry| {
+            entry.value_ptr.*.refresh();
         }
 
         // run window frames
@@ -394,8 +393,8 @@ pub const App = struct {
         var results = ArrayList([]const u8).init(self.frame_allocator);
 
         var buffer_iter = self.buffers.iterator();
-        while (buffer_iter.next()) |kv| {
-            kv.value.getCompletionsInto(prefix, &results);
+        while (buffer_iter.next()) |entry| {
+            entry.value_ptr.*.getCompletionsInto(prefix, &results);
         }
 
         std.sort.sort([]const u8, results.items, {}, struct {

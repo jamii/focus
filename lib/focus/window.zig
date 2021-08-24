@@ -23,7 +23,6 @@ pub const View = union(enum) {
     Launcher: *Launcher,
     ImpRepl: *ImpRepl,
 };
-pub const ViewTag = @TagType(View);
 
 pub const Window = struct {
     app: *App,
@@ -95,7 +94,7 @@ pub const Window = struct {
         // no vsync - causes problems with multiple windows
         // see https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
         if (c.SDL_GL_SetSwapInterval(0) != 0)
-            panic("Setting swap interval failed: {}", .{c.SDL_GetError()});
+            panic("Setting swap interval failed: {s}", .{c.SDL_GetError()});
 
         // accept unicode input
         // TODO does this need to be per window?
@@ -430,7 +429,7 @@ pub const Window = struct {
                 .Editor => |editor| editor.save(.Auto),
                 else => {},
             }
-            inline for (@typeInfo(ViewTag).Enum.fields) |field| {
+            inline for (@typeInfo(@typeInfo(View).Union.tag_type.?).Enum.fields) |field| {
                 if (@enumToInt(std.meta.activeTag(view)) == field.value) {
                     var view_ptr = @field(view, field.name);
                     view_ptr.deinit();

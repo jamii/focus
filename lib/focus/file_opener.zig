@@ -115,13 +115,13 @@ pub const FileOpener = struct {
             if (filename.len > 0 and std.fs.path.isSep(filename[filename.len - 1])) {
                 if (action == .SelectRaw)
                     std.fs.cwd().makeDir(filename) catch |err| {
-                        panic("{} while creating directory {}", .{ err, filename });
+                        panic("{} while creating directory {s}", .{ err, filename });
                     };
                 self.input.setText(filename);
             } else {
                 if (action == .SelectRaw) {
                     const file = std.fs.cwd().createFile(filename, .{ .truncate = false }) catch |err| {
-                        panic("{} while creating file {}", .{ err, filename });
+                        panic("{} while creating file {s}", .{ err, filename });
                     };
                     file.close();
                 }

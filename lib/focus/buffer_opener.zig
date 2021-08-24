@@ -54,19 +54,19 @@ pub const BufferOpener = struct {
         var paths = ArrayList([]const u8).init(self.app.frame_allocator);
         {
             const Entry = @TypeOf(self.app.buffers).Entry;
-            var entries = ArrayList(*Entry).init(self.app.frame_allocator);
+            var entries = ArrayList(Entry).init(self.app.frame_allocator);
             var buffers_iter = self.app.buffers.iterator();
-            while (buffers_iter.next()) |kv| {
-                entries.append(kv) catch oom();
+            while (buffers_iter.next()) |entry| {
+                entries.append(entry) catch oom();
             }
             // sort by most recently focused
-            std.sort.sort(*Entry, entries.items, {}, (struct {
-                fn lessThan(_: void, a: *Entry, b: *Entry) bool {
-                    return b.value.last_focused_ms < a.value.last_focused_ms;
+            std.sort.sort(Entry, entries.items, {}, (struct {
+                fn lessThan(_: void, a: Entry, b: Entry) bool {
+                    return b.value_ptr.*.last_focused_ms < a.value_ptr.*.last_focused_ms;
                 }
             }).lessThan);
-            for (entries.items) |kv| {
-                paths.append(kv.key) catch oom();
+            for (entries.items) |entry| {
+                paths.append(entry.key_ptr.*) catch oom();
             }
         }
 

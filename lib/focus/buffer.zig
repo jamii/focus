@@ -334,7 +334,7 @@ pub const Buffer = struct {
         return self.searchForwards(pos, "\n") orelse self.getBufferEnd();
     }
 
-    // TODO pass outStream instead of Allocator for easy concat/sentinel? but costs more allocations?
+    // TODO pass Writer instead of Allocator for easy concat/sentinel? but costs more allocations?
     pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) []const u8 {
         assert(start <= end);
         assert(end <= self.bytes.items.len);
@@ -370,7 +370,7 @@ pub const Buffer = struct {
         self.removeRangeFromCompletions(line_start, line_end);
 
         std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
-        self.bytes.shrink(self.bytes.items.len - (end - start));
+        self.bytes.shrinkAndFree(self.bytes.items.len - (end - start));
 
         self.addRangeToCompletions(line_start, line_end - (end - start));
 
@@ -416,7 +416,7 @@ pub const Buffer = struct {
             for (edits) |edit| edit.deinit(self.app.allocator);
             self.app.allocator.free(edits);
         }
-        self.redos.shrink(0);
+        self.redos.shrinkAndFree(0);
         self.rawInsert(pos, bytes);
     }
 
@@ -432,7 +432,7 @@ pub const Buffer = struct {
             for (edits) |edit| edit.deinit(self.app.allocator);
             self.app.allocator.free(edits);
         }
-        self.redos.shrink(0);
+        self.redos.shrinkAndFree(0);
         self.rawDelete(start, end);
     }
 
@@ -449,7 +449,7 @@ pub const Buffer = struct {
                 for (edits) |edit| edit.deinit(self.app.allocator);
                 self.app.allocator.free(edits);
             }
-            self.redos.shrink(0);
+            self.redos.shrinkAndFree(0);
             self.rawReplace(new_bytes);
             self.newUndoGroup();
         }
@@ -642,7 +642,6 @@ pub const Buffer = struct {
     }
 
     pub fn getCompletionsInto(self: *Buffer, prefix: []const u8, results: *ArrayList([]const u8)) void {
-        const bytes = self.bytes.items;
         const completions = &self.completions;
         const completions_items = completions.items;
         var left: usize = 0;

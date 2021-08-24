@@ -29,7 +29,7 @@ pub const LineWrappedBuffer = struct {
         const bytes = self.buffer.bytes.items;
         const wrapped_line_ranges = &self.wrapped_line_ranges;
         wrapped_line_ranges.resize(0) catch oom();
-        for (self.buffer.line_ranges.items) |real_line_range, real_line| {
+        for (self.buffer.line_ranges.items) |real_line_range| {
             const real_line_end = real_line_range[1];
             var line_start: usize = real_line_range[0];
             if (real_line_end - line_start <= self.max_chars_per_line) {

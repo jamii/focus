@@ -28,21 +28,18 @@ let
   zig = hostPkgs.stdenv.mkDerivation {
     name = "zig";
     src = fetchTarball (if (hostPkgs.system == "x86_64-linux") then {
-        url = "https://ziglang.org/download/0.7.1/zig-linux-x86_64-0.7.1.tar.xz";
-        sha256 = "1jpp46y9989kkzavh73yyd4ch50sccqgcn4xzcflm8g96l3azl40";
-    } else if (hostPkgs.system == "aarch64-linux") then {
-        url = "https://ziglang.org/download/0.7.1/zig-linux-aarch64-0.7.1.tar.xz";
-        sha256 = "02fvph5hvn5mrr847z8zhs35kafhw5pik6jfkx3rimjr65pqpd9v";
+        url = "https://ziglang.org/builds/zig-linux-x86_64-0.9.0-dev.687+7aaea20e7.tar.xz";
+        sha256 = "1s64pkv6jf70gw58lvsizv1wxcp2055cb540l4xpbgcqc749g6bl";
     } else throw ("Unknown system " ++ hostPkgs.system));
     dontConfigure = true;
     dontBuild = true;
     installPhase = ''
-      mkdir -p $out
-      mv ./lib $out/
-      mkdir -p $out/bin
-      mv ./zig $out/bin
-      mkdir -p $out/doc
-      #mv ./langref.html $out/doc
+    mkdir -p $out
+    mv ./lib $out/
+    mkdir -p $out/bin
+    mv ./zig $out/bin
+    mkdir -p $out/doc
+    #mv ./langref.html $out/doc
     '';
   };
 

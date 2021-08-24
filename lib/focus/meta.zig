@@ -78,7 +78,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
                 }
             }
         },
-        .Array => |ati| {
+        .Array => {
             for (a) |a_elem, a_ix| {
                 const ordering = deepCompare(a_elem, b[a_ix]);
                 if (ordering != .Equal) {
@@ -98,6 +98,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
         },
         .Union => |uti| {
             if (uti.tag_type) |tag_type| {
+                const enum_info = @typeInfo(tag_type).Enum;
                 const a_tag = @enumToInt(@as(tag_type, a));
                 const b_tag = @enumToInt(@as(tag_type, b));
                 if (a_tag < b_tag) {
@@ -106,8 +107,8 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
                 if (a_tag > b_tag) {
                     return .GreaterThan;
                 }
-                inline for (uti.fields) |fti| {
-                    if (a_tag == fti.enum_field.?.value) {
+                inline for (enum_info.fields) |fti| {
+                    if (a_tag == fti.value) {
                         return deepCompare(
                             @field(a, fti.name),
                             @field(b, fti.name),
@@ -159,7 +160,7 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
     }
     switch (ti) {
         .Int => @call(.{ .modifier = .always_inline }, hasher.update, .{std.mem.asBytes(&key)}),
-        .Float => |info| deepHashInto(hasher, @bitCast(std.meta.IntType(false, info.bits), key)),
+        .Float => |info| deepHashInto(hasher, @bitCast(std.meta.Int(.unsigned, info.bits), key)),
         .Bool => deepHashInto(hasher, @boolToInt(key)),
         .Enum => deepHashInto(hasher, @enumToInt(key)),
         .Pointer => |pti| {
@@ -186,10 +187,10 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
         },
         .Union => |info| {
             if (info.tag_type) |tag_type| {
+                const enum_info = @typeInfo(tag_type).Enum;
                 const tag = std.meta.activeTag(key);
                 deepHashInto(hasher, tag);
-                inline for (info.fields) |field| {
-                    const enum_field = field.enum_field.?;
+                inline for (enum_info.fields) |enum_field| {
                     if (enum_field.value == @enumToInt(tag)) {
                         deepHashInto(hasher, @field(key, enum_field.name));
                         return;
@@ -201,4 +202,16 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
         .Void => {},
         else => @compileError("cannot deepHash " ++ @typeName(T)),
     }
+}
+
+pub fn DeepHashContext(comptime K: type) type {
+    return struct {
+        const Self = @This();
+        pub fn hash(_: Self, pseudo_key: K) u64 {
+            return deepHash(pseudo_key);
+        }
+        pub fn eql(_: Self, pseudo_key: K, key: K) bool {
+            return deepEqual(pseudo_key, key);
+        }
+    };
 }

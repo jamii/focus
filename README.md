@@ -1,4 +1,4 @@
-A low-latency text editor. 
+A low-latency text editor.
 
 Probably not useful for anyone but me, but perhaps a useful starting point to fork off your own editor.
 

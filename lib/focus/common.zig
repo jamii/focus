@@ -28,9 +28,9 @@ pub const AutoHashMap = std.AutoHashMap;
 // TODO should probably preallocate memory for panic message
 pub fn panic(comptime fmt: []const u8, args: anytype) noreturn {
     var buf = ArrayList(u8).init(std.heap.c_allocator);
-    var out = buf.outStream();
+    var writer = buf.writer();
     const message: []const u8 = message: {
-        std.fmt.format(out, fmt, args) catch |err| {
+        std.fmt.format(writer, fmt, args) catch |err| {
             switch (err) {
                 error.OutOfMemory => break :message "OOM inside panic",
             }
@@ -45,115 +45,144 @@ pub fn oom() noreturn {
 }
 
 pub fn DeepHashMap(comptime K: type, comptime V: type) type {
-    return std.HashMap(K, V, struct {
-        fn hash(key: K) u64 {
-            return meta.deepHash(key);
-        }
-    }.hash, struct {
-        fn equal(a: K, b: K) bool {
-            return meta.deepEqual(a, b);
-        }
-    }.equal, std.hash_map.DefaultMaxLoadPercentage);
+    return std.HashMap(K, V, meta.DeepHashContext(K), std.hash_map.DefaultMaxLoadPercentage);
 }
 
 pub fn dump(thing: anytype) void {
     const held = std.debug.getStderrMutex().acquire();
     defer held.release();
-    const my_stderr = std.io.getStdErr().writer();
-    dumpInto(my_stderr, 0, thing) catch return;
-    my_stderr.writeAll("\n") catch return;
+    const my_stderr = std.io.getStdErr();
+    const writer = my_stderr.writer();
+    dumpInto(writer, 0, thing) catch return;
+    writer.writeAll("\n") catch return;
 }
 
-pub fn dumpInto(out_stream: anytype, indent: u32, thing: anytype) anyerror!void {
-    const ti = @typeInfo(@TypeOf(thing));
-    switch (ti) {
+pub fn dumpInto(writer: anytype, indent: u32, thing: anytype) anyerror!void {
+    switch (@typeInfo(@TypeOf(thing))) {
         .Pointer => |pti| {
             switch (pti.size) {
                 .One => {
-                    try out_stream.writeAll("&");
-                    try dumpInto(out_stream, indent, thing.*);
+                    try writer.writeAll("&");
+                    try dumpInto(writer, indent, thing.*);
                 },
                 .Many => {
                     // bail
-                    try std.fmt.format(out_stream, "{}", .{thing});
+                    try std.fmt.format(writer, "{}", .{thing});
                 },
                 .Slice => {
                     if (pti.child == u8) {
-                        try std.fmt.format(out_stream, "\"{s}\"", .{thing});
+                        try std.fmt.format(writer, "\"{s}\"", .{thing});
                     } else {
-                        try std.fmt.format(out_stream, "[]{}[\n", .{@typeName(pti.child)});
+                        try std.fmt.format(writer, "[]{s}[\n", .{pti.child});
                         for (thing) |elem| {
-                            try out_stream.writeByteNTimes(' ', indent + 4);
-                            try dumpInto(out_stream, indent + 4, elem);
-                            try out_stream.writeAll(",\n");
+                            try writer.writeByteNTimes(' ', indent + 4);
+                            try dumpInto(writer, indent + 4, elem);
+                            try writer.writeAll(",\n");
                         }
-                        try out_stream.writeByteNTimes(' ', indent);
-                        try out_stream.writeAll("]");
+                        try writer.writeByteNTimes(' ', indent);
+                        try writer.writeAll("]");
                     }
                 },
                 .C => {
                     // bail
-                    try std.fmt.format(out_stream, "{}", .{thing});
+                    try std.fmt.format(writer, "{}", .{thing});
                 },
             }
         },
         .Array => |ati| {
             if (ati.child == u8) {
-                try std.fmt.format(out_stream, "\"{s}\"", .{thing});
+                try std.fmt.format(writer, "\"{s}\"", .{thing});
             } else {
-                try std.fmt.format(out_stream, "[{}]{}[\n", .{ ati.len, @typeName(ati.child) });
+                try std.fmt.format(writer, "[{}]{s}[\n", .{ ati.len, ati.child });
                 for (thing) |elem| {
-                    try out_stream.writeByteNTimes(' ', indent + 4);
-                    try dumpInto(out_stream, indent + 4, elem);
-                    try out_stream.writeAll(",\n");
+                    try writer.writeByteNTimes(' ', indent + 4);
+                    try dumpInto(writer, indent + 4, elem);
+                    try writer.writeAll(",\n");
                 }
-                try out_stream.writeByteNTimes(' ', indent);
-                try out_stream.writeAll("]");
+                try writer.writeByteNTimes(' ', indent);
+                try writer.writeAll("]");
             }
         },
         .Struct => |sti| {
-            try out_stream.writeAll(@typeName(@TypeOf(thing)));
-            try out_stream.writeAll("{\n");
+            try writer.writeAll(@typeName(@TypeOf(thing)));
+            try writer.writeAll("{\n");
             inline for (sti.fields) |field| {
-                try out_stream.writeByteNTimes(' ', indent + 4);
-                try std.fmt.format(out_stream, ".{} = ", .{field.name});
-                try dumpInto(out_stream, indent + 4, @field(thing, field.name));
-                try out_stream.writeAll(",\n");
+                try writer.writeByteNTimes(' ', indent + 4);
+                try std.fmt.format(writer, ".{s} = ", .{field.name});
+                try dumpInto(writer, indent + 4, @field(thing, field.name));
+                try writer.writeAll(",\n");
             }
-            try out_stream.writeByteNTimes(' ', indent);
-            try out_stream.writeAll("}");
+            try writer.writeByteNTimes(' ', indent);
+            try writer.writeAll("}");
         },
         .Union => |uti| {
             if (uti.tag_type) |tag_type| {
-                try out_stream.writeAll(@typeName(@TypeOf(thing)));
-                try out_stream.writeAll("{\n");
+                try writer.writeAll(@typeName(@TypeOf(thing)));
+                try writer.writeAll("{\n");
                 inline for (@typeInfo(tag_type).Enum.fields) |fti| {
                     if (@enumToInt(std.meta.activeTag(thing)) == fti.value) {
-                        try out_stream.writeByteNTimes(' ', indent + 4);
-                        try std.fmt.format(out_stream, ".{} = ", .{fti.name});
-                        try dumpInto(out_stream, indent + 4, @field(thing, fti.name));
-                        try out_stream.writeAll("\n");
-                        try out_stream.writeByteNTimes(' ', indent);
-                        try out_stream.writeAll("}");
+                        try writer.writeByteNTimes(' ', indent + 4);
+                        try std.fmt.format(writer, ".{s} = ", .{fti.name});
+                        try dumpInto(writer, indent + 4, @field(thing, fti.name));
+                        try writer.writeAll("\n");
+                        try writer.writeByteNTimes(' ', indent);
+                        try writer.writeAll("}");
                     }
                 }
             } else {
                 // bail
-                try std.fmt.format(out_stream, "{}", .{thing});
+                try std.fmt.format(writer, "{}", .{thing});
+            }
+        },
+        .Optional => {
+            if (thing == null) {
+                try writer.writeAll("null");
+            } else {
+                try dumpInto(writer, indent, thing.?);
             }
         },
         else => {
             // bail
-            try std.fmt.format(out_stream, "{}", .{thing});
+            try std.fmt.format(writer, "{}", .{thing});
         },
     }
 }
 
 pub fn format(allocator: *Allocator, comptime fmt: []const u8, args: anytype) []const u8 {
     var buf = ArrayList(u8).init(allocator);
-    var out = buf.outStream();
-    std.fmt.format(out, fmt, args) catch oom();
+    var writer = buf.writer();
+    std.fmt.format(writer, fmt, args) catch oom();
     return buf.items;
+}
+
+pub fn tagEqual(a: anytype, b: @TypeOf(a)) bool {
+    return std.meta.activeTag(a) == std.meta.activeTag(b);
+}
+
+pub fn FixedSizeArrayList(comptime size: usize, comptime T: type) type {
+    return struct {
+        elems: [size]T,
+        len: usize,
+
+        const Self = @This();
+
+        pub fn init() Self {
+            return Self{
+                .elems = undefined,
+                .len = 0,
+            };
+        }
+
+        pub fn append(self: *Self, elem: T) void {
+            assert(self.len < size);
+            self.elems[self.len] = elem;
+            self.len += 1;
+        }
+
+        pub fn slice(self: *Self) []T {
+            return self.elems[0..self.len];
+        }
+    };
 }
 
 pub fn subSaturating(a: anytype, b: @TypeOf(a)) @TypeOf(a) {

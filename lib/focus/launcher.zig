@@ -69,12 +69,12 @@ pub const Launcher = struct {
         if (filtered_exes.len > 0 and action == .SelectOne) {
             const exe = filtered_exes[self.selector.selected];
             // TODO this is kinda hacky :D
-            const command = format(self.app.frame_allocator, "{} & disown", .{exe});
+            const command = format(self.app.frame_allocator, "{s} & disown", .{exe});
             var process = std.ChildProcess.init(
                 &[_][]const u8{ "bash", "-c", command },
                 self.app.frame_allocator,
-            ) catch |err| panic("Failed to init {}: {}", .{ command, err });
-            process.spawn() catch |err| panic("Failed to spawn {}: {}", .{ command, err });
+            ) catch |err| panic("Failed to init {s}: {}", .{ command, err });
+            process.spawn() catch |err| panic("Failed to spawn {s}: {}", .{ command, err });
             window.close_after_frame = true;
         }
     }

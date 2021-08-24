@@ -256,7 +256,7 @@ pub const Editor = struct {
                             const line = @divTrunc(self.top_pixel + (mouse_y - text_rect.y), self.app.atlas.char_height);
                             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
                             const pos = self.line_wrapped_buffer.getPosForLineCol(min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, line)), @intCast(usize, col));
-                            const mod = @enumToInt(c.SDL_GetModState());
+                            const mod = c.SDL_GetModState();
                             if (mod == c.KMOD_LCTRL or mod == c.KMOD_RCTRL) {
                                 self.dragging = .CtrlDragging;
                                 var cursor = self.newCursor();
@@ -292,7 +292,7 @@ pub const Editor = struct {
             // get mouse state
             var global_mouse_x: c_int = undefined;
             var global_mouse_y: c_int = undefined;
-            const mouse_state = c.SDL_GetGlobalMouseState(&global_mouse_x, &global_mouse_y);
+            _ = c.SDL_GetGlobalMouseState(&global_mouse_x, &global_mouse_y);
             var window_x: c_int = undefined;
             var window_y: c_int = undefined;
             c.SDL_GetWindowPosition(window.sdl_window, &window_x, &window_y);
@@ -552,7 +552,7 @@ pub const Editor = struct {
             // use real line_col instead of wrapped
             const line_col = self.buffer.getLineColForPos(self.getMainCursor().head.pos);
             const filename = self.buffer.getFilename() orelse "";
-            const status_text = format(self.app.frame_allocator, "{} L{} C{}", .{ filename, line_col[0] + 1, line_col[1] + 1 });
+            const status_text = format(self.app.frame_allocator, "{s} L{} C{}", .{ filename, line_col[0] + 1, line_col[1] + 1 });
             window.queueText(status_rect.?, style.text_color, status_text);
         }
 
@@ -831,7 +831,7 @@ pub const Editor = struct {
     }
 
     pub fn collapseCursors(self: *Editor) void {
-        self.cursors.shrink(1);
+        self.cursors.shrinkAndFree(1);
     }
 
     pub fn getMainCursor(self: *Editor) *Cursor {
@@ -1038,16 +1038,16 @@ pub const Editor = struct {
         process.stdout_behavior = .Pipe;
         process.stderr_behavior = .Pipe;
         process.spawn() catch |err| panic("Error spawning zig fmt: {}", .{err});
-        process.stdin.?.outStream().writeAll(self.buffer.bytes.items) catch |err| panic("Error writing to zig fmt: {}", .{err});
+        process.stdin.?.writer().writeAll(self.buffer.bytes.items) catch |err| panic("Error writing to zig fmt: {}", .{err});
         process.stdin.?.close();
         process.stdin = null;
         // NOTE this is fragile - currently zig fmt closes stdout before stderr so this works but reading the other way round will sometimes block
-        const stdout = process.stdout.?.inStream().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024 * 1024) catch |err| panic("Error reading zig fmt stdout: {}", .{err});
-        const stderr = process.stderr.?.inStream().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024) catch |err| panic("Error reading zig fmt stderr: {}", .{err});
+        const stdout = process.stdout.?.reader().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024 * 1024) catch |err| panic("Error reading zig fmt stdout: {}", .{err});
+        const stderr = process.stderr.?.reader().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024) catch |err| panic("Error reading zig fmt stderr: {}", .{err});
         const result = process.wait() catch |err| panic("Error waiting for zig fmt: {}", .{err});
         assert(result == .Exited);
         if (result.Exited != 0) {
-            warn("Error formatting zig buffer: {}", .{stderr});
+            warn("Error formatting zig buffer: {s}", .{stderr});
         } else {
             self.buffer.replace(stdout);
         }

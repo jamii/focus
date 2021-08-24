@@ -65,7 +65,7 @@ To install, perform the following commands:
 Solus
 -----
 
-Fira Code package is available in the official repository: `font-firacode-ttf` and `font-firacode-otf`.  
+Fira Code package is available in the official repository: `font-firacode-ttf` and `font-firacode-otf`.
 They can be installed by running:
 
     sudo eopkg install font-firacode-ttf font-firacode-otf
@@ -552,8 +552,8 @@ Visual Studio
 -------------
 
 1. Launch Visual Studio (2015 or later).
-2. Launch the Options dialog by opening the "Tools" menu and selecting "Options". 
-3. In the Options dialog, under the "Environment" category, you'll find "Fonts and Colors". Click on that. You'll see a combo-box on the right hand side of the dialog labelled "Font". Select "Fira Code" from that combo-box. 
+2. Launch the Options dialog by opening the "Tools" menu and selecting "Options".
+3. In the Options dialog, under the "Environment" category, you'll find "Fonts and Colors". Click on that. You'll see a combo-box on the right hand side of the dialog labelled "Font". Select "Fira Code" from that combo-box.
 4. Click "OK" to dismiss.
 5. Restart Visual Studio.
 
