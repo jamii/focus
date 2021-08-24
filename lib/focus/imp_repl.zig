@@ -13,8 +13,13 @@ pub const ImpRepl = struct {
     app: *App,
     result_editor: *Editor,
 
-    program: []const u8,
-    result_o: ?[]const u8,
+    // mutex protects latest_program, new_result, background_loop_should_stop
+    mutex: std.Thread.Mutex,
+    // the background thread must check this before setting new_program or new_result
+    background_loop_should_stop: bool,
+    // new_program and new_result behave like queues, except that they only care about the most recent item
+    new_program: ?[]const u8,
+    new_result: ?[]const u8,
 
     pub fn init(app: *App) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .Real);
@@ -24,37 +29,91 @@ pub const ImpRepl = struct {
         self.* = ImpRepl{
             .app = app,
             .result_editor = result_editor,
-            .program = "",
-            .result_o = null,
+            .mutex = std.Thread.Mutex{},
+            .new_program = null,
+            .new_result = null,
+            .background_loop_should_stop = false,
         };
+
+        _ = std.Thread.spawn(.{}, ImpRepl.backgroundLoop, .{self}) catch |err|
+            panic("Failed to spawn background thread: {}", .{err});
+
         return self;
     }
 
     pub fn deinit(self: *ImpRepl) void {
+        {
+            const held = self.mutex.acquire();
+            defer held.release();
+            if (self.new_program) |program| self.app.allocator.free(program);
+            if (self.new_result) |result| self.app.allocator.free(result);
+            self.background_loop_should_stop = true;
+        }
         self.result_editor.deinit();
         self.app.allocator.destroy(self);
     }
 
+    // called from Buffer on change
     pub fn setProgram(self: *ImpRepl, program: []const u8) void {
-        self.app.allocator.free(self.program);
-        self.program = self.app.dupe(program);
-        if (self.result_o) |result| self.app.allocator.free(result);
-        self.result_o = null;
+        const held = self.mutex.acquire();
+        defer held.release();
+        if (self.new_program) |old_program| self.app.allocator.free(old_program);
+        self.new_program = self.app.dupe(program);
+    }
+
+    pub fn backgroundLoop(self: *ImpRepl) void {
+        while (true) {
+            var new_program: ?[]const u8 = null;
+            defer if (new_program) |program| self.app.allocator.free(program);
+
+            // see if we have a new program
+            {
+                const held = self.mutex.acquire();
+                defer held.release();
+                if (self.background_loop_should_stop) return;
+                if (self.new_program) |program| {
+                    new_program = program;
+                    self.new_program = null;
+                }
+            }
+
+            // if so, produce a new result
+            if (new_program) |program| {
+                // eval
+                var arena = ArenaAllocator.init(self.app.allocator);
+                defer arena.deinit();
+                var error_info: ?imp.lang.InterpretErrorInfo = null;
+                const result = imp.lang.interpret(&arena, program, &error_info);
+
+                // print result
+                var result_buffer = ArrayList(u8).init(self.app.allocator);
+                defer result_buffer.deinit();
+                if (result) |type_and_set|
+                    type_and_set.dumpInto(&arena.allocator, result_buffer.writer()) catch oom()
+                else |err|
+                    imp.lang.InterpretErrorInfo.dumpInto(error_info, err, result_buffer.writer()) catch oom();
+
+                // set result
+                {
+                    const held = self.mutex.acquire();
+                    defer held.release();
+                    if (self.background_loop_should_stop) return;
+                    if (self.new_result) |old_result| self.app.allocator.free(old_result);
+                    self.new_result = result_buffer.toOwnedSlice();
+                }
+            }
+        }
     }
 
     pub fn frame(self: *ImpRepl, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        if (self.result_o == null) {
-            var arena = ArenaAllocator.init(self.app.allocator);
-            defer arena.deinit();
-            var error_info: ?imp.lang.InterpretErrorInfo = null;
-            const result = imp.lang.interpret(&arena, self.program, &error_info);
-            var result_buffer = ArrayList(u8).init(self.app.allocator);
-            if (result) |type_and_set|
-                type_and_set.dumpInto(&arena.allocator, result_buffer.writer()) catch oom()
-            else |err|
-                imp.lang.InterpretErrorInfo.dumpInto(error_info, err, result_buffer.writer()) catch oom();
-            self.result_o = result_buffer.toOwnedSlice();
-            self.result_editor.buffer.replace(self.result_o.?);
+        {
+            const held = self.mutex.acquire();
+            defer held.release();
+            if (self.new_result) |result| {
+                self.result_editor.buffer.replace(result);
+                self.app.allocator.free(result);
+                self.new_result = null;
+            }
         }
         self.result_editor.frame(window, rect, events);
     }
