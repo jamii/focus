@@ -14,13 +14,15 @@ pub const ImpRepl = struct {
     buffer: *Buffer,
     result_editor: *Editor,
 
-    // mutex protects latest_program, new_result, background_loop_should_stop
+    // mutex protects these fields
     mutex: std.Thread.Mutex,
     // the background thread must check this before setting new_program or new_result
     background_loop_should_stop: bool,
     // new_program and new_result behave like queues, except that they only care about the most recent item
     new_program: ?[]const u8,
     new_result: ?[]const u8,
+    // does the result currently being displayed match the program in the buffer
+    is_synced: bool,
 
     pub fn init(app: *App, buffer: *Buffer) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .Real);
@@ -35,6 +37,7 @@ pub const ImpRepl = struct {
             .new_program = null,
             .new_result = null,
             .background_loop_should_stop = false,
+            .is_synced = true,
         };
 
         _ = std.Thread.spawn(.{}, ImpRepl.backgroundLoop, .{self}) catch |err|
@@ -63,6 +66,7 @@ pub const ImpRepl = struct {
         defer held.release();
         if (self.new_program) |old_program| self.app.allocator.free(old_program);
         self.new_program = self.app.dupe(program);
+        self.is_synced = false;
     }
 
     pub fn backgroundLoop(self: *ImpRepl) void {
@@ -104,6 +108,7 @@ pub const ImpRepl = struct {
                     if (self.background_loop_should_stop) return;
                     if (self.new_result) |old_result| self.app.allocator.free(old_result);
                     self.new_result = result_buffer.toOwnedSlice();
+                    if (self.new_program == null) self.is_synced = true;
                 }
             }
         }
@@ -120,5 +125,7 @@ pub const ImpRepl = struct {
             }
         }
         self.result_editor.frame(window, rect, events);
+        if (!self.is_synced)
+            window.queueRect(rect, style.highlight_color);
     }
 };
