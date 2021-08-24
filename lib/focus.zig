@@ -12,6 +12,7 @@ pub const BufferOpener = @import("./focus/buffer_opener.zig").BufferOpener;
 pub const BufferSearcher = @import("./focus/buffer_searcher.zig").BufferSearcher;
 pub const ProjectSearcher = @import("./focus/project_searcher.zig").ProjectSearcher;
 pub const Launcher = @import("./focus/launcher.zig").Launcher;
+pub const ImpRepl = @import("./focus/imp_repl.zig").ImpRepl;
 pub const Window = @import("./focus/window.zig").Window;
 pub const style = @import("./focus/style.zig");
 

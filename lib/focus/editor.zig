@@ -4,7 +4,7 @@ const App = focus.App;
 const Buffer = focus.Buffer;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 const BufferSearcher = focus.BufferSearcher;
-const Selector = focus.Selector;
+const ImpRepl = focus.ImpRepl;
 const Window = focus.Window;
 const style = focus.style;
 const meta = focus.meta;
@@ -179,6 +179,7 @@ pub const Editor = struct {
                             'z' => self.undo(text_rect),
                             '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
                             c.SDLK_TAB => for (self.cursors.items) |*cursor| self.indent(cursor),
+                            c.SDLK_RETURN => self.eval(),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LCTRL | c.KMOD_LSHIFT or
@@ -1106,5 +1107,15 @@ pub const Editor = struct {
             self.top_pixel = cursor_top_pixel - @intCast(isize, text_rect.h) + @intCast(isize, self.app.atlas.char_height);
         if (cursor_bottom_pixel <= self.top_pixel + @intCast(isize, self.app.atlas.char_height))
             self.top_pixel = cursor_top_pixel;
+    }
+
+    fn eval(self: *Editor) void {
+        if (self.buffer.imp_repl_o == null) {
+            self.buffer.imp_repl_o = ImpRepl.init(self.app);
+            self.buffer.imp_repl_o.?.setProgram(self.buffer.bytes.items);
+            var window = Window.init(self.app, .NotFloating);
+            window.pushView(self.buffer.imp_repl_o.?);
+            _ = self.app.registerWindow(window);
+        }
     }
 };

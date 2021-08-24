@@ -10,6 +10,7 @@ const BufferOpener = focus.BufferOpener;
 const BufferSearcher = focus.BufferSearcher;
 const ProjectSearcher = focus.ProjectSearcher;
 const Launcher = focus.Launcher;
+const ImpRepl = focus.ImpRepl;
 const style = focus.style;
 
 pub const View = union(enum) {
@@ -20,6 +21,7 @@ pub const View = union(enum) {
     BufferSearcher: *BufferSearcher,
     ProjectSearcher: *ProjectSearcher,
     Launcher: *Launcher,
+    ImpRepl: *ImpRepl,
 };
 pub const ViewTag = @TagType(View);
 
@@ -294,6 +296,7 @@ pub const Window = struct {
                 .BufferSearcher => |buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
                 .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
                 .Launcher => |launcher| launcher.frame(self, window_rect, view_events.items),
+                .ImpRepl => |imp_repl| imp_repl.frame(self, window_rect, view_events.items),
             }
         } else {
             const message = "focus";
