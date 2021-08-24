@@ -1113,7 +1113,7 @@ pub const Editor = struct {
 
     fn eval(self: *Editor) void {
         if (self.buffer.imp_repl_o == null) {
-            self.buffer.imp_repl_o = ImpRepl.init(self.app);
+            self.buffer.imp_repl_o = ImpRepl.init(self.app, self.buffer);
             self.buffer.imp_repl_o.?.setProgram(self.buffer.bytes.items);
             var window = Window.init(self.app, .NotFloating);
             window.pushView(self.buffer.imp_repl_o.?);

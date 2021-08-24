@@ -11,6 +11,7 @@ const imp = @import("../../imp/lib/imp.zig");
 
 pub const ImpRepl = struct {
     app: *App,
+    buffer: *Buffer,
     result_editor: *Editor,
 
     // mutex protects latest_program, new_result, background_loop_should_stop
@@ -21,13 +22,14 @@ pub const ImpRepl = struct {
     new_program: ?[]const u8,
     new_result: ?[]const u8,
 
-    pub fn init(app: *App) *ImpRepl {
+    pub fn init(app: *App, buffer: *Buffer) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .Real);
         const result_editor = Editor.init(app, empty_buffer, false, false);
 
         const self = app.allocator.create(ImpRepl) catch oom();
         self.* = ImpRepl{
             .app = app,
+            .buffer = buffer,
             .result_editor = result_editor,
             .mutex = std.Thread.Mutex{},
             .new_program = null,
@@ -50,7 +52,9 @@ pub const ImpRepl = struct {
             self.background_loop_should_stop = true;
         }
         self.result_editor.deinit();
+        self.buffer.imp_repl_o = null;
         self.app.allocator.destroy(self);
+        // TODO if background thread tries to acquire self.mutex at this point, it might panic
     }
 
     // called from Buffer on change
