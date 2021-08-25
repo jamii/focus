@@ -60,6 +60,6 @@ pub const ImpRepl = struct {
         }
         self.result_editor.frame(window, rect, events);
         if (self.last_program_id != self.last_result_id)
-            window.queueRect(rect, style.highlight_color);
+            window.queueRect(rect, style.fade_color);
     }
 };
