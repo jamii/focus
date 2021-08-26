@@ -69,7 +69,6 @@ pub const Buffer = struct {
     completions: ArrayList([]const u8),
     // editors must unregister before buffer deinits
     editors: ArrayList(*Editor),
-    imp_repl_o: ?*ImpRepl,
     role: Role,
     last_focused_ms: i64,
 
@@ -86,7 +85,6 @@ pub const Buffer = struct {
             .line_ranges = ArrayList([2]usize).init(app.allocator),
             .completions = ArrayList([]const u8).init(app.allocator),
             .editors = ArrayList(*Editor).init(app.allocator),
-            .imp_repl_o = null,
             .role = role,
             .last_focused_ms = 0,
         };
@@ -111,8 +109,6 @@ pub const Buffer = struct {
     // TODO fn initPreviewFromAbsoluteFilename
 
     pub fn deinit(self: *Buffer) void {
-        if (self.imp_repl_o) |imp_repl| imp_repl.deinit();
-
         // all editors should have unregistered already
         assert(self.editors.items.len == 0);
         self.editors.deinit();
@@ -357,8 +353,6 @@ pub const Buffer = struct {
         for (self.editors.items) |editor| {
             editor.updateAfterInsert(pos, bytes);
         }
-        if (self.imp_repl_o) |imp_repl|
-            imp_repl.setProgram(self.bytes.items);
     }
 
     fn rawDelete(self: *Buffer, start: usize, end: usize) void {
@@ -379,8 +373,6 @@ pub const Buffer = struct {
         for (self.editors.items) |editor| {
             editor.updateAfterDelete(start, end);
         }
-        if (self.imp_repl_o) |imp_repl|
-            imp_repl.setProgram(self.bytes.items);
     }
 
     fn rawReplace(self: *Buffer, new_bytes: []const u8) void {
@@ -400,8 +392,6 @@ pub const Buffer = struct {
         for (self.editors.items) |editor| {
             editor.updateAfterReplace(line_colss.pop());
         }
-        if (self.imp_repl_o) |imp_repl|
-            imp_repl.setProgram(self.bytes.items);
     }
 
     pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) void {

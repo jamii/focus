@@ -11,13 +11,13 @@ const imp = @import("../../imp/lib/imp.zig");
 
 pub const ImpRepl = struct {
     app: *App,
-    buffer: *Buffer,
+    program_editor: *Editor,
     result_editor: *Editor,
     imp_worker: *imp.lang.Worker,
     last_program_id: usize,
     last_result_id: usize,
 
-    pub fn init(app: *App, buffer: *Buffer) *ImpRepl {
+    pub fn init(app: *App, program_editor: *Editor) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .Real);
         const result_editor = Editor.init(app, empty_buffer, false, false);
         const imp_worker = imp.lang.Worker.init(app.allocator) catch |err|
@@ -26,7 +26,7 @@ pub const ImpRepl = struct {
         const self = app.allocator.create(ImpRepl) catch oom();
         self.* = ImpRepl{
             .app = app,
-            .buffer = buffer,
+            .program_editor = program_editor,
             .result_editor = result_editor,
             .imp_worker = imp_worker,
             .last_program_id = 0,
@@ -39,16 +39,16 @@ pub const ImpRepl = struct {
         self.imp_worker.deinitSoon();
         // imp_worker will deinit itself when it shuts down
         self.result_editor.deinit();
-        self.buffer.imp_repl_o = null;
+        self.program_editor.imp_repl_o = null;
         self.app.allocator.destroy(self);
         self.* = undefined;
     }
 
-    // called from Buffer on change
-    pub fn setProgram(self: *ImpRepl, program: []const u8) void {
+    // called from program_editor on change
+    pub fn setProgram(self: *ImpRepl, program: []const u8, cursor_pos: usize) void {
         self.last_program_id += 1;
         self.imp_worker.setProgram(.{
-            .text = program,
+            .text = program[0..cursor_pos],
             .id = self.last_program_id,
         }) catch oom();
     }
