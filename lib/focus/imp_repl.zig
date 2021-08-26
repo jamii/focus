@@ -41,7 +41,6 @@ pub const ImpRepl = struct {
         self.result_editor.deinit();
         self.program_editor.imp_repl_o = null;
         self.app.allocator.destroy(self);
-        self.* = undefined;
     }
 
     // called from program_editor on change
