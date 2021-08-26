@@ -384,11 +384,11 @@ pub const Buffer = struct {
     }
 
     fn rawReplace(self: *Buffer, new_bytes: []const u8) void {
-        var line_colss = ArrayList([][2]usize).init(self.app.frame_allocator);
+        var line_colss = ArrayList([][2][2]usize).init(self.app.frame_allocator);
         for (self.editors.items) |editor| {
             line_colss.append(editor.updateBeforeReplace()) catch oom();
         }
-        std.mem.reverse([][2]usize, line_colss.items);
+        std.mem.reverse([][2][2]usize, line_colss.items);
 
         self.bytes.resize(0) catch oom();
         self.bytes.appendSlice(new_bytes) catch oom();

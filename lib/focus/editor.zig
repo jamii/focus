@@ -715,19 +715,25 @@ pub const Editor = struct {
         }
     }
 
-    pub fn updateBeforeReplace(self: *Editor) [][2]usize {
-        var line_cols = ArrayList([2]usize).init(self.app.frame_allocator);
+    pub fn updateBeforeReplace(self: *Editor) [][2][2]usize {
+        var line_cols = ArrayList([2][2]usize).init(self.app.frame_allocator);
         for (self.cursors.items) |cursor| {
-            line_cols.append(self.buffer.getLineColForPos(cursor.head.pos)) catch oom();
+            line_cols.append(.{
+                self.buffer.getLineColForPos(cursor.head.pos),
+                self.buffer.getLineColForPos(cursor.tail.pos),
+            }) catch oom();
         }
         return line_cols.toOwnedSlice();
     }
 
-    pub fn updateAfterReplace(self: *Editor, line_cols: [][2]usize) void {
+    pub fn updateAfterReplace(self: *Editor, line_cols: [][2][2]usize) void {
         self.line_wrapped_buffer.update();
         for (self.cursors.items) |*cursor, i| {
-            const line_col = line_cols[i];
-            self.goPos(cursor, self.buffer.getPosForLineCol(min(line_col[0], self.buffer.countLines() - 1), line_col[1]));
+            for (&[2]*Point{ &cursor.head, &cursor.tail }) |point, j| {
+                const line_col = line_cols[i][j];
+                const pos = self.buffer.getPosForLineCol(min(line_col[0], self.buffer.countLines() - 1), line_col[1]);
+                self.updatePos(point, pos);
+            }
         }
     }
 
