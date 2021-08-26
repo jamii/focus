@@ -36,7 +36,8 @@ pub const ImpRepl = struct {
     }
 
     pub fn deinit(self: *ImpRepl) void {
-        self.imp_worker.stop();
+        self.imp_worker.deinitSoon();
+        // imp_worker will deinit itself when it shuts down
         self.result_editor.deinit();
         self.buffer.imp_repl_o = null;
         self.app.allocator.destroy(self);
