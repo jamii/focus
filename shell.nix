@@ -67,6 +67,6 @@ hostPkgs.mkShell rec {
   NIX_SDL2_DEV=targetPkgs.SDL2.dev;
   NIX_SDL2_TTF_DEV=targetPkgs.SDL2_ttf; # no .dev
   # TODO with SDL_VIDEODRIVER=wayland, SDL doesn't seem to respect xkb settings eg caps vs ctrl
-  # but without, sometimes see https://github.com/swaywm/sway/issues/5227
+  # but without, sometimes causes https://github.com/swaywm/sway/issues/5227
   # SDL_VIDEODRIVER="wayland";
 }
