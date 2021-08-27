@@ -99,7 +99,7 @@ pub const Editor = struct {
     }
 
     pub fn deinit(self: *Editor) void {
-        if (self.imp_repl_o) |imp_repl| imp_repl.deinit();
+        // self.imp_repl_o will deinit itself when repl window is closed
         if (self.completer_o) |completer| self.app.allocator.free(completer.prefix);
         self.buffer.deregisterEditor(self);
         self.cursors.deinit();
