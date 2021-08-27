@@ -20,7 +20,12 @@ pub const ImpRepl = struct {
     pub fn init(app: *App, program_editor: *Editor) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .Real);
         const result_editor = Editor.init(app, empty_buffer, false, false);
-        const imp_worker = imp.lang.Worker.init(app.allocator) catch |err|
+        const imp_worker = imp.lang.Worker.init(
+            app.allocator,
+            .{
+                .memory_limit_bytes = 1024 * 1024 * 64,
+            },
+        ) catch |err|
             panic("Failed to start imp worker: {}", .{err});
 
         const self = app.allocator.create(ImpRepl) catch oom();
