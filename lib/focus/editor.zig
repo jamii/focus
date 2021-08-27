@@ -990,51 +990,64 @@ pub const Editor = struct {
             return;
 
         // figure out how many lines we're going to comment _before_ we start changing them
-        var num_lines: usize = 1;
         const range = self.getSelectionRange(cursor);
-        {
-            var pos = range[0];
-            while (self.buffer.searchForwards(pos, "\n")) |new_pos| {
-                if (new_pos >= range[1]) break;
-                num_lines += 1;
-                pos = new_pos + 1;
-            }
-        }
+        const start_line = self.buffer.getLineColForPos(range[0])[0];
+        const end_line = self.buffer.getLineColForPos(range[1])[0];
 
-        // make a new cursor to peform the comments
-        var edit_cursor = self.newCursor();
-        std.mem.swap(Cursor, edit_cursor, &self.cursors.items[0]);
-        edit_cursor = &self.cursors.items[0];
-        defer {
-            std.mem.swap(Cursor, edit_cursor, &self.cursors.items[self.cursors.items.len - 1]);
-            _ = self.cursors.pop();
-        }
-        self.goPos(edit_cursor, range[0]);
+        switch (action) {
+            .Insert => {
+                // find minimum indent
+                var minimum_indent: usize = std.math.maxInt(usize);
+                {
+                    var line: usize = start_line;
+                    while (line <= end_line) : (line += 1) {
+                        const start = self.buffer.getPosForLine(line);
+                        const end = self.buffer.getLineEnd(start);
 
-        // for each line in selection
-        while (num_lines > 0) : (num_lines -= 1) {
-            // find first non-whitespace char
-            self.goRealLineStart(edit_cursor);
-            var start = edit_cursor.head.pos;
-            const end = self.buffer.getLineEnd(start);
-            while (start < end and self.buffer.bytes.items[start] == ' ') : (start += 1) {}
-
-            // insert or remove comment
-            switch (action) {
-                .Insert => {
-                    self.buffer.insert(start, comment_string);
-                },
-                .Remove => {
-                    if (end - start >= comment_string.len and
-                        meta.deepEqual(comment_string, self.buffer.bytes.items[start .. start + comment_string.len]))
-                    {
-                        self.buffer.delete(start, start + comment_string.len);
+                        // find first non-whitespace char
+                        for (self.buffer.bytes.items[start..end]) |byte, i| {
+                            if (byte != ' ') {
+                                minimum_indent = min(minimum_indent, i);
+                                break;
+                            }
+                        }
                     }
-                },
-            }
+                }
 
-            // go to next line in selection
-            self.goRealDown(edit_cursor);
+                // comment each line that has non-whitespace chars
+                {
+                    var line: usize = start_line;
+                    while (line <= end_line) : (line += 1) {
+                        const start = self.buffer.getPosForLine(line);
+                        const end = self.buffer.getLineEnd(start);
+
+                        // check for any non-whitespace characters
+                        var any_non_whitespace = false;
+                        for (self.buffer.bytes.items[start..end]) |byte| {
+                            if (byte != ' ') {
+                                any_non_whitespace = true;
+                                break;
+                            }
+                        }
+
+                        // insert comment
+                        if (any_non_whitespace)
+                            self.buffer.insert(start + minimum_indent, comment_string);
+                    }
+                }
+            },
+            .Remove => {
+                var line: usize = start_line;
+                while (line <= end_line) : (line += 1) {
+                    const start = self.buffer.getPosForLine(line);
+                    const end = self.buffer.getLineEnd(start);
+
+                    // remove first comment
+                    if (self.buffer.searchForwards(start, comment_string)) |pos|
+                        if (pos <= end)
+                            self.buffer.delete(pos, pos + comment_string.len);
+                }
+            },
         }
     }
 
