@@ -380,9 +380,14 @@ pub const Editor = struct {
             }
         }
 
+        //const colors = self.buffer.language.highlight
+
         // draw cursors, selections, text
         var line_ix = @intCast(usize, max(visible_start_line, 0));
         const max_line_ix = min(@intCast(usize, max(visible_end_line + 1, 0)), self.line_wrapped_buffer.wrapped_line_ranges.items.len);
+        const min_pos = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix][0];
+        const max_pos = self.line_wrapped_buffer.wrapped_line_ranges.items[max_line_ix - 1][1];
+        const highligher_colors = self.buffer.language.highlight(self.app.frame_allocator, self.buffer.bytes.items, .{ min_pos, max_pos });
         while (line_ix < max_line_ix) : (line_ix += 1) {
             const line_range = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix];
             const line = self.buffer.bytes.items[line_range[0]..line_range[1]];
@@ -433,7 +438,19 @@ pub const Editor = struct {
 
             // draw text
             // TODO clip text at the top of the editor, not only the bottom
-            window.queueText(.{ .x = text_rect.x, .y = @intCast(Coord, y), .w = text_rect.w, .h = text_rect.y + text_rect.h - @intCast(Coord, y) }, style.text_color, line);
+            for (line) |char, i| {
+                const highlighter_color = highligher_colors[line_range[0] + i - min_pos];
+                window.queueText(
+                    .{
+                        .x = text_rect.x + (@intCast(Coord, i) * self.app.atlas.char_width),
+                        .y = @intCast(Coord, y),
+                        .w = text_rect.w,
+                        .h = text_rect.y + text_rect.h - @intCast(Coord, y),
+                    },
+                    highlighter_color,
+                    &[1]u8{char},
+                );
+            }
 
             // if wrapped, draw arrows
             if (line_ix > 0 and line_range[0] == self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix - 1][1]) {

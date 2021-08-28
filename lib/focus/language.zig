@@ -30,11 +30,22 @@ pub const Language = enum {
             return .Unknown;
     }
 
-    pub fn commentString(language: Language) ?[]const u8 {
-        return switch (language) {
+    pub fn commentString(self: Language) ?[]const u8 {
+        return switch (self) {
             .Zig, .Java, .Javascript, .Imp => "//",
             .Shell, .Julia => "#",
             .Unknown => null,
         };
+    }
+
+    pub fn highlight(self: Language, allocator: *Allocator, source: []const u8, range: [2]usize) []const Color {
+        _ = source;
+        const colors = allocator.alloc(Color, range[1] - range[0]) catch oom();
+        switch (self) {
+            else => {
+                for (colors) |*color, i| color.* = style.text_color;
+            },
+        }
+        return colors;
     }
 };
