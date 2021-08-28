@@ -42,9 +42,37 @@ pub const Language = enum {
     pub fn highlight(self: Language, allocator: *Allocator, source: []const u8, range: [2]usize) []const Color {
         _ = source;
         const colors = allocator.alloc(Color, range[1] - range[0]) catch oom();
-        for (colors) |*color| color.* = style.text_color;
         switch (self) {
+            .Zig => {
+                for (colors) |*color| color.* = style.comment_color;
+                const source_z = std.mem.dupeZ(allocator, u8, source[range[0]..range[1]]) catch oom();
+                defer allocator.free(source_z);
+                var tokenizer = std.zig.Tokenizer.init(source_z);
+                while (true) {
+                    const token = tokenizer.next();
+                    if (token.tag == .eof) break;
+                    switch (token.tag) {
+                        .doc_comment, .container_doc_comment => {},
+                        .identifier => {
+                            const hash = meta.deepHash(tokenizer.buffer[token.loc.start..token.loc.end]);
+                            const highlight_color = Color{
+                                .r = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 0 }) % 64)),
+                                .g = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 1 }) % 64)),
+                                .b = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 2 }) % 64)),
+                                .a = 255,
+                            };
+                            for (colors[token.loc.start..token.loc.end]) |*color|
+                                color.* = highlight_color;
+                        },
+                        else => {
+                            for (colors[token.loc.start..token.loc.end]) |*color|
+                                color.* = style.keyword_color;
+                        },
+                    }
+                }
+            },
             .Imp => {
+                for (colors) |*color| color.* = style.comment_color;
                 var arena = ArenaAllocator.init(allocator);
                 defer arena.deinit();
                 var store = imp.lang.Store.init(&arena);
@@ -62,27 +90,21 @@ pub const Language = enum {
                             switch (token) {
                                 .EOF => break,
                                 .None, .Some, .Number, .Text, .Name, .When, .Fix, .Reduce, .Enumerate => {
-                                    const hash = meta.deepHash(source[start..parser.position]);
-                                    const color = Color{
+                                    const hash = meta.deepHash(parser.source[start..parser.position]);
+                                    const highlight_color = Color{
                                         .r = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 0 }) % 64)),
                                         .g = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 1 }) % 64)),
                                         .b = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 2 }) % 64)),
                                         .a = 255,
                                     };
-                                    var i: usize = start;
-                                    while (i < parser.position) : (i += 1)
-                                        colors[i] = color;
+                                    for (colors[start..parser.position]) |*color|
+                                        color.* = highlight_color;
                                 },
                                 else => {
-                                    var i: usize = start;
-                                    while (i < parser.position) : (i += 1)
-                                        colors[i] = style.keyword_color;
+                                    for (colors[start..parser.position]) |*color|
+                                        color.* = style.keyword_color;
                                 },
                             }
-                        } else {
-                            var i: usize = start;
-                            while (i < parser.position) : (i += 1)
-                                colors[i] = style.comment_color;
                         }
                     } else |err| {
                         if (err == error.OutOfMemory) oom();
@@ -90,7 +112,9 @@ pub const Language = enum {
                     }
                 }
             },
-            else => {},
+            else => {
+                for (colors) |*color| color.* = style.text_color;
+            },
         }
         return colors;
     }
