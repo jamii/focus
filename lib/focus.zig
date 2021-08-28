@@ -14,6 +14,7 @@ pub const ProjectSearcher = @import("./focus/project_searcher.zig").ProjectSearc
 pub const Launcher = @import("./focus/launcher.zig").Launcher;
 pub const ImpRepl = @import("./focus/imp_repl.zig").ImpRepl;
 pub const Window = @import("./focus/window.zig").Window;
+pub const Language = @import("./focus/language.zig").Language;
 pub const style = @import("./focus/style.zig");
 
 usingnamespace common;

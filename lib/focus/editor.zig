@@ -972,22 +972,8 @@ pub const Editor = struct {
     }
 
     pub fn modifyComment(self: *Editor, cursor: *Cursor, action: enum { Insert, Remove }) void {
-        const filename = self.buffer.getFilename() orelse "";
-        const comment_string: []const u8 = if (std.mem.endsWith(u8, filename, ".zig"))
-            "//"
-        else if (std.mem.endsWith(u8, filename, ".java"))
-            "//"
-        else if (std.mem.endsWith(u8, filename, ".sh"))
-            "#"
-        else if (std.mem.endsWith(u8, filename, ".jl"))
-            "#"
-        else if (std.mem.endsWith(u8, filename, ".js"))
-            "//"
-        else if (std.mem.endsWith(u8, filename, ".imp"))
-            "//"
-        else
-            // don't know how to comment this lang
-            return;
+        // see if we know how to comment this language
+        const comment_string = self.buffer.language.commentString() orelse return;
 
         // figure out how many lines we're going to comment _before_ we start changing them
         const range = self.getSelectionRange(cursor);

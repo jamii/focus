@@ -5,6 +5,7 @@ const Editor = focus.Editor;
 const ImpRepl = focus.ImpRepl;
 const meta = focus.meta;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
+const Language = focus.Language;
 
 pub const BufferSource = union(enum) {
     None,
@@ -60,6 +61,7 @@ const Edit = union(enum) {
 pub const Buffer = struct {
     app: *App,
     source: BufferSource,
+    language: Language,
     bytes: ArrayList(u8),
     undos: ArrayList([]Edit),
     doing: ArrayList(Edit),
@@ -77,6 +79,7 @@ pub const Buffer = struct {
         self.* = Buffer{
             .app = app,
             .source = .None,
+            .language = .Unknown,
             .bytes = ArrayList(u8).init(app.allocator),
             .undos = ArrayList([]Edit).init(app.allocator),
             .doing = ArrayList(Edit).init(app.allocator),
@@ -101,6 +104,7 @@ pub const Buffer = struct {
                 .mtime = 0,
             },
         };
+        self.language = Language.fromFilename(absolute_filename);
         self.load(.Init);
         self.undos.resize(0) catch oom();
         return self;
