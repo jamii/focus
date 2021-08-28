@@ -44,29 +44,29 @@ pub const Language = enum {
         const colors = allocator.alloc(Color, range[1] - range[0]) catch oom();
         switch (self) {
             .Zig => {
-                for (colors) |*color| color.* = style.comment_color;
                 const source_z = std.mem.dupeZ(allocator, u8, source[range[0]..range[1]]) catch oom();
                 defer allocator.free(source_z);
                 var tokenizer = std.zig.Tokenizer.init(source_z);
+                std.mem.set(Color, colors, style.comment_color);
                 while (true) {
                     const token = tokenizer.next();
                     switch (token.tag) {
                         .eof => break,
                         .doc_comment, .container_doc_comment => {},
-                        .identifier => {
-                            const highlight_color = highlightColor(tokenizer.buffer[token.loc.start..token.loc.end]);
-                            for (colors[token.loc.start..token.loc.end]) |*color|
-                                color.* = highlight_color;
-                        },
-                        else => {
-                            for (colors[token.loc.start..token.loc.end]) |*color|
-                                color.* = style.keyword_color;
-                        },
+                        .identifier => std.mem.set(
+                            Color,
+                            colors[token.loc.start..token.loc.end],
+                            highlightColor(tokenizer.buffer[token.loc.start..token.loc.end]),
+                        ),
+                        else => std.mem.set(
+                            Color,
+                            colors[token.loc.start..token.loc.end],
+                            style.keyword_color,
+                        ),
                     }
                 }
             },
             .Imp => {
-                for (colors) |*color| color.* = style.comment_color;
                 var arena = ArenaAllocator.init(allocator);
                 defer arena.deinit();
                 var store = imp.lang.Store.init(&arena);
@@ -77,21 +77,23 @@ pub const Language = enum {
                     .position = 0,
                     .error_info = &error_info,
                 };
+                std.mem.set(Color, colors, style.comment_color);
                 while (true) {
                     const start = parser.position;
                     if (parser.nextTokenMaybe()) |maybe_token| {
                         if (maybe_token) |token| {
                             switch (token) {
                                 .EOF => break,
-                                .None, .Some, .Number, .Text, .Name, .When, .Fix, .Reduce, .Enumerate => {
-                                    const highlight_color = highlightColor(parser.source[start..parser.position]);
-                                    for (colors[start..parser.position]) |*color|
-                                        color.* = highlight_color;
-                                },
-                                else => {
-                                    for (colors[start..parser.position]) |*color|
-                                        color.* = style.keyword_color;
-                                },
+                                .None, .Some, .Number, .Text, .Name, .When, .Fix, .Reduce, .Enumerate => std.mem.set(
+                                    Color,
+                                    colors[start..parser.position],
+                                    highlightColor(parser.source[start..parser.position]),
+                                ),
+                                else => std.mem.set(
+                                    Color,
+                                    colors[start..parser.position],
+                                    style.keyword_color,
+                                ),
                             }
                         }
                     } else |err| {
@@ -101,7 +103,7 @@ pub const Language = enum {
                 }
             },
             else => {
-                for (colors) |*color| color.* = style.text_color;
+                std.mem.set(Color, colors, style.text_color);
             },
         }
         return colors;
