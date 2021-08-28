@@ -50,8 +50,8 @@ pub const Language = enum {
                 var tokenizer = std.zig.Tokenizer.init(source_z);
                 while (true) {
                     const token = tokenizer.next();
-                    if (token.tag == .eof) break;
                     switch (token.tag) {
+                        .eof => break,
                         .doc_comment, .container_doc_comment => {},
                         .identifier => {
                             const highlight_color = highlightColor(tokenizer.buffer[token.loc.start..token.loc.end]);
