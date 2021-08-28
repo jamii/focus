@@ -54,13 +54,7 @@ pub const Language = enum {
                     switch (token.tag) {
                         .doc_comment, .container_doc_comment => {},
                         .identifier => {
-                            const hash = meta.deepHash(tokenizer.buffer[token.loc.start..token.loc.end]);
-                            const highlight_color = Color{
-                                .r = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 0 }) % 64)),
-                                .g = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 1 }) % 64)),
-                                .b = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 2 }) % 64)),
-                                .a = 255,
-                            };
+                            const highlight_color = highlightColor(tokenizer.buffer[token.loc.start..token.loc.end]);
                             for (colors[token.loc.start..token.loc.end]) |*color|
                                 color.* = highlight_color;
                         },
@@ -90,13 +84,7 @@ pub const Language = enum {
                             switch (token) {
                                 .EOF => break,
                                 .None, .Some, .Number, .Text, .Name, .When, .Fix, .Reduce, .Enumerate => {
-                                    const hash = meta.deepHash(parser.source[start..parser.position]);
-                                    const highlight_color = Color{
-                                        .r = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 0 }) % 64)),
-                                        .g = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 1 }) % 64)),
-                                        .b = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 2 }) % 64)),
-                                        .a = 255,
-                                    };
+                                    const highlight_color = highlightColor(parser.source[start..parser.position]);
                                     for (colors[start..parser.position]) |*color|
                                         color.* = highlight_color;
                                 },
@@ -117,5 +105,15 @@ pub const Language = enum {
             },
         }
         return colors;
+    }
+
+    fn highlightColor(ident: []const u8) Color {
+        const hash = meta.deepHash(ident);
+        return Color{
+            .r = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 0 }) % 64)),
+            .g = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 1 }) % 64)),
+            .b = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 2 }) % 64)),
+            .a = 255,
+        };
     }
 };
