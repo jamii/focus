@@ -17,6 +17,7 @@ pub const builtin = @import("builtin");
 pub const std = @import("std");
 pub const warn = std.debug.warn;
 pub const assert = std.debug.assert;
+pub const expect = std.testing.expect;
 pub const max = std.math.max;
 pub const min = std.math.min;
 pub const Allocator = std.mem.Allocator;
@@ -257,7 +258,49 @@ pub const Color = packed struct {
     g: u8,
     b: u8,
     a: u8,
+
+    pub fn hsl(h: f64, s: f64, l: f64) Color {
+        assert(h >= 0 and h < 360);
+        const ch = (1 - @fabs((2 * l) - 1)) * s;
+        const x = ch * (1 - @fabs(@mod(h / 60, 2) - 1));
+        const m = l - (ch / 2);
+        const rgb: [3]f64 = switch (@floatToInt(u8, @floor(h / 60))) {
+            0 => .{ ch, x, 0 },
+            1 => .{ x, ch, 0 },
+            2 => .{ 0, ch, x },
+            3 => .{ 0, x, ch },
+            4 => .{ x, 0, ch },
+            5 => .{ ch, 0, x },
+            else => unreachable,
+        };
+        return .{
+            .r = @floatToInt(u8, @round(255 * (rgb[0] + m))),
+            .g = @floatToInt(u8, @round(255 * (rgb[1] + m))),
+            .b = @floatToInt(u8, @round(255 * (rgb[2] + m))),
+            .a = 255,
+        };
+    }
 };
+
+test "hsl" {
+    // source https://www.rapidtables.com/convert/color/hsl-to-rgb.html
+    try expect(meta.deepEqual(Color.hsl(0, 0, 0), Color{ .r = 0, .g = 0, .b = 0, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(0, 0, 1), Color{ .r = 255, .g = 255, .b = 255, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(0, 1, 0.5), Color{ .r = 255, .g = 0, .b = 0, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(120, 1, 0.5), Color{ .r = 0, .g = 255, .b = 0, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(240, 1, 0.5), Color{ .r = 0, .g = 0, .b = 255, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(60, 1, 0.5), Color{ .r = 255, .g = 255, .b = 0, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(180, 1, 0.5), Color{ .r = 0, .g = 255, .b = 255, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(300, 1, 0.5), Color{ .r = 255, .g = 0, .b = 255, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(0, 0, 0.75), Color{ .r = 191, .g = 191, .b = 191, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(0, 0, 0.5), Color{ .r = 128, .g = 128, .b = 128, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(0, 1, 0.25), Color{ .r = 128, .g = 0, .b = 0, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(120, 1, 0.25), Color{ .r = 0, .g = 128, .b = 0, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(240, 1, 0.25), Color{ .r = 0, .g = 0, .b = 128, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(60, 1, 0.25), Color{ .r = 128, .g = 128, .b = 0, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(180, 1, 0.25), Color{ .r = 0, .g = 128, .b = 128, .a = 255 }));
+    try expect(meta.deepEqual(Color.hsl(300, 1, 0.25), Color{ .r = 128, .g = 0, .b = 128, .a = 255 }));
+}
 
 pub const Vec2f = packed struct {
     x: f32,

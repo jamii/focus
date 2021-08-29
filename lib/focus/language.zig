@@ -53,10 +53,15 @@ pub const Language = enum {
                     switch (token.tag) {
                         .eof => break,
                         .doc_comment, .container_doc_comment => {},
-                        .identifier => std.mem.set(
+                        .identifier, .builtin, .integer_literal, .float_literal => std.mem.set(
                             Color,
                             colors[token.loc.start..token.loc.end],
-                            highlightColor(tokenizer.buffer[token.loc.start..token.loc.end]),
+                            style.highlightColor(tokenizer.buffer[token.loc.start..token.loc.end]),
+                        ),
+                        .keyword_try, .keyword_catch => std.mem.set(
+                            Color,
+                            colors[token.loc.start..token.loc.end],
+                            .{ .r = 255, .g = 0, .b = 0, .a = 255 },
                         ),
                         else => std.mem.set(
                             Color,
@@ -87,7 +92,7 @@ pub const Language = enum {
                                 .None, .Some, .Number, .Text, .Name, .When, .Fix, .Reduce, .Enumerate => std.mem.set(
                                     Color,
                                     colors[start..parser.position],
-                                    highlightColor(parser.source[start..parser.position]),
+                                    style.highlightColor(parser.source[start..parser.position]),
                                 ),
                                 else => std.mem.set(
                                     Color,
@@ -107,15 +112,5 @@ pub const Language = enum {
             },
         }
         return colors;
-    }
-
-    fn highlightColor(ident: []const u8) Color {
-        const hash = meta.deepHash(ident);
-        return Color{
-            .r = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 0 }) % 64)),
-            .g = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 1 }) % 64)),
-            .b = @intCast(u8, 192 + (meta.deepHash([2]u64{ hash, 2 }) % 64)),
-            .a = 255,
-        };
     }
 };
