@@ -396,23 +396,25 @@ pub const Editor = struct {
             // draw error squigglies
             if (self.imp_repl_o) |imp_repl| {
                 if (imp_repl.last_request_id == imp_repl.last_response_id) {
-                    if (imp_repl.last_error_range) |error_range| {
-                        const highlight_start_pos = min(max(error_range[0], line_range[0]), line_range[1]);
-                        const highlight_end_pos = min(max(error_range[1], line_range[0]), line_range[1]);
-                        if ((highlight_start_pos < highlight_end_pos) or (error_range[0] <= line_range[1] and error_range[1] > line_range[1])) {
-                            const x = text_rect.x + (@intCast(Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
-                            const w = if (error_range[1] > line_range[1])
-                                text_rect.x + text_rect.w - x
-                            else
-                                @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
-                            var dx: i32 = 0;
-                            while (dx < w) : (dx += self.app.atlas.char_width) {
-                                window.queueText(.{
-                                    .x = @intCast(Coord, x + dx),
-                                    .y = @intCast(Coord, y) + @divTrunc(self.app.atlas.char_height, 2),
-                                    .w = self.app.atlas.char_width,
-                                    .h = self.app.atlas.char_height,
-                                }, style.error_text_color, "~");
+                    if (imp_repl.last_response_kind == .Err) {
+                        if (imp_repl.last_response_kind.Err) |error_range| {
+                            const highlight_start_pos = min(max(error_range[0], line_range[0]), line_range[1]);
+                            const highlight_end_pos = min(max(error_range[1], line_range[0]), line_range[1]);
+                            if ((highlight_start_pos < highlight_end_pos) or (error_range[0] <= line_range[1] and error_range[1] > line_range[1])) {
+                                const x = text_rect.x + (@intCast(Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
+                                const w = if (error_range[1] > line_range[1])
+                                    text_rect.x + text_rect.w - x
+                                else
+                                    @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
+                                var dx: i32 = 0;
+                                while (dx < w) : (dx += self.app.atlas.char_width) {
+                                    window.queueText(.{
+                                        .x = @intCast(Coord, x + dx),
+                                        .y = @intCast(Coord, y) + @divTrunc(self.app.atlas.char_height, 2),
+                                        .w = self.app.atlas.char_width,
+                                        .h = self.app.atlas.char_height,
+                                    }, style.error_text_color, "~");
+                                }
                             }
                         }
                     }
