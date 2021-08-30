@@ -9,6 +9,7 @@ pub const keyword_color = Color{ .r = 0xff, .g = 0xff, .b = 0xff, .a = 255 };
 pub const comment_color = Color{ .r = 0xaa, .g = 0xaa, .b = 0xaa, .a = 255 };
 pub const error_text_color = Color{ .r = 0xff, .g = 0x00, .b = 0x00, .a = 255 };
 pub const highlight_color = Color{ .r = 0xee, .g = 0xee, .b = 0xec, .a = 100 };
+pub const error_highlight_color = Color{ .r = 0xff, .g = 0x00, .b = 0x00, .a = 100 };
 pub const multi_cursor_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 255 };
 pub const paren_match_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 100 };
 

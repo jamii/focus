@@ -380,20 +380,44 @@ pub const Editor = struct {
             }
         }
 
-        //const colors = self.buffer.language.highlight
-
         // draw cursors, selections, text
         var line_ix = @intCast(usize, max(visible_start_line, 0));
         const max_line_ix = min(@intCast(usize, max(visible_end_line + 1, 0)), self.line_wrapped_buffer.wrapped_line_ranges.items.len);
         const min_pos = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix][0];
         const max_pos = self.line_wrapped_buffer.wrapped_line_ranges.items[max_line_ix - 1][1];
-        const highligher_colors = self.buffer.language.highlight(self.app.frame_allocator, self.buffer.bytes.items, .{ min_pos, max_pos });
+        const highlighter_colors = self.buffer.language.highlight(self.app.frame_allocator, self.buffer.bytes.items, .{ min_pos, max_pos });
         while (line_ix < max_line_ix) : (line_ix += 1) {
             const line_range = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix];
             const line = self.buffer.bytes.items[line_range[0]..line_range[1]];
 
             const line_top_pixel = @intCast(Coord, line_ix) * self.app.atlas.char_height;
             const y = text_rect.y + @intCast(Coord, line_top_pixel - self.top_pixel);
+
+            // draw error squigglies
+            if (self.imp_repl_o) |imp_repl| {
+                if (imp_repl.last_request_id == imp_repl.last_response_id) {
+                    if (imp_repl.last_error_range) |error_range| {
+                        const highlight_start_pos = min(max(error_range[0], line_range[0]), line_range[1]);
+                        const highlight_end_pos = min(max(error_range[1], line_range[0]), line_range[1]);
+                        if ((highlight_start_pos < highlight_end_pos) or (error_range[0] <= line_range[1] and error_range[1] > line_range[1])) {
+                            const x = text_rect.x + (@intCast(Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
+                            const w = if (error_range[1] > line_range[1])
+                                text_rect.x + text_rect.w - x
+                            else
+                                @intCast(Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
+                            var dx: i32 = 0;
+                            while (dx < w) : (dx += self.app.atlas.char_width) {
+                                window.queueText(.{
+                                    .x = @intCast(Coord, x + dx),
+                                    .y = @intCast(Coord, y) + @divTrunc(self.app.atlas.char_height, 2),
+                                    .w = self.app.atlas.char_width,
+                                    .h = self.app.atlas.char_height,
+                                }, style.error_text_color, "~");
+                            }
+                        }
+                    }
+                }
+            }
 
             for (self.cursors.items) |cursor| {
                 // draw cursor
@@ -439,7 +463,7 @@ pub const Editor = struct {
             // draw text
             // TODO clip text at the top of the editor, not only the bottom
             for (line) |char, i| {
-                const highlighter_color = highligher_colors[line_range[0] + i - min_pos];
+                const highlighter_color = highlighter_colors[line_range[0] + i - min_pos];
                 window.queueText(
                     .{
                         .x = text_rect.x + (@intCast(Coord, i) * self.app.atlas.char_width),

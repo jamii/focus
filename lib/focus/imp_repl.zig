@@ -16,6 +16,7 @@ pub const ImpRepl = struct {
     imp_worker: *imp.lang.Worker,
     last_request_id: usize,
     last_response_id: usize,
+    last_error_range: ?[2]usize,
 
     pub fn init(app: *App, program_editor: *Editor) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .Real);
@@ -36,6 +37,7 @@ pub const ImpRepl = struct {
             .imp_worker = imp_worker,
             .last_request_id = 0,
             .last_response_id = 0,
+            .last_error_range = null,
         };
         return self;
     }
@@ -62,6 +64,13 @@ pub const ImpRepl = struct {
             self.result_editor.buffer.replace(response.text);
             self.last_response_id = response.id;
             self.app.allocator.free(response.text);
+            if (response.error_range) |error_range| {
+                self.last_error_range = error_range;
+                self.result_editor.buffer.language = .Unknown;
+            } else {
+                self.last_error_range = null;
+                self.result_editor.buffer.language = .Imp;
+            }
         }
         self.result_editor.frame(window, rect, events);
         if (self.last_request_id != self.last_response_id)
