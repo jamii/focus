@@ -14,8 +14,8 @@ pub const ImpRepl = struct {
     program_editor: *Editor,
     result_editor: *Editor,
     imp_worker: *imp.lang.Worker,
-    last_program_id: usize,
-    last_result_id: usize,
+    last_request_id: usize,
+    last_response_id: usize,
 
     pub fn init(app: *App, program_editor: *Editor) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .Real);
@@ -34,8 +34,8 @@ pub const ImpRepl = struct {
             .program_editor = program_editor,
             .result_editor = result_editor,
             .imp_worker = imp_worker,
-            .last_program_id = 0,
-            .last_result_id = 0,
+            .last_request_id = 0,
+            .last_response_id = 0,
         };
         return self;
     }
@@ -50,21 +50,21 @@ pub const ImpRepl = struct {
 
     // called from program_editor on change
     pub fn setProgram(self: *ImpRepl, program: []const u8, cursor_pos: usize) void {
-        self.last_program_id += 1;
-        self.imp_worker.setProgram(.{
+        self.last_request_id += 1;
+        self.imp_worker.setRequest(.{
             .text = program[0..cursor_pos],
-            .id = self.last_program_id,
+            .id = self.last_request_id,
         }) catch oom();
     }
 
     pub fn frame(self: *ImpRepl, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
-        if (self.imp_worker.getResult()) |result| {
-            self.result_editor.buffer.replace(result.text);
-            self.last_result_id = result.id;
-            self.app.allocator.free(result.text);
+        if (self.imp_worker.getResponse()) |response| {
+            self.result_editor.buffer.replace(response.text);
+            self.last_response_id = response.id;
+            self.app.allocator.free(response.text);
         }
         self.result_editor.frame(window, rect, events);
-        if (self.last_program_id != self.last_result_id)
+        if (self.last_request_id != self.last_response_id)
             window.queueRect(rect, style.fade_color);
     }
 };
