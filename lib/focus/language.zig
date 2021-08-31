@@ -56,12 +56,12 @@ pub const Language = enum {
                         .identifier, .builtin, .integer_literal, .float_literal => std.mem.set(
                             Color,
                             colors[token.loc.start..token.loc.end],
-                            style.highlightColor(tokenizer.buffer[token.loc.start..token.loc.end]),
+                            style.identColor(tokenizer.buffer[token.loc.start..token.loc.end]),
                         ),
                         .keyword_try, .keyword_catch => std.mem.set(
                             Color,
                             colors[token.loc.start..token.loc.end],
-                            .{ .r = 255, .g = 0, .b = 0, .a = 255 },
+                            style.emphasisColor,
                         ),
                         else => std.mem.set(
                             Color,
@@ -92,7 +92,7 @@ pub const Language = enum {
                                 .None, .Some, .Number, .Text, .Name, .When, .Fix, .Reduce, .Enumerate => std.mem.set(
                                     Color,
                                     colors[start..parser.position],
-                                    style.highlightColor(parser.source[start..parser.position]),
+                                    style.identColor(parser.source[start..parser.position]),
                                 ),
                                 else => std.mem.set(
                                     Color,

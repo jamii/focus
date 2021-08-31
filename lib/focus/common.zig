@@ -259,10 +259,11 @@ pub const Color = packed struct {
     b: u8,
     a: u8,
 
-    pub fn hsl(h: f64, s: f64, l: f64) Color {
+    pub fn hsla(h: f64, s: f64, l: f64, a: f64) Color {
         assert(h >= 0 and h < 360);
-        assert(s >= 0 and s < 1);
-        assert(l >= 0 and l < 1);
+        assert(s >= 0 and s <= 1);
+        assert(l >= 0 and l <= 1);
+        assert(a >= 0 and a <= 1);
         const ch = (1 - @fabs((2 * l) - 1)) * s;
         const x = ch * (1 - @fabs(@mod(h / 60, 2) - 1));
         const m = l - (ch / 2);
@@ -279,7 +280,7 @@ pub const Color = packed struct {
             .r = @floatToInt(u8, @round(255 * (rgb[0] + m))),
             .g = @floatToInt(u8, @round(255 * (rgb[1] + m))),
             .b = @floatToInt(u8, @round(255 * (rgb[2] + m))),
-            .a = 255,
+            .a = @floatToInt(u8, @round(255 * a)),
         };
     }
 };
