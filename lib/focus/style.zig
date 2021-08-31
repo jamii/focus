@@ -14,17 +14,11 @@ pub const multi_cursor_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 255 
 pub const paren_match_color = Color{ .r = 0x7a, .g = 0xa6, .b = 0xda, .a = 100 };
 
 pub fn highlightColor(ident: []const u8) Color {
-    const hash = focus.meta.deepHash(ident);
+    const hash = focus.meta.deepHash(.{ @intCast(u64, 7919), ident });
+    const saturation = [3]f64{ 0.4, 0.6, 0.8 };
     return Color.hsl(
         @intToFloat(f64, hash % 360),
-        0.8,
-        //0.5 + (@intToFloat(f64, (hash >> 8) % 256) / 512),
+        saturation[@divTrunc(hash, 360) % 3],
         0.8,
     );
-    //return .{
-    //    .r = @intCast(u8, 192 + ((hash >> 0) % 64)),
-    //    .g = @intCast(u8, 192 + ((hash >> 8) % 64)),
-    //    .b = @intCast(u8, 192 + ((hash >> 16) % 64)),
-    //    .a = 255,
-    //};
 }

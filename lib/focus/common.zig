@@ -261,6 +261,8 @@ pub const Color = packed struct {
 
     pub fn hsl(h: f64, s: f64, l: f64) Color {
         assert(h >= 0 and h < 360);
+        assert(s >= 0 and s < 1);
+        assert(l >= 0 and l < 1);
         const ch = (1 - @fabs((2 * l) - 1)) * s;
         const x = ch * (1 - @fabs(@mod(h / 60, 2) - 1));
         const m = l - (ch / 2);
