@@ -89,7 +89,7 @@ pub const Language = enum {
                         if (maybe_token) |token| {
                             switch (token) {
                                 .EOF => break,
-                                .None, .Some, .Number, .Text, .Name, .When, .Fix, .Reduce, .Enumerate => std.mem.set(
+                                .Number, .Text, .Name => std.mem.set(
                                     Color,
                                     colors[start..parser.position],
                                     style.identColor(parser.source[start..parser.position]),
