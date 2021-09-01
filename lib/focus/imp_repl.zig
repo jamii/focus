@@ -24,7 +24,7 @@ pub const ImpRepl = struct {
         const imp_worker = imp.lang.Worker.init(
             app.allocator,
             .{
-                .memory_limit_bytes = 1024 * 1024 * 64,
+                .memory_limit_bytes = 1024 * 1024 * 1024,
             },
         ) catch |err|
             panic("Failed to start imp worker: {}", .{err});
