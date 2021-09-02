@@ -9,6 +9,7 @@ pub const highlight_color = Color.hsla(0, 0.0, 0.9, 0.3);
 pub const keyword_color = text_color;
 pub const comment_color = Color.hsla(0, 0.0, 0.6, 1.0);
 pub const error_text_color = Color.hsla(0, 1.0, 0.5, 1.0);
+pub const eval_text_color = Color.hsla(180, 1.0, 0.5, 1.0);
 pub const multi_cursor_color = Color.hsla(150, 1.0, 0.5, 1.0);
 pub const paren_match_color = Color.hsla(150, 1.0, 0.5, 0.3);
 

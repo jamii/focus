@@ -37,7 +37,7 @@ pub const ImpRepl = struct {
             .imp_worker = imp_worker,
             .last_request_id = 0,
             .last_response_id = 0,
-            .last_response_kind = .Ok,
+            .last_response_kind = .{ .Ok = null },
         };
         return self;
     }
@@ -51,11 +51,12 @@ pub const ImpRepl = struct {
     }
 
     // called from program_editor on change
-    pub fn setProgram(self: *ImpRepl, program: []const u8, cursor_pos: usize) void {
+    pub fn setProgram(self: *ImpRepl, program: []const u8, selection: imp.lang.Store.SourceSelection) void {
         self.last_request_id += 1;
         self.imp_worker.setRequest(.{
-            .text = program[0..cursor_pos],
             .id = self.last_request_id,
+            .text = program,
+            .selection = selection,
         }) catch oom();
     }
 
