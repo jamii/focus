@@ -61,7 +61,17 @@ pub const Language = enum {
                         .keyword_try, .keyword_catch => std.mem.set(
                             Color,
                             colors[token.loc.start..token.loc.end],
-                            style.emphasisColor,
+                            style.emphasisRed,
+                        ),
+                        .keyword_defer, .keyword_errdefer => std.mem.set(
+                            Color,
+                            colors[token.loc.start..token.loc.end],
+                            style.emphasisOrange,
+                        ),
+                        .keyword_break, .keyword_continue, .keyword_return => std.mem.set(
+                            Color,
+                            colors[token.loc.start..token.loc.end],
+                            style.emphasisGreen,
                         ),
                         else => std.mem.set(
                             Color,
