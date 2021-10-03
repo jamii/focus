@@ -51,7 +51,7 @@ pub const ImpRepl = struct {
     }
 
     // called from program_editor on change
-    pub fn setProgram(self: *ImpRepl, program: []const u8, selection: imp.lang.Store.SourceSelection) void {
+    pub fn setProgram(self: *ImpRepl, program: []const u8, selection: imp.lang.SourceSelection) void {
         self.last_request_id += 1;
         self.imp_worker.setRequest(.{
             .id = self.last_request_id,

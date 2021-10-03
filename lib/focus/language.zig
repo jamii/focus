@@ -84,11 +84,12 @@ pub const Language = enum {
             .Imp => {
                 var arena = ArenaAllocator.init(allocator);
                 defer arena.deinit();
-                var store = imp.lang.Store.init(&arena);
                 var error_info: ?imp.lang.pass.parse.ErrorInfo = null;
                 var parser = imp.lang.pass.parse.Parser{
-                    .store = &store,
+                    .arena = &arena,
                     .source = source[range[0]..range[1]],
+                    .exprs = ArrayList(imp.lang.repr.syntax.Expr).init(&arena.allocator),
+                    .from_source = ArrayList([2]usize).init(&arena.allocator),
                     .position = 0,
                     .error_info = &error_info,
                 };
