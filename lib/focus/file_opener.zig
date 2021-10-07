@@ -53,51 +53,16 @@ pub const FileOpener = struct {
         if (input_changed == .Changed) self.selector.selected = 0;
 
         // get and filter completions
-        var results = ArrayList([]const u8).init(self.app.frame_allocator);
-        var results_err_o: ?std.fs.Dir.OpenError = null;
-        {
-            const path = self.input.getText();
-            var dirname_o: ?[]const u8 = null;
-            var basename: []const u8 = "";
-            if (path.len > 0) {
-                if (std.fs.path.isSep(path[path.len - 1])) {
-                    dirname_o = path;
-                    basename = "";
-                } else {
-                    dirname_o = std.fs.path.dirname(path);
-                    basename = std.fs.path.basename(path);
-                }
-            }
-            if (dirname_o) |dirname| {
-                if (std.fs.cwd().openDir(dirname, .{ .iterate = true })) |*dir| {
-                    defer dir.close();
-                    var dir_iter = dir.iterate();
-                    while (dir_iter.next() catch |err| panic("{} while iterating dir {s}", .{ err, dirname })) |entry| {
-                        if (std.mem.startsWith(u8, entry.name, basename)) {
-                            var result = ArrayList(u8).init(self.app.frame_allocator);
-                            result.appendSlice(entry.name) catch oom();
-                            if (entry.kind == .Directory) result.append('/') catch oom();
-                            results.append(result.toOwnedSlice()) catch oom();
-                        }
-                    }
-                } else |err| {
-                    results_err_o = err;
-                }
-            }
-        }
-        std.sort.sort([]const u8, results.items, {}, struct {
-            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-                return std.mem.lessThan(u8, a, b);
-            }
-        }.lessThan);
+        const results_or_err = fuzzy_search_paths(self.app.frame_allocator, self.input.getText());
+        const results = results_or_err catch &[_][]const u8{};
 
         // run selector frame
         var action: Selector.Action = .None;
-        if (results_err_o) |results_err| {
+        if (results_or_err) |_| {
+            action = self.selector.frame(window, layout.selector, events, results);
+        } else |results_err| {
             const error_text = format(self.app.frame_allocator, "Error opening directory: {}", .{results_err});
             window.queueText(layout.selector, style.error_text_color, error_text);
-        } else {
-            action = self.selector.frame(window, layout.selector, events, results.items);
         }
 
         const path = self.input.getText();
@@ -111,7 +76,7 @@ pub const FileOpener = struct {
             const filename: []const u8 = if (action == .SelectRaw)
                 std.mem.dupe(self.app.frame_allocator, u8, self.input.getText()) catch oom()
             else
-                std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, results.items[self.selector.selected] }) catch oom();
+                std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, results[self.selector.selected] }) catch oom();
             if (filename.len > 0 and std.fs.path.isSep(filename[filename.len - 1])) {
                 if (action == .SelectRaw)
                     std.fs.cwd().makeDir(filename) catch |err| {
@@ -136,11 +101,11 @@ pub const FileOpener = struct {
         const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
         buffer.deinit();
-        if (results.items.len == 0) {
+        if (results.len == 0) {
             const empty_buffer = Buffer.initEmpty(self.app, .Preview);
             self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
         } else {
-            const selected = results.items[self.selector.selected];
+            const selected = results[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
                 const empty_buffer = Buffer.initEmpty(self.app, .Preview);
                 self.preview_editor = Editor.init(self.app, empty_buffer, false, false);

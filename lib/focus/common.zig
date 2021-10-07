@@ -380,3 +380,39 @@ pub fn fuzzy_search(allocator: *Allocator, items: []const []const u8, filter: []
     }
     return results.toOwnedSlice();
 }
+
+pub fn fuzzy_search_paths(allocator: *Allocator, path: []const u8) ![]const []const u8 {
+    var results = ArrayList([]const u8).init(allocator);
+    {
+        var dirname_o: ?[]const u8 = null;
+        var basename: []const u8 = "";
+        if (path.len > 0) {
+            if (std.fs.path.isSep(path[path.len - 1])) {
+                dirname_o = path;
+                basename = "";
+            } else {
+                dirname_o = std.fs.path.dirname(path);
+                basename = std.fs.path.basename(path);
+            }
+        }
+        if (dirname_o) |dirname| {
+            var dir = try std.fs.cwd().openDir(dirname, .{ .iterate = true });
+            defer dir.close();
+            var dir_iter = dir.iterate();
+            while (dir_iter.next() catch |err| panic("{} while iterating dir {s}", .{ err, dirname })) |entry| {
+                if (std.mem.startsWith(u8, entry.name, basename)) {
+                    var result = ArrayList(u8).init(allocator);
+                    result.appendSlice(entry.name) catch oom();
+                    if (entry.kind == .Directory) result.append('/') catch oom();
+                    results.append(result.toOwnedSlice()) catch oom();
+                }
+            }
+        }
+    }
+    std.sort.sort([]const u8, results.items, {}, struct {
+        fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.lessThan(u8, a, b);
+        }
+    }.lessThan);
+    return results.toOwnedSlice();
+}

@@ -16,12 +16,17 @@ pub const Maker = struct {
     history_string: []const u8,
     history: []const []const u8,
     state: union(enum) {
-        Choosing,
+        ChoosingDir,
+        ChoosingCommand: struct {
+            dirname: []const u8,
+        },
         Running: struct {
+            dirname: []const u8,
             command: []const u8,
             child_process: *std.ChildProcess,
         },
         Finished: struct {
+            dirname: []const u8,
             command: []const u8,
         },
     },
@@ -29,7 +34,7 @@ pub const Maker = struct {
     pub fn init(app: *App) *Maker {
         const empty_buffer = Buffer.initEmpty(app, .Real);
         const result_editor = Editor.init(app, empty_buffer, false, false);
-        const input = SingleLineEditor.init(app, "");
+        const input = SingleLineEditor.init(app, "/home/jamie/");
         const selector = Selector.init(app);
         const history_file = std.fs.cwd().openFile("/home/jamie/.bash_history", .{}) catch |err|
             panic("Failed to open bash history: {}", .{err});
@@ -49,22 +54,27 @@ pub const Maker = struct {
             .result_editor = result_editor,
             .history_string = history_string,
             .history = history.toOwnedSlice(),
-            .state = .Choosing,
+            .state = .ChoosingDir,
         };
         return self;
     }
 
     pub fn deinit(self: *Maker) void {
         switch (self.state) {
-            .Choosing => return,
+            .ChoosingDir => return,
+            .ChoosingCommand => |choosing_command| {
+                self.app.allocator.free(choosing_command.dirname);
+            },
             .Running => |running| {
                 running.child_process.stdout.?.close();
                 running.child_process.stderr.?.close();
                 running.child_process.deinit();
                 self.app.allocator.free(running.command);
+                self.app.allocator.free(running.dirname);
             },
             .Finished => |finished| {
                 self.app.allocator.free(finished.command);
+                self.app.allocator.free(finished.dirname);
             },
         }
         self.app.allocator.free(self.history_string);
@@ -78,7 +88,47 @@ pub const Maker = struct {
 
     pub fn frame(self: *Maker, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
         switch (self.state) {
-            .Choosing => {
+            .ChoosingDir => {
+                const layout = window.layoutSearcher(rect);
+
+                // run input frame
+                const input_changed = self.input.frame(window, layout.input, events);
+                if (input_changed == .Changed) self.selector.selected = 0;
+
+                // get and filter completions
+                const results_or_err = fuzzy_search_paths(self.app.frame_allocator, self.input.getText());
+                const results = results_or_err catch &[_][]const u8{};
+
+                // run selector frame
+                var action: Selector.Action = .None;
+                if (results_or_err) |_| {
+                    action = self.selector.frame(window, layout.selector, events, results);
+                } else |results_err| {
+                    const error_text = format(self.app.frame_allocator, "Error opening directory: {}", .{results_err});
+                    window.queueText(layout.selector, style.error_text_color, error_text);
+                }
+
+                const path = self.input.getText();
+                const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
+                    path[0 .. path.len - 1]
+                else
+                    std.fs.path.dirname(path) orelse "";
+
+                // maybe pick dir
+                if (action == .SelectRaw or action == .SelectOne) {
+                    const chosen_dirname: []const u8 = if (action == .SelectRaw)
+                        self.input.getText()
+                    else
+                        std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, results[self.selector.selected] }) catch oom();
+                    if (chosen_dirname.len > 0 and std.fs.path.isSep(chosen_dirname[chosen_dirname.len - 1])) {
+                        self.input.buffer.replace("");
+                        self.state = .{ .ChoosingCommand = .{
+                            .dirname = self.app.dupe(chosen_dirname),
+                        } };
+                    }
+                }
+            },
+            .ChoosingCommand => |choosing_command| {
                 const layout = window.layoutSearcher(rect);
 
                 // run input frame
@@ -112,8 +162,9 @@ pub const Maker = struct {
 
                     // start running
                     self.state = .{ .Running = .{
+                        .dirname = choosing_command.dirname,
                         .command = command,
-                        .child_process = spawn(self.app.allocator, command),
+                        .child_process = spawn(self.app.allocator, choosing_command.dirname, command),
                     } };
                 }
             },
@@ -129,7 +180,10 @@ pub const Maker = struct {
                         self.result_editor.buffer.insert(self.result_editor.buffer.bytes.items.len, contents);
                     }
                     running.child_process.deinit();
-                    self.state = .{ .Finished = .{ .command = running.command } };
+                    self.state = .{ .Finished = .{
+                        .dirname = running.dirname,
+                        .command = running.command,
+                    } };
                 }
 
                 // show results in editor
@@ -144,29 +198,31 @@ pub const Maker = struct {
 
     pub fn handleAfterSave(self: *Maker) void {
         switch (self.state) {
-            .Choosing => return,
+            .ChoosingDir, .ChoosingCommand => return,
             .Running => |running| {
                 running.child_process.stdout.?.close();
                 running.child_process.stderr.?.close();
                 running.child_process.deinit();
                 self.result_editor.buffer.replace("");
                 self.state = .{ .Running = .{
+                    .dirname = running.dirname,
                     .command = running.command,
-                    .child_process = spawn(self.app.allocator, running.command),
+                    .child_process = spawn(self.app.allocator, running.dirname, running.command),
                 } };
             },
             .Finished => |finished| {
                 self.result_editor.buffer.replace("");
                 self.state = .{ .Running = .{
+                    .dirname = finished.dirname,
                     .command = finished.command,
-                    .child_process = spawn(self.app.allocator, finished.command),
+                    .child_process = spawn(self.app.allocator, finished.dirname, finished.command),
                 } };
             },
         }
     }
 };
 
-fn spawn(allocator: *Allocator, command: []const u8) *std.ChildProcess {
+fn spawn(allocator: *Allocator, dirname: []const u8, command: []const u8) *std.ChildProcess {
     var child_process = std.ChildProcess.init(
         &.{ "bash", "-c", command },
         allocator,
@@ -175,7 +231,7 @@ fn spawn(allocator: *Allocator, command: []const u8) *std.ChildProcess {
     child_process.stdin_behavior = .Ignore;
     child_process.stdout_behavior = .Pipe;
     child_process.stderr_behavior = .Pipe;
-    child_process.cwd = "/home/jamie";
+    child_process.cwd = dirname;
     child_process.spawn() catch |err|
         panic("{} while running command: {s}", .{ err, command });
     return child_process;
