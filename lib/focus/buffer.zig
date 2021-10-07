@@ -569,6 +569,8 @@ pub const Buffer = struct {
     }
 
     fn removeRangeFromCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
+        if (self.role == .Preview) return;
+
         const bytes = self.bytes.items;
         const completions = &self.completions;
         var start = range_start;
@@ -603,6 +605,8 @@ pub const Buffer = struct {
     }
 
     fn addRangeToCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
+        if (self.role == .Preview) return;
+
         const bytes = self.bytes.items;
         const completions = &self.completions;
         var start = range_start;

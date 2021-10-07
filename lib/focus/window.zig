@@ -11,6 +11,7 @@ const BufferSearcher = focus.BufferSearcher;
 const ProjectSearcher = focus.ProjectSearcher;
 const Launcher = focus.Launcher;
 const ImpRepl = focus.ImpRepl;
+const Maker = focus.Maker;
 const style = focus.style;
 
 pub const View = union(enum) {
@@ -22,6 +23,7 @@ pub const View = union(enum) {
     ProjectSearcher: *ProjectSearcher,
     Launcher: *Launcher,
     ImpRepl: *ImpRepl,
+    Maker: *Maker,
 };
 
 pub const Window = struct {
@@ -224,6 +226,11 @@ pub const Window = struct {
                                 self.app.changeFontSize(1);
                                 handled = true;
                             },
+                            'm' => {
+                                const maker = Maker.init(self.app);
+                                self.pushView(maker);
+                                handled = true;
+                            },
                             else => {},
                         }
                     }
@@ -296,6 +303,7 @@ pub const Window = struct {
                 .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
                 .Launcher => |launcher| launcher.frame(self, window_rect, view_events.items),
                 .ImpRepl => |imp_repl| imp_repl.frame(self, window_rect, view_events.items),
+                .Maker => |maker| maker.frame(self, window_rect, view_events.items),
             }
         } else {
             const message = "focus";
