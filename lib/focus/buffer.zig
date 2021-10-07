@@ -239,6 +239,8 @@ pub const Buffer = struct {
                 const stat = file.stat() catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 file_source.mtime = stat.mtime;
                 self.modified_since_last_save = false;
+
+                self.app.handleAfterSave();
             },
         }
     }

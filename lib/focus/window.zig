@@ -152,7 +152,7 @@ pub const Window = struct {
         self.views.deinit();
     }
 
-    fn getTopView(self: *Window) ?View {
+    pub fn getTopView(self: *Window) ?View {
         if (self.views.items.len > 0)
             return self.views.items[self.views.items.len - 1]
         else
@@ -411,6 +411,12 @@ pub const Window = struct {
                 .c = vertex_ix + 1,
             },
         }) catch oom();
+    }
+
+    pub fn handleAfterSave(self: *Window) void {
+        if (self.getTopView()) |view|
+            if (view == .Maker)
+                view.Maker.handleAfterSave();
     }
 
     // view api

@@ -414,4 +414,8 @@ pub const App = struct {
 
         return unique_results.toOwnedSlice();
     }
+
+    pub fn handleAfterSave(self: *App) void {
+        for (self.windows.items) |window| window.handleAfterSave();
+    }
 };
