@@ -107,6 +107,7 @@ pub const Buffer = struct {
         self.language = Language.fromFilename(absolute_filename);
         self.load(.Init);
         self.undos.resize(0) catch oom();
+        self.modified_since_last_save = false;
         return self;
     }
 

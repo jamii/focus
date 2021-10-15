@@ -7,6 +7,7 @@ const Window = focus.Window;
 const style = focus.style;
 const SingleLineEditor = focus.SingleLineEditor;
 const Selector = focus.Selector;
+const ErrorLister = focus.ErrorLister;
 
 pub const Maker = struct {
     app: *App,
@@ -28,7 +29,7 @@ pub const Maker = struct {
         Finished: struct {
             dirname: []const u8,
             command: []const u8,
-            error_locations: []const ErrorLocation,
+            error_locations: []const ErrorLister.ErrorLocation,
 
             const Self = @This();
             fn deinit(self: Self, allocator: *Allocator) void {
@@ -39,17 +40,6 @@ pub const Maker = struct {
             }
         },
     },
-
-    pub const ErrorLocation = struct {
-        source_location: [2]usize,
-        path: []const u8,
-        line: usize,
-        col: usize,
-
-        fn deinit(self: ErrorLocation, allocator: *Allocator) void {
-            allocator.free(self.path);
-        }
-    };
 
     pub fn init(app: *App) *Maker {
         const empty_buffer = Buffer.initEmpty(app, .Real);
@@ -199,16 +189,15 @@ pub const Maker = struct {
                     running.child_process.deinit();
 
                     // parse results
-                    var error_locations = ArrayList(ErrorLocation).init(self.app.allocator);
+                    var error_locations = ArrayList(ErrorLister.ErrorLocation).init(self.app.allocator);
                     defer error_locations.deinit();
                     const text = self.result_editor.buffer.bytes.items;
                     for (regex_search(
                         self.app.frame_allocator,
                         text,
-                        \\([\S^:]+):(\d+):(\d+)
+                        \\([\S^:]+):(\d+):(\d+).*
                         ,
                     )) |match| {
-                        const path = text[match.captures[0][0]..match.captures[0][1]];
                         const line = std.fmt.parseInt(
                             usize,
                             text[match.captures[1][0]..match.captures[1][1]],
@@ -219,15 +208,14 @@ pub const Maker = struct {
                             text[match.captures[2][0]..match.captures[2][1]],
                             10,
                         ) catch continue;
-                        const full_path = if (std.fs.path.isAbsolute(path))
-                            self.app.dupe(path)
-                        else
-                            std.fs.path.join(self.app.allocator, &.{
-                                running.dirname,
-                                path,
-                            }) catch oom();
+                        const path = text[match.captures[0][0]..match.captures[0][1]];
+                        const full_path = std.fs.path.resolve(self.app.allocator, &.{
+                            running.dirname,
+                            path,
+                        }) catch |err| panic("Error when resolving path {s}: {}", .{ path, err });
                         error_locations.append(.{
-                            .source_location = match.matched,
+                            .report_buffer = self.result_editor.buffer,
+                            .report_location = match.matched,
                             .path = full_path,
                             .line = line,
                             .col = col,

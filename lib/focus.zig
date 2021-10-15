@@ -14,6 +14,7 @@ pub const ProjectSearcher = @import("./focus/project_searcher.zig").ProjectSearc
 pub const Launcher = @import("./focus/launcher.zig").Launcher;
 pub const ImpRepl = @import("./focus/imp_repl.zig").ImpRepl;
 pub const Maker = @import("./focus/maker.zig").Maker;
+pub const ErrorLister = @import("./focus/error_lister.zig").ErrorLister;
 pub const Window = @import("./focus/window.zig").Window;
 pub const Language = @import("./focus/language.zig").Language;
 pub const style = @import("./focus/style.zig");
@@ -199,6 +200,7 @@ pub const App = struct {
     last_file_filter: []const u8,
     last_project_file_opener_selected: usize,
     last_buffer_opener_selected: usize,
+    last_error_lister_selected: usize,
 
     pub fn init(allocator: *Allocator, server_socket: ServerSocket) *App {
         if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0)
@@ -221,6 +223,7 @@ pub const App = struct {
             .last_file_filter = "",
             .last_project_file_opener_selected = 0,
             .last_buffer_opener_selected = 0,
+            .last_error_lister_selected = 0,
         };
         self.frame_allocator = &self.frame_arena.allocator;
 

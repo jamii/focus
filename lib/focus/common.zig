@@ -427,7 +427,7 @@ const Match = struct {
 pub fn regex_search(allocator: *Allocator, text: []const u8, pattern: [:0]const u8) []const Match {
     var err_number: c_int = undefined;
     var err_offset: c.PCRE2_SIZE = undefined;
-    var regex = c.pcre2_compile_8(pattern, pattern.len, 0, &err_number, &err_offset, null);
+    var regex = c.pcre2_compile_8(pattern, pattern.len, c.PCRE2_MULTILINE, &err_number, &err_offset, null);
     if (regex == null) {
         var buffer: [256]u8 = undefined;
         _ = c.pcre2_get_error_message_8(err_number, &buffer, buffer.len);
@@ -442,12 +442,16 @@ pub fn regex_search(allocator: *Allocator, text: []const u8, pattern: [:0]const 
     defer matches.deinit();
 
     var start: usize = 0;
-    while (true) {
+    while (start < text.len) {
         const result = c.pcre2_match_8(regex, @ptrCast([*c]const u8, text), text.len, start, 0, match_data, null);
         if (result < 0) {
             switch (result) {
                 c.PCRE2_ERROR_NOMATCH => break,
-                else => panic("Error during matching: {}", .{result}),
+                else => {
+                    var buffer: [256]u8 = undefined;
+                    _ = c.pcre2_get_error_message_8(result, &buffer, buffer.len);
+                    panic("Error during matching: {s}", .{buffer});
+                },
             }
         }
 

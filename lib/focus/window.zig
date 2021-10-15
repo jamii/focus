@@ -12,6 +12,7 @@ const ProjectSearcher = focus.ProjectSearcher;
 const Launcher = focus.Launcher;
 const ImpRepl = focus.ImpRepl;
 const Maker = focus.Maker;
+const ErrorLister = focus.ErrorLister;
 const style = focus.style;
 
 pub const View = union(enum) {
@@ -24,6 +25,7 @@ pub const View = union(enum) {
     Launcher: *Launcher,
     ImpRepl: *ImpRepl,
     Maker: *Maker,
+    ErrorLister: *ErrorLister,
 };
 
 pub const Window = struct {
@@ -262,6 +264,11 @@ pub const Window = struct {
                                 self.pushView(buffer_opener);
                                 handled = true;
                             },
+                            'm' => {
+                                const error_lister = ErrorLister.init(self.app);
+                                self.pushView(error_lister);
+                                handled = true;
+                            },
                             else => {},
                         }
                     }
@@ -304,6 +311,7 @@ pub const Window = struct {
                 .Launcher => |launcher| launcher.frame(self, window_rect, view_events.items),
                 .ImpRepl => |imp_repl| imp_repl.frame(self, window_rect, view_events.items),
                 .Maker => |maker| maker.frame(self, window_rect, view_events.items),
+                .ErrorLister => |error_lister| error_lister.frame(self, window_rect, view_events.items),
             }
         } else {
             const message = "focus";
@@ -507,10 +515,31 @@ pub const Window = struct {
     pub fn layoutSearcherWithPreview(self: *Window, rect: Rect) SearcherWithPreviewLayout {
         const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
         var all_rect = rect;
-        const preview_rect = all_rect.splitTop(@divTrunc(max(0, rect.h - self.app.atlas.char_height - 2 * border_thickness), 2), 0);
+        const h = @divTrunc(max(0, rect.h - self.app.atlas.char_height - 2 * border_thickness), 2);
+        const preview_rect = all_rect.splitTop(h, 0);
         const border_rect = all_rect.splitTop(border_thickness, 0);
         const searcher_layout = self.layoutSearcher(all_rect);
         self.queueRect(border_rect, style.text_color);
         return .{ .preview = preview_rect, .selector = searcher_layout.selector, .input = searcher_layout.input };
+    }
+
+    pub const ListerLayout = struct {
+        preview: Rect,
+        report: Rect,
+        selector: Rect,
+    };
+
+    pub fn layoutLister(self: *Window, rect: Rect) ListerLayout {
+        const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
+        var all_rect = rect;
+        const h = @divTrunc(max(0, rect.h - 3 * border_thickness), 3);
+        const preview_rect = all_rect.splitTop(h, 0);
+        const border1_rect = all_rect.splitTop(border_thickness, 0);
+        const report_rect = all_rect.splitTop(h, 0);
+        const border2_rect = all_rect.splitTop(border_thickness, 0);
+        const selector_rect = all_rect;
+        self.queueRect(border1_rect, style.text_color);
+        self.queueRect(border2_rect, style.text_color);
+        return .{ .preview = preview_rect, .report = report_rect, .selector = selector_rect };
     }
 };
