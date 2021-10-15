@@ -11,6 +11,8 @@ pub const c = @cImport({
     @cInclude("sys/types.h");
     @cInclude("sys/stat.h");
     @cInclude("syslog.h");
+    @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
+    @cInclude("pcre2.h");
 });
 
 pub const builtin = @import("builtin");
@@ -415,4 +417,57 @@ pub fn fuzzy_search_paths(allocator: *Allocator, path: []const u8) ![]const []co
         }
     }.lessThan);
     return results.toOwnedSlice();
+}
+
+const Match = struct {
+    matched: [2]usize,
+    captures: []const [2]usize,
+};
+
+pub fn regex_search(allocator: *Allocator, text: []const u8, pattern: [:0]const u8) []const Match {
+    var err_number: c_int = undefined;
+    var err_offset: c.PCRE2_SIZE = undefined;
+    var regex = c.pcre2_compile_8(pattern, pattern.len, 0, &err_number, &err_offset, null);
+    if (regex == null) {
+        var buffer: [256]u8 = undefined;
+        _ = c.pcre2_get_error_message_8(err_number, &buffer, buffer.len);
+        panic("Failed to compile regex at offset {} in pattern {s}: {s}\n", .{ err_offset, pattern, buffer });
+    }
+    defer c.pcre2_code_free_8(regex);
+
+    var match_data = c.pcre2_match_data_create_from_pattern_8(regex, null);
+    defer c.pcre2_match_data_free_8(match_data);
+
+    var matches = ArrayList(Match).init(allocator);
+    defer matches.deinit();
+
+    var start: usize = 0;
+    while (true) {
+        const result = c.pcre2_match_8(regex, @ptrCast([*c]const u8, text), text.len, start, 0, match_data, null);
+        if (result < 0) {
+            switch (result) {
+                c.PCRE2_ERROR_NOMATCH => break,
+                else => panic("Error during matching: {}", .{result}),
+            }
+        }
+
+        var captures = ArrayList([2]usize).init(allocator);
+        defer captures.deinit();
+
+        const ovector = c.pcre2_get_ovector_pointer_8(match_data);
+        const ovector_len = c.pcre2_get_ovector_count_8(match_data);
+        if (ovector[0] == ovector[1])
+            // This loop would have to be more complicated to handle empty matches
+            panic("Empty match of pattern {s}", .{pattern});
+        var ovector_i: usize = 1;
+        while (ovector_i < ovector_len) : (ovector_i += 1)
+            captures.append(.{ ovector[2 * ovector_i], ovector[(2 * ovector_i) + 1] }) catch oom();
+        matches.append(Match{
+            .matched = .{ ovector[0], ovector[1] },
+            .captures = captures.toOwnedSlice(),
+        }) catch oom();
+        start = ovector[1];
+    }
+
+    return matches.toOwnedSlice();
 }

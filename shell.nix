@@ -55,12 +55,10 @@ hostPkgs.mkShell rec {
     targetPkgs.xlibs.xorgproto
     targetPkgs.SDL2.all
     targetPkgs.SDL2_ttf.all
+    targetPkgs.pcre2.all
   ];
   FOCUS="nixos@192.168.1.83";
   NIX_GCC=targetPkgs.gcc;
-  NIX_LIBGL_LIB=targetPkgs.libGL;
-  NIX_SDL2_LIB=targetPkgs.SDL2;
-  NIX_SDL2_TTF_LIB=targetPkgs.SDL2_ttf;
   NIX_LIBGL_DEV=targetPkgs.libGL.dev;
   NIX_LIBX11_DEV=targetPkgs.xorg.libX11.dev;
   NIX_XORGPROTO_DEV=targetPkgs.xlibs.xorgproto;
@@ -69,4 +67,5 @@ hostPkgs.mkShell rec {
   # TODO with SDL_VIDEODRIVER=wayland, SDL doesn't seem to respect xkb settings eg caps vs ctrl
   # but without, sometimes causes https://github.com/swaywm/sway/issues/5227
   # SDL_VIDEODRIVER="wayland";
+  NIX_PCRE2_DEV = targetPkgs.pcre2.dev;
 }

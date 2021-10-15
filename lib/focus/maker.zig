@@ -28,8 +28,28 @@ pub const Maker = struct {
         Finished: struct {
             dirname: []const u8,
             command: []const u8,
+            error_locations: []const ErrorLocation,
+
+            const Self = @This();
+            fn deinit(self: Self, allocator: *Allocator) void {
+                for (self.error_locations) |error_location|
+                    error_location.deinit(allocator);
+                allocator.free(self.command);
+                allocator.free(self.dirname);
+            }
         },
     },
+
+    pub const ErrorLocation = struct {
+        source_location: [2]usize,
+        path: []const u8,
+        line: usize,
+        col: usize,
+
+        fn deinit(self: ErrorLocation, allocator: *Allocator) void {
+            allocator.free(self.path);
+        }
+    };
 
     pub fn init(app: *App) *Maker {
         const empty_buffer = Buffer.initEmpty(app, .Real);
@@ -72,10 +92,7 @@ pub const Maker = struct {
                 self.app.allocator.free(running.command);
                 self.app.allocator.free(running.dirname);
             },
-            .Finished => |finished| {
-                self.app.allocator.free(finished.command);
-                self.app.allocator.free(finished.dirname);
-            },
+            .Finished => |finished| finished.deinit(self.app.allocator),
         }
         self.app.allocator.free(self.history_string);
         self.selector.deinit();
@@ -180,9 +197,47 @@ pub const Maker = struct {
                         self.result_editor.buffer.insert(self.result_editor.buffer.bytes.items.len, contents);
                     }
                     running.child_process.deinit();
+
+                    // parse results
+                    var error_locations = ArrayList(ErrorLocation).init(self.app.allocator);
+                    defer error_locations.deinit();
+                    const text = self.result_editor.buffer.bytes.items;
+                    for (regex_search(
+                        self.app.frame_allocator,
+                        text,
+                        \\([\S^:]+):(\d+):(\d+)
+                        ,
+                    )) |match| {
+                        const path = text[match.captures[0][0]..match.captures[0][1]];
+                        const line = std.fmt.parseInt(
+                            usize,
+                            text[match.captures[1][0]..match.captures[1][1]],
+                            10,
+                        ) catch continue;
+                        const col = std.fmt.parseInt(
+                            usize,
+                            text[match.captures[2][0]..match.captures[2][1]],
+                            10,
+                        ) catch continue;
+                        const full_path = if (std.fs.path.isAbsolute(path))
+                            self.app.dupe(path)
+                        else
+                            std.fs.path.join(self.app.allocator, &.{
+                                running.dirname,
+                                path,
+                            }) catch oom();
+                        error_locations.append(.{
+                            .source_location = match.matched,
+                            .path = full_path,
+                            .line = line,
+                            .col = col,
+                        }) catch oom();
+                    }
+
                     self.state = .{ .Finished = .{
                         .dirname = running.dirname,
                         .command = running.command,
+                        .error_locations = error_locations.toOwnedSlice(),
                     } };
                 }
 
@@ -212,6 +267,8 @@ pub const Maker = struct {
             },
             .Finished => |finished| {
                 self.result_editor.buffer.replace("");
+                for (finished.error_locations) |error_location|
+                    error_location.deinit(self.app.allocator);
                 self.state = .{ .Running = .{
                     .dirname = finished.dirname,
                     .command = finished.command,
