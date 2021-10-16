@@ -526,20 +526,16 @@ pub const Window = struct {
     pub const ListerLayout = struct {
         preview: Rect,
         report: Rect,
-        selector: Rect,
     };
 
     pub fn layoutLister(self: *Window, rect: Rect) ListerLayout {
         const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
         var all_rect = rect;
-        const h = @divTrunc(max(0, rect.h - 3 * border_thickness), 3);
+        const h = @divTrunc(max(0, rect.h - 2 * border_thickness), 2);
         const preview_rect = all_rect.splitTop(h, 0);
-        const border1_rect = all_rect.splitTop(border_thickness, 0);
-        const report_rect = all_rect.splitTop(h, 0);
-        const border2_rect = all_rect.splitTop(border_thickness, 0);
-        const selector_rect = all_rect;
-        self.queueRect(border1_rect, style.text_color);
-        self.queueRect(border2_rect, style.text_color);
-        return .{ .preview = preview_rect, .report = report_rect, .selector = selector_rect };
+        const border_rect = all_rect.splitTop(border_thickness, 0);
+        const report_rect = all_rect;
+        self.queueRect(border_rect, style.text_color);
+        return .{ .preview = preview_rect, .report = report_rect };
     }
 };

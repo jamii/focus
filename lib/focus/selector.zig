@@ -35,10 +35,8 @@ pub const Selector = struct {
         self.buffer.deinit();
     }
 
-    pub fn frame(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event, items: []const []const u8) Action {
+    pub fn logic(self: *Selector, events: []const c.SDL_Event, num_items: usize) Action {
         var action: Action = .None;
-
-        // handle events
         for (events) |event| {
             switch (event.type) {
                 c.SDL_KEYDOWN => {
@@ -56,7 +54,7 @@ pub const Selector = struct {
                         }
                     } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
                         switch (sym.sym) {
-                            'k' => self.selected = items.len - 1,
+                            'k' => self.selected = num_items - 1,
                             'i' => self.selected = 0,
                             c.SDLK_RETURN => {
                                 action = .SelectAll;
@@ -65,7 +63,7 @@ pub const Selector = struct {
                         }
                     } else if (sym.mod == 0) {
                         switch (sym.sym) {
-                            c.SDLK_RETURN => if (items.len != 0) {
+                            c.SDLK_RETURN => if (num_items != 0) {
                                 action = .SelectOne;
                             },
                             else => {},
@@ -75,6 +73,12 @@ pub const Selector = struct {
                 else => {},
             }
         }
+        self.selected = min(self.selected, max(1, num_items) - 1);
+        return action;
+    }
+
+    pub fn frame(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event, items: []const []const u8) Action {
+        const action = self.logic(events, items.len);
 
         // fill buffer
         // TODO highlight found area
@@ -86,7 +90,6 @@ pub const Selector = struct {
         self.buffer.replace(text.items);
 
         // set selection
-        self.selected = min(self.selected, max(1, items.len) - 1);
         var cursor = self.editor.getMainCursor();
         if (items.len != 0) {
             self.editor.goPos(cursor, self.buffer.getPosForLineCol(self.selected, 0));

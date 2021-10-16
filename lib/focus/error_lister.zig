@@ -69,19 +69,13 @@ pub const ErrorLister = struct {
             }
         }
 
-        // collect selector items
-        var selector_items = ArrayList([]const u8).init(self.app.frame_allocator);
-        for (error_locations.items) |error_location| {
-            selector_items.append(error_location.report_buffer.bytes.items[error_location.report_location[0]..error_location.report_location[1]]) catch oom();
-        }
-
-        // run selector frame
-        const action = self.selector.frame(window, layout.selector, events, selector_items.items);
+        // run selector logic only, no rendering
+        const action = self.selector.logic(events, error_locations.items.len);
 
         // set cache selection
         self.app.last_error_lister_selected = self.selector.selected;
 
-        if (selector_items.items.len > 0) {
+        if (error_locations.items.len > 0) {
             const error_location = error_locations.items[self.selector.selected];
 
             // maybe open file
@@ -90,6 +84,7 @@ pub const ErrorLister = struct {
                 const new_editor = Editor.init(self.app, new_buffer, true, true);
                 const cursor = new_editor.getMainCursor();
                 new_editor.goRealLineCol(cursor, error_location.line - 1, error_location.col - 1);
+                new_editor.setCenterAtPos(cursor.head.pos);
                 window.popView();
                 window.pushView(new_editor);
             }

@@ -51,11 +51,15 @@ pub const Maker = struct {
         const history_string = history_file.reader().readAllAlloc(app.allocator, std.math.maxInt(usize)) catch |err|
             panic("Failed to read bash history: {}", .{err});
         var history_lines = std.mem.split(history_string, "\n");
-        var history = ArrayList([]const u8).init(app.allocator);
-        while (history_lines.next()) |line|
-            if (line.len != 0)
-                history.append(line) catch oom();
+        var history = ArrayList([]const u8).init(app.frame_allocator);
+        while (history_lines.next()) |line| history.append(line) catch oom();
         std.mem.reverse([]const u8, history.items);
+        var unseen_history = ArrayList([]const u8).init(app.allocator);
+        var seen_history = DeepHashSet([]const u8).init(app.frame_allocator);
+        for (history.items) |line|
+            if (line.len != 0)
+                if (!(seen_history.getOrPut(std.mem.trim(u8, line, " ")) catch oom()).found_existing)
+                    unseen_history.append(line) catch oom();
         const self = app.allocator.create(Maker) catch oom();
         self.* = Maker{
             .app = app,
@@ -63,7 +67,7 @@ pub const Maker = struct {
             .selector = selector,
             .result_editor = result_editor,
             .history_string = history_string,
-            .history = history.toOwnedSlice(),
+            .history = unseen_history.toOwnedSlice(),
             .state = .ChoosingDir,
         };
         return self;
