@@ -25,6 +25,20 @@ pub const Maker = struct {
             dirname: []const u8,
             command: []const u8,
             child_process: *std.ChildProcess,
+
+            const Self = @This();
+            fn kill(self: Self) void {
+                const pgid = std.os.linux.syscall1(.getpgid, @bitCast(usize, @as(isize, self.child_process.pid)));
+                std.os.kill(-@intCast(i32, pgid), std.os.SIGKILL) catch {};
+                self.child_process.stdout.?.close();
+                self.child_process.stderr.?.close();
+                self.child_process.deinit();
+            }
+            fn deinit(self: Self, allocator: *Allocator) void {
+                self.kill();
+                allocator.free(self.command);
+                allocator.free(self.dirname);
+            }
         },
         Finished: struct {
             dirname: []const u8,
@@ -79,13 +93,7 @@ pub const Maker = struct {
             .ChoosingCommand => |choosing_command| {
                 self.app.allocator.free(choosing_command.dirname);
             },
-            .Running => |running| {
-                running.child_process.stdout.?.close();
-                running.child_process.stderr.?.close();
-                running.child_process.deinit();
-                self.app.allocator.free(running.command);
-                self.app.allocator.free(running.dirname);
-            },
+            .Running => |running| running.deinit(self.app.allocator),
             .Finished => |finished| finished.deinit(self.app.allocator),
         }
         self.app.allocator.free(self.history_string);
@@ -247,9 +255,7 @@ pub const Maker = struct {
         switch (self.state) {
             .ChoosingDir, .ChoosingCommand => return,
             .Running => |running| {
-                running.child_process.stdout.?.close();
-                running.child_process.stderr.?.close();
-                running.child_process.deinit();
+                running.kill();
                 self.result_editor.buffer.replace("");
                 self.state = .{ .Running = .{
                     .dirname = running.dirname,
@@ -273,7 +279,7 @@ pub const Maker = struct {
 
 fn spawn(allocator: *Allocator, dirname: []const u8, command: []const u8) *std.ChildProcess {
     var child_process = std.ChildProcess.init(
-        &.{ "bash", "-c", command },
+        &.{ "setsid", "bash", "-c", command },
         allocator,
     ) catch |err|
         panic("{} while running command: {s}", .{ err, command });

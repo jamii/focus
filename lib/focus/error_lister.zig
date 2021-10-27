@@ -14,7 +14,7 @@ pub const ErrorLister = struct {
     selector: Selector,
 
     pub fn init(app: *App) *ErrorLister {
-        const error_source_buffer = Buffer.initEmpty(app, .Preview);
+        const error_source_buffer = Buffer.initEmpty(app, .Real);
         const error_source_editor = Editor.init(app, error_source_buffer, false, false);
         // TODO error_report_buffer will get leaked
         const error_report_buffer = Buffer.initEmpty(app, .Real);
