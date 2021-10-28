@@ -148,9 +148,12 @@ pub fn dumpInto(writer: anytype, indent: u32, thing: anytype) anyerror!void {
                 try dumpInto(writer, indent, thing.?);
             }
         },
+        .Opaque => {
+            try writer.writeAll("opaque");
+        },
         else => {
             // bail
-            try std.fmt.format(writer, "{}", .{thing});
+            try std.fmt.format(writer, "{any}", .{thing});
         },
     }
 }

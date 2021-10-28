@@ -25,8 +25,15 @@ pub const Maker = struct {
             dirname: []const u8,
             command: []const u8,
             child_process: *std.ChildProcess,
+            error_locations: []const ErrorLister.ErrorLocation,
 
             const Self = @This();
+            fn clearErrorLocations(self: *Self, allocator: *Allocator) void {
+                for (self.error_locations) |error_location|
+                    error_location.deinit(allocator);
+                allocator.free(self.error_locations);
+                self.error_locations = &.{};
+            }
             fn kill(self: Self) void {
                 const pgid = std.os.linux.syscall1(.getpgid, @bitCast(usize, @as(isize, self.child_process.pid)));
                 std.os.kill(-@intCast(i32, pgid), std.os.SIGKILL) catch {};
@@ -34,21 +41,9 @@ pub const Maker = struct {
                 self.child_process.stderr.?.close();
                 self.child_process.deinit();
             }
-            fn deinit(self: Self, allocator: *Allocator) void {
+            fn deinit(self: *Self, allocator: *Allocator) void {
+                self.clearErrorLocations(allocator);
                 self.kill();
-                allocator.free(self.command);
-                allocator.free(self.dirname);
-            }
-        },
-        Finished: struct {
-            dirname: []const u8,
-            command: []const u8,
-            error_locations: []const ErrorLister.ErrorLocation,
-
-            const Self = @This();
-            fn deinit(self: Self, allocator: *Allocator) void {
-                for (self.error_locations) |error_location|
-                    error_location.deinit(allocator);
                 allocator.free(self.command);
                 allocator.free(self.dirname);
             }
@@ -90,11 +85,8 @@ pub const Maker = struct {
     pub fn deinit(self: *Maker) void {
         switch (self.state) {
             .ChoosingDir => return,
-            .ChoosingCommand => |choosing_command| {
-                self.app.allocator.free(choosing_command.dirname);
-            },
-            .Running => |running| running.deinit(self.app.allocator),
-            .Finished => |finished| finished.deinit(self.app.allocator),
+            .ChoosingCommand => |choosing_command| self.app.allocator.free(choosing_command.dirname),
+            .Running => |*running| running.deinit(self.app.allocator),
         }
         self.app.allocator.free(self.history_string);
         self.selector.deinit();
@@ -133,12 +125,15 @@ pub const Maker = struct {
                 else
                     std.fs.path.dirname(path) orelse "";
 
-                // maybe pick dir
-                if (action == .SelectRaw or action == .SelectOne) {
-                    const chosen_dirname: []const u8 = if (action == .SelectRaw)
-                        self.input.getText()
-                    else
-                        std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, results[self.selector.selected] }) catch oom();
+                // maybe enter dir
+                if (action == .SelectOne) {
+                    self.input.buffer.replace(std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, results[self.selector.selected] }) catch oom());
+                    const cursor = self.input.editor.getMainCursor();
+                    self.input.editor.goRealLineEnd(cursor);
+                }
+                // maybe choose current dir
+                if (action == .SelectRaw) {
+                    const chosen_dirname: []const u8 = self.input.getText();
                     if (chosen_dirname.len > 0 and std.fs.path.isSep(chosen_dirname[chosen_dirname.len - 1])) {
                         self.input.buffer.replace("");
                         self.state = .{ .ChoosingCommand = .{
@@ -184,22 +179,32 @@ pub const Maker = struct {
                         .dirname = choosing_command.dirname,
                         .command = command,
                         .child_process = spawn(self.app.allocator, choosing_command.dirname, command),
+                        .error_locations = &.{},
                     } };
                 }
             },
-            .Running => |running| {
-                // check if we've finished running yet
-                const wait = std.os.waitpid(running.child_process.pid, std.os.linux.WNOHANG);
-                if (wait.pid == running.child_process.pid) {
-                    // finished, read results
-                    for (&[_]std.fs.File{ running.child_process.stdout.?, running.child_process.stderr.? }) |file| {
-                        const contents = file.reader().readAllAlloc(self.app.frame_allocator, std.math.maxInt(usize)) catch |err|
-                            panic("{} while reading from command: {s}", .{ err, running.command });
-                        file.close();
-                        self.result_editor.buffer.insert(self.result_editor.buffer.bytes.items.len, contents);
+            .Running => |*running| {
+                // read stdout/stderr
+                var did_read = false;
+                const buffer = self.app.frame_allocator.alloc(u8, 1024) catch oom();
+                for (&[_]std.fs.File{ running.child_process.stdout.?, running.child_process.stderr.? }) |file| {
+                    while (true) {
+                        if (file.read(buffer)) |len| {
+                            self.result_editor.buffer.insert(self.result_editor.buffer.bytes.items.len, buffer[0..len]);
+                            if (len > 0)
+                                did_read = true;
+                            if (len < buffer.len)
+                                break;
+                        } else |err| {
+                            switch (err) {
+                                error.WouldBlock => break,
+                                else => panic("Err reading pipe: {}", .{err}),
+                            }
+                        }
                     }
-                    running.child_process.deinit();
+                }
 
+                if (did_read) {
                     // parse results
                     var error_locations = ArrayList(ErrorLister.ErrorLocation).init(self.app.allocator);
                     defer error_locations.deinit();
@@ -207,7 +212,7 @@ pub const Maker = struct {
                     for (regex_search(
                         self.app.frame_allocator,
                         text,
-                        \\([\S^:]+):(\d+):(\d+).*
+                        \\([\S^:]+):(\d+):(\d+)
                         ,
                     )) |match| {
                         const line = std.fmt.parseInt(
@@ -233,18 +238,10 @@ pub const Maker = struct {
                             .col = col,
                         }) catch oom();
                     }
-
-                    self.state = .{ .Finished = .{
-                        .dirname = running.dirname,
-                        .command = running.command,
-                        .error_locations = error_locations.toOwnedSlice(),
-                    } };
+                    running.clearErrorLocations(self.app.allocator);
+                    running.error_locations = error_locations.toOwnedSlice();
                 }
 
-                // show results in editor
-                self.result_editor.frame(window, rect, events);
-            },
-            .Finished => {
                 // show results in editor
                 self.result_editor.frame(window, rect, events);
             },
@@ -254,24 +251,11 @@ pub const Maker = struct {
     pub fn handleAfterSave(self: *Maker) void {
         switch (self.state) {
             .ChoosingDir, .ChoosingCommand => return,
-            .Running => |running| {
+            .Running => |*running| {
+                self.result_editor.buffer.replace("");
+                running.clearErrorLocations(self.app.allocator);
                 running.kill();
-                self.result_editor.buffer.replace("");
-                self.state = .{ .Running = .{
-                    .dirname = running.dirname,
-                    .command = running.command,
-                    .child_process = spawn(self.app.allocator, running.dirname, running.command),
-                } };
-            },
-            .Finished => |finished| {
-                self.result_editor.buffer.replace("");
-                for (finished.error_locations) |error_location|
-                    error_location.deinit(self.app.allocator);
-                self.state = .{ .Running = .{
-                    .dirname = finished.dirname,
-                    .command = finished.command,
-                    .child_process = spawn(self.app.allocator, finished.dirname, finished.command),
-                } };
+                running.child_process = spawn(self.app.allocator, running.dirname, running.command);
             },
         }
     }
@@ -289,5 +273,9 @@ fn spawn(allocator: *Allocator, dirname: []const u8, command: []const u8) *std.C
     child_process.cwd = dirname;
     child_process.spawn() catch |err|
         panic("{} while running command: {s}", .{ err, command });
+    for (&[_]std.fs.File{ child_process.stdout.?, child_process.stderr.? }) |file| {
+        _ = std.os.fcntl(file.handle, std.os.linux.F_SETFL, std.os.linux.O_NONBLOCK) catch |err|
+            panic("Err setting pipe nonblock: {}", .{err});
+    }
     return child_process;
 }
