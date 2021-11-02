@@ -17,7 +17,7 @@ pub const ProjectSearcher = struct {
     selector: Selector,
 
     pub fn init(app: *App, project_dir: []const u8) *ProjectSearcher {
-        const empty_buffer = Buffer.initEmpty(app, .Preview);
+        const empty_buffer = Buffer.initEmpty(app, .Real);
         const preview_editor = Editor.init(app, empty_buffer, false, false);
         const input = SingleLineEditor.init(app, app.last_search_filter);
         input.editor.goRealLineStart(input.editor.getMainCursor());
@@ -103,7 +103,7 @@ pub const ProjectSearcher = struct {
             const buffer = self.preview_editor.buffer;
             self.preview_editor.deinit();
             buffer.deinit();
-            const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .Preview, path.?);
+            const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .Real, path.?);
             self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
 
             {

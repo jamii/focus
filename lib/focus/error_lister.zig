@@ -108,7 +108,7 @@ pub const ErrorLister = struct {
             const buffer = self.error_source_editor.buffer;
             self.error_source_editor.deinit();
             buffer.deinit();
-            const error_source_buffer = Buffer.initFromAbsoluteFilename(self.app, .Preview, error_location.path);
+            const error_source_buffer = Buffer.initFromAbsoluteFilename(self.app, .Real, error_location.path);
             self.error_source_editor = Editor.init(self.app, error_source_buffer, false, false);
             {
                 dump(.{ error_location.report_location, error_location.path, error_location.line, error_location.col });
