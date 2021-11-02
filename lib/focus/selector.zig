@@ -11,6 +11,7 @@ pub const Selector = struct {
     buffer: *Buffer,
     editor: *Editor,
     selected: usize,
+    ranges: []const [2]usize,
 
     pub const Action = enum {
         None,
@@ -33,12 +34,33 @@ pub const Selector = struct {
             .buffer = buffer,
             .editor = editor,
             .selected = 0,
+            .ranges = &.{},
         };
     }
 
     pub fn deinit(self: *Selector) void {
+        self.app.allocator.free(self.ranges);
         self.editor.deinit();
         self.buffer.deinit();
+    }
+
+    pub fn setByItems(self: *Selector, items: []const []const u8) void {
+        var text = ArrayList(u8).init(self.app.frame_allocator);
+        var ranges = ArrayList([2]usize).init(self.app.frame_allocator);
+        for (items) |item| {
+            const start = text.items.len;
+            text.appendSlice(item) catch oom();
+            const end = text.items.len;
+            text.append('\n') catch oom();
+            ranges.append(.{ start, end }) catch oom();
+        }
+        self.setByTextAndRanges(text.toOwnedSlice(), ranges.toOwnedSlice());
+    }
+
+    pub fn setByTextAndRanges(self: *Selector, text: []const u8, ranges: []const [2]usize) void {
+        self.buffer.replace(text);
+        self.app.allocator.free(self.ranges);
+        self.ranges = self.app.dupe(ranges);
     }
 
     pub fn logic(self: *Selector, events: []const c.SDL_Event, num_items: usize) Action {
@@ -83,30 +105,15 @@ pub const Selector = struct {
         return action;
     }
 
-    pub fn frame(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event, items: []const []const u8) Action {
-        var text = ArrayList(u8).init(self.app.frame_allocator);
-        var ranges = ArrayList([2]usize).init(self.app.frame_allocator);
-        for (items) |item| {
-            const start = text.items.len;
-            text.appendSlice(item) catch oom();
-            const end = text.items.len;
-            text.append('\n') catch oom();
-            ranges.append(.{ start, end }) catch oom();
-        }
-
-        return self.frameInner(window, rect, events, text.toOwnedSlice(), ranges.toOwnedSlice());
-    }
-
-    pub fn frameInner(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event, text: []const u8, ranges: []const [2]usize) Action {
-        self.buffer.replace(text);
-        const action = self.logic(events, ranges.len);
+    pub fn frame(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event) Action {
+        const action = self.logic(events, self.ranges.len);
 
         // set selection
         var cursor = self.editor.getMainCursor();
-        if (ranges.len != 0) {
-            self.editor.goPos(cursor, ranges[self.selected][0]);
+        if (self.ranges.len != 0) {
+            self.editor.goPos(cursor, self.ranges[self.selected][0]);
             self.editor.setMark();
-            self.editor.goPos(cursor, ranges[self.selected][1]);
+            self.editor.goPos(cursor, self.ranges[self.selected][1]);
         } else {
             self.editor.clearMark();
             self.editor.goBufferStart(cursor);

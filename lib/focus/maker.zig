@@ -119,7 +119,8 @@ pub const Maker = struct {
                 // run selector frame
                 var action: Selector.Action = .None;
                 if (results_or_err) |_| {
-                    action = self.selector.frame(window, layout.selector, events, results);
+                    self.selector.setByItems(results);
+                    action = self.selector.frame(window, layout.selector, events);
                 } else |results_err| {
                     const error_text = format(self.app.frame_allocator, "Error opening directory: {}", .{results_err});
                     window.queueText(layout.selector, style.error_text_color, error_text);
@@ -160,7 +161,8 @@ pub const Maker = struct {
 
                 // run selector frame
                 var action: Selector.Action = .None;
-                action = self.selector.frame(window, layout.selector, events, filtered_history);
+                self.selector.setByItems(filtered_history);
+                action = self.selector.frame(window, layout.selector, events);
 
                 // maybe run command
                 var command_o: ?[]const u8 = null;

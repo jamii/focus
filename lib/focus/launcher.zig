@@ -63,7 +63,8 @@ pub const Launcher = struct {
         const filtered_exes = fuzzy_search(self.app.frame_allocator, self.exes, self.input.getText());
 
         // run selector frame
-        const action = self.selector.frame(window, layout.selector, events, filtered_exes);
+        self.selector.setByItems(filtered_exes);
+        const action = self.selector.frame(window, layout.selector, events);
 
         // handle action
         if (filtered_exes.len > 0 and action == .SelectOne) {

@@ -50,7 +50,7 @@ pub const ProjectSearcher = struct {
         const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
         buffer.deinit();
-        // TODO should this own project_dir?
+        // TODO should self own project_dir?
         self.app.allocator.destroy(self);
     }
 
@@ -59,48 +59,51 @@ pub const ProjectSearcher = struct {
 
         // run input frame
         const input_changed = self.input.frame(window, layout.input, events);
-        if (input_changed == .Changed) self.selector.selected = 0;
 
         // get and filter results
-        var text: []const u8 = "";
-        var ranges = ArrayList([2]usize).init(self.app.frame_allocator);
-        {
-            const filter = self.input.getText();
-            if (filter.len > 0) {
-                const result = std.ChildProcess.exec(.{
-                    .allocator = self.app.frame_allocator,
-                    // TODO would prefer null separated but tricky to parse
-                    .argv = &[_][]const u8{ "rg", "--line-number", "--sort", "path", "--fixed-strings", filter },
-                    .cwd = self.project_dir,
-                    .max_output_bytes = 128 * 1024 * 1024,
-                }) catch |err| panic("{} while calling rg", .{err});
-                assert(result.term == .Exited); // exits with 1 if no search results
-                text = result.stdout;
-                var start: usize = 0;
-                var end: usize = 0;
-                while (end < text.len) {
-                    end = std.mem.indexOfPos(u8, text, start, "\n") orelse text.len;
-                    if (start != end)
-                        ranges.append(.{ start, end }) catch oom();
-                    start = end + 1;
+        if (input_changed == .Changed) {
+            self.selector.selected = 0;
+            var result_ranges = ArrayList([2]usize).init(self.app.frame_allocator);
+            {
+                const filter = self.input.getText();
+                if (filter.len > 0) {
+                    const result = std.ChildProcess.exec(.{
+                        .allocator = self.app.frame_allocator,
+                        // TODO would prefer null separated but tricky to parse
+                        .argv = &[_][]const u8{ "rg", "--line-number", "--sort", "path", "--fixed-strings", filter },
+                        .cwd = self.project_dir,
+                        .max_output_bytes = 128 * 1024 * 1024,
+                    }) catch |err| panic("{} while calling rg", .{err});
+                    assert(result.term == .Exited); // exits with 1 if no search results
+                    var start: usize = 0;
+                    var end: usize = 0;
+                    while (end < result.stdout.len) {
+                        end = std.mem.indexOfPos(u8, result.stdout, start, "\n") orelse result.stdout.len;
+                        if (start != end)
+                            result_ranges.append(.{ start, end }) catch oom();
+                        start = end + 1;
+                    }
+                    self.selector.setByTextAndRanges(result.stdout, result_ranges.toOwnedSlice());
+                } else {
+                    self.selector.setByTextAndRanges("", &.{});
                 }
             }
         }
 
         // run selector frame
-        const action = self.selector.frameInner(window, layout.selector, events, text, ranges.items);
+        const action = self.selector.frame(window, layout.selector, events);
 
         // set cached search text
         self.app.allocator.free(self.app.last_search_filter);
         self.app.last_search_filter = self.app.dupe(self.input.getText());
         self.app.last_project_search_selected = self.selector.selected;
 
-        // update preview
         var line_number: ?usize = null;
         var path: ?[]const u8 = null;
-        if (ranges.items.len > 0) {
-            const range = ranges.items[self.selector.selected];
-            const line = text[range[0]..range[1]];
+        if (self.selector.ranges.len > 0) {
+            // update preview
+            const range = self.selector.ranges[self.selector.selected];
+            const line = self.selector.buffer.bytes.items[range[0]..range[1]];
             var parts = std.mem.split(line, ":");
             const path_suffix = parts.next().?;
             const line_number_string = parts.next().?;
@@ -118,7 +121,6 @@ pub const ProjectSearcher = struct {
                 .show_status_bar = false,
                 .show_completer = false,
             });
-
             {
                 const cursor = self.preview_editor.getMainCursor();
                 self.preview_editor.goRealLine(cursor, line_number.? - 1);
@@ -126,23 +128,23 @@ pub const ProjectSearcher = struct {
                 self.preview_editor.goRealLineEnd(cursor);
                 self.preview_editor.setCenterAtPos(cursor.head.pos);
             }
+
+            // handle action
+            if (action == .SelectOne) {
+                const new_buffer = self.app.getBufferFromAbsoluteFilename(path.?);
+                const new_editor = Editor.init(self.app, new_buffer, .{});
+                new_editor.top_pixel = self.preview_editor.top_pixel;
+                var cursor = new_editor.getMainCursor();
+                new_editor.goRealLine(cursor, line_number.? - 1);
+                new_editor.setMark();
+                new_editor.goRealLineEnd(cursor);
+                new_editor.setCenterAtPos(cursor.head.pos);
+                window.popView();
+                window.pushView(new_editor);
+            }
         }
 
         // run preview frame
         self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
-
-        // handle action
-        if (ranges.items.len > 0 and action == .SelectOne) {
-            const new_buffer = self.app.getBufferFromAbsoluteFilename(path.?);
-            const new_editor = Editor.init(self.app, new_buffer, .{});
-            new_editor.top_pixel = self.preview_editor.top_pixel;
-            var cursor = new_editor.getMainCursor();
-            new_editor.goRealLine(cursor, line_number.? - 1);
-            new_editor.setMark();
-            new_editor.goRealLineEnd(cursor);
-            new_editor.setCenterAtPos(cursor.head.pos);
-            window.popView();
-            window.pushView(new_editor);
-        }
     }
 };

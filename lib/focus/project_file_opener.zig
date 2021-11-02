@@ -103,7 +103,8 @@ pub const ProjectFileOpener = struct {
         const filtered_paths = fuzzy_search(self.app.frame_allocator, self.paths, self.input.getText());
 
         // run selector frame
-        const action = self.selector.frame(window, layout.selector, events, filtered_paths);
+        self.selector.setByItems(filtered_paths);
+        const action = self.selector.frame(window, layout.selector, events);
 
         // maybe open file
         if (action == .SelectOne and filtered_paths.len > 0) {

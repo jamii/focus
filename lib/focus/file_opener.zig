@@ -66,7 +66,8 @@ pub const FileOpener = struct {
         // run selector frame
         var action: Selector.Action = .None;
         if (results_or_err) |_| {
-            action = self.selector.frame(window, layout.selector, events, results);
+            self.selector.setByItems(results);
+            action = self.selector.frame(window, layout.selector, events);
         } else |results_err| {
             const error_text = format(self.app.frame_allocator, "Error opening directory: {}", .{results_err});
             window.queueText(layout.selector, style.error_text_color, error_text);
