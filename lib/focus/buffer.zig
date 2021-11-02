@@ -382,7 +382,7 @@ pub const Buffer = struct {
         }
     }
 
-    fn rawReplace(self: *Buffer, new_bytes: []const u8) void {
+    pub fn rawReplace(self: *Buffer, new_bytes: []const u8) void {
         var line_colss = ArrayList([][2][2]usize).init(self.app.frame_allocator);
         for (self.editors.items) |editor| {
             line_colss.append(editor.updateBeforeReplace()) catch oom();

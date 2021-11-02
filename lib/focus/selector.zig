@@ -20,7 +20,7 @@ pub const Selector = struct {
     };
 
     pub fn init(app: *App) Selector {
-        const buffer = Buffer.initEmpty(app, .Real);
+        const buffer = Buffer.initEmpty(app, .Preview);
         const editor = Editor.init(app, buffer, false, false);
         return Selector{
             .app = app,
@@ -78,23 +78,29 @@ pub const Selector = struct {
     }
 
     pub fn frame(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event, items: []const []const u8) Action {
-        const action = self.logic(events, items.len);
-
-        // fill buffer
-        // TODO highlight found area
         var text = ArrayList(u8).init(self.app.frame_allocator);
+        var ranges = ArrayList([2]usize).init(self.app.frame_allocator);
         for (items) |item| {
+            const start = text.items.len;
             text.appendSlice(item) catch oom();
+            const end = text.items.len;
             text.append('\n') catch oom();
+            ranges.append(.{ start, end }) catch oom();
         }
-        self.buffer.replace(text.items);
+
+        return self.frameInner(window, rect, events, text.toOwnedSlice(), ranges.toOwnedSlice());
+    }
+
+    pub fn frameInner(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event, text: []const u8, ranges: []const [2]usize) Action {
+        self.buffer.rawReplace(text);
+        const action = self.logic(events, ranges.len);
 
         // set selection
         var cursor = self.editor.getMainCursor();
-        if (items.len != 0) {
-            self.editor.goPos(cursor, self.buffer.getPosForLineCol(self.selected, 0));
+        if (ranges.len != 0) {
+            self.editor.goPos(cursor, ranges[self.selected][0]);
             self.editor.setMark();
-            self.editor.goRealLineEnd(cursor);
+            self.editor.goPos(cursor, ranges[self.selected][1]);
         } else {
             self.editor.clearMark();
             self.editor.goBufferStart(cursor);

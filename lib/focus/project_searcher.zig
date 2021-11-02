@@ -56,7 +56,8 @@ pub const ProjectSearcher = struct {
         if (input_changed == .Changed) self.selector.selected = 0;
 
         // get and filter results
-        var results = ArrayList([]const u8).init(self.app.frame_allocator);
+        var text: []const u8 = "";
+        var ranges = ArrayList([2]usize).init(self.app.frame_allocator);
         {
             const filter = self.input.getText();
             if (filter.len > 0) {
@@ -68,15 +69,19 @@ pub const ProjectSearcher = struct {
                     .max_output_bytes = 128 * 1024 * 1024,
                 }) catch |err| panic("{} while calling rg", .{err});
                 assert(result.term == .Exited); // exits with 1 if no search results
-                var lines = std.mem.split(result.stdout, "\n");
-                while (lines.next()) |line| {
-                    if (line.len != 0) results.append(line) catch oom();
+                text = result.stdout;
+                var start: usize = 0;
+                var end: usize = 0;
+                while (end < text.len) {
+                    end = std.mem.indexOfPos(u8, text, start, "\n") orelse text.len;
+                    ranges.append(.{ start, end }) catch oom();
+                    start = end + 1;
                 }
             }
         }
 
         // run selector frame
-        const action = self.selector.frame(window, layout.selector, events, results.items);
+        const action = self.selector.frameInner(window, layout.selector, events, text, ranges.items);
 
         // set cached search text
         self.app.allocator.free(self.app.last_search_filter);
@@ -86,8 +91,9 @@ pub const ProjectSearcher = struct {
         // update preview
         var line_number: ?usize = null;
         var path: ?[]const u8 = null;
-        if (results.items.len > 0) {
-            const line = results.items[self.selector.selected];
+        if (ranges.items.len > 0) {
+            const range = ranges.items[self.selector.selected];
+            const line = text[range[0]..range[1]];
             var parts = std.mem.split(line, ":");
             const path_suffix = parts.next().?;
             const line_number_string = parts.next().?;
@@ -113,7 +119,7 @@ pub const ProjectSearcher = struct {
         self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
 
         // handle action
-        if (results.items.len > 0 and action == .SelectOne) {
+        if (ranges.items.len > 0 and action == .SelectOne) {
             const new_buffer = self.app.getBufferFromAbsoluteFilename(path.?);
             const new_editor = Editor.init(self.app, new_buffer, true, true);
             new_editor.top_pixel = self.preview_editor.top_pixel;
