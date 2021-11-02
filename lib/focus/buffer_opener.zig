@@ -16,8 +16,15 @@ pub const BufferOpener = struct {
     selector: Selector,
 
     pub fn init(app: *App) *BufferOpener {
-        const empty_buffer = Buffer.initEmpty(app, .Preview);
-        const preview_editor = Editor.init(app, empty_buffer, false, false);
+        const empty_buffer = Buffer.initEmpty(app, .{
+            .limit_load_bytes = true,
+            .enable_completions = false,
+            .enable_undo = false,
+        });
+        const preview_editor = Editor.init(app, empty_buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         const input = SingleLineEditor.init(app, "");
         // const input = SingleLineEditor.init(app, app.last_file_filter);
         input.editor.goRealLineStart(input.editor.getMainCursor());
@@ -80,7 +87,7 @@ pub const BufferOpener = struct {
         if (action == .SelectOne and filtered_paths.len > 0) {
             const path = filtered_paths[self.selector.selected];
             const new_buffer = self.app.getBufferFromAbsoluteFilename(path);
-            const new_editor = Editor.init(self.app, new_buffer, true, true);
+            const new_editor = Editor.init(self.app, new_buffer, .{});
             window.popView();
             window.pushView(new_editor);
         }
@@ -93,12 +100,22 @@ pub const BufferOpener = struct {
         // update preview
         self.preview_editor.deinit();
         if (filtered_paths.len == 0) {
-            const empty_buffer = Buffer.initEmpty(self.app, .Preview);
-            self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
+            const empty_buffer = Buffer.initEmpty(self.app, .{
+                .limit_load_bytes = true,
+                .enable_completions = false,
+                .enable_undo = false,
+            });
+            self.preview_editor = Editor.init(self.app, empty_buffer, .{
+                .show_status_bar = false,
+                .show_completer = false,
+            });
         } else {
             const selected = filtered_paths[self.selector.selected];
             const preview_buffer = self.app.getBufferFromAbsoluteFilename(selected);
-            self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
+            self.preview_editor = Editor.init(self.app, preview_buffer, .{
+                .show_status_bar = false,
+                .show_completer = false,
+            });
         }
 
         // run preview frame

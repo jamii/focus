@@ -19,8 +19,14 @@ pub const ImpRepl = struct {
     last_response_kind: imp.lang.Worker.ResponseKind,
 
     pub fn init(app: *App, program_editor: *Editor) *ImpRepl {
-        const empty_buffer = Buffer.initEmpty(app, .Real);
-        const result_editor = Editor.init(app, empty_buffer, false, false);
+        const empty_buffer = Buffer.initEmpty(app, .{
+            .enable_completions = false,
+            .enable_undo = false,
+        });
+        const result_editor = Editor.init(app, empty_buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         const imp_worker = imp.lang.Worker.init(
             app.allocator,
             .{

@@ -21,7 +21,10 @@ pub const BufferSearcher = struct {
     init_selection_pos: usize,
 
     pub fn init(app: *App, target_editor: *Editor) *BufferSearcher {
-        const preview_editor = Editor.init(app, target_editor.buffer, false, false);
+        const preview_editor = Editor.init(app, target_editor.buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         preview_editor.getMainCursor().* = target_editor.getMainCursor().*;
         const input = SingleLineEditor.init(app, app.last_search_filter);
         input.editor.goRealLineStart(input.editor.getMainCursor());

@@ -30,8 +30,15 @@ pub const ProjectFileOpener = struct {
     paths: []const []const u8,
 
     pub fn init(app: *App) *ProjectFileOpener {
-        const empty_buffer = Buffer.initEmpty(app, .Preview);
-        const preview_editor = Editor.init(app, empty_buffer, false, false);
+        const empty_buffer = Buffer.initEmpty(app, .{
+            .limit_load_bytes = true,
+            .enable_completions = false,
+            .enable_undo = false,
+        });
+        const preview_editor = Editor.init(app, empty_buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         const input = SingleLineEditor.init(app, app.last_file_filter);
         input.editor.goRealLineStart(input.editor.getMainCursor());
         input.editor.setMark();
@@ -105,7 +112,7 @@ pub const ProjectFileOpener = struct {
                 self.input.setText(path);
             } else {
                 const new_buffer = self.app.getBufferFromAbsoluteFilename(path);
-                const new_editor = Editor.init(self.app, new_buffer, true, true);
+                const new_editor = Editor.init(self.app, new_buffer, .{});
                 window.popView();
                 window.pushView(new_editor);
             }
@@ -121,16 +128,37 @@ pub const ProjectFileOpener = struct {
         self.preview_editor.deinit();
         buffer.deinit();
         if (filtered_paths.len == 0) {
-            const empty_buffer = Buffer.initEmpty(self.app, .Preview);
-            self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
+            const empty_buffer = Buffer.initEmpty(self.app, .{
+                .limit_load_bytes = true,
+                .enable_completions = false,
+                .enable_undo = false,
+            });
+            self.preview_editor = Editor.init(self.app, empty_buffer, .{
+                .show_status_bar = false,
+                .show_completer = false,
+            });
         } else {
             const selected = filtered_paths[self.selector.selected];
             if (std.mem.endsWith(u8, selected, "/")) {
-                const empty_buffer = Buffer.initEmpty(self.app, .Preview);
-                self.preview_editor = Editor.init(self.app, empty_buffer, false, false);
+                const empty_buffer = Buffer.initEmpty(self.app, .{
+                    .limit_load_bytes = true,
+                    .enable_completions = false,
+                    .enable_undo = false,
+                });
+                self.preview_editor = Editor.init(self.app, empty_buffer, .{
+                    .show_status_bar = false,
+                    .show_completer = false,
+                });
             } else {
-                const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .Preview, selected);
-                self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
+                const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .{
+                    .limit_load_bytes = true,
+                    .enable_completions = false,
+                    .enable_undo = false,
+                }, selected);
+                self.preview_editor = Editor.init(self.app, preview_buffer, .{
+                    .show_status_bar = false,
+                    .show_completer = false,
+                });
             }
         }
 

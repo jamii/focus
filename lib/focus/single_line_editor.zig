@@ -13,8 +13,13 @@ pub const SingleLineEditor = struct {
     editor: *Editor,
 
     pub fn init(app: *App, init_text: []const u8) SingleLineEditor {
-        const buffer = Buffer.initEmpty(app, .Real);
-        const editor = Editor.init(app, buffer, false, false);
+        const buffer = Buffer.initEmpty(app, .{
+            .enable_completions = false,
+        });
+        const editor = Editor.init(app, buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         editor.insert(editor.getMainCursor(), init_text);
         return SingleLineEditor{
             .app = app,

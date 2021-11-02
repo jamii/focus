@@ -22,13 +22,14 @@ pub const BufferSource = union(enum) {
     }
 };
 
-pub const Role = enum {
-    Real,
-    Preview,
+pub const Options = struct {
+    limit_load_bytes: bool = false,
+    enable_completions: bool = true,
+    enable_undo: bool = true,
 };
 
 // rare to have enough space to put more chars than this above the fold
-const max_preview_bytes = 200 * 500;
+const limited_load_bytes = 200 * 500;
 
 const Edit = union(enum) {
     Insert: struct {
@@ -71,10 +72,10 @@ pub const Buffer = struct {
     completions: ArrayList([]const u8),
     // editors must unregister before buffer deinits
     editors: ArrayList(*Editor),
-    role: Role,
+    options: Options,
     last_focused_ms: i64,
 
-    pub fn initEmpty(app: *App, role: Role) *Buffer {
+    pub fn initEmpty(app: *App, options: Options) *Buffer {
         const self = app.allocator.create(Buffer) catch oom();
         self.* = Buffer{
             .app = app,
@@ -88,16 +89,16 @@ pub const Buffer = struct {
             .line_ranges = ArrayList([2]usize).init(app.allocator),
             .completions = ArrayList([]const u8).init(app.allocator),
             .editors = ArrayList(*Editor).init(app.allocator),
-            .role = role,
+            .options = options,
             .last_focused_ms = 0,
         };
         self.updateLineRanges();
         return self;
     }
 
-    pub fn initFromAbsoluteFilename(app: *App, role: Role, absolute_filename: []const u8) *Buffer {
+    pub fn initFromAbsoluteFilename(app: *App, options: Options, absolute_filename: []const u8) *Buffer {
         assert(std.fs.path.isAbsolute(absolute_filename));
-        const self = Buffer.initEmpty(app, role);
+        const self = Buffer.initEmpty(app, options);
         self.source = .{
             .File = .{
                 .absolute_filename = std.mem.dupe(self.app.allocator, u8, absolute_filename) catch oom(),
@@ -110,8 +111,6 @@ pub const Buffer = struct {
         self.modified_since_last_save = false;
         return self;
     }
-
-    // TODO fn initPreviewFromAbsoluteFilename
 
     pub fn deinit(self: *Buffer) void {
         // all editors should have unregistered already
@@ -155,7 +154,7 @@ pub const Buffer = struct {
 
         const stat = try file.stat();
         var num_bytes = stat.size;
-        if (self.role == .Preview) num_bytes = min(num_bytes, max_preview_bytes);
+        if (self.options.limit_load_bytes) num_bytes = min(num_bytes, limited_load_bytes);
 
         var bytes = self.app.frame_allocator.alloc(u8, num_bytes) catch oom();
         const len = try file.readAll(bytes);
@@ -382,7 +381,7 @@ pub const Buffer = struct {
         }
     }
 
-    pub fn rawReplace(self: *Buffer, new_bytes: []const u8) void {
+    fn rawReplace(self: *Buffer, new_bytes: []const u8) void {
         var line_colss = ArrayList([][2][2]usize).init(self.app.frame_allocator);
         for (self.editors.items) |editor| {
             line_colss.append(editor.updateBeforeReplace()) catch oom();
@@ -402,44 +401,12 @@ pub const Buffer = struct {
     }
 
     pub fn insert(self: *Buffer, pos: usize, bytes: []const u8) void {
-        self.doing.append(.{
-            .Insert = .{
-                .start = pos,
-                .end = pos + bytes.len,
-                .new_bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch oom(),
-            },
-        }) catch oom();
-        for (self.redos.items) |edits| {
-            for (edits) |edit| edit.deinit(self.app.allocator);
-            self.app.allocator.free(edits);
-        }
-        self.redos.shrinkAndFree(0);
-        self.rawInsert(pos, bytes);
-    }
-
-    pub fn delete(self: *Buffer, start: usize, end: usize) void {
-        self.doing.append(.{
-            .Delete = .{
-                .start = start,
-                .end = end,
-                .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch oom(),
-            },
-        }) catch oom();
-        for (self.redos.items) |edits| {
-            for (edits) |edit| edit.deinit(self.app.allocator);
-            self.app.allocator.free(edits);
-        }
-        self.redos.shrinkAndFree(0);
-        self.rawDelete(start, end);
-    }
-
-    pub fn replace(self: *Buffer, new_bytes: []const u8) void {
-        if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
-            self.newUndoGroup();
+        if (self.options.enable_undo) {
             self.doing.append(.{
-                .Replace = .{
-                    .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items) catch oom(),
-                    .new_bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch oom(),
+                .Insert = .{
+                    .start = pos,
+                    .end = pos + bytes.len,
+                    .new_bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch oom(),
                 },
             }) catch oom();
             for (self.redos.items) |edits| {
@@ -447,6 +414,44 @@ pub const Buffer = struct {
                 self.app.allocator.free(edits);
             }
             self.redos.shrinkAndFree(0);
+        }
+        self.rawInsert(pos, bytes);
+    }
+
+    pub fn delete(self: *Buffer, start: usize, end: usize) void {
+        if (self.options.enable_undo) {
+            self.doing.append(.{
+                .Delete = .{
+                    .start = start,
+                    .end = end,
+                    .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch oom(),
+                },
+            }) catch oom();
+            for (self.redos.items) |edits| {
+                for (edits) |edit| edit.deinit(self.app.allocator);
+                self.app.allocator.free(edits);
+            }
+            self.redos.shrinkAndFree(0);
+        }
+        self.rawDelete(start, end);
+    }
+
+    pub fn replace(self: *Buffer, new_bytes: []const u8) void {
+        if (!std.mem.eql(u8, self.bytes.items, new_bytes)) {
+            self.newUndoGroup();
+            if (self.options.enable_undo) {
+                self.doing.append(.{
+                    .Replace = .{
+                        .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items) catch oom(),
+                        .new_bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch oom(),
+                    },
+                }) catch oom();
+                for (self.redos.items) |edits| {
+                    for (edits) |edit| edit.deinit(self.app.allocator);
+                    self.app.allocator.free(edits);
+                }
+                self.redos.shrinkAndFree(0);
+            }
             self.rawReplace(new_bytes);
             self.newUndoGroup();
         }
@@ -547,7 +552,7 @@ pub const Buffer = struct {
     }
 
     fn updateCompletions(self: *Buffer) void {
-        if (self.role == .Preview) return;
+        if (!self.options.enable_completions) return;
 
         for (self.completions.items) |completion| self.app.allocator.free(completion);
         self.completions.resize(0) catch oom();
@@ -572,7 +577,7 @@ pub const Buffer = struct {
     }
 
     fn removeRangeFromCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
-        if (self.role == .Preview) return;
+        if (!self.options.enable_completions) return;
 
         const bytes = self.bytes.items;
         const completions = &self.completions;
@@ -608,7 +613,7 @@ pub const Buffer = struct {
     }
 
     fn addRangeToCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
-        if (self.role == .Preview) return;
+        if (!self.options.enable_completions) return;
 
         const bytes = self.bytes.items;
         const completions = &self.completions;

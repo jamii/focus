@@ -17,8 +17,14 @@ pub const ProjectSearcher = struct {
     selector: Selector,
 
     pub fn init(app: *App, project_dir: []const u8) *ProjectSearcher {
-        const empty_buffer = Buffer.initEmpty(app, .Real);
-        const preview_editor = Editor.init(app, empty_buffer, false, false);
+        const empty_buffer = Buffer.initEmpty(app, .{
+            .enable_completions = false,
+            .enable_undo = false,
+        });
+        const preview_editor = Editor.init(app, empty_buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         const input = SingleLineEditor.init(app, app.last_search_filter);
         input.editor.goRealLineStart(input.editor.getMainCursor());
         input.editor.setMark();
@@ -74,7 +80,8 @@ pub const ProjectSearcher = struct {
                 var end: usize = 0;
                 while (end < text.len) {
                     end = std.mem.indexOfPos(u8, text, start, "\n") orelse text.len;
-                    ranges.append(.{ start, end }) catch oom();
+                    if (start != end)
+                        ranges.append(.{ start, end }) catch oom();
                     start = end + 1;
                 }
             }
@@ -103,8 +110,14 @@ pub const ProjectSearcher = struct {
             const buffer = self.preview_editor.buffer;
             self.preview_editor.deinit();
             buffer.deinit();
-            const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .Real, path.?);
-            self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
+            const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .{
+                .enable_completions = false,
+                .enable_undo = false,
+            }, path.?);
+            self.preview_editor = Editor.init(self.app, preview_buffer, .{
+                .show_status_bar = false,
+                .show_completer = false,
+            });
 
             {
                 const cursor = self.preview_editor.getMainCursor();
@@ -121,7 +134,7 @@ pub const ProjectSearcher = struct {
         // handle action
         if (ranges.items.len > 0 and action == .SelectOne) {
             const new_buffer = self.app.getBufferFromAbsoluteFilename(path.?);
-            const new_editor = Editor.init(self.app, new_buffer, true, true);
+            const new_editor = Editor.init(self.app, new_buffer, .{});
             new_editor.top_pixel = self.preview_editor.top_pixel;
             var cursor = new_editor.getMainCursor();
             new_editor.goRealLine(cursor, line_number.? - 1);

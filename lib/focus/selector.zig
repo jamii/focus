@@ -20,8 +20,14 @@ pub const Selector = struct {
     };
 
     pub fn init(app: *App) Selector {
-        const buffer = Buffer.initEmpty(app, .Preview);
-        const editor = Editor.init(app, buffer, false, false);
+        const buffer = Buffer.initEmpty(app, .{
+            .enable_completions = false,
+            .enable_undo = false,
+        });
+        const editor = Editor.init(app, buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         return Selector{
             .app = app,
             .buffer = buffer,
@@ -92,7 +98,7 @@ pub const Selector = struct {
     }
 
     pub fn frameInner(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event, text: []const u8, ranges: []const [2]usize) Action {
-        self.buffer.rawReplace(text);
+        self.buffer.replace(text);
         const action = self.logic(events, ranges.len);
 
         // set selection

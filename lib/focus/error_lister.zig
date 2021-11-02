@@ -14,11 +14,23 @@ pub const ErrorLister = struct {
     selector: Selector,
 
     pub fn init(app: *App) *ErrorLister {
-        const error_source_buffer = Buffer.initEmpty(app, .Real);
-        const error_source_editor = Editor.init(app, error_source_buffer, false, false);
+        const error_source_buffer = Buffer.initEmpty(app, .{
+            .enable_completions = false,
+            .enable_undo = false,
+        });
+        const error_source_editor = Editor.init(app, error_source_buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         // TODO error_report_buffer will get leaked
-        const error_report_buffer = Buffer.initEmpty(app, .Real);
-        const error_report_editor = Editor.init(app, error_report_buffer, false, false);
+        const error_report_buffer = Buffer.initEmpty(app, .{
+            .enable_completions = false,
+            .enable_undo = false,
+        });
+        const error_report_editor = Editor.init(app, error_report_buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         var selector = Selector.init(app);
         selector.selected = app.last_error_lister_selected;
         const self = app.allocator.create(ErrorLister) catch oom();
@@ -81,7 +93,7 @@ pub const ErrorLister = struct {
             // maybe open file
             if (action == .SelectOne) {
                 const new_buffer = self.app.getBufferFromAbsoluteFilename(error_location.path);
-                const new_editor = Editor.init(self.app, new_buffer, true, true);
+                const new_editor = Editor.init(self.app, new_buffer, .{});
                 const cursor = new_editor.getMainCursor();
                 const line = min(error_location.line - 1, new_editor.buffer.countLines() - 1);
                 const line_range = new_editor.buffer.line_ranges.items[line];
@@ -94,7 +106,10 @@ pub const ErrorLister = struct {
 
             // show report
             self.error_report_editor.deinit();
-            self.error_report_editor = Editor.init(self.app, error_location.report_buffer, false, false);
+            self.error_report_editor = Editor.init(self.app, error_location.report_buffer, .{
+                .show_status_bar = false,
+                .show_completer = false,
+            });
             {
                 const cursor = self.error_report_editor.getMainCursor();
                 self.error_report_editor.goPos(cursor, error_location.report_location[0]);
@@ -108,8 +123,14 @@ pub const ErrorLister = struct {
             const buffer = self.error_source_editor.buffer;
             self.error_source_editor.deinit();
             buffer.deinit();
-            const error_source_buffer = Buffer.initFromAbsoluteFilename(self.app, .Real, error_location.path);
-            self.error_source_editor = Editor.init(self.app, error_source_buffer, false, false);
+            const error_source_buffer = Buffer.initFromAbsoluteFilename(self.app, .{
+                .enable_completions = false,
+                .enable_undo = false,
+            }, error_location.path);
+            self.error_source_editor = Editor.init(self.app, error_source_buffer, .{
+                .show_status_bar = false,
+                .show_completer = false,
+            });
             {
                 dump(.{ error_location.report_location, error_location.path, error_location.line, error_location.col });
                 const cursor = self.error_source_editor.getMainCursor();

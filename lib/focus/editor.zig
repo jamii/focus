@@ -33,6 +33,11 @@ pub const Dragging = enum {
     CtrlDragging,
 };
 
+pub const Options = struct {
+    show_status_bar: bool = true,
+    show_completer: bool = true,
+};
+
 pub const Editor = struct {
     app: *App,
     buffer: *Buffer,
@@ -47,7 +52,7 @@ pub const Editor = struct {
     last_text_rect_h: Coord,
     wanted_center_pos: ?usize,
     last_event_ms: i64,
-    show_status_bar: bool,
+    options: Options,
     completer_o: ?Completer,
     imp_repl_o: ?*ImpRepl,
 
@@ -61,14 +66,14 @@ pub const Editor = struct {
     const scroll_amount = 32;
     const max_completions_shown = 10;
 
-    pub fn init(app: *App, buffer: *Buffer, show_status_bar: bool, show_completer: bool) *Editor {
+    pub fn init(app: *App, buffer: *Buffer, options: Options) *Editor {
         const line_wrapped_buffer = LineWrappedBuffer.init(app, buffer, std.math.maxInt(usize));
         var cursors = ArrayList(Cursor).init(app.allocator);
         cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
         }) catch oom();
-        const completer_o = if (show_completer)
+        const completer_o = if (options.show_completer)
             Completer{
                 .prefix = "",
                 .prefix_pos = 0,
@@ -90,7 +95,7 @@ pub const Editor = struct {
             .last_text_rect_h = 0,
             .wanted_center_pos = null,
             .last_event_ms = app.frame_time_ms,
-            .show_status_bar = show_status_bar,
+            .options = options,
             .completer_o = completer_o,
             .imp_repl_o = null,
         };
@@ -109,7 +114,7 @@ pub const Editor = struct {
 
     pub fn frame(self: *Editor, window: *Window, frame_rect: Rect, events: []const c.SDL_Event) void {
         var text_rect = frame_rect;
-        const status_rect = if (self.show_status_bar) text_rect.splitBottom(self.app.atlas.char_height, 0) else null;
+        const status_rect = if (self.options.show_status_bar) text_rect.splitBottom(self.app.atlas.char_height, 0) else null;
         const left_gutter_rect = text_rect.splitLeft(self.app.atlas.char_width, 0);
         const right_gutter_rect = text_rect.splitRight(self.app.atlas.char_width, 0);
 
@@ -623,7 +628,7 @@ pub const Editor = struct {
         }
 
         // draw statusbar
-        if (self.show_status_bar) {
+        if (self.options.show_status_bar) {
             window.queueRect(status_rect.?, style.status_background_color);
             // use real line_col instead of wrapped
             const line_col = self.buffer.getLineColForPos(self.getMainCursor().head.pos);

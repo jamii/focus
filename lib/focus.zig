@@ -268,7 +268,7 @@ pub const App = struct {
         if (self.buffers.get(absolute_filename)) |buffer| {
             return buffer;
         } else {
-            const buffer = Buffer.initFromAbsoluteFilename(self, .Real, absolute_filename);
+            const buffer = Buffer.initFromAbsoluteFilename(self, .{}, absolute_filename);
             // buffer might be out of date if file was modified elsewhere
             buffer.refresh();
             self.buffers.put(self.dupe(absolute_filename), buffer) catch oom();
@@ -306,7 +306,7 @@ pub const App = struct {
                 new_window = self.registerWindow(Window.init(self, .NotFloating));
                 new_window.client_address_o = client_address;
                 const new_buffer = self.getBufferFromAbsoluteFilename(filename);
-                const new_editor = Editor.init(self, new_buffer, true, true);
+                const new_editor = Editor.init(self, new_buffer, .{});
                 new_window.pushView(new_editor);
             },
         }

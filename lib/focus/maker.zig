@@ -51,8 +51,14 @@ pub const Maker = struct {
     },
 
     pub fn init(app: *App) *Maker {
-        const empty_buffer = Buffer.initEmpty(app, .Real);
-        const result_editor = Editor.init(app, empty_buffer, false, false);
+        const empty_buffer = Buffer.initEmpty(app, .{
+            .enable_completions = false,
+            .enable_undo = false,
+        });
+        const result_editor = Editor.init(app, empty_buffer, .{
+            .show_status_bar = false,
+            .show_completer = false,
+        });
         const input = SingleLineEditor.init(app, "/home/jamie/");
         const selector = Selector.init(app);
         const history_file = std.fs.cwd().openFile("/home/jamie/.bash_history", .{}) catch |err|
