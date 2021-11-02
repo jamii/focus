@@ -107,7 +107,7 @@ pub const ProjectSearcher = struct {
             self.preview_editor = Editor.init(self.app, preview_buffer, false, false);
 
             {
-                var cursor = self.preview_editor.getMainCursor();
+                const cursor = self.preview_editor.getMainCursor();
                 self.preview_editor.goRealLine(cursor, line_number.? - 1);
                 self.preview_editor.setMark();
                 self.preview_editor.goRealLineEnd(cursor);
