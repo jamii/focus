@@ -108,7 +108,7 @@ pub const Selector = struct {
         }
         if (old_selected != self.selected)
             self.selected = min(self.selected, max(1, num_items) - 1);
-        if (self.selected >= num_items)
+        if (action == .SelectOne and self.selected >= num_items)
             action = .None;
         return action;
     }
