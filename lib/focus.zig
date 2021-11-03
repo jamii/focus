@@ -17,6 +17,7 @@ pub const Maker = @import("./focus/maker.zig").Maker;
 pub const ErrorLister = @import("./focus/error_lister.zig").ErrorLister;
 pub const Window = @import("./focus/window.zig").Window;
 pub const Language = @import("./focus/language.zig").Language;
+pub const ChildProcess = @import("./focus/child_process.zig").ChildProcess;
 pub const style = @import("./focus/style.zig");
 
 usingnamespace common;

@@ -8,6 +8,7 @@ const style = focus.style;
 const SingleLineEditor = focus.SingleLineEditor;
 const Selector = focus.Selector;
 const ErrorLister = focus.ErrorLister;
+const ChildProcess = focus.ChildProcess;
 
 pub const Maker = struct {
     app: *App,
@@ -24,7 +25,7 @@ pub const Maker = struct {
         Running: struct {
             dirname: []const u8,
             command: []const u8,
-            child_process: *std.ChildProcess,
+            child_process: ChildProcess,
             error_locations: []const ErrorLister.ErrorLocation,
 
             const Self = @This();
@@ -34,16 +35,9 @@ pub const Maker = struct {
                 allocator.free(self.error_locations);
                 self.error_locations = &.{};
             }
-            fn kill(self: Self) void {
-                const pgid = std.os.linux.syscall1(.getpgid, @bitCast(usize, @as(isize, self.child_process.pid)));
-                std.os.kill(-@intCast(i32, pgid), std.os.SIGKILL) catch {};
-                self.child_process.stdout.?.close();
-                self.child_process.stderr.?.close();
-                self.child_process.deinit();
-            }
             fn deinit(self: *Self, allocator: *Allocator) void {
                 self.clearErrorLocations(allocator);
-                self.kill();
+                self.child_process.deinit();
                 allocator.free(self.command);
                 allocator.free(self.dirname);
             }
@@ -186,33 +180,17 @@ pub const Maker = struct {
                     self.state = .{ .Running = .{
                         .dirname = choosing_command.dirname,
                         .command = command,
-                        .child_process = spawn(self.app.allocator, choosing_command.dirname, command),
+                        .child_process = ChildProcess.init(
+                            self.app.allocator,
+                            choosing_command.dirname,
+                            &.{ "setsid", "bash", "-c", command },
+                        ),
                         .error_locations = &.{},
                     } };
                 }
             },
             .Running => |*running| {
-                // read stdout/stderr
-                var did_read = false;
-                const buffer = self.app.frame_allocator.alloc(u8, 1024) catch oom();
-                for (&[_]std.fs.File{ running.child_process.stdout.?, running.child_process.stderr.? }) |file| {
-                    while (true) {
-                        if (file.read(buffer)) |len| {
-                            self.result_editor.buffer.insert(self.result_editor.buffer.bytes.items.len, buffer[0..len]);
-                            if (len > 0)
-                                did_read = true;
-                            if (len < buffer.len)
-                                break;
-                        } else |err| {
-                            switch (err) {
-                                error.WouldBlock => break,
-                                else => panic("Err reading pipe: {}", .{err}),
-                            }
-                        }
-                    }
-                }
-
-                if (did_read) {
+                if (running.child_process.poll(self.result_editor.buffer) > 0) {
                     // parse results
                     var error_locations = ArrayList(ErrorLister.ErrorLocation).init(self.app.allocator);
                     defer error_locations.deinit();
@@ -262,28 +240,13 @@ pub const Maker = struct {
             .Running => |*running| {
                 self.result_editor.buffer.replace("");
                 running.clearErrorLocations(self.app.allocator);
-                running.kill();
-                running.child_process = spawn(self.app.allocator, running.dirname, running.command);
+                running.child_process.deinit();
+                running.child_process = ChildProcess.init(
+                    self.app.allocator,
+                    running.dirname,
+                    &.{ "setsid", "bash", "-c", running.command },
+                );
             },
         }
     }
 };
-
-fn spawn(allocator: *Allocator, dirname: []const u8, command: []const u8) *std.ChildProcess {
-    var child_process = std.ChildProcess.init(
-        &.{ "setsid", "bash", "-c", command },
-        allocator,
-    ) catch |err|
-        panic("{} while running command: {s}", .{ err, command });
-    child_process.stdin_behavior = .Ignore;
-    child_process.stdout_behavior = .Pipe;
-    child_process.stderr_behavior = .Pipe;
-    child_process.cwd = dirname;
-    child_process.spawn() catch |err|
-        panic("{} while running command: {s}", .{ err, command });
-    for (&[_]std.fs.File{ child_process.stdout.?, child_process.stderr.? }) |file| {
-        _ = std.os.fcntl(file.handle, std.os.linux.F_SETFL, std.os.linux.O_NONBLOCK) catch |err|
-            panic("Err setting pipe nonblock: {}", .{err});
-    }
-    return child_process;
-}
