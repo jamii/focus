@@ -95,10 +95,8 @@ pub const ErrorLister = struct {
                 const new_buffer = self.app.getBufferFromAbsoluteFilename(error_location.path);
                 const new_editor = Editor.init(self.app, new_buffer, .{});
                 const cursor = new_editor.getMainCursor();
-                const line = min(error_location.line - 1, new_editor.buffer.countLines() - 1);
-                const line_range = new_editor.buffer.line_ranges.items[line];
-                const col = min(error_location.col - 1, line_range[1] - line_range[0]);
-                new_editor.goRealLineCol(cursor, line, col);
+                new_editor.tryGoRealLine(cursor, error_location.line - 1);
+                new_editor.goRealCol(cursor, error_location.col - 1);
                 new_editor.setCenterAtPos(cursor.head.pos);
                 window.popView();
                 window.pushView(new_editor);
@@ -132,12 +130,9 @@ pub const ErrorLister = struct {
                 .show_completer = false,
             });
             {
-                dump(.{ error_location.report_location, error_location.path, error_location.line, error_location.col });
                 const cursor = self.error_source_editor.getMainCursor();
-                const line = min(error_location.line - 1, self.error_source_editor.buffer.countLines() - 1);
-                const line_range = self.error_source_editor.buffer.line_ranges.items[line];
-                const col = min(error_location.col - 1, line_range[1] - line_range[0]);
-                self.error_source_editor.goRealLineCol(cursor, line, col);
+                self.error_source_editor.tryGoRealLine(cursor, error_location.line - 1);
+                self.error_source_editor.goRealCol(cursor, error_location.col - 1);
                 self.error_source_editor.setCenterAtPos(cursor.head.pos);
             }
             self.error_source_editor.frame(window, layout.preview, &.{});

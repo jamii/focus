@@ -113,7 +113,7 @@ pub const Maker = struct {
                 // run selector frame
                 var action: Selector.Action = .None;
                 if (results_or_err) |_| {
-                    self.selector.setByItems(results);
+                    self.selector.setItems(results);
                     action = self.selector.frame(window, layout.selector, events);
                 } else |results_err| {
                     const error_text = format(self.app.frame_allocator, "Error opening directory: {}", .{results_err});
@@ -155,7 +155,7 @@ pub const Maker = struct {
 
                 // run selector frame
                 var action: Selector.Action = .None;
-                self.selector.setByItems(filtered_history);
+                self.selector.setItems(filtered_history);
                 action = self.selector.frame(window, layout.selector, events);
 
                 // maybe run command
@@ -183,14 +183,16 @@ pub const Maker = struct {
                         .child_process = ChildProcess.init(
                             self.app.allocator,
                             choosing_command.dirname,
-                            &.{ "setsid", "bash", "-c", command },
+                            &.{ "bash", "-c", command },
                         ),
                         .error_locations = &.{},
                     } };
                 }
             },
             .Running => |*running| {
-                if (running.child_process.poll(self.result_editor.buffer) > 0) {
+                const new_text = running.child_process.read(self.app.frame_allocator);
+                if (new_text.len > 0) {
+                    self.result_editor.buffer.insert(self.result_editor.buffer.getBufferEnd(), new_text);
                     // parse results
                     var error_locations = ArrayList(ErrorLister.ErrorLocation).init(self.app.allocator);
                     defer error_locations.deinit();
@@ -244,7 +246,7 @@ pub const Maker = struct {
                 running.child_process = ChildProcess.init(
                     self.app.allocator,
                     running.dirname,
-                    &.{ "setsid", "bash", "-c", running.command },
+                    &.{ "bash", "-c", running.command },
                 );
             },
         }

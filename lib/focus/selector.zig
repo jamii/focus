@@ -44,7 +44,7 @@ pub const Selector = struct {
         self.buffer.deinit();
     }
 
-    pub fn setByItems(self: *Selector, items: []const []const u8) void {
+    pub fn setItems(self: *Selector, items: []const []const u8) void {
         var text = ArrayList(u8).init(self.app.frame_allocator);
         var ranges = ArrayList([2]usize).init(self.app.frame_allocator);
         for (items) |item| {
@@ -54,17 +54,22 @@ pub const Selector = struct {
             text.append('\n') catch oom();
             ranges.append(.{ start, end }) catch oom();
         }
-        self.setByTextAndRanges(text.toOwnedSlice(), ranges.toOwnedSlice());
+        self.setTextAndRanges(text.toOwnedSlice(), ranges.toOwnedSlice());
     }
 
-    pub fn setByTextAndRanges(self: *Selector, text: []const u8, ranges: []const [2]usize) void {
+    pub fn setTextAndRanges(self: *Selector, text: []const u8, ranges: []const [2]usize) void {
         self.buffer.replace(text);
+        self.setRanges(ranges);
+    }
+
+    pub fn setRanges(self: *Selector, ranges: []const [2]usize) void {
         self.app.allocator.free(self.ranges);
         self.ranges = self.app.dupe(ranges);
     }
 
     pub fn logic(self: *Selector, events: []const c.SDL_Event, num_items: usize) Action {
         var action: Action = .None;
+        const old_selected = self.selected;
         for (events) |event| {
             switch (event.type) {
                 c.SDL_KEYDOWN => {
@@ -101,7 +106,10 @@ pub const Selector = struct {
                 else => {},
             }
         }
-        self.selected = min(self.selected, max(1, num_items) - 1);
+        if (old_selected != self.selected)
+            self.selected = min(self.selected, max(1, num_items) - 1);
+        if (self.selected >= num_items)
+            action = .None;
         return action;
     }
 
@@ -110,7 +118,7 @@ pub const Selector = struct {
 
         // set selection
         var cursor = self.editor.getMainCursor();
-        if (self.ranges.len != 0) {
+        if (self.selected < self.ranges.len) {
             self.editor.goPos(cursor, self.ranges[self.selected][0]);
             self.editor.setMark();
             self.editor.goPos(cursor, self.ranges[self.selected][1]);

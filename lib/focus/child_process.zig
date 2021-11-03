@@ -1,19 +1,22 @@
 const focus = @import("../focus.zig");
 usingnamespace focus.common;
-const Buffer = focus.Buffer;
 
 pub const ChildProcess = struct {
     child_process: *std.ChildProcess,
 
     pub fn init(allocator: *Allocator, dirname: []const u8, args: []const []const u8) ChildProcess {
-        const child_process = std.ChildProcess.init(args, allocator) catch |err|
-            panic("{} while running args: {s}", .{ err, args });
+        const full_args = std.mem.concat(allocator, []const u8, &.{
+            &.{@as([]const u8, "setsid")},
+            args,
+        }) catch oom();
+        const child_process = std.ChildProcess.init(full_args, allocator) catch |err|
+            panic("{} while running args: {s}", .{ err, full_args });
         child_process.cwd = dirname;
         child_process.stdin_behavior = .Ignore;
         child_process.stdout_behavior = .Pipe;
         child_process.stderr_behavior = .Pipe;
         child_process.spawn() catch |err|
-            panic("{} while running args: {s}", .{ err, args });
+            panic("{} while running args: {s}", .{ err, full_args });
         for (&[_]std.fs.File{ child_process.stdout.?, child_process.stderr.? }) |file| {
             _ = std.os.fcntl(file.handle, std.os.linux.F_SETFL, std.os.linux.O_NONBLOCK) catch |err|
                 panic("Err setting pipe nonblock: {}", .{err});
@@ -21,7 +24,7 @@ pub const ChildProcess = struct {
         return .{ .child_process = child_process };
     }
 
-    pub fn deinit(self: *ChildProcess) void {
+    pub fn deinit(self: ChildProcess) void {
         const pgid = std.os.linux.syscall1(.getpgid, @bitCast(usize, @as(isize, self.child_process.pid)));
         std.os.kill(-@intCast(i32, pgid), std.os.SIGKILL) catch {};
         self.child_process.stdout.?.close();
@@ -29,15 +32,21 @@ pub const ChildProcess = struct {
         self.child_process.deinit();
     }
 
-    pub fn poll(self: *ChildProcess, buffer: *Buffer) usize {
-        var num_bytes_read: usize = 0;
-        const tmp = buffer.app.frame_allocator.alloc(u8, 1024) catch oom();
+    pub fn poll(self: ChildProcess) enum { Running, Finished } {
+        const wait = std.os.waitpid(self.child_process.pid, std.os.linux.WNOHANG);
+        return if (wait.pid == self.child_process.pid) .Finished else .Running;
+    }
+
+    pub fn read(self: ChildProcess, allocator: *Allocator) []const u8 {
+        var bytes = ArrayList(u8).initCapacity(allocator, 4096) catch oom();
+        defer bytes.deinit();
+        var start: usize = 0;
         for (&[_]std.fs.File{ self.child_process.stdout.?, self.child_process.stderr.? }) |file| {
             while (true) {
-                if (file.read(tmp)) |len| {
-                    buffer.insert(buffer.bytes.items.len, tmp[0..len]);
-                    num_bytes_read += len;
-                    if (len < tmp.len)
+                bytes.expandToCapacity();
+                if (file.read(bytes.items[start..])) |num_bytes_read| {
+                    start += num_bytes_read;
+                    if (num_bytes_read == 0)
                         break;
                 } else |err| {
                     switch (err) {
@@ -45,8 +54,10 @@ pub const ChildProcess = struct {
                         else => panic("Err reading pipe: {}", .{err}),
                     }
                 }
+                bytes.ensureTotalCapacity(start + 1) catch oom();
             }
         }
-        return num_bytes_read;
+        bytes.shrinkAndFree(start);
+        return bytes.toOwnedSlice();
     }
 };

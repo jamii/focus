@@ -669,6 +669,11 @@ pub const Editor = struct {
         self.goRealCol(cursor, col);
     }
 
+    pub fn tryGoRealLine(self: *Editor, cursor: *Cursor, line: usize) void {
+        const safe_line = min(line, self.buffer.countLines() - 1);
+        self.goRealLine(cursor, safe_line);
+    }
+
     pub fn goWrappedCol(self: *Editor, cursor: *Cursor, col: usize) void {
         const line_start = self.line_wrapped_buffer.getLineStart(cursor.head.pos);
         cursor.head.col = min(col, self.line_wrapped_buffer.getLineEnd(cursor.head.pos) - line_start);

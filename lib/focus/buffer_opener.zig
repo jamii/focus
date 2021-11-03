@@ -81,7 +81,7 @@ pub const BufferOpener = struct {
         const filtered_paths = fuzzy_search(self.app.frame_allocator, paths.items, self.input.getText());
 
         // run selector frame
-        self.selector.setByItems(filtered_paths);
+        self.selector.setItems(filtered_paths);
         const action = self.selector.frame(window, layout.selector, events);
 
         // maybe open file
