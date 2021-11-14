@@ -1,6 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
-const meta = focus.meta;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -33,7 +34,7 @@ pub const BufferOpener = struct {
         var selector = Selector.init(app);
         // selector.selected = app.last_buffer_opener_selected;
 
-        const self = app.allocator.create(BufferOpener) catch oom();
+        const self = app.allocator.create(BufferOpener) catch u.oom();
         self.* = BufferOpener{
             .app = app,
             .preview_editor = preview_editor,
@@ -50,7 +51,7 @@ pub const BufferOpener = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *BufferOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *BufferOpener, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
@@ -58,13 +59,13 @@ pub const BufferOpener = struct {
         if (input_changed == .Changed) self.selector.selected = 0;
 
         // get buffer paths
-        var paths = ArrayList([]const u8).init(self.app.frame_allocator);
+        var paths = u.ArrayList([]const u8).init(self.app.frame_allocator);
         {
             const Entry = @TypeOf(self.app.buffers).Entry;
-            var entries = ArrayList(Entry).init(self.app.frame_allocator);
+            var entries = u.ArrayList(Entry).init(self.app.frame_allocator);
             var buffers_iter = self.app.buffers.iterator();
             while (buffers_iter.next()) |entry| {
-                entries.append(entry) catch oom();
+                entries.append(entry) catch u.oom();
             }
             // sort by most recently focused
             std.sort.sort(Entry, entries.items, {}, (struct {
@@ -73,12 +74,12 @@ pub const BufferOpener = struct {
                 }
             }).lessThan);
             for (entries.items) |entry| {
-                paths.append(entry.key_ptr.*) catch oom();
+                paths.append(entry.key_ptr.*) catch u.oom();
             }
         }
 
         // filter paths
-        const filtered_paths = fuzzy_search(self.app.frame_allocator, paths.items, self.input.getText());
+        const filtered_paths = u.fuzzy_search(self.app.frame_allocator, paths.items, self.input.getText());
 
         // run selector frame
         self.selector.setItems(filtered_paths);

@@ -1,6 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
-const meta = focus.meta;
+const u = focus.util;
+const c = focus.util.c;
 const Atlas = focus.Atlas;
 const App = focus.App;
 const Editor = focus.Editor;
@@ -31,22 +32,22 @@ pub const View = union(enum) {
 pub const Window = struct {
     app: *App,
     // views are allowed to have pointers to previous views on the stack
-    views: ArrayList(View),
-    popped_views: ArrayList(View),
+    views: u.ArrayList(View),
+    popped_views: u.ArrayList(View),
     close_after_frame: bool,
 
     // client socket who opened this window, need to tell them when we close
     client_address_o: ?focus.Address,
 
     sdl_window: *c.SDL_Window,
-    width: Coord,
-    height: Coord,
+    width: u.Coord,
+    height: u.Coord,
 
     gl_context: c.SDL_GLContext,
-    texture_buffer: ArrayList(Quad(Vec2f)),
-    vertex_buffer: ArrayList(Quad(Vec2f)),
-    color_buffer: ArrayList(Quad(Color)),
-    index_buffer: ArrayList([2]Tri(u32)),
+    texture_buffer: u.ArrayList(u.Quad(u.Vec2f)),
+    vertex_buffer: u.ArrayList(u.Quad(u.Vec2f)),
+    color_buffer: u.ArrayList(u.Quad(u.Color)),
+    index_buffer: u.ArrayList([2]u.Tri(u32)),
 
     pub fn init(
         app: *App,
@@ -67,22 +68,22 @@ pub const Window = struct {
             @as(c_int, init_width),
             @as(c_int, init_height),
             @intCast(u32, flags),
-        ) orelse panic("SDL window creation failed: {s}", .{c.SDL_GetError()});
+        ) orelse u.panic("SDL window creation failed: {s}", .{c.SDL_GetError()});
 
         // TODO zig compiler can't handle this macro-fest yet
         //var info: c.SDL_SysWMinfo = undefined;
         //c.SDL_VERSION(&info.version);
         //if (!SDL_GetWindowWMInfo(sdl_window, &info)) {
-        //   panic("Could not get window info: {s}", .{c.SDL_GetError()});
+        //   u.panic("Could not get window info: {s}", .{c.SDL_GetError()});
         //}
         //if (info.subsystem != c.SDL_SYSWM_WAYLAND) {
-        //    panic("Wanted wayland, got subsystem={}", .{info.subsystem});
+        //    u.panic("Wanted wayland, got subsystem={}", .{info.subsystem});
         //}
 
         // init gl
         const gl_context = c.SDL_GL_CreateContext(sdl_window);
         if (c.SDL_GL_MakeCurrent(sdl_window, gl_context) != 0)
-            panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
+            u.panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
         c.glEnable(c.GL_BLEND);
         c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
         c.glDisable(c.GL_CULL_FACE);
@@ -98,7 +99,7 @@ pub const Window = struct {
         // no vsync - causes problems with multiple windows
         // see https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
         if (c.SDL_GL_SetSwapInterval(0) != 0)
-            panic("Setting swap interval failed: {s}", .{c.SDL_GetError()});
+            u.panic("Setting swap interval failed: {s}", .{c.SDL_GetError()});
 
         // accept unicode input
         // TODO does this need to be per window?
@@ -109,8 +110,8 @@ pub const Window = struct {
 
         return Window{
             .app = app,
-            .views = ArrayList(View).init(app.allocator),
-            .popped_views = ArrayList(View).init(app.allocator),
+            .views = u.ArrayList(View).init(app.allocator),
+            .popped_views = u.ArrayList(View).init(app.allocator),
             .close_after_frame = false,
 
             .client_address_o = null,
@@ -120,10 +121,10 @@ pub const Window = struct {
             .height = init_height,
 
             .gl_context = gl_context,
-            .texture_buffer = ArrayList(Quad(Vec2f)).init(app.allocator),
-            .vertex_buffer = ArrayList(Quad(Vec2f)).init(app.allocator),
-            .color_buffer = ArrayList(Quad(Color)).init(app.allocator),
-            .index_buffer = ArrayList([2]Tri(u32)).init(app.allocator),
+            .texture_buffer = u.ArrayList(u.Quad(u.Vec2f)).init(app.allocator),
+            .vertex_buffer = u.ArrayList(u.Quad(u.Vec2f)).init(app.allocator),
+            .color_buffer = u.ArrayList(u.Quad(u.Color)).init(app.allocator),
+            .index_buffer = u.ArrayList([2]u.Tri(u32)).init(app.allocator),
         };
     }
 
@@ -134,7 +135,7 @@ pub const Window = struct {
         c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, atlas.texture.ptr);
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
         c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
-        assert(c.glGetError() == 0);
+        u.assert(c.glGetError() == 0);
     }
 
     pub fn deinit(self: *Window) void {
@@ -147,7 +148,7 @@ pub const Window = struct {
 
         while (self.views.items.len > 0) {
             const view = self.views.pop();
-            self.popped_views.append(view) catch oom();
+            self.popped_views.append(view) catch u.oom();
         }
         self.deinitPoppedViews();
         self.popped_views.deinit();
@@ -182,11 +183,11 @@ pub const Window = struct {
         var w: c_int = undefined;
         var h: c_int = undefined;
         c.SDL_GL_GetDrawableSize(self.sdl_window, &w, &h);
-        self.width = @intCast(Coord, w);
-        self.height = @intCast(Coord, h);
-        const window_rect = Rect{ .x = 0, .y = 0, .w = self.width, .h = self.height };
+        self.width = @intCast(u.Coord, w);
+        self.height = @intCast(u.Coord, h);
+        const window_rect = u.Rect{ .x = 0, .y = 0, .w = self.width, .h = self.height };
 
-        var view_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
+        var view_events = u.ArrayList(c.SDL_Event).init(self.app.frame_allocator);
 
         // handle events
         for (events) |event| {
@@ -199,7 +200,7 @@ pub const Window = struct {
                             'q' => if (self.getTopViewIfEditor() == null) self.popView(),
                             'o' => {
                                 const init_path = if (self.getTopViewFilename()) |filename|
-                                    std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch oom()
+                                    std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch u.oom()
                                 else
                                     "/home/jamie/";
                                 const file_opener = FileOpener.init(self.app, init_path);
@@ -244,15 +245,15 @@ pub const Window = struct {
                                     if (editor.buffer.getFilename()) |filename| {
                                         const dirname = std.fs.path.dirname(filename).?;
                                         var root = dirname;
-                                        while (!meta.deepEqual(root, "/")) {
-                                            const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch oom();
+                                        while (!u.deepEqual(root, "/")) {
+                                            const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch u.oom();
                                             if (std.fs.openFileAbsolute(git_path, .{})) |file| {
                                                 file.close();
                                                 break;
                                             } else |_| {}
                                             root = std.fs.path.dirname(root).?;
                                         }
-                                        project_dir = if (meta.deepEqual(root, "/")) dirname else root;
+                                        project_dir = if (u.deepEqual(root, "/")) dirname else root;
                                     }
                                 }
                                 const project_searcher = ProjectSearcher.init(self.app, project_dir);
@@ -289,7 +290,7 @@ pub const Window = struct {
                 else => {},
             }
             // delegate other events to editor
-            if (!handled) view_events.append(event) catch oom();
+            if (!handled) view_events.append(event) catch u.oom();
         }
 
         // check focus
@@ -315,11 +316,11 @@ pub const Window = struct {
             }
         } else {
             const message = "focus";
-            const rect = Rect{
-                .x = window_rect.x + max(0, @divTrunc(window_rect.w - (@intCast(Coord, message.len) * self.app.atlas.char_width), 2)),
-                .y = window_rect.y + max(0, @divTrunc(window_rect.h - self.app.atlas.char_height, 2)),
-                .w = min(window_rect.w, @intCast(Coord, message.len) * self.app.atlas.char_width),
-                .h = min(window_rect.h, self.app.atlas.char_height),
+            const rect = u.Rect{
+                .x = window_rect.x + u.max(0, @divTrunc(window_rect.w - (@intCast(u.Coord, message.len) * self.app.atlas.char_width), 2)),
+                .y = window_rect.y + u.max(0, @divTrunc(window_rect.h - self.app.atlas.char_height, 2)),
+                .w = u.min(window_rect.w, @intCast(u.Coord, message.len) * self.app.atlas.char_width),
+                .h = u.min(window_rect.h, self.app.atlas.char_height),
             };
             self.queueText(rect, style.text_color, message);
         }
@@ -327,13 +328,13 @@ pub const Window = struct {
         // set window title
         var window_title: [*c]const u8 = "";
         if (self.getTopViewFilename()) |filename| {
-            window_title = std.mem.dupeZ(self.app.frame_allocator, u8, filename) catch oom();
+            window_title = std.mem.dupeZ(self.app.frame_allocator, u8, filename) catch u.oom();
         }
         c.SDL_SetWindowTitle(self.sdl_window, window_title);
 
         // render
         if (c.SDL_GL_MakeCurrent(self.sdl_window, self.gl_context) != 0)
-            panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
+            u.panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
 
         c.glClearColor(0, 0, 0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
@@ -360,10 +361,10 @@ pub const Window = struct {
         c.SDL_GL_SwapWindow(self.sdl_window);
 
         // reset
-        self.texture_buffer.resize(0) catch oom();
-        self.vertex_buffer.resize(0) catch oom();
-        self.color_buffer.resize(0) catch oom();
-        self.index_buffer.resize(0) catch oom();
+        self.texture_buffer.resize(0) catch u.oom();
+        self.vertex_buffer.resize(0) catch u.oom();
+        self.color_buffer.resize(0) catch u.oom();
+        self.index_buffer.resize(0) catch u.oom();
 
         // clean up
         self.deinitPoppedViews();
@@ -376,7 +377,7 @@ pub const Window = struct {
         }
     }
 
-    pub fn queueQuad(self: *Window, dst: Rect, src: Rect, color: Color) void {
+    pub fn queueQuad(self: *Window, dst: u.Rect, src: u.Rect, color: u.Color) void {
         const tx = @intToFloat(f32, src.x) / @intToFloat(f32, self.app.atlas.texture_dims.x);
         const ty = @intToFloat(f32, src.y) / @intToFloat(f32, self.app.atlas.texture_dims.y);
         const tw = @intToFloat(f32, src.w) / @intToFloat(f32, self.app.atlas.texture_dims.x);
@@ -386,7 +387,7 @@ pub const Window = struct {
             .tr = .{ .x = tx + tw, .y = ty },
             .bl = .{ .x = tx, .y = ty + th },
             .br = .{ .x = tx + tw, .y = ty + th },
-        }) catch oom();
+        }) catch u.oom();
 
         const vx = @intToFloat(f32, dst.x);
         const vy = @intToFloat(f32, dst.y);
@@ -397,14 +398,14 @@ pub const Window = struct {
             .tr = .{ .x = vx + vw, .y = vy },
             .bl = .{ .x = vx, .y = vy + vh },
             .br = .{ .x = vx + vw, .y = vy + vh },
-        }) catch oom();
+        }) catch u.oom();
 
         self.color_buffer.append(.{
             .tl = color,
             .tr = color,
             .bl = color,
             .br = color,
-        }) catch oom();
+        }) catch u.oom();
 
         const vertex_ix = @intCast(u32, self.index_buffer.items.len * 4);
         self.index_buffer.append(.{
@@ -418,7 +419,7 @@ pub const Window = struct {
                 .b = vertex_ix + 3,
                 .c = vertex_ix + 1,
             },
-        }) catch oom();
+        }) catch u.oom();
     }
 
     pub fn handleAfterSave(self: *Window) void {
@@ -433,14 +434,14 @@ pub const Window = struct {
         if (self.getTopViewIfEditor()) |editor| editor.save(.Auto);
         const tag_name = @typeName(@typeInfo(@TypeOf(view_ptr)).Pointer.child);
         const view = @unionInit(View, tag_name, view_ptr);
-        self.views.append(view) catch oom();
+        self.views.append(view) catch u.oom();
     }
 
     pub fn popView(self: *Window) void {
         if (self.views.items.len > 0) {
             const view = self.views.pop();
             // can't clean up view right away because we might still be inside it's frame function
-            self.popped_views.append(view) catch oom();
+            self.popped_views.append(view) catch u.oom();
         }
     }
 
@@ -462,26 +463,26 @@ pub const Window = struct {
 
     // drawing api
 
-    pub fn queueRect(self: *Window, rect: Rect, color: Color) void {
+    pub fn queueRect(self: *Window, rect: u.Rect, color: u.Color) void {
         self.queueQuad(rect, self.app.atlas.white_rect, color);
     }
 
-    pub fn queueText(self: *Window, rect: Rect, color: Color, chars: []const u8) void {
+    pub fn queueText(self: *Window, rect: u.Rect, color: u.Color, chars: []const u8) void {
         const max_x = rect.x + rect.w;
         const max_y = rect.y + rect.h;
-        var dst: Rect = .{ .x = rect.x, .y = rect.y, .w = 0, .h = 0 };
+        var dst: u.Rect = .{ .x = rect.x, .y = rect.y, .w = 0, .h = 0 };
         for (chars) |char| {
             var src = if (char < self.app.atlas.char_to_rect.len)
                 self.app.atlas.char_to_rect[char]
             else
                 // TODO tofu
                 self.app.atlas.white_rect;
-            const max_w = max(0, max_x - dst.x);
-            const max_h = max(0, max_y - dst.y);
-            const ratio_w = @intToFloat(f64, min(max_w, self.app.atlas.char_width)) / @intToFloat(f64, self.app.atlas.char_width);
-            const ratio_h = @intToFloat(f64, min(max_h, self.app.atlas.char_height)) / @intToFloat(f64, self.app.atlas.char_height);
-            src.w = @floatToInt(Coord, @floor(@intToFloat(f64, src.w) * ratio_w));
-            src.h = @floatToInt(Coord, @floor(@intToFloat(f64, src.h) * ratio_h));
+            const max_w = u.max(0, max_x - dst.x);
+            const max_h = u.max(0, max_y - dst.y);
+            const ratio_w = @intToFloat(f64, u.min(max_w, self.app.atlas.char_width)) / @intToFloat(f64, self.app.atlas.char_width);
+            const ratio_h = @intToFloat(f64, u.min(max_h, self.app.atlas.char_height)) / @intToFloat(f64, self.app.atlas.char_height);
+            src.w = @floatToInt(u.Coord, @floor(@intToFloat(f64, src.w) * ratio_w));
+            src.h = @floatToInt(u.Coord, @floor(@intToFloat(f64, src.h) * ratio_h));
             dst.w = src.w;
             dst.h = src.h;
             self.queueQuad(dst, src, color);
@@ -492,11 +493,11 @@ pub const Window = struct {
     // util
 
     pub const SearcherLayout = struct {
-        selector: Rect,
-        input: Rect,
+        selector: u.Rect,
+        input: u.Rect,
     };
 
-    pub fn layoutSearcher(self: *Window, rect: Rect) SearcherLayout {
+    pub fn layoutSearcher(self: *Window, rect: u.Rect) SearcherLayout {
         const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
         var all_rect = rect;
         const input_rect = all_rect.splitTop(self.app.atlas.char_height, 0);
@@ -507,15 +508,15 @@ pub const Window = struct {
     }
 
     pub const SearcherWithPreviewLayout = struct {
-        preview: Rect,
-        selector: Rect,
-        input: Rect,
+        preview: u.Rect,
+        selector: u.Rect,
+        input: u.Rect,
     };
 
-    pub fn layoutSearcherWithPreview(self: *Window, rect: Rect) SearcherWithPreviewLayout {
+    pub fn layoutSearcherWithPreview(self: *Window, rect: u.Rect) SearcherWithPreviewLayout {
         const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
         var all_rect = rect;
-        const h = @divTrunc(max(0, rect.h - self.app.atlas.char_height - 2 * border_thickness), 2);
+        const h = @divTrunc(u.max(0, rect.h - self.app.atlas.char_height - 2 * border_thickness), 2);
         const preview_rect = all_rect.splitTop(h, 0);
         const border_rect = all_rect.splitTop(border_thickness, 0);
         const searcher_layout = self.layoutSearcher(all_rect);
@@ -524,14 +525,14 @@ pub const Window = struct {
     }
 
     pub const ListerLayout = struct {
-        preview: Rect,
-        report: Rect,
+        preview: u.Rect,
+        report: u.Rect,
     };
 
-    pub fn layoutLister(self: *Window, rect: Rect) ListerLayout {
+    pub fn layoutLister(self: *Window, rect: u.Rect) ListerLayout {
         const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
         var all_rect = rect;
-        const h = @divTrunc(max(0, rect.h - 2 * border_thickness), 2);
+        const h = @divTrunc(u.max(0, rect.h - 2 * border_thickness), 2);
         const preview_rect = all_rect.splitTop(h, 0);
         const border_rect = all_rect.splitTop(border_thickness, 0);
         const report_rect = all_rect;

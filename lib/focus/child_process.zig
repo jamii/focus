@@ -1,32 +1,34 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
+const u = focus.util;
+const c = focus.util.c;
 
 pub const ChildProcess = struct {
     child_process: *std.ChildProcess,
 
-    pub fn init(allocator: *Allocator, dirname: []const u8, args: []const []const u8) ChildProcess {
+    pub fn init(allocator: *u.Allocator, dirname: []const u8, args: []const []const u8) ChildProcess {
         const full_args = std.mem.concat(allocator, []const u8, &.{
             &.{@as([]const u8, "setsid")},
             args,
-        }) catch oom();
+        }) catch u.oom();
         const child_process = std.ChildProcess.init(full_args, allocator) catch |err|
-            panic("{} while running args: {s}", .{ err, full_args });
+            u.panic("{} while running args: {s}", .{ err, full_args });
         child_process.cwd = dirname;
         child_process.stdin_behavior = .Ignore;
         child_process.stdout_behavior = .Pipe;
         child_process.stderr_behavior = .Pipe;
         child_process.spawn() catch |err|
-            panic("{} while running args: {s}", .{ err, full_args });
+            u.panic("{} while running args: {s}", .{ err, full_args });
         for (&[_]std.fs.File{ child_process.stdout.?, child_process.stderr.? }) |file| {
-            _ = std.os.fcntl(file.handle, std.os.linux.F_SETFL, std.os.linux.O_NONBLOCK) catch |err|
-                panic("Err setting pipe nonblock: {}", .{err});
+            _ = std.os.fcntl(file.handle, std.os.linux.F.SETFL, std.os.linux.O.NONBLOCK) catch |err|
+                u.panic("Err setting pipe nonblock: {}", .{err});
         }
         return .{ .child_process = child_process };
     }
 
     pub fn deinit(self: ChildProcess) void {
         const pgid = std.os.linux.syscall1(.getpgid, @bitCast(usize, @as(isize, self.child_process.pid)));
-        std.os.kill(-@intCast(i32, pgid), std.os.SIGKILL) catch {};
+        std.os.kill(-@intCast(i32, pgid), std.os.SIG.KILL) catch {};
         self.child_process.stdout.?.close();
         self.child_process.stderr.?.close();
         self.child_process.deinit();
@@ -37,8 +39,8 @@ pub const ChildProcess = struct {
         return if (wait.pid == self.child_process.pid) .Finished else .Running;
     }
 
-    pub fn read(self: ChildProcess, allocator: *Allocator) []const u8 {
-        var bytes = ArrayList(u8).initCapacity(allocator, 4096) catch oom();
+    pub fn read(self: ChildProcess, allocator: *u.Allocator) []const u8 {
+        var bytes = u.ArrayList(u8).initCapacity(allocator, 4096) catch u.oom();
         defer bytes.deinit();
         var start: usize = 0;
         for (&[_]std.fs.File{ self.child_process.stdout.?, self.child_process.stderr.? }) |file| {
@@ -51,10 +53,10 @@ pub const ChildProcess = struct {
                 } else |err| {
                     switch (err) {
                         error.WouldBlock => break,
-                        else => panic("Err reading pipe: {}", .{err}),
+                        else => u.panic("Err reading pipe: {}", .{err}),
                     }
                 }
-                bytes.ensureTotalCapacity(start + 1) catch oom();
+                bytes.ensureTotalCapacity(start + 1) catch u.oom();
             }
         }
         bytes.shrinkAndFree(start);

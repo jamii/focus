@@ -26,22 +26,22 @@ let
   targetPkgs = if cross then crossPkgs else hostPkgs;
 
   zig = hostPkgs.stdenv.mkDerivation {
-    name = "zig";
-    src = fetchTarball (if (hostPkgs.system == "x86_64-linux") then {
-        url = "https://ziglang.org/builds/zig-linux-x86_64-0.9.0-dev.687+7aaea20e7.tar.xz";
-        sha256 = "1s64pkv6jf70gw58lvsizv1wxcp2055cb540l4xpbgcqc749g6bl";
-    } else throw ("Unknown system " ++ hostPkgs.system));
-    dontConfigure = true;
-    dontBuild = true;
-    installPhase = ''
-    mkdir -p $out
-    mv ./lib $out/
-    mkdir -p $out/bin
-    mv ./zig $out/bin
-    mkdir -p $out/doc
-    #mv ./langref.html $out/doc
-    '';
-  };
+        name = "zig";
+        src = fetchTarball (if (hostPkgs.system == "x86_64-linux") then {
+            url = "https://ziglang.org/builds/zig-linux-x86_64-0.9.0-dev.1625+d3a099c14.tar.xz";
+            sha256 = "1azv16jkn7mh1jm9m6k7d5nkjjs26dhy26azg9xcb4hg5qrznnc0";
+        } else throw ("Unknown system " ++ hostPkgs.system));
+        dontConfigure = true;
+        dontBuild = true;
+        installPhase = ''
+        mkdir -p $out
+        mv ./lib $out/
+        mkdir -p $out/bin
+        mv ./zig $out/bin
+        mkdir -p $out/doc
+        #mv ./langref.html $out/doc
+        '';
+    };
 
 in
 

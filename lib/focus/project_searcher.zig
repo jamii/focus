@@ -1,6 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
-const meta = focus.meta;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -34,7 +35,7 @@ pub const ProjectSearcher = struct {
         var selector = Selector.init(app);
         selector.selected = app.last_project_search_selected;
 
-        const self = app.allocator.create(ProjectSearcher) catch oom();
+        const self = app.allocator.create(ProjectSearcher) catch u.oom();
         self.* =
             ProjectSearcher{
             .app = app,
@@ -70,7 +71,7 @@ pub const ProjectSearcher = struct {
         }
     }
 
-    pub fn frame(self: *ProjectSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *ProjectSearcher, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
@@ -93,13 +94,13 @@ pub const ProjectSearcher = struct {
             if (new_text.len > 0) {
                 self.selector.buffer.insert(self.selector.buffer.getBufferEnd(), new_text);
                 const text = self.selector.buffer.bytes.items;
-                var result_ranges = ArrayList([2]usize).init(self.app.frame_allocator);
+                var result_ranges = u.ArrayList([2]usize).init(self.app.frame_allocator);
                 var start: usize = 0;
                 var end: usize = 0;
                 while (end < text.len) {
                     end = std.mem.indexOfPos(u8, text, start, "\n") orelse text.len;
                     if (start != end)
-                        result_ranges.append(.{ start, end }) catch oom();
+                        result_ranges.append(.{ start, end }) catch u.oom();
                     start = end + 1;
                 }
                 self.selector.setRanges(result_ranges.toOwnedSlice());
@@ -125,9 +126,9 @@ pub const ProjectSearcher = struct {
             // see if we can parse selection
             const range = self.selector.ranges[self.selector.selected];
             const line = self.selector.buffer.bytes.items[range[0]..range[1]];
-            var parts = std.mem.split(line, ":");
+            var parts = std.mem.split(u8, line, ":");
             if (parts.next()) |path_suffix|
-                path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch oom();
+                path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch u.oom();
             if (parts.next()) |line_number_string|
                 line_number = std.fmt.parseInt(usize, line_number_string, 10) catch null;
 

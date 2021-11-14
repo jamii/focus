@@ -1,6 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
-const meta = focus.meta;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -45,14 +46,14 @@ pub const Selector = struct {
     }
 
     pub fn setItems(self: *Selector, items: []const []const u8) void {
-        var text = ArrayList(u8).init(self.app.frame_allocator);
-        var ranges = ArrayList([2]usize).init(self.app.frame_allocator);
+        var text = u.ArrayList(u8).init(self.app.frame_allocator);
+        var ranges = u.ArrayList([2]usize).init(self.app.frame_allocator);
         for (items) |item| {
             const start = text.items.len;
-            text.appendSlice(item) catch oom();
+            text.appendSlice(item) catch u.oom();
             const end = text.items.len;
-            text.append('\n') catch oom();
-            ranges.append(.{ start, end }) catch oom();
+            text.append('\n') catch u.oom();
+            ranges.append(.{ start, end }) catch u.oom();
         }
         self.setTextAndRanges(text.toOwnedSlice(), ranges.toOwnedSlice());
     }
@@ -107,13 +108,13 @@ pub const Selector = struct {
             }
         }
         if (old_selected != self.selected)
-            self.selected = min(self.selected, max(1, num_items) - 1);
+            self.selected = u.min(self.selected, u.max(1, num_items) - 1);
         if (action == .SelectOne and self.selected >= num_items)
             action = .None;
         return action;
     }
 
-    pub fn frame(self: *Selector, window: *Window, rect: Rect, events: []const c.SDL_Event) Action {
+    pub fn frame(self: *Selector, window: *Window, rect: u.Rect, events: []const c.SDL_Event) Action {
         const action = self.logic(events, self.ranges.len);
 
         // set selection

@@ -1,5 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -26,7 +28,7 @@ pub const FileOpener = struct {
         });
         const input = SingleLineEditor.init(app, init_path);
         const selector = Selector.init(app);
-        const self = app.allocator.create(FileOpener) catch oom();
+        const self = app.allocator.create(FileOpener) catch u.oom();
         self.* = FileOpener{
             .app = app,
             .preview_editor = preview_editor,
@@ -45,7 +47,7 @@ pub const FileOpener = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *FileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *FileOpener, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // handle events
@@ -60,7 +62,7 @@ pub const FileOpener = struct {
         if (input_changed == .Changed) self.selector.selected = 0;
 
         // get and filter completions
-        const results_or_err = fuzzy_search_paths(self.app.frame_allocator, self.input.getText());
+        const results_or_err = u.fuzzy_search_paths(self.app.frame_allocator, self.input.getText());
         const results = results_or_err catch &[_][]const u8{};
 
         // run selector frame
@@ -69,7 +71,7 @@ pub const FileOpener = struct {
             self.selector.setItems(results);
             action = self.selector.frame(window, layout.selector, events);
         } else |results_err| {
-            const error_text = format(self.app.frame_allocator, "Error opening directory: {}", .{results_err});
+            const error_text = u.format(self.app.frame_allocator, "Error opening directory: {}", .{results_err});
             window.queueText(layout.selector, style.error_text_color, error_text);
         }
 
@@ -82,19 +84,19 @@ pub const FileOpener = struct {
         // maybe open file
         if (action == .SelectRaw or action == .SelectOne) {
             const filename: []const u8 = if (action == .SelectRaw)
-                std.mem.dupe(self.app.frame_allocator, u8, self.input.getText()) catch oom()
+                std.mem.dupe(self.app.frame_allocator, u8, self.input.getText()) catch u.oom()
             else
-                std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, results[self.selector.selected] }) catch oom();
+                std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, results[self.selector.selected] }) catch u.oom();
             if (filename.len > 0 and std.fs.path.isSep(filename[filename.len - 1])) {
                 if (action == .SelectRaw)
                     std.fs.cwd().makeDir(filename) catch |err| {
-                        panic("{} while creating directory {s}", .{ err, filename });
+                        u.panic("{} while creating directory {s}", .{ err, filename });
                     };
                 self.input.setText(filename);
             } else {
                 if (action == .SelectRaw) {
                     const file = std.fs.cwd().createFile(filename, .{ .truncate = false }) catch |err| {
-                        panic("{} while creating file {s}", .{ err, filename });
+                        u.panic("{} while creating file {s}", .{ err, filename });
                     };
                     file.close();
                 }
@@ -132,7 +134,7 @@ pub const FileOpener = struct {
                     .show_completer = false,
                 });
             } else {
-                const filename = std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, selected }) catch oom();
+                const filename = std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, selected }) catch u.oom();
                 const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .{
                     .limit_load_bytes = true,
                     .enable_completions = false,

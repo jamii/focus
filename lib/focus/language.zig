@@ -1,7 +1,8 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
+const u = focus.util;
+const c = focus.util.c;
 const style = focus.style;
-const meta = focus.meta;
 const imp = @import("../../imp/lib/imp.zig");
 
 pub const Language = enum {
@@ -39,42 +40,42 @@ pub const Language = enum {
         };
     }
 
-    pub fn highlight(self: Language, allocator: *Allocator, source: []const u8, range: [2]usize) []const Color {
+    pub fn highlight(self: Language, allocator: *u.Allocator, source: []const u8, range: [2]usize) []const u.Color {
         _ = source;
-        const colors = allocator.alloc(Color, range[1] - range[0]) catch oom();
+        const colors = allocator.alloc(u.Color, range[1] - range[0]) catch u.oom();
         switch (self) {
             .Zig => {
-                const source_z = std.mem.dupeZ(allocator, u8, source[range[0]..range[1]]) catch oom();
+                const source_z = std.mem.dupeZ(allocator, u8, source[range[0]..range[1]]) catch u.oom();
                 defer allocator.free(source_z);
                 var tokenizer = std.zig.Tokenizer.init(source_z);
-                std.mem.set(Color, colors, style.comment_color);
+                std.mem.set(u.Color, colors, style.comment_color);
                 while (true) {
                     const token = tokenizer.next();
                     switch (token.tag) {
                         .eof => break,
                         .doc_comment, .container_doc_comment => {},
                         .identifier, .builtin, .integer_literal, .float_literal => std.mem.set(
-                            Color,
+                            u.Color,
                             colors[token.loc.start..token.loc.end],
                             style.identColor(tokenizer.buffer[token.loc.start..token.loc.end]),
                         ),
                         .keyword_try, .keyword_catch => std.mem.set(
-                            Color,
+                            u.Color,
                             colors[token.loc.start..token.loc.end],
                             style.emphasisRed,
                         ),
                         .keyword_defer, .keyword_errdefer => std.mem.set(
-                            Color,
+                            u.Color,
                             colors[token.loc.start..token.loc.end],
                             style.emphasisOrange,
                         ),
                         .keyword_break, .keyword_continue, .keyword_return => std.mem.set(
-                            Color,
+                            u.Color,
                             colors[token.loc.start..token.loc.end],
                             style.emphasisGreen,
                         ),
                         else => std.mem.set(
-                            Color,
+                            u.Color,
                             colors[token.loc.start..token.loc.end],
                             style.keyword_color,
                         ),
@@ -82,18 +83,18 @@ pub const Language = enum {
                 }
             },
             .Imp => {
-                var arena = ArenaAllocator.init(allocator);
+                var arena = u.ArenaAllocator.init(allocator);
                 defer arena.deinit();
                 var error_info: ?imp.lang.pass.parse.ErrorInfo = null;
                 var parser = imp.lang.pass.parse.Parser{
                     .arena = &arena,
                     .source = source[range[0]..range[1]],
-                    .exprs = ArrayList(imp.lang.repr.syntax.Expr).init(&arena.allocator),
-                    .from_source = ArrayList([2]usize).init(&arena.allocator),
+                    .exprs = u.ArrayList(imp.lang.repr.syntax.Expr).init(&arena.allocator),
+                    .from_source = u.ArrayList([2]usize).init(&arena.allocator),
                     .position = 0,
                     .error_info = &error_info,
                 };
-                std.mem.set(Color, colors, style.comment_color);
+                std.mem.set(u.Color, colors, style.comment_color);
                 while (true) {
                     const start = parser.position;
                     if (parser.nextTokenMaybe()) |maybe_token| {
@@ -101,25 +102,25 @@ pub const Language = enum {
                             switch (token) {
                                 .EOF => break,
                                 .Number, .Text, .Name => std.mem.set(
-                                    Color,
+                                    u.Color,
                                     colors[start..parser.position],
                                     style.identColor(parser.source[start..parser.position]),
                                 ),
                                 else => std.mem.set(
-                                    Color,
+                                    u.Color,
                                     colors[start..parser.position],
                                     style.keyword_color,
                                 ),
                             }
                         }
                     } else |err| {
-                        if (err == error.OutOfMemory) oom();
+                        if (err == error.OutOfMemory) u.oom();
                         parser.position += 1;
                     }
                 }
             },
             else => {
-                std.mem.set(Color, colors, style.text_color);
+                std.mem.set(u.Color, colors, style.text_color);
             },
         }
         return colors;

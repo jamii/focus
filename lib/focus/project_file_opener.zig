@@ -1,6 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
-const meta = focus.meta;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -46,19 +47,19 @@ pub const ProjectFileOpener = struct {
         var selector = Selector.init(app);
         selector.selected = app.last_project_file_opener_selected;
 
-        var paths = ArrayList([]const u8).init(app.allocator);
+        var paths = u.ArrayList([]const u8).init(app.allocator);
         for (projects) |project| {
             const result = std.ChildProcess.exec(.{
                 .allocator = app.frame_allocator,
                 .argv = &[_][]const u8{ "rg", "--files", "-0" },
                 .cwd = project,
                 .max_output_bytes = 128 * 1024 * 1024,
-            }) catch |err| panic("{} while calling rg", .{err});
-            assert(result.term == .Exited and result.term.Exited == 0);
-            var lines = std.mem.split(result.stdout, &[1]u8{0});
+            }) catch |err| u.panic("{} while calling rg", .{err});
+            u.assert(result.term == .Exited and result.term.Exited == 0);
+            var lines = std.mem.split(u8, result.stdout, &[1]u8{0});
             while (lines.next()) |line| {
-                const path = std.fs.path.join(app.allocator, &[2][]const u8{ project, line }) catch oom();
-                paths.append(path) catch oom();
+                const path = std.fs.path.join(app.allocator, &[2][]const u8{ project, line }) catch u.oom();
+                paths.append(path) catch u.oom();
             }
         }
 
@@ -68,7 +69,7 @@ pub const ProjectFileOpener = struct {
             }
         }.lessThan);
 
-        const self = app.allocator.create(ProjectFileOpener) catch oom();
+        const self = app.allocator.create(ProjectFileOpener) catch u.oom();
         self.* = ProjectFileOpener{
             .app = app,
             .preview_editor = preview_editor,
@@ -92,7 +93,7 @@ pub const ProjectFileOpener = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *ProjectFileOpener, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *ProjectFileOpener, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
@@ -100,7 +101,7 @@ pub const ProjectFileOpener = struct {
         if (input_changed == .Changed) self.selector.selected = 0;
 
         // filter paths
-        const filtered_paths = fuzzy_search(self.app.frame_allocator, self.paths, self.input.getText());
+        const filtered_paths = u.fuzzy_search(self.app.frame_allocator, self.paths, self.input.getText());
 
         // run selector frame
         self.selector.setItems(filtered_paths);

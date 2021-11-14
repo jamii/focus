@@ -1,21 +1,22 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
-const meta = focus.meta;
 
 pub const LineWrappedBuffer = struct {
     app: *App,
     buffer: *Buffer,
     max_chars_per_line: usize,
-    wrapped_line_ranges: ArrayList([2]usize),
+    wrapped_line_ranges: u.ArrayList([2]usize),
 
     pub fn init(app: *App, buffer: *Buffer, max_chars_per_line: usize) LineWrappedBuffer {
         var self = LineWrappedBuffer{
             .app = app,
             .buffer = buffer,
             .max_chars_per_line = max_chars_per_line,
-            .wrapped_line_ranges = ArrayList([2]usize).init(app.allocator),
+            .wrapped_line_ranges = u.ArrayList([2]usize).init(app.allocator),
         };
         self.update();
         return self;
@@ -28,12 +29,12 @@ pub const LineWrappedBuffer = struct {
     pub fn update(self: *LineWrappedBuffer) void {
         const bytes = self.buffer.bytes.items;
         const wrapped_line_ranges = &self.wrapped_line_ranges;
-        wrapped_line_ranges.resize(0) catch oom();
+        wrapped_line_ranges.resize(0) catch u.oom();
         for (self.buffer.line_ranges.items) |real_line_range| {
             const real_line_end = real_line_range[1];
             var line_start: usize = real_line_range[0];
             if (real_line_end - line_start <= self.max_chars_per_line) {
-                wrapped_line_ranges.append(real_line_range) catch oom();
+                wrapped_line_ranges.append(real_line_range) catch u.oom();
                 continue;
             }
             while (true) {
@@ -70,7 +71,7 @@ pub const LineWrappedBuffer = struct {
                         // otherwise keep looking ahead
                     }
                 }
-                self.wrapped_line_ranges.append(.{ line_start, line_end }) catch oom();
+                self.wrapped_line_ranges.append(.{ line_start, line_end }) catch u.oom();
                 if (line_end >= real_line_end) break;
                 line_start = line_end;
             }
@@ -102,7 +103,7 @@ pub const LineWrappedBuffer = struct {
 
     pub fn getPosForLineCol(self: *LineWrappedBuffer, line: usize, col: usize) usize {
         const range = self.wrapped_line_ranges.items[line];
-        return range[0] + min(col, range[1] - range[0]);
+        return range[0] + u.min(col, range[1] - range[0]);
     }
 
     pub fn getLineStart(self: *LineWrappedBuffer, pos: usize) usize {

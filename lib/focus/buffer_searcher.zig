@@ -1,6 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
-const meta = focus.meta;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -32,7 +33,7 @@ pub const BufferSearcher = struct {
         input.editor.goRealLineEnd(input.editor.getMainCursor());
         const selector = Selector.init(app);
         const selection_pos = target_editor.getMainCursor().head.pos;
-        var self = app.allocator.create(BufferSearcher) catch oom();
+        var self = app.allocator.create(BufferSearcher) catch u.oom();
         self.* = BufferSearcher{
             .app = app,
             .target_editor = target_editor,
@@ -53,7 +54,7 @@ pub const BufferSearcher = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *BufferSearcher, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *BufferSearcher, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
@@ -63,10 +64,10 @@ pub const BufferSearcher = struct {
         // search buffer
         // TODO default to first result after target
         const filter = self.input.getText();
-        var results = ArrayList([]const u8).init(self.app.frame_allocator);
-        var result_poss = ArrayList(usize).init(self.app.frame_allocator);
+        var results = u.ArrayList([]const u8).init(self.app.frame_allocator);
+        var result_poss = u.ArrayList(usize).init(self.app.frame_allocator);
         {
-            const max_line_string = format(self.app.frame_allocator, "{}", .{self.preview_editor.buffer.countLines()});
+            const max_line_string = u.format(self.app.frame_allocator, "{}", .{self.preview_editor.buffer.countLines()});
             if (filter.len > 0) {
                 var pos: usize = 0;
                 var i: usize = 0;
@@ -74,17 +75,17 @@ pub const BufferSearcher = struct {
                     const start = self.preview_editor.buffer.getLineStart(found_pos);
                     const end = self.preview_editor.buffer.getLineEnd(found_pos + filter.len);
                     const selection = self.preview_editor.buffer.dupe(self.app.frame_allocator, start, end);
-                    assert(selection[0] != '\n' and selection[selection.len - 1] != '\n');
+                    u.assert(selection[0] != '\n' and selection[selection.len - 1] != '\n');
 
-                    var result = ArrayList(u8).init(self.app.frame_allocator);
+                    var result = u.ArrayList(u8).init(self.app.frame_allocator);
                     const line = self.preview_editor.buffer.getLineColForPos(found_pos)[0];
-                    const line_string = format(self.app.frame_allocator, "{}", .{line});
-                    result.appendSlice(line_string) catch oom();
-                    result.appendNTimes(' ', max_line_string.len - line_string.len + 1) catch oom();
-                    result.appendSlice(selection) catch oom();
+                    const line_string = u.format(self.app.frame_allocator, "{}", .{line});
+                    result.appendSlice(line_string) catch u.oom();
+                    result.appendNTimes(' ', max_line_string.len - line_string.len + 1) catch u.oom();
+                    result.appendSlice(selection) catch u.oom();
 
-                    results.append(result.toOwnedSlice()) catch oom();
-                    result_poss.append(found_pos) catch oom();
+                    results.append(result.toOwnedSlice()) catch u.oom();
+                    result_poss.append(found_pos) catch u.oom();
 
                     pos = found_pos + filter.len;
                     i += 1;
@@ -93,7 +94,7 @@ pub const BufferSearcher = struct {
         }
 
         // update selection
-        self.selector.selected = max(result_poss.items.len, 1) - 1;
+        self.selector.selected = u.max(result_poss.items.len, 1) - 1;
         for (result_poss.items) |result_pos, i| {
             if (self.selection_pos < result_pos + filter.len) {
                 self.selector.selected = i;

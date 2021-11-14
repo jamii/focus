@@ -1,9 +1,10 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Editor = focus.Editor;
 const ImpRepl = focus.ImpRepl;
-const meta = focus.meta;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 const Language = focus.Language;
 
@@ -47,7 +48,7 @@ const Edit = union(enum) {
         new_bytes: []const u8,
     },
 
-    fn deinit(self: Edit, allocator: *Allocator) void {
+    fn deinit(self: Edit, allocator: *u.Allocator) void {
         switch (self) {
             .Insert => |data| allocator.free(data.new_bytes),
             .Delete => |data| allocator.free(data.old_bytes),
@@ -63,32 +64,32 @@ pub const Buffer = struct {
     app: *App,
     source: BufferSource,
     language: Language,
-    bytes: ArrayList(u8),
-    undos: ArrayList([]Edit),
-    doing: ArrayList(Edit),
-    redos: ArrayList([]Edit),
+    bytes: u.ArrayList(u8),
+    undos: u.ArrayList([]Edit),
+    doing: u.ArrayList(Edit),
+    redos: u.ArrayList([]Edit),
     modified_since_last_save: bool,
-    line_ranges: ArrayList([2]usize),
-    completions: ArrayList([]const u8),
+    line_ranges: u.ArrayList([2]usize),
+    completions: u.ArrayList([]const u8),
     // editors must unregister before buffer deinits
-    editors: ArrayList(*Editor),
+    editors: u.ArrayList(*Editor),
     options: Options,
     last_focused_ms: i64,
 
     pub fn initEmpty(app: *App, options: Options) *Buffer {
-        const self = app.allocator.create(Buffer) catch oom();
+        const self = app.allocator.create(Buffer) catch u.oom();
         self.* = Buffer{
             .app = app,
             .source = .None,
             .language = .Unknown,
-            .bytes = ArrayList(u8).init(app.allocator),
-            .undos = ArrayList([]Edit).init(app.allocator),
-            .doing = ArrayList(Edit).init(app.allocator),
-            .redos = ArrayList([]Edit).init(app.allocator),
+            .bytes = u.ArrayList(u8).init(app.allocator),
+            .undos = u.ArrayList([]Edit).init(app.allocator),
+            .doing = u.ArrayList(Edit).init(app.allocator),
+            .redos = u.ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
-            .line_ranges = ArrayList([2]usize).init(app.allocator),
-            .completions = ArrayList([]const u8).init(app.allocator),
-            .editors = ArrayList(*Editor).init(app.allocator),
+            .line_ranges = u.ArrayList([2]usize).init(app.allocator),
+            .completions = u.ArrayList([]const u8).init(app.allocator),
+            .editors = u.ArrayList(*Editor).init(app.allocator),
             .options = options,
             .last_focused_ms = 0,
         };
@@ -97,24 +98,24 @@ pub const Buffer = struct {
     }
 
     pub fn initFromAbsoluteFilename(app: *App, options: Options, absolute_filename: []const u8) *Buffer {
-        assert(std.fs.path.isAbsolute(absolute_filename));
+        u.assert(std.fs.path.isAbsolute(absolute_filename));
         const self = Buffer.initEmpty(app, options);
         self.source = .{
             .File = .{
-                .absolute_filename = std.mem.dupe(self.app.allocator, u8, absolute_filename) catch oom(),
+                .absolute_filename = std.mem.dupe(self.app.allocator, u8, absolute_filename) catch u.oom(),
                 .mtime = 0,
             },
         };
         self.language = Language.fromFilename(absolute_filename);
         self.load(.Init);
-        self.undos.resize(0) catch oom();
+        self.undos.resize(0) catch u.oom();
         self.modified_since_last_save = false;
         return self;
     }
 
     pub fn deinit(self: *Buffer) void {
         // all editors should have unregistered already
-        assert(self.editors.items.len == 0);
+        u.assert(self.editors.items.len == 0);
         self.editors.deinit();
 
         for (self.completions.items) |completion| self.app.allocator.free(completion);
@@ -154,12 +155,12 @@ pub const Buffer = struct {
 
         const stat = try file.stat();
         var num_bytes = stat.size;
-        if (self.options.limit_load_bytes) num_bytes = min(num_bytes, limited_load_bytes);
+        if (self.options.limit_load_bytes) num_bytes = u.min(num_bytes, limited_load_bytes);
 
-        var bytes = self.app.frame_allocator.alloc(u8, num_bytes) catch oom();
+        var bytes = self.app.frame_allocator.alloc(u8, num_bytes) catch u.oom();
         const len = try file.readAll(bytes);
         // TODO can this fail if the file was truncated between stat and read?
-        assert(len == bytes.len);
+        u.assert(len == bytes.len);
 
         return TryLoadResult{
             .bytes = bytes,
@@ -175,7 +176,7 @@ pub const Buffer = struct {
             }
             self.source.File.mtime = result.mtime;
         } else |err| {
-            const message = format(self.app.frame_allocator, "{} while loading {s}", .{ err, self.getFilename() });
+            const message = u.format(self.app.frame_allocator, "{} while loading {s}", .{ err, self.getFilename() });
             std.debug.print("{s}\n", .{message});
             self.replace(message);
         }
@@ -192,11 +193,11 @@ pub const Buffer = struct {
                             self.modified_since_last_save = true;
                             return;
                         },
-                        else => panic("{} while refreshing {s}", .{ err, file_source.absolute_filename }),
+                        else => u.panic("{} while refreshing {s}", .{ err, file_source.absolute_filename }),
                     }
                 };
                 defer file.close();
-                const stat = file.stat() catch |err| panic("{} while refreshing {s}", .{ err, file_source.absolute_filename });
+                const stat = file.stat() catch |err| u.panic("{} while refreshing {s}", .{ err, file_source.absolute_filename });
                 if (stat.mtime != file_source.mtime) {
                     self.load(.Refresh);
                 }
@@ -214,12 +215,12 @@ pub const Buffer = struct {
             .File => |*file_source| {
                 const file = switch (source) {
                     .User => std.fs.cwd().createFile(file_source.absolute_filename, .{ .read = false, .truncate = true }) catch |err| {
-                        panic("{} while saving {s}", .{ err, file_source.absolute_filename });
+                        u.panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                     },
                     .Auto => file: {
                         if (std.fs.cwd().openFile(file_source.absolute_filename, .{ .read = false, .write = true })) |file| {
-                            file.setEndPos(0) catch |err| panic("{} while truncating {s}", .{ err, file_source.absolute_filename });
-                            file.seekTo(0) catch |err| panic("{} while truncating {s}", .{ err, file_source.absolute_filename });
+                            file.setEndPos(0) catch |err| u.panic("{} while truncating {s}", .{ err, file_source.absolute_filename });
+                            file.seekTo(0) catch |err| u.panic("{} while truncating {s}", .{ err, file_source.absolute_filename });
                             break :file file;
                         } else |err| {
                             switch (err) {
@@ -228,15 +229,15 @@ pub const Buffer = struct {
                                     self.modified_since_last_save = true;
                                     return;
                                 },
-                                else => panic("{} while saving {s}", .{ err, file_source.absolute_filename }),
+                                else => u.panic("{} while saving {s}", .{ err, file_source.absolute_filename }),
                             }
                         }
                     },
                 };
                 defer file.close();
 
-                file.writeAll(self.bytes.items) catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
-                const stat = file.stat() catch |err| panic("{} while saving {s}", .{ err, file_source.absolute_filename });
+                file.writeAll(self.bytes.items) catch |err| u.panic("{} while saving {s}", .{ err, file_source.absolute_filename });
+                const stat = file.stat() catch |err| u.panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 file_source.mtime = stat.mtime;
                 self.modified_since_last_save = false;
 
@@ -257,7 +258,7 @@ pub const Buffer = struct {
     /// Panics on line out of range. Handles col out of range by truncating to end of line.
     pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
         const line_range = self.line_ranges.items[line];
-        return line_range[0] + min(col, line_range[1] - line_range[0]);
+        return line_range[0] + u.min(col, line_range[1] - line_range[0]);
     }
 
     pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
@@ -337,10 +338,10 @@ pub const Buffer = struct {
     }
 
     // TODO pass Writer instead of Allocator for easy concat/sentinel? but costs more allocations?
-    pub fn dupe(self: *Buffer, allocator: *Allocator, start: usize, end: usize) []const u8 {
-        assert(start <= end);
-        assert(end <= self.bytes.items.len);
-        return std.mem.dupe(allocator, u8, self.bytes.items[start..end]) catch oom();
+    pub fn dupe(self: *Buffer, allocator: *u.Allocator, start: usize, end: usize) []const u8 {
+        u.assert(start <= end);
+        u.assert(end <= self.bytes.items.len);
+        return std.mem.dupe(allocator, u8, self.bytes.items[start..end]) catch u.oom();
     }
 
     fn rawInsert(self: *Buffer, pos: usize, bytes: []const u8) void {
@@ -348,7 +349,7 @@ pub const Buffer = struct {
         const line_end = self.getLineEnd(pos);
         self.removeRangeFromCompletions(line_start, line_end);
 
-        self.bytes.resize(self.bytes.items.len + bytes.len) catch oom();
+        self.bytes.resize(self.bytes.items.len + bytes.len) catch u.oom();
         std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
 
@@ -362,8 +363,8 @@ pub const Buffer = struct {
     }
 
     fn rawDelete(self: *Buffer, start: usize, end: usize) void {
-        assert(start <= end);
-        assert(end <= self.bytes.items.len);
+        u.assert(start <= end);
+        u.assert(end <= self.bytes.items.len);
 
         const line_start = self.getLineStart(start);
         const line_end = self.getLineEnd(end);
@@ -382,14 +383,14 @@ pub const Buffer = struct {
     }
 
     fn rawReplace(self: *Buffer, new_bytes: []const u8) void {
-        var line_colss = ArrayList([][2][2]usize).init(self.app.frame_allocator);
+        var line_colss = u.ArrayList([][2][2]usize).init(self.app.frame_allocator);
         for (self.editors.items) |editor| {
-            line_colss.append(editor.updateBeforeReplace()) catch oom();
+            line_colss.append(editor.updateBeforeReplace()) catch u.oom();
         }
         std.mem.reverse([][2][2]usize, line_colss.items);
 
-        self.bytes.resize(0) catch oom();
-        self.bytes.appendSlice(new_bytes) catch oom();
+        self.bytes.resize(0) catch u.oom();
+        self.bytes.appendSlice(new_bytes) catch u.oom();
 
         self.updateCompletions();
 
@@ -406,9 +407,9 @@ pub const Buffer = struct {
                 .Insert = .{
                     .start = pos,
                     .end = pos + bytes.len,
-                    .new_bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch oom(),
+                    .new_bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch u.oom(),
                 },
-            }) catch oom();
+            }) catch u.oom();
             for (self.redos.items) |edits| {
                 for (edits) |edit| edit.deinit(self.app.allocator);
                 self.app.allocator.free(edits);
@@ -424,9 +425,9 @@ pub const Buffer = struct {
                 .Delete = .{
                     .start = start,
                     .end = end,
-                    .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch oom(),
+                    .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch u.oom(),
                 },
-            }) catch oom();
+            }) catch u.oom();
             for (self.redos.items) |edits| {
                 for (edits) |edit| edit.deinit(self.app.allocator);
                 self.app.allocator.free(edits);
@@ -442,10 +443,10 @@ pub const Buffer = struct {
             if (self.options.enable_undo) {
                 self.doing.append(.{
                     .Replace = .{
-                        .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items) catch oom(),
-                        .new_bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch oom(),
+                        .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items) catch u.oom(),
+                        .new_bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch u.oom(),
                     },
-                }) catch oom();
+                }) catch u.oom();
                 for (self.redos.items) |edits| {
                     for (edits) |edit| edit.deinit(self.app.allocator);
                     self.app.allocator.free(edits);
@@ -461,7 +462,7 @@ pub const Buffer = struct {
         if (self.doing.items.len > 0) {
             const edits = self.doing.toOwnedSlice();
             std.mem.reverse(Edit, edits);
-            self.undos.append(edits) catch oom();
+            self.undos.append(edits) catch u.oom();
         }
     }
 
@@ -486,7 +487,7 @@ pub const Buffer = struct {
                 }
             }
             std.mem.reverse(Edit, edits);
-            self.redos.append(edits) catch oom();
+            self.redos.append(edits) catch u.oom();
         }
         return pos;
     }
@@ -511,7 +512,7 @@ pub const Buffer = struct {
                 }
             }
             std.mem.reverse(Edit, edits);
-            self.undos.append(edits) catch oom();
+            self.undos.append(edits) catch u.oom();
         }
         return pos;
     }
@@ -540,13 +541,13 @@ pub const Buffer = struct {
         const bytes = self.bytes.items;
         const len = bytes.len;
 
-        self.line_ranges.resize(0) catch oom();
+        self.line_ranges.resize(0) catch u.oom();
 
         var start: usize = 0;
         while (start <= len) {
             var end = start;
             while (end < len and bytes[end] != '\n') : (end += 1) {}
-            line_ranges.append(.{ start, end }) catch oom();
+            line_ranges.append(.{ start, end }) catch u.oom();
             start = end + 1;
         }
     }
@@ -555,7 +556,7 @@ pub const Buffer = struct {
         if (!self.options.enable_completions) return;
 
         for (self.completions.items) |completion| self.app.allocator.free(completion);
-        self.completions.resize(0) catch oom();
+        self.completions.resize(0) catch u.oom();
 
         const bytes = self.bytes.items;
         const len = bytes.len;
@@ -564,7 +565,7 @@ pub const Buffer = struct {
         while (start < len) {
             var end = start;
             while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
-            if (end > start) completions.append(self.app.dupe(bytes[start..end])) catch oom();
+            if (end > start) completions.append(self.app.dupe(bytes[start..end])) catch u.oom();
             start = end + 1;
             while (start < len and !isLikeIdent(bytes[start])) : (start += 1) {}
         }
@@ -601,7 +602,7 @@ pub const Buffer = struct {
                         }
                     }
                     // completion should definitely exist in the list
-                    @panic("how");
+                    u.panic("how", .{});
                 };
 
                 const removed = completions.orderedRemove(pos);
@@ -640,14 +641,14 @@ pub const Buffer = struct {
                     break :pos left;
                 };
 
-                completions.insert(pos, self.app.dupe(completion)) catch oom();
+                completions.insert(pos, self.app.dupe(completion)) catch u.oom();
             }
             start = end + 1;
             while (start < range_end and !isLikeIdent(bytes[start])) : (start += 1) {}
         }
     }
 
-    pub fn getCompletionsInto(self: *Buffer, prefix: []const u8, results: *ArrayList([]const u8)) void {
+    pub fn getCompletionsInto(self: *Buffer, prefix: []const u8, results: *u.ArrayList([]const u8)) void {
         const completions = &self.completions;
         const completions_items = completions.items;
         var left: usize = 0;
@@ -671,7 +672,7 @@ pub const Buffer = struct {
         while (end < len and std.mem.startsWith(u8, completions_items[end], prefix)) : (end += 1) {
             if (end == 0 or !std.mem.eql(u8, completions_items[end - 1], completions_items[end]))
                 if (!std.mem.eql(u8, prefix, completions_items[end]))
-                    results.append(completions_items[end]) catch oom();
+                    results.append(completions_items[end]) catch u.oom();
         }
     }
 
@@ -709,7 +710,7 @@ pub const Buffer = struct {
     }
 
     pub fn registerEditor(self: *Buffer, editor: *Editor) void {
-        self.editors.append(editor) catch oom();
+        self.editors.append(editor) catch u.oom();
     }
 
     pub fn deregisterEditor(self: *Buffer, editor: *Editor) void {

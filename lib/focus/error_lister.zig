@@ -1,5 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -33,7 +35,7 @@ pub const ErrorLister = struct {
         });
         var selector = Selector.init(app);
         selector.selected = app.last_error_lister_selected;
-        const self = app.allocator.create(ErrorLister) catch oom();
+        const self = app.allocator.create(ErrorLister) catch u.oom();
         self.* = ErrorLister{
             .app = app,
             .selector = selector,
@@ -59,21 +61,21 @@ pub const ErrorLister = struct {
         line: usize,
         col: usize,
 
-        pub fn deinit(self: ErrorLocation, allocator: *Allocator) void {
+        pub fn deinit(self: ErrorLocation, allocator: *u.Allocator) void {
             allocator.free(self.path);
         }
     };
 
-    pub fn frame(self: *ErrorLister, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *ErrorLister, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
         const layout = window.layoutLister(rect);
 
         // get error locations
-        var error_locations = ArrayList(ErrorLocation).init(self.app.frame_allocator);
+        var error_locations = u.ArrayList(ErrorLocation).init(self.app.frame_allocator);
         for (self.app.windows.items) |other_window| {
             if (other_window.getTopView()) |view| {
                 switch (view) {
                     .Maker => |maker| switch (maker.state) {
-                        .Running => |running| error_locations.appendSlice(running.error_locations) catch oom(),
+                        .Running => |running| error_locations.appendSlice(running.error_locations) catch u.oom(),
                         else => {},
                     },
                     else => {},

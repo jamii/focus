@@ -1,5 +1,6 @@
+const builtin = @import("builtin");
+const std = @import("std");
 const focus = @import("../focus.zig");
-const meta = focus.meta;
 
 pub const c = @cImport({
     @cInclude("SDL2/SDL.h");
@@ -15,8 +16,6 @@ pub const c = @cImport({
     @cInclude("pcre2.h");
 });
 
-pub const builtin = @import("builtin");
-pub const std = @import("std");
 pub const warn = std.debug.warn;
 pub const assert = std.debug.assert;
 pub const expect = std.testing.expect;
@@ -48,7 +47,7 @@ pub fn oom() noreturn {
 }
 
 pub fn DeepHashMap(comptime K: type, comptime V: type) type {
-    return std.HashMap(K, V, meta.DeepHashContext(K), std.hash_map.DefaultMaxLoadPercentage);
+    return std.HashMap(K, V, DeepHashContext(K), std.hash_map.DefaultMaxLoadPercentage);
 }
 
 pub fn DeepHashSet(comptime K: type) type {
@@ -127,7 +126,7 @@ pub fn dumpInto(writer: anytype, indent: u32, thing: anytype) anyerror!void {
                 try writer.writeAll(@typeName(@TypeOf(thing)));
                 try writer.writeAll("{\n");
                 inline for (@typeInfo(tag_type).Enum.fields) |fti| {
-                    if (@enumToInt(std.meta.activeTag(thing)) == fti.value) {
+                    if (@enumToInt(std.activeTag(thing)) == fti.value) {
                         try writer.writeByteNTimes(' ', indent + 4);
                         try std.fmt.format(writer, ".{s} = ", .{fti.name});
                         try dumpInto(writer, indent + 4, @field(thing, fti.name));
@@ -166,7 +165,7 @@ pub fn format(allocator: *Allocator, comptime fmt: []const u8, args: anytype) []
 }
 
 pub fn tagEqual(a: anytype, b: @TypeOf(a)) bool {
-    return std.meta.activeTag(a) == std.meta.activeTag(b);
+    return std.activeTag(a) == std.activeTag(b);
 }
 
 pub fn FixedSizeArrayList(comptime size: usize, comptime T: type) type {
@@ -296,22 +295,22 @@ pub const Color = packed struct {
 
 test "hsl" {
     // source https://www.rapidtables.com/convert/color/hsl-to-rgb.html
-    try expect(meta.deepEqual(Color.hsl(0, 0, 0), Color{ .r = 0, .g = 0, .b = 0, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(0, 0, 1), Color{ .r = 255, .g = 255, .b = 255, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(0, 1, 0.5), Color{ .r = 255, .g = 0, .b = 0, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(120, 1, 0.5), Color{ .r = 0, .g = 255, .b = 0, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(240, 1, 0.5), Color{ .r = 0, .g = 0, .b = 255, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(60, 1, 0.5), Color{ .r = 255, .g = 255, .b = 0, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(180, 1, 0.5), Color{ .r = 0, .g = 255, .b = 255, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(300, 1, 0.5), Color{ .r = 255, .g = 0, .b = 255, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(0, 0, 0.75), Color{ .r = 191, .g = 191, .b = 191, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(0, 0, 0.5), Color{ .r = 128, .g = 128, .b = 128, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(0, 1, 0.25), Color{ .r = 128, .g = 0, .b = 0, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(120, 1, 0.25), Color{ .r = 0, .g = 128, .b = 0, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(240, 1, 0.25), Color{ .r = 0, .g = 0, .b = 128, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(60, 1, 0.25), Color{ .r = 128, .g = 128, .b = 0, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(180, 1, 0.25), Color{ .r = 0, .g = 128, .b = 128, .a = 255 }));
-    try expect(meta.deepEqual(Color.hsl(300, 1, 0.25), Color{ .r = 128, .g = 0, .b = 128, .a = 255 }));
+    try expect(deepEqual(Color.hsl(0, 0, 0), Color{ .r = 0, .g = 0, .b = 0, .a = 255 }));
+    try expect(deepEqual(Color.hsl(0, 0, 1), Color{ .r = 255, .g = 255, .b = 255, .a = 255 }));
+    try expect(deepEqual(Color.hsl(0, 1, 0.5), Color{ .r = 255, .g = 0, .b = 0, .a = 255 }));
+    try expect(deepEqual(Color.hsl(120, 1, 0.5), Color{ .r = 0, .g = 255, .b = 0, .a = 255 }));
+    try expect(deepEqual(Color.hsl(240, 1, 0.5), Color{ .r = 0, .g = 0, .b = 255, .a = 255 }));
+    try expect(deepEqual(Color.hsl(60, 1, 0.5), Color{ .r = 255, .g = 255, .b = 0, .a = 255 }));
+    try expect(deepEqual(Color.hsl(180, 1, 0.5), Color{ .r = 0, .g = 255, .b = 255, .a = 255 }));
+    try expect(deepEqual(Color.hsl(300, 1, 0.5), Color{ .r = 255, .g = 0, .b = 255, .a = 255 }));
+    try expect(deepEqual(Color.hsl(0, 0, 0.75), Color{ .r = 191, .g = 191, .b = 191, .a = 255 }));
+    try expect(deepEqual(Color.hsl(0, 0, 0.5), Color{ .r = 128, .g = 128, .b = 128, .a = 255 }));
+    try expect(deepEqual(Color.hsl(0, 1, 0.25), Color{ .r = 128, .g = 0, .b = 0, .a = 255 }));
+    try expect(deepEqual(Color.hsl(120, 1, 0.25), Color{ .r = 0, .g = 128, .b = 0, .a = 255 }));
+    try expect(deepEqual(Color.hsl(240, 1, 0.25), Color{ .r = 0, .g = 0, .b = 128, .a = 255 }));
+    try expect(deepEqual(Color.hsl(60, 1, 0.25), Color{ .r = 128, .g = 128, .b = 0, .a = 255 }));
+    try expect(deepEqual(Color.hsl(180, 1, 0.25), Color{ .r = 0, .g = 128, .b = 128, .a = 255 }));
+    try expect(deepEqual(Color.hsl(300, 1, 0.25), Color{ .r = 128, .g = 0, .b = 128, .a = 255 }));
 }
 
 pub const Vec2f = packed struct {
@@ -481,4 +480,219 @@ pub fn regex_search(allocator: *Allocator, text: []const u8, pattern: [:0]const 
     }
 
     return matches.toOwnedSlice();
+}
+
+pub const Ordering = enum {
+    LessThan,
+    Equal,
+    GreaterThan,
+};
+
+pub fn deepEqual(a: anytype, b: @TypeOf(a)) bool {
+    return deepCompare(a, b) == .Equal;
+}
+
+pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
+    const T = @TypeOf(a);
+    const ti = @typeInfo(T);
+    switch (ti) {
+        .Struct, .Enum, .Union => {
+            if (@hasDecl(T, "deepCompare")) {
+                return T.deepCompare(a, b);
+            }
+        },
+        else => {},
+    }
+    switch (ti) {
+        .Bool => {
+            if (a == b) return .Equal;
+            if (a) return .GreaterThan;
+            return .LessThan;
+        },
+        .Int, .Float => {
+            if (a < b) {
+                return .LessThan;
+            }
+            if (a > b) {
+                return .GreaterThan;
+            }
+            return .Equal;
+        },
+        .Enum => {
+            return deepCompare(@enumToInt(a), @enumToInt(b));
+        },
+        .Pointer => |pti| {
+            switch (pti.size) {
+                .One => {
+                    return deepCompare(a.*, b.*);
+                },
+                .Slice => {
+                    if (a.len < b.len) {
+                        return .LessThan;
+                    }
+                    if (a.len > b.len) {
+                        return .GreaterThan;
+                    }
+                    for (a) |a_elem, a_ix| {
+                        const ordering = deepCompare(a_elem, b[a_ix]);
+                        if (ordering != .Equal) {
+                            return ordering;
+                        }
+                    }
+                    return .Equal;
+                },
+                .Many, .C => @compileError("cannot deepCompare " ++ @typeName(T)),
+            }
+        },
+        .Optional => {
+            if (a) |a_val| {
+                if (b) |b_val| {
+                    return deepCompare(a_val, b_val);
+                } else {
+                    return .GreaterThan;
+                }
+            } else {
+                if (b) |_| {
+                    return .LessThan;
+                } else {
+                    return .Equal;
+                }
+            }
+        },
+        .Array => {
+            for (a) |a_elem, a_ix| {
+                const ordering = deepCompare(a_elem, b[a_ix]);
+                if (ordering != .Equal) {
+                    return ordering;
+                }
+            }
+            return .Equal;
+        },
+        .Struct => |sti| {
+            inline for (sti.fields) |fti| {
+                const ordering = deepCompare(@field(a, fti.name), @field(b, fti.name));
+                if (ordering != .Equal) {
+                    return ordering;
+                }
+            }
+            return .Equal;
+        },
+        .Union => |uti| {
+            if (uti.tag_type) |tag_type| {
+                const enum_info = @typeInfo(tag_type).Enum;
+                const a_tag = @enumToInt(@as(tag_type, a));
+                const b_tag = @enumToInt(@as(tag_type, b));
+                if (a_tag < b_tag) {
+                    return .LessThan;
+                }
+                if (a_tag > b_tag) {
+                    return .GreaterThan;
+                }
+                inline for (enum_info.fields) |fti| {
+                    if (a_tag == fti.value) {
+                        return deepCompare(
+                            @field(a, fti.name),
+                            @field(b, fti.name),
+                        );
+                    }
+                }
+                unreachable;
+            } else {
+                @compileError("cannot deepCompare " ++ @typeName(T));
+            }
+        },
+        .Void => return .Equal,
+        .ErrorUnion => {
+            if (a) |a_ok| {
+                if (b) |b_ok| {
+                    return deepCompare(a_ok, b_ok);
+                } else |_| {
+                    return .LessThan;
+                }
+            } else |a_err| {
+                if (b) |_| {
+                    return .GreaterThan;
+                } else |b_err| {
+                    return deepCompare(a_err, b_err);
+                }
+            }
+        },
+        .ErrorSet => return deepCompare(@errorToInt(a), @errorToInt(b)),
+        else => @compileError("cannot deepCompare " ++ @typeName(T)),
+    }
+}
+
+pub fn deepHash(key: anytype) u64 {
+    var hasher = std.hash.Wyhash.init(0);
+    deepHashInto(&hasher, key);
+    return hasher.final();
+}
+
+pub fn deepHashInto(hasher: anytype, key: anytype) void {
+    const T = @TypeOf(key);
+    const ti = @typeInfo(T);
+    switch (ti) {
+        .Struct, .Enum, .Union => {
+            if (@hasDecl(T, "deepHashInto")) {
+                return T.deepHashInto(hasher, key);
+            }
+        },
+        else => {},
+    }
+    switch (ti) {
+        .Int => @call(.{ .modifier = .always_inline }, hasher.update, .{std.mem.asBytes(&key)}),
+        .Float => |info| deepHashInto(hasher, @bitCast(std.Int(.unsigned, info.bits), key)),
+        .Bool => deepHashInto(hasher, @boolToInt(key)),
+        .Enum => deepHashInto(hasher, @enumToInt(key)),
+        .Pointer => |pti| {
+            switch (pti.size) {
+                .One => deepHashInto(hasher, key.*),
+                .Slice => {
+                    for (key) |element| {
+                        deepHashInto(hasher, element);
+                    }
+                },
+                .Many, .C => @compileError("cannot deepHash " ++ @typeName(T)),
+            }
+        },
+        .Optional => if (key) |k| deepHashInto(hasher, k),
+        .Array => {
+            for (key) |element| {
+                deepHashInto(hasher, element);
+            }
+        },
+        .Struct => |info| {
+            inline for (info.fields) |field| {
+                deepHashInto(hasher, @field(key, field.name));
+            }
+        },
+        .Union => |info| {
+            if (info.tag_type) |tag_type| {
+                const enum_info = @typeInfo(tag_type).Enum;
+                const tag = std.activeTag(key);
+                deepHashInto(hasher, tag);
+                inline for (enum_info.fields) |enum_field| {
+                    if (enum_field.value == @enumToInt(tag)) {
+                        deepHashInto(hasher, @field(key, enum_field.name));
+                        return;
+                    }
+                }
+                unreachable;
+            } else @compileError("cannot deepHash " ++ @typeName(T));
+        },
+        .Void => {},
+        else => @compileError("cannot deepHash " ++ @typeName(T)),
+    }
+}
+
+pub fn DeepHashContext(comptime K: type) type {
+    return struct {
+        const Self = @This();
+        pub fn hash(_: Self, pseudo_key: K) u64 {
+            return deepHash(pseudo_key);
+        }
+        pub fn eql(_: Self, pseudo_key: K, key: K) bool {
+            return deepEqual(pseudo_key, key);
+        }
+    };
 }

@@ -1,5 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -33,17 +35,17 @@ pub const SingleLineEditor = struct {
         self.buffer.deinit();
     }
 
-    pub fn frame(self: *SingleLineEditor, window: *Window, rect: Rect, events: []const c.SDL_Event) enum { Changed, Unchanged } {
+    pub fn frame(self: *SingleLineEditor, window: *Window, rect: u.Rect, events: []const c.SDL_Event) enum { Changed, Unchanged } {
         const prev_text = self.app.dupe(self.getText());
 
         // filter out multiline events
-        var editor_events = ArrayList(c.SDL_Event).init(self.app.frame_allocator);
+        var editor_events = u.ArrayList(c.SDL_Event).init(self.app.frame_allocator);
         for (events) |event| {
             if (event.type == c.SDL_KEYDOWN) {
                 if (event.key.keysym.sym == c.SDLK_RETURN) continue;
                 if ((event.key.keysym.mod == c.KMOD_LALT or event.key.keysym.mod == c.KMOD_RALT) and (event.key.keysym.sym == 'k' or event.key.keysym.sym == 'i')) continue;
             }
-            editor_events.append(event) catch oom();
+            editor_events.append(event) catch u.oom();
         }
 
         // run editor

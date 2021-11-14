@@ -1,6 +1,7 @@
+const std = @import("std");
 const focus = @import("../focus.zig");
-usingnamespace focus.common;
-const meta = focus.meta;
+const u = focus.util;
+const c = focus.util.c;
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -33,9 +34,9 @@ pub const ImpRepl = struct {
                 .memory_limit_bytes = 1024 * 1024 * 1024,
             },
         ) catch |err|
-            panic("Failed to start imp worker: {}", .{err});
+            u.panic("Failed to start imp worker: {}", .{err});
 
-        const self = app.allocator.create(ImpRepl) catch oom();
+        const self = app.allocator.create(ImpRepl) catch u.oom();
         self.* = ImpRepl{
             .app = app,
             .program_editor = program_editor,
@@ -63,10 +64,10 @@ pub const ImpRepl = struct {
             .id = self.last_request_id,
             .text = program,
             .selection = selection,
-        }) catch oom();
+        }) catch u.oom();
     }
 
-    pub fn frame(self: *ImpRepl, window: *Window, rect: Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *ImpRepl, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
         if (self.imp_worker.getResponse()) |response| {
             self.result_editor.buffer.replace(response.text);
             self.last_response_id = response.id;
