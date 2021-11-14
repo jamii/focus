@@ -76,10 +76,14 @@ pub const FileOpener = struct {
         }
 
         const path = self.input.getText();
-        const dirname = if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
-            path[0 .. path.len - 1]
-        else
-            std.fs.path.dirname(path) orelse "";
+        const dirname = std.mem.dupe(
+            self.app.frame_allocator,
+            u8,
+            if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
+                path[0 .. path.len - 1]
+            else
+                std.fs.path.dirname(path) orelse "",
+        ) catch u.oom();
 
         // maybe open file
         if (action == .SelectRaw or action == .SelectOne) {
@@ -93,6 +97,7 @@ pub const FileOpener = struct {
                         u.panic("{} while creating directory {s}", .{ err, filename });
                     };
                 self.input.setText(filename);
+                self.selector.selected = 0;
             } else {
                 if (action == .SelectRaw) {
                     const file = std.fs.cwd().createFile(filename, .{ .truncate = false }) catch |err| {
@@ -111,7 +116,7 @@ pub const FileOpener = struct {
         const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
         buffer.deinit();
-        if (results.len == 0) {
+        if (self.selector.selected > results.len) {
             const empty_buffer = Buffer.initEmpty(self.app, .{
                 .limit_load_bytes = true,
                 .enable_completions = false,
@@ -134,7 +139,9 @@ pub const FileOpener = struct {
                     .show_completer = false,
                 });
             } else {
+                u.dump(.{ results, self.selector.selected, selected, dirname });
                 const filename = std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, selected }) catch u.oom();
+
                 const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .{
                     .limit_load_bytes = true,
                     .enable_completions = false,

@@ -117,7 +117,7 @@ pub const ProjectSearcher = struct {
 
         var line_number: ?usize = null;
         var path: ?[]const u8 = null;
-        if (self.selector.ranges.len > 0) {
+        if (self.selector.selected < self.selector.ranges.len) {
             // deinit old preview
             const buffer = self.preview_editor.buffer;
             self.preview_editor.deinit();

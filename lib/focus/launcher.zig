@@ -68,7 +68,7 @@ pub const Launcher = struct {
         const action = self.selector.frame(window, layout.selector, events);
 
         // handle action
-        if (filtered_exes.len > 0 and action == .SelectOne) {
+        if (action == .SelectOne) {
             const exe = filtered_exes[self.selector.selected];
             // TODO this is kinda hacky :D
             const command = u.format(self.app.frame_allocator, "{s} & disown", .{exe});

@@ -162,7 +162,7 @@ pub const Maker = struct {
 
                 // maybe run command
                 var command_o: ?[]const u8 = null;
-                if (action == .SelectOne and filtered_history.len > 0) {
+                if (action == .SelectOne) {
                     command_o = self.app.dupe(filtered_history[self.selector.selected]);
                 }
                 if (action == .SelectRaw) {

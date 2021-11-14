@@ -108,7 +108,7 @@ pub const ProjectFileOpener = struct {
         const action = self.selector.frame(window, layout.selector, events);
 
         // maybe open file
-        if (action == .SelectOne and filtered_paths.len > 0) {
+        if (action == .SelectOne) {
             const path = filtered_paths[self.selector.selected];
             if (path.len > 0 and std.fs.path.isSep(path[path.len - 1])) {
                 self.input.setText(path);
@@ -129,7 +129,7 @@ pub const ProjectFileOpener = struct {
         const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
         buffer.deinit();
-        if (filtered_paths.len == 0) {
+        if (self.selector.selected > filtered_paths.len) {
             const empty_buffer = Buffer.initEmpty(self.app, .{
                 .limit_load_bytes = true,
                 .enable_completions = false,

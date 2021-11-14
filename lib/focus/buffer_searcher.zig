@@ -135,7 +135,7 @@ pub const BufferSearcher = struct {
         editor.setMark();
         switch (action) {
             .None, .SelectRaw, .SelectOne => {
-                if (result_poss.len != 0) {
+                if (self.selector.selected < result_poss.len) {
                     const pos = result_poss[self.selector.selected];
                     var cursor = editor.getMainCursor();
                     editor.goPos(cursor, pos + filter.len);

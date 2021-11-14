@@ -89,7 +89,7 @@ pub const ErrorLister = struct {
         // set cache selection
         self.app.last_error_lister_selected = self.selector.selected;
 
-        if (error_locations.items.len > 0) {
+        if (self.selector.selected < error_locations.items.len) {
             const error_location = error_locations.items[self.selector.selected];
 
             // maybe open file
