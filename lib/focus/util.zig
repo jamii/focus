@@ -55,8 +55,8 @@ pub fn DeepHashSet(comptime K: type) type {
 }
 
 pub fn dump(thing: anytype) void {
-    const held = std.debug.getStderrMutex().acquire();
-    defer held.release();
+    std.debug.getStderrMutex().lock();
+    defer std.debug.getStderrMutex().unlock();
     const my_stderr = std.io.getStdErr();
     const writer = my_stderr.writer();
     dumpInto(writer, 0, thing) catch return;
