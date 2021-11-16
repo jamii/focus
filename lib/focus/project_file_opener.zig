@@ -129,7 +129,7 @@ pub const ProjectFileOpener = struct {
         const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
         buffer.deinit();
-        if (self.selector.selected > filtered_paths.len) {
+        if (self.selector.selected >= filtered_paths.len) {
             const empty_buffer = Buffer.initEmpty(self.app, .{
                 .limit_load_bytes = true,
                 .enable_completions = false,

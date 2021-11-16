@@ -116,7 +116,7 @@ pub const FileOpener = struct {
         const buffer = self.preview_editor.buffer;
         self.preview_editor.deinit();
         buffer.deinit();
-        if (self.selector.selected > results.len) {
+        if (self.selector.selected >= results.len) {
             const empty_buffer = Buffer.initEmpty(self.app, .{
                 .limit_load_bytes = true,
                 .enable_completions = false,

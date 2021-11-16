@@ -101,7 +101,7 @@ pub const BufferOpener = struct {
 
         // update preview
         self.preview_editor.deinit();
-        if (self.selector.selected > filtered_paths.len) {
+        if (self.selector.selected >= filtered_paths.len) {
             const empty_buffer = Buffer.initEmpty(self.app, .{
                 .limit_load_bytes = true,
                 .enable_completions = false,
