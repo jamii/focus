@@ -30,7 +30,10 @@ let
         src = fetchTarball (if (hostPkgs.system == "x86_64-linux") then {
             url = "https://ziglang.org/builds/zig-linux-x86_64-0.9.0-dev.1625+d3a099c14.tar.xz";
             sha256 = "1azv16jkn7mh1jm9m6k7d5nkjjs26dhy26azg9xcb4hg5qrznnc0";
-        } else throw ("Unknown system " ++ hostPkgs.system));
+        } else if (hostPkgs.system == "aarch64-linux") then {
+        url = "https://ziglang.org/builds/zig-linux-aarch64-0.9.0-dev.1801+a4aff36fb.tar.xz";
+        sha256 = "1sbkci9rs8yjvbbl6szy3hz1ihkjvcb41w6hnzlkf3p1zhc7y43i";
+    } else throw ("Unknown system " ++ hostPkgs.system));
         dontConfigure = true;
         dontBuild = true;
         installPhase = ''
