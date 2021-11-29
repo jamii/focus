@@ -139,7 +139,6 @@ pub const FileOpener = struct {
                     .show_completer = false,
                 });
             } else {
-                u.dump(.{ results, self.selector.selected, selected, dirname });
                 const filename = std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, selected }) catch u.oom();
 
                 const preview_buffer = Buffer.initFromAbsoluteFilename(self.app, .{
