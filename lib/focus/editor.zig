@@ -601,7 +601,7 @@ pub const Editor = struct {
             // handle replacement
             if (completer_event != .None) {
                 for (self.cursors.items) |*cursor|
-                    self.buffer.insertCompletion(cursor.head.pos, std.mem.dupe(self.app.frame_allocator, u8, completions[0]) catch u.oom());
+                    self.buffer.insertCompletion(cursor.head.pos, self.app.frame_allocator.dupe(u8, completions[0]) catch u.oom());
                 // make sure we don't get confused about that cursor movement
                 completer.last_pos = self.getMainCursor().head.pos;
             }
@@ -885,7 +885,7 @@ pub const Editor = struct {
         }
     }
 
-    pub fn dupeSelection(self: *Editor, allocator: *u.Allocator, cursor: *Cursor) []const u8 {
+    pub fn dupeSelection(self: *Editor, allocator: u.Allocator, cursor: *Cursor) []const u8 {
         const range = self.getSelectionRange(cursor);
         return self.buffer.dupe(allocator, range[0], range[1]);
     }
@@ -897,7 +897,7 @@ pub const Editor = struct {
     pub fn copy(self: *Editor, cursor: *Cursor) void {
         if (cursor.head.pos == cursor.tail.pos) return;
         const text = self.dupeSelection(self.app.frame_allocator, cursor);
-        const textZ = std.mem.dupeZ(self.app.frame_allocator, u8, text) catch u.oom();
+        const textZ = self.app.frame_allocator.dupeZ(u8, text) catch u.oom();
         if (c.SDL_SetClipboardText(textZ) != 0) {
             u.panic("{s} while setting system clipboard", .{c.SDL_GetError()});
         }
@@ -911,7 +911,7 @@ pub const Editor = struct {
     pub fn paste(self: *Editor, cursor: *Cursor) void {
         if (c.SDL_GetClipboardText()) |text| {
             defer c.SDL_free(text);
-            self.insert(cursor, std.mem.spanZ(text));
+            self.insert(cursor, std.mem.span(text));
         } else {
             u.warn("{s} while getting system clipboard", .{c.SDL_GetError()});
         }

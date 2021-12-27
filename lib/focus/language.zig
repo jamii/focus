@@ -40,12 +40,12 @@ pub const Language = enum {
         };
     }
 
-    pub fn highlight(self: Language, allocator: *u.Allocator, source: []const u8, range: [2]usize) []const u.Color {
+    pub fn highlight(self: Language, allocator: u.Allocator, source: []const u8, range: [2]usize) []const u.Color {
         _ = source;
         const colors = allocator.alloc(u.Color, range[1] - range[0]) catch u.oom();
         switch (self) {
             .Zig => {
-                const source_z = std.mem.dupeZ(allocator, u8, source[range[0]..range[1]]) catch u.oom();
+                const source_z = allocator.dupeZ(u8, source[range[0]..range[1]]) catch u.oom();
                 defer allocator.free(source_z);
                 var tokenizer = std.zig.Tokenizer.init(source_z);
                 std.mem.set(u.Color, colors, style.comment_color);
@@ -89,8 +89,8 @@ pub const Language = enum {
                 var parser = imp.lang.pass.parse.Parser{
                     .arena = &arena,
                     .source = source[range[0]..range[1]],
-                    .exprs = u.ArrayList(imp.lang.repr.syntax.Expr).init(&arena.allocator),
-                    .from_source = u.ArrayList([2]usize).init(&arena.allocator),
+                    .exprs = u.ArrayList(imp.lang.repr.syntax.Expr).init(arena.allocator()),
+                    .from_source = u.ArrayList([2]usize).init(arena.allocator()),
                     .position = 0,
                     .error_info = &error_info,
                 };

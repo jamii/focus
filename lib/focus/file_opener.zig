@@ -76,8 +76,7 @@ pub const FileOpener = struct {
         }
 
         const path = self.input.getText();
-        const dirname = std.mem.dupe(
-            self.app.frame_allocator,
+        const dirname = self.app.frame_allocator.dupe(
             u8,
             if (path.len > 0 and std.fs.path.isSep(path[path.len - 1]))
                 path[0 .. path.len - 1]
@@ -88,7 +87,7 @@ pub const FileOpener = struct {
         // maybe open file
         if (action == .SelectRaw or action == .SelectOne) {
             const filename: []const u8 = if (action == .SelectRaw)
-                std.mem.dupe(self.app.frame_allocator, u8, self.input.getText()) catch u.oom()
+                self.app.frame_allocator.dupe(u8, self.input.getText()) catch u.oom()
             else
                 std.fs.path.join(self.app.frame_allocator, &[_][]const u8{ dirname, results[self.selector.selected] }) catch u.oom();
             if (filename.len > 0 and std.fs.path.isSep(filename[filename.len - 1])) {

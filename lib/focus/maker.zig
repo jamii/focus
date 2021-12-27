@@ -31,13 +31,13 @@ pub const Maker = struct {
             error_locations: []const ErrorLister.ErrorLocation,
 
             const Self = @This();
-            fn clearErrorLocations(self: *Self, allocator: *u.Allocator) void {
+            fn clearErrorLocations(self: *Self, allocator: u.Allocator) void {
                 for (self.error_locations) |error_location|
                     error_location.deinit(allocator);
                 allocator.free(self.error_locations);
                 self.error_locations = &.{};
             }
-            fn deinit(self: *Self, allocator: *u.Allocator) void {
+            fn deinit(self: *Self, allocator: u.Allocator) void {
                 self.clearErrorLocations(allocator);
                 self.child_process.deinit();
                 allocator.free(self.command);

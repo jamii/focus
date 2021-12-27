@@ -6,7 +6,7 @@ const c = focus.util.c;
 const fira_code = @embedFile("../../fonts/Fira_Code_v5.2/woff/FiraCode-Regular.woff");
 
 pub const Atlas = struct {
-    allocator: *u.Allocator,
+    allocator: u.Allocator,
     point_size: usize,
     font: *c.TTF_Font,
     texture: []u.Color,
@@ -18,7 +18,7 @@ pub const Atlas = struct {
     right_down_arrow_rect: u.Rect,
     down_right_arrow_rect: u.Rect,
 
-    pub fn init(allocator: *u.Allocator, point_size: usize) Atlas {
+    pub fn init(allocator: u.Allocator, point_size: usize) Atlas {
 
         // init SDL2_ttf
         if (c.TTF_Init() != 0)
@@ -56,7 +56,7 @@ pub const Atlas = struct {
 
         // copy the texture
         u.assert(surface.*.format.*.format == c.SDL_PIXELFORMAT_ARGB8888);
-        const texture = std.mem.dupe(allocator, u.Color, @ptrCast([*]u.Color, surface.*.pixels)[0..@intCast(usize, surface.*.w * surface.*.h)]) catch u.oom();
+        const texture = allocator.dupe(u.Color, @ptrCast([*]u.Color, surface.*.pixels)[0..@intCast(usize, surface.*.w * surface.*.h)]) catch u.oom();
 
         // make a white pixel
         texture[0] = u.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };

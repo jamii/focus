@@ -328,7 +328,7 @@ pub const Window = struct {
         // set window title
         var window_title: [*c]const u8 = "";
         if (self.getTopViewFilename()) |filename| {
-            window_title = std.mem.dupeZ(self.app.frame_allocator, u8, filename) catch u.oom();
+            window_title = self.app.frame_allocator.dupeZ(u8, filename) catch u.oom();
         }
         c.SDL_SetWindowTitle(self.sdl_window, window_title);
 

@@ -16,7 +16,7 @@ pub const c = @cImport({
     @cInclude("pcre2.h");
 });
 
-pub const warn = std.debug.warn;
+pub const warn = std.log.warn;
 pub const assert = std.debug.assert;
 pub const expect = std.testing.expect;
 pub const max = std.math.max;
@@ -47,7 +47,7 @@ pub fn oom() noreturn {
 }
 
 pub fn DeepHashMap(comptime K: type, comptime V: type) type {
-    return std.HashMap(K, V, DeepHashContext(K), std.hash_map.DefaultMaxLoadPercentage);
+    return std.HashMap(K, V, DeepHashContext(K), std.hash_map.default_max_load_percentage);
 }
 
 pub fn DeepHashSet(comptime K: type) type {
@@ -157,7 +157,7 @@ pub fn dumpInto(writer: anytype, indent: u32, thing: anytype) anyerror!void {
     }
 }
 
-pub fn format(allocator: *Allocator, comptime fmt: []const u8, args: anytype) []const u8 {
+pub fn format(allocator: Allocator, comptime fmt: []const u8, args: anytype) []const u8 {
     var buf = ArrayList(u8).init(allocator);
     var writer = buf.writer();
     std.fmt.format(writer, fmt, args) catch oom();
@@ -343,7 +343,7 @@ const ScoredItem = struct {
     score: usize,
     item: []const u8,
 };
-pub fn fuzzy_search(allocator: *Allocator, items: []const []const u8, filter: []const u8) [][]const u8 {
+pub fn fuzzy_search(allocator: Allocator, items: []const []const u8, filter: []const u8) [][]const u8 {
     var scored_items = ArrayList(ScoredItem).init(allocator);
     defer scored_items.deinit();
 
@@ -389,7 +389,7 @@ pub fn fuzzy_search(allocator: *Allocator, items: []const []const u8, filter: []
     return results.toOwnedSlice();
 }
 
-pub fn fuzzy_search_paths(allocator: *Allocator, path: []const u8) ![]const []const u8 {
+pub fn fuzzy_search_paths(allocator: Allocator, path: []const u8) ![]const []const u8 {
     var results = ArrayList([]const u8).init(allocator);
     {
         var dirname_o: ?[]const u8 = null;
@@ -430,7 +430,7 @@ const Match = struct {
     captures: []const [2]usize,
 };
 
-pub fn regex_search(allocator: *Allocator, text: []const u8, pattern: [:0]const u8) []const Match {
+pub fn regex_search(allocator: Allocator, text: []const u8, pattern: [:0]const u8) []const Match {
     var err_number: c_int = undefined;
     var err_offset: c.PCRE2_SIZE = undefined;
     var regex = c.pcre2_compile_8(pattern, pattern.len, c.PCRE2_MULTILINE, &err_number, &err_offset, null);

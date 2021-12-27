@@ -172,7 +172,7 @@ pub fn waitReply(client_socket: std.os.socket_t) u8 {
 
 const ns_per_frame = @divTrunc(1_000_000_000, 60);
 
-pub fn run(allocator: *u.Allocator, server_socket: ServerSocket) void {
+pub fn run(allocator: u.Allocator, server_socket: ServerSocket) void {
     var app = App.init(allocator, server_socket);
     var timer = std.time.Timer.start() catch u.panic("Couldn't start timer", .{});
     while (true) {
@@ -186,10 +186,10 @@ pub fn run(allocator: *u.Allocator, server_socket: ServerSocket) void {
 }
 
 pub const App = struct {
-    allocator: *u.Allocator,
+    allocator: u.Allocator,
     server_socket: ServerSocket,
     frame_arena: u.ArenaAllocator,
-    frame_allocator: *u.Allocator,
+    frame_allocator: u.Allocator,
     atlas: *Atlas,
     // contains only buffers that were created from files
     // other buffers are just floating around but must be deinited by their owning view
@@ -204,7 +204,7 @@ pub const App = struct {
     last_buffer_opener_selected: usize,
     last_error_lister_selected: usize,
 
-    pub fn init(allocator: *u.Allocator, server_socket: ServerSocket) *App {
+    pub fn init(allocator: u.Allocator, server_socket: ServerSocket) *App {
         if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0)
             u.panic("SDL init failed: {s}", .{c.SDL_GetError()});
 
@@ -227,7 +227,7 @@ pub const App = struct {
             .last_buffer_opener_selected = 0,
             .last_error_lister_selected = 0,
         };
-        self.frame_allocator = &self.frame_arena.allocator;
+        self.frame_allocator = self.frame_arena.allocator();
 
         return self;
     }
@@ -351,7 +351,7 @@ pub const App = struct {
 
         // run window frames
         // copy window list because it might change during frame
-        const current_windows = std.mem.dupe(self.frame_allocator, *Window, self.windows.items) catch u.oom();
+        const current_windows = self.frame_allocator.dupe(*Window, self.windows.items) catch u.oom();
         for (current_windows) |window| {
             var window_events = u.ArrayList(c.SDL_Event).init(self.frame_allocator);
             for (events.items) |event| {

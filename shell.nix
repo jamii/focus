@@ -27,22 +27,23 @@ let
 
   zig = hostPkgs.stdenv.mkDerivation {
         name = "zig";
-        src = fetchTarball (if (hostPkgs.system == "x86_64-linux") then {
-            url = "https://ziglang.org/builds/zig-linux-x86_64-0.9.0-dev.1801+a4aff36fb.tar.xz";
-            sha256 = "12ir9nqf45rw7kiv4yn6m9zbacg1svz16fl69ibjrqc9nkd6p047";
-        } else if (hostPkgs.system == "aarch64-linux") then {
-            url = "https://ziglang.org/builds/zig-linux-aarch64-0.9.0-dev.1801+a4aff36fb.tar.xz";
-            sha256 = "1sbkci9rs8yjvbbl6szy3hz1ihkjvcb41w6hnzlkf3p1zhc7y43i";
-    } else throw ("Unknown system " ++ hostPkgs.system));
+        src = fetchTarball (
+            if (hostPkgs.system == "x86_64-linux") then {
+                url = "https://ziglang.org/download/0.9.0/zig-linux-x86_64-0.9.0.tar.xz";
+                sha256 = "1vagp72wxn6i9qscji6k3a1shy76jg4d6crmx9ijpch9kyn71c96";
+            } else if (hostPkgs.system == "aarch64-linux") then {
+                url = "https://ziglang.org/download/0.9.0/zig-linux-aarch64-0.9.0.tar.xz";
+                sha256 = "00m6nxp64nf6pwq407by52l8i0f2m4mw6hj17jbjdjd267b6sgri";
+            } else 
+                throw ("Unknown system " ++ hostPkgs.system)
+        );
         dontConfigure = true;
         dontBuild = true;
         installPhase = ''
-        mkdir -p $out
-        mv ./lib $out/
-        mkdir -p $out/bin
-        mv ./zig $out/bin
-        mkdir -p $out/doc
-        #mv ./langref.html $out/doc
+            mkdir -p $out
+            mv ./* $out/
+            mkdir -p $out/bin
+            mv $out/zig $out/bin
         '';
     };
 
@@ -52,7 +53,6 @@ hostPkgs.mkShell rec {
   buildInputs = [
     zig
     hostPkgs.pkg-config
-    hostPkgs.patchelf
     targetPkgs.libGL.all
     targetPkgs.xorg.libX11.dev
     targetPkgs.xlibs.xorgproto

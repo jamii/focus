@@ -61,7 +61,7 @@ pub const ErrorLister = struct {
         line: usize,
         col: usize,
 
-        pub fn deinit(self: ErrorLocation, allocator: *u.Allocator) void {
+        pub fn deinit(self: ErrorLocation, allocator: u.Allocator) void {
             allocator.free(self.path);
         }
     };

@@ -48,7 +48,7 @@ const Edit = union(enum) {
         new_bytes: []const u8,
     },
 
-    fn deinit(self: Edit, allocator: *u.Allocator) void {
+    fn deinit(self: Edit, allocator: u.Allocator) void {
         switch (self) {
             .Insert => |data| allocator.free(data.new_bytes),
             .Delete => |data| allocator.free(data.old_bytes),
@@ -102,7 +102,7 @@ pub const Buffer = struct {
         const self = Buffer.initEmpty(app, options);
         self.source = .{
             .File = .{
-                .absolute_filename = std.mem.dupe(self.app.allocator, u8, absolute_filename) catch u.oom(),
+                .absolute_filename = self.app.allocator.dupe(u8, absolute_filename) catch u.oom(),
                 .mtime = 0,
             },
         };
@@ -338,10 +338,10 @@ pub const Buffer = struct {
     }
 
     // TODO pass Writer instead of Allocator for easy concat/sentinel? but costs more allocations?
-    pub fn dupe(self: *Buffer, allocator: *u.Allocator, start: usize, end: usize) []const u8 {
+    pub fn dupe(self: *Buffer, allocator: u.Allocator, start: usize, end: usize) []const u8 {
         u.assert(start <= end);
         u.assert(end <= self.bytes.items.len);
-        return std.mem.dupe(allocator, u8, self.bytes.items[start..end]) catch u.oom();
+        return allocator.dupe(u8, self.bytes.items[start..end]) catch u.oom();
     }
 
     fn rawInsert(self: *Buffer, pos: usize, bytes: []const u8) void {
@@ -407,7 +407,7 @@ pub const Buffer = struct {
                 .Insert = .{
                     .start = pos,
                     .end = pos + bytes.len,
-                    .new_bytes = std.mem.dupe(self.app.allocator, u8, bytes) catch u.oom(),
+                    .new_bytes = self.app.allocator.dupe(u8, bytes) catch u.oom(),
                 },
             }) catch u.oom();
             for (self.redos.items) |edits| {
@@ -425,7 +425,7 @@ pub const Buffer = struct {
                 .Delete = .{
                     .start = start,
                     .end = end,
-                    .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items[start..end]) catch u.oom(),
+                    .old_bytes = self.app.allocator.dupe(u8, self.bytes.items[start..end]) catch u.oom(),
                 },
             }) catch u.oom();
             for (self.redos.items) |edits| {
@@ -443,8 +443,8 @@ pub const Buffer = struct {
             if (self.options.enable_undo) {
                 self.doing.append(.{
                     .Replace = .{
-                        .old_bytes = std.mem.dupe(self.app.allocator, u8, self.bytes.items) catch u.oom(),
-                        .new_bytes = std.mem.dupe(self.app.allocator, u8, new_bytes) catch u.oom(),
+                        .old_bytes = self.app.allocator.dupe(u8, self.bytes.items) catch u.oom(),
+                        .new_bytes = self.app.allocator.dupe(u8, new_bytes) catch u.oom(),
                     },
                 }) catch u.oom();
                 for (self.redos.items) |edits| {

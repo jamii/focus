@@ -16,10 +16,10 @@ const Action = union(enum) {
 };
 
 pub fn main() void {
-    const allocator = if (builtin.mode == .Debug) &gpa.allocator else std.heap.c_allocator;
+    const allocator = if (builtin.mode == .Debug) gpa.allocator() else std.heap.c_allocator;
     var arena = focus.util.ArenaAllocator.init(allocator);
 
-    const args = std.process.argsAlloc(&arena.allocator) catch focus.util.oom();
+    const args = std.process.argsAlloc(arena.allocator()) catch focus.util.oom();
 
     var action: Action = .{ .Request = .CreateEmptyWindow };
     for (args[1..]) |c_arg| {
@@ -33,12 +33,12 @@ pub fn main() void {
                 focus.util.panic("Unrecognized arg: {s}", .{arg});
             }
         } else {
-            const absolute_filename = std.fs.path.resolve(&arena.allocator, &[_][]const u8{arg}) catch focus.util.oom();
+            const absolute_filename = std.fs.path.resolve(arena.allocator(), &[_][]const u8{arg}) catch focus.util.oom();
             action = .{ .Request = .{ .CreateEditorWindow = absolute_filename } };
         }
     }
 
-    const socket_path = focus.util.format(&arena.allocator, "#{s}", .{args[0]});
+    const socket_path = focus.util.format(arena.allocator(), "#{s}", .{args[0]});
     const server_socket = focus.createServerSocket(socket_path);
 
     switch (action) {
@@ -51,7 +51,7 @@ pub fn main() void {
         .Request => |request| {
             // if we successfully bound the socket then we need to create the daemon
             if (server_socket.state == .Bound) {
-                const log_filename = focus.util.format(&arena.allocator, "/home/jamie/.log/{s}.log", .{std.fs.path.basename(args[0])});
+                const log_filename = focus.util.format(arena.allocator(), "/home/jamie/.log/{s}.log", .{std.fs.path.basename(args[0])});
                 if (focus.daemonize(log_filename) == .Child) {
                     focus.run(allocator, server_socket);
                     // run doesn't return

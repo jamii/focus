@@ -6,7 +6,7 @@ const c = focus.util.c;
 pub const ChildProcess = struct {
     child_process: *std.ChildProcess,
 
-    pub fn init(allocator: *u.Allocator, dirname: []const u8, args: []const []const u8) ChildProcess {
+    pub fn init(allocator: u.Allocator, dirname: []const u8, args: []const []const u8) ChildProcess {
         const full_args = std.mem.concat(allocator, []const u8, &.{
             &.{@as([]const u8, "setsid")},
             args,
@@ -39,7 +39,7 @@ pub const ChildProcess = struct {
         return if (wait.pid == self.child_process.pid) .Finished else .Running;
     }
 
-    pub fn read(self: ChildProcess, allocator: *u.Allocator) []const u8 {
+    pub fn read(self: ChildProcess, allocator: u.Allocator) []const u8 {
         var bytes = u.ArrayList(u8).initCapacity(allocator, 4096) catch u.oom();
         defer bytes.deinit();
         var start: usize = 0;
