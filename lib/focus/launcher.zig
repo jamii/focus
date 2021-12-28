@@ -24,14 +24,15 @@ pub const Launcher = struct {
         {
             const result = std.ChildProcess.exec(.{
                 .allocator = app.frame_allocator,
-                .argv = &[_][]const u8{ "bash", "-c", "compgen -c" },
+                .argv = &[_][]const u8{ "fish", "-C", "complete -C ''" },
                 .cwd = "/home/jamie",
                 .max_output_bytes = 128 * 1024 * 1024,
             }) catch |err| u.panic("{} while calling compgen", .{err});
             u.assert(result.term == .Exited and result.term.Exited == 0);
             var lines = std.mem.split(u8, result.stdout, "\n");
             while (lines.next()) |line| {
-                exes.append(app.dupe(line)) catch u.oom();
+                const command = std.mem.split(u8, line, "\t").next().?;
+                exes.append(app.dupe(command)) catch u.oom();
             }
         }
 
@@ -73,7 +74,7 @@ pub const Launcher = struct {
             // TODO this is kinda hacky :D
             const command = u.format(self.app.frame_allocator, "{s} & disown", .{exe});
             var process = std.ChildProcess.init(
-                &[_][]const u8{ "bash", "-c", command },
+                &[_][]const u8{ "fish", "-c", command },
                 self.app.frame_allocator,
             ) catch |err| u.panic("Failed to init {s}: {}", .{ command, err });
             process.spawn() catch |err| u.panic("Failed to spawn {s}: {}", .{ command, err });

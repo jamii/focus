@@ -57,20 +57,21 @@ pub const Maker = struct {
         });
         const input = SingleLineEditor.init(app, "/home/jamie/");
         const selector = Selector.init(app);
-        const history_file = std.fs.cwd().openFile("/home/jamie/.bash_history", .{}) catch |err|
-            u.panic("Failed to open bash history: {}", .{err});
-        const history_string = history_file.reader().readAllAlloc(app.allocator, std.math.maxInt(usize)) catch |err|
-            u.panic("Failed to read bash history: {}", .{err});
-        var history_lines = std.mem.split(u8, history_string, "\n");
-        var history = u.ArrayList([]const u8).init(app.frame_allocator);
-        while (history_lines.next()) |line| history.append(line) catch u.oom();
-        std.mem.reverse([]const u8, history.items);
-        var unseen_history = u.ArrayList([]const u8).init(app.allocator);
-        var seen_history = u.DeepHashSet([]const u8).init(app.frame_allocator);
-        for (history.items) |line|
-            if (line.len != 0)
-                if (!(seen_history.getOrPut(std.mem.trim(u8, line, " ")) catch u.oom()).found_existing)
-                    unseen_history.append(line) catch u.oom();
+
+        const result = std.ChildProcess.exec(.{
+            .allocator = app.frame_allocator,
+            .argv = &[_][]const u8{ "fish", "--command", "history" },
+            .cwd = "/home/jamie",
+            .max_output_bytes = 128 * 1024 * 1024,
+        }) catch |err| u.panic("{} while calling fish history", .{err});
+        u.assert(result.term == .Exited and result.term.Exited == 0);
+        const history_string = app.dupe(result.stdout);
+        var history = u.ArrayList([]const u8).init(app.allocator);
+        var lines = std.mem.split(u8, history_string, "\n");
+        while (lines.next()) |line| {
+            history.append(app.dupe(line)) catch u.oom();
+        }
+
         const self = app.allocator.create(Maker) catch u.oom();
         self.* = Maker{
             .app = app,
@@ -78,7 +79,7 @@ pub const Maker = struct {
             .selector = selector,
             .result_editor = result_editor,
             .history_string = history_string,
-            .history = unseen_history.toOwnedSlice(),
+            .history = history.toOwnedSlice(),
             .state = .ChoosingDir,
         };
         return self;
@@ -90,6 +91,7 @@ pub const Maker = struct {
             .ChoosingCommand => |choosing_command| self.app.allocator.free(choosing_command.dirname),
             .Running => |*running| running.deinit(self.app.allocator),
         }
+        self.app.allocator.free(self.history);
         self.app.allocator.free(self.history_string);
         self.selector.deinit();
         self.input.deinit();
@@ -171,12 +173,13 @@ pub const Maker = struct {
 
                 if (command_o) |command| {
                     // add command to history
-                    const history_file = std.fs.cwd().openFile("/home/jamie/.bash_history", .{ .write = true }) catch |err|
-                        u.panic("Failed to open bash history: {}", .{err});
+                    const history_file = std.fs.cwd().openFile("/home/jamie/.local/share/fish/fish_history", .{ .write = true }) catch |err|
+                        u.panic("Failed to open fish history: {}", .{err});
                     history_file.seekFromEnd(0) catch |err|
-                        u.panic("Failed to seek to end of bash history: {}", .{err});
-                    std.fmt.format(history_file.writer(), "{s}\n", .{command}) catch |err|
-                        u.panic("Failed to write to bash history: {}", .{err});
+                        u.panic("Failed to seek to end of fish history: {}", .{err});
+                    std.fmt.format(history_file.writer(), "\n- cmd: {s}\n  when: {}", .{ command, std.time.timestamp() }) catch |err|
+                        u.panic("Failed to write to fish history: {}", .{err});
+                    history_file.close();
 
                     // start running
                     self.state = .{ .Running = .{
@@ -185,7 +188,7 @@ pub const Maker = struct {
                         .child_process = ChildProcess.init(
                             self.app.allocator,
                             choosing_command.dirname,
-                            &.{ "bash", "-c", command },
+                            &.{ "fish", "--command", command },
                         ),
                         .error_locations = &.{},
                     } };
@@ -248,7 +251,7 @@ pub const Maker = struct {
                 running.child_process = ChildProcess.init(
                     self.app.allocator,
                     running.dirname,
-                    &.{ "bash", "-c", running.command },
+                    &.{ "fish", "--command", running.command },
                 );
             },
         }
