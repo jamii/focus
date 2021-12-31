@@ -41,7 +41,6 @@ pub const Language = enum {
     }
 
     pub fn highlight(self: Language, allocator: u.Allocator, source: []const u8, range: [2]usize) []const u.Color {
-        _ = source;
         const colors = allocator.alloc(u.Color, range[1] - range[0]) catch u.oom();
         switch (self) {
             .Zig => {

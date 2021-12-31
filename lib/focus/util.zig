@@ -8,10 +8,6 @@ pub const c = @cImport({
     @cInclude("SDL2/SDL_opengl.h");
     @cInclude("SDL2/SDL_ttf.h");
     @cInclude("unistd.h");
-    @cInclude("signal.h");
-    @cInclude("sys/types.h");
-    @cInclude("sys/stat.h");
-    @cInclude("syslog.h");
     @cDefine("PCRE2_CODE_UNIT_WIDTH", "8");
     @cInclude("pcre2.h");
 });
