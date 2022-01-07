@@ -10,8 +10,6 @@ pub const text_color = u.Color.hsla(0, 0.0, 0.9, 1.0);
 pub const highlight_color = u.Color.hsla(0, 0.0, 0.9, 0.3);
 pub const keyword_color = text_color;
 pub const comment_color = u.Color.hsla(0, 0.0, 0.6, 1.0);
-pub const error_text_color = u.Color.hsla(0, 1.0, 0.5, 1.0);
-pub const eval_text_color = u.Color.hsla(120, 1.0, 0.5, 1.0);
 pub const multi_cursor_color = u.Color.hsla(150, 1.0, 0.5, 1.0);
 pub const paren_match_color = u.Color.hsla(150, 1.0, 0.5, 0.3);
 

@@ -72,7 +72,7 @@ pub const FileOpener = struct {
             action = self.selector.frame(window, layout.selector, events);
         } else |results_err| {
             const error_text = u.format(self.app.frame_allocator, "Error opening directory: {}", .{results_err});
-            window.queueText(layout.selector, style.error_text_color, error_text);
+            window.queueText(layout.selector, style.emphasisRed, error_text);
         }
 
         const path = self.input.getText();

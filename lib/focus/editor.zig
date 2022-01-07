@@ -399,56 +399,43 @@ pub const Editor = struct {
             const line_top_pixel = @intCast(u.Coord, line_ix) * self.app.atlas.char_height;
             const y = text_rect.y + @intCast(u.Coord, line_top_pixel - self.top_pixel);
 
+            const Squiggly = struct {
+                color: u.Color,
+                range: [2]usize,
+            };
+            var squigglies = u.ArrayList(Squiggly).init(self.app.frame_allocator);
             // draw eval/error squigglies
             if (self.imp_repl_o) |imp_repl| {
-                if (imp_repl.last_request_id == imp_repl.last_response_id) {
-                    switch (imp_repl.last_response_kind) {
-                        .Ok => |ok_range_o| {
-                            if (ok_range_o) |ok_range| {
-                                if (ok_range[0] != 0) {
-                                    const highlight_start_pos = u.min(u.max(ok_range[0], line_range[0]), line_range[1]);
-                                    const highlight_end_pos = u.min(u.max(ok_range[1], line_range[0]), line_range[1]);
-                                    if ((highlight_start_pos < highlight_end_pos) or (ok_range[0] <= line_range[1] and ok_range[1] > line_range[1])) {
-                                        const x = text_rect.x + (@intCast(u.Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
-                                        const w = if (ok_range[1] > line_range[1])
-                                            text_rect.x + text_rect.w - x
-                                        else
-                                            @intCast(u.Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
-                                        var dx: i32 = 0;
-                                        while (dx < w) : (dx += self.app.atlas.char_width) {
-                                            window.queueText(.{
-                                                .x = @intCast(u.Coord, x + dx),
-                                                .y = @intCast(u.Coord, y) + @divTrunc(self.app.atlas.char_height, 2),
-                                                .w = self.app.atlas.char_width,
-                                                .h = self.app.atlas.char_height,
-                                            }, style.eval_text_color, "~");
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        .Err => |error_range_o| {
-                            if (error_range_o) |error_range| {
-                                const highlight_start_pos = u.min(u.max(error_range[0], line_range[0]), line_range[1]);
-                                const highlight_end_pos = u.min(u.max(error_range[1], line_range[0]), line_range[1]);
-                                if ((highlight_start_pos < highlight_end_pos) or (error_range[0] <= line_range[1] and error_range[1] > line_range[1])) {
-                                    const x = text_rect.x + (@intCast(u.Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
-                                    const w = if (error_range[1] > line_range[1])
-                                        text_rect.x + text_rect.w - x
-                                    else
-                                        @intCast(u.Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
-                                    var dx: i32 = 0;
-                                    while (dx < w) : (dx += self.app.atlas.char_width) {
-                                        window.queueText(.{
-                                            .x = @intCast(u.Coord, x + dx),
-                                            .y = @intCast(u.Coord, y) + @divTrunc(self.app.atlas.char_height, 2),
-                                            .w = self.app.atlas.char_width,
-                                            .h = self.app.atlas.char_height,
-                                        }, style.error_text_color, "~");
-                                    }
-                                }
-                            }
-                        },
+                if (imp_repl.last_request_id == imp_repl.last_response.id) {
+                    switch (imp_repl.last_response.kind) {
+                        .Ok => |ok_range_o| if (ok_range_o) |ok_range|
+                            squigglies.append(.{ .range = ok_range, .color = style.emphasisGreen }) catch u.oom(),
+                        .Err => |error_range_o| if (error_range_o) |error_range|
+                            squigglies.append(.{ .range = error_range, .color = style.emphasisRed }) catch u.oom(),
+                    }
+                }
+                for (imp_repl.last_response.warnings) |warning_range|
+                    squigglies.append(.{ .range = warning_range, .color = style.emphasisOrange }) catch u.oom();
+            }
+            for (squigglies.items) |squiggly| {
+                if (squiggly.range[0] != 0) {
+                    const highlight_start_pos = u.min(u.max(squiggly.range[0], line_range[0]), line_range[1]);
+                    const highlight_end_pos = u.min(u.max(squiggly.range[1], line_range[0]), line_range[1]);
+                    if ((highlight_start_pos < highlight_end_pos) or (squiggly.range[0] <= line_range[1] and squiggly.range[1] > line_range[1])) {
+                        const x = text_rect.x + (@intCast(u.Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
+                        const w = if (squiggly.range[1] > line_range[1])
+                            text_rect.x + text_rect.w - x
+                        else
+                            @intCast(u.Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
+                        var dx: i32 = 0;
+                        while (dx < w) : (dx += self.app.atlas.char_width) {
+                            window.queueText(.{
+                                .x = @intCast(u.Coord, x + dx),
+                                .y = @intCast(u.Coord, y) + @divTrunc(self.app.atlas.char_height, 2),
+                                .w = self.app.atlas.char_width,
+                                .h = self.app.atlas.char_height,
+                            }, squiggly.color, "~");
+                        }
                     }
                 }
             }

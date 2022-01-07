@@ -16,8 +16,7 @@ pub const ImpRepl = struct {
     result_editor: *Editor,
     imp_worker: *imp.lang.Worker,
     last_request_id: usize,
-    last_response_id: usize,
-    last_response_kind: imp.lang.Worker.ResponseKind,
+    last_response: imp.lang.Worker.Response,
 
     pub fn init(app: *App, program_editor: *Editor) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .{
@@ -43,15 +42,20 @@ pub const ImpRepl = struct {
             .result_editor = result_editor,
             .imp_worker = imp_worker,
             .last_request_id = 0,
-            .last_response_id = 0,
-            .last_response_kind = .{ .Ok = null },
+            .last_response = .{
+                .id = 0,
+                .text = "",
+                .kind = .{ .Ok = null },
+                .warnings = &.{},
+            },
         };
         return self;
     }
 
     pub fn deinit(self: *ImpRepl) void {
-        self.imp_worker.deinitSoon();
         // imp_worker will deinit itself when it shuts down
+        self.imp_worker.deinitSoon();
+        self.last_response.deinit(self.app.allocator);
         self.result_editor.deinit();
         self.program_editor.imp_repl_o = null;
         self.app.allocator.destroy(self);
@@ -69,17 +73,16 @@ pub const ImpRepl = struct {
 
     pub fn frame(self: *ImpRepl, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
         if (self.imp_worker.getResponse()) |response| {
+            self.last_response.deinit(self.app.allocator);
+            self.last_response = response;
             self.result_editor.buffer.replace(response.text);
-            self.last_response_id = response.id;
-            self.app.allocator.free(response.text);
-            self.last_response_kind = response.kind;
             self.result_editor.buffer.language = switch (response.kind) {
                 .Ok => .Imp,
                 .Err => .Unknown,
             };
         }
         self.result_editor.frame(window, rect, events);
-        if (self.last_request_id != self.last_response_id)
+        if (self.last_request_id != self.last_response.id)
             window.queueRect(rect, style.fade_color);
     }
 };
