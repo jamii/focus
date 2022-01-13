@@ -30,6 +30,7 @@ pub const ImpRepl = struct {
         const imp_worker = imp.lang.Worker.init(
             app.allocator,
             .{
+                .db_path = "/home/jamie/exo-secret/imp.db",
                 .memory_limit_bytes = 1024 * 1024 * 1024,
             },
         ) catch |err|
