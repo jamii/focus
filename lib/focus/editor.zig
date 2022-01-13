@@ -218,6 +218,7 @@ pub const Editor = struct {
                                 self.top_pixel = 0;
                             },
                             '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
+                            c.SDLK_RETURN => self.commit(),
                             else => accept_textinput = true,
                         }
                     } else if (sym.mod == c.KMOD_LSHIFT or sym.mod == c.KMOD_RSHIFT) {
@@ -1209,6 +1210,18 @@ pub const Editor = struct {
             imp_repl.setProgram(
                 self.buffer.bytes.items,
                 if (self.marked) .{ .Range = self.getSelectionRange(cursor) } else .{ .Point = cursor.head.pos },
+                .Eval,
+            );
+        }
+    }
+
+    fn commit(self: *Editor) void {
+        if (self.imp_repl_o) |imp_repl| {
+            const cursor = self.getMainCursor();
+            imp_repl.setProgram(
+                self.buffer.bytes.items,
+                if (self.marked) .{ .Range = self.getSelectionRange(cursor) } else .{ .Point = cursor.head.pos },
+                .Commit,
             );
         }
     }
