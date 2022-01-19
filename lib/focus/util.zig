@@ -122,7 +122,7 @@ pub fn dumpInto(writer: anytype, indent: u32, thing: anytype) anyerror!void {
                 try writer.writeAll(@typeName(@TypeOf(thing)));
                 try writer.writeAll("{\n");
                 inline for (@typeInfo(tag_type).Enum.fields) |fti| {
-                    if (@enumToInt(std.activeTag(thing)) == fti.value) {
+                    if (@enumToInt(std.meta.activeTag(thing)) == fti.value) {
                         try writer.writeByteNTimes(' ', indent + 4);
                         try std.fmt.format(writer, ".{s} = ", .{fti.name});
                         try dumpInto(writer, indent + 4, @field(thing, fti.name));
@@ -161,7 +161,7 @@ pub fn format(allocator: Allocator, comptime fmt: []const u8, args: anytype) []c
 }
 
 pub fn tagEqual(a: anytype, b: @TypeOf(a)) bool {
-    return std.activeTag(a) == std.activeTag(b);
+    return std.meta.activeTag(a) == std.meta.activeTag(b);
 }
 
 pub fn FixedSizeArrayList(comptime size: usize, comptime T: type) type {
@@ -665,7 +665,7 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
         .Union => |info| {
             if (info.tag_type) |tag_type| {
                 const enum_info = @typeInfo(tag_type).Enum;
-                const tag = std.activeTag(key);
+                const tag = std.meta.activeTag(key);
                 deepHashInto(hasher, tag);
                 inline for (enum_info.fields) |enum_field| {
                     if (enum_field.value == @enumToInt(tag)) {

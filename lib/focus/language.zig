@@ -41,15 +41,18 @@ pub const Language = enum {
     }
 
     pub fn highlight(self: Language, allocator: u.Allocator, source: []const u8, range: [2]usize) []const u.Color {
-        const colors = allocator.alloc(u.Color, range[1] - range[0]) catch u.oom();
+        var extended_range = range;
+        while (extended_range[0] > 0 and source[extended_range[0]] != '\n') extended_range[0] -= 1;
+        while (extended_range[1] < source.len and source[extended_range[1]] != '\n') extended_range[1] += 1;
+        const colors = allocator.alloc(u.Color, extended_range[1] - extended_range[0]) catch u.oom();
         switch (self) {
             .Zig => {
-                const source_z = allocator.dupeZ(u8, source[range[0]..range[1]]) catch u.oom();
+                const source_z = allocator.dupeZ(u8, source[extended_range[0]..extended_range[1]]) catch u.oom();
                 defer allocator.free(source_z);
                 var tokenizer = std.zig.Tokenizer.init(source_z);
                 std.mem.set(u.Color, colors, style.comment_color);
                 while (true) {
-                    const token = tokenizer.next();
+                    var token = tokenizer.next();
                     switch (token.tag) {
                         .eof => break,
                         .doc_comment, .container_doc_comment => {},
@@ -87,7 +90,7 @@ pub const Language = enum {
                 var error_info: ?imp.lang.pass.parse.ErrorInfo = null;
                 var parser = imp.lang.pass.parse.Parser{
                     .arena = &arena,
-                    .source = source[range[0]..range[1]],
+                    .source = source[extended_range[0]..extended_range[1]],
                     .exprs = u.ArrayList(imp.lang.repr.syntax.Expr).init(arena.allocator()),
                     .from_source = u.ArrayList([2]usize).init(arena.allocator()),
                     .position = 0,
@@ -122,6 +125,6 @@ pub const Language = enum {
                 std.mem.set(u.Color, colors, style.text_color);
             },
         }
-        return colors;
+        return colors[range[0] - extended_range[0] ..];
     }
 };
