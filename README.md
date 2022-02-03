@@ -10,4 +10,4 @@ nix-shell
 zig build run -Drelease-safe=true
 ```
 
-See the architecture notes [here](https://scattered-thoughts.net/writing/focus-intro/).
+See the architecture notes [here](https://scattered-thoughts.net/#focus).
