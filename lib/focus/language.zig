@@ -3,7 +3,7 @@ const focus = @import("../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
 const style = focus.style;
-const imp = @import("../../imp/lib/imp.zig");
+const imp2 = @import("../../imp2/lib/imp.zig");
 
 pub const Language = enum {
     Zig,
@@ -11,7 +11,7 @@ pub const Language = enum {
     Shell,
     Julia,
     Javascript,
-    Imp,
+    Imp2,
     Unknown,
 
     pub fn fromFilename(filename: []const u8) Language {
@@ -26,15 +26,15 @@ pub const Language = enum {
             return .Julia
         else if (std.mem.endsWith(u8, filename, ".js"))
             return .Javascript
-        else if (std.mem.endsWith(u8, filename, ".imp"))
-            return .Imp
+        else if (std.mem.endsWith(u8, filename, ".imp2"))
+            return .Imp2
         else
             return .Unknown;
     }
 
     pub fn commentString(self: Language) ?[]const u8 {
         return switch (self) {
-            .Zig, .Java, .Javascript, .Imp => "//",
+            .Zig, .Java, .Javascript, .Imp2 => "//",
             .Shell, .Julia => "#",
             .Unknown => null,
         };
@@ -84,14 +84,14 @@ pub const Language = enum {
                     }
                 }
             },
-            .Imp => {
+            .Imp2 => {
                 var arena = u.ArenaAllocator.init(allocator);
                 defer arena.deinit();
-                var error_info: ?imp.lang.pass.parse.ErrorInfo = null;
-                var parser = imp.lang.pass.parse.Parser{
+                var error_info: ?imp2.lang.pass.parse.ErrorInfo = null;
+                var parser = imp2.lang.pass.parse.Parser{
                     .arena = &arena,
                     .source = source[extended_range[0]..extended_range[1]],
-                    .exprs = u.ArrayList(imp.lang.repr.syntax.Expr).init(arena.allocator()),
+                    .exprs = u.ArrayList(imp2.lang.repr.syntax.Expr).init(arena.allocator()),
                     .from_source = u.ArrayList([2]usize).init(arena.allocator()),
                     .position = 0,
                     .error_info = &error_info,

@@ -8,15 +8,15 @@ const Editor = focus.Editor;
 const Window = focus.Window;
 const style = focus.style;
 const Selector = focus.Selector;
-const imp = @import("../../imp/lib/imp.zig");
+const imp2 = @import("../../imp2/lib/imp.zig");
 
 pub const ImpRepl = struct {
     app: *App,
     program_editor: *Editor,
     result_editor: *Editor,
-    imp_worker: *imp.lang.Worker,
+    imp_worker: *imp2.lang.Worker,
     last_request_id: usize,
-    last_response: imp.lang.Worker.Response,
+    last_response: imp2.lang.Worker.Response,
 
     pub fn init(app: *App, program_editor: *Editor) *ImpRepl {
         const empty_buffer = Buffer.initEmpty(app, .{
@@ -27,10 +27,10 @@ pub const ImpRepl = struct {
             .show_status_bar = false,
             .show_completer = false,
         });
-        const imp_worker = imp.lang.Worker.init(
+        const imp_worker = imp2.lang.Worker.init(
             app.allocator,
             .{
-                .db_path = "/home/jamie/exo-secret/imp.db",
+                .db_path = "/home/jamie/exo-secret/imp2.db",
                 .memory_limit_bytes = 1024 * 1024 * 1024,
             },
         ) catch |err|
@@ -63,7 +63,7 @@ pub const ImpRepl = struct {
     }
 
     // called from program_editor on change
-    pub fn setProgram(self: *ImpRepl, program: []const u8, selection: imp.lang.SourceSelection, action: imp.lang.Worker.Request.Action) void {
+    pub fn setProgram(self: *ImpRepl, program: []const u8, selection: imp2.lang.SourceSelection, action: imp2.lang.Worker.Request.Action) void {
         self.last_request_id += 1;
         self.imp_worker.setRequest(.{
             .id = self.last_request_id,
@@ -79,7 +79,7 @@ pub const ImpRepl = struct {
             self.last_response = response;
             self.result_editor.buffer.replace(response.text);
             self.result_editor.buffer.language = switch (response.kind) {
-                .Ok => .Imp,
+                .Ok => .Imp2,
                 .Err => .Unknown,
             };
         }

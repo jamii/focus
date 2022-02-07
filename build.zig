@@ -1,6 +1,6 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const imp = @import("imp/build.zig");
+const imp2 = @import("imp2/build.zig");
 const Builder = std.build.Builder;
 const allocator = std.testing.allocator;
 
@@ -49,7 +49,7 @@ fn includeCommon(exe: *std.build.LibExeObjStep) !void {
     try includeNix(exe, "NIX_SDL2_TTF_DEV");
     try includeNix(exe, "NIX_PCRE2_DEV");
     exe.setOutputDir("./zig-cache");
-    imp.addDeps(exe);
+    imp2.addDeps(exe);
 }
 
 fn includeNix(exe: *std.build.LibExeObjStep, env_var: []const u8) !void {
