@@ -22,6 +22,7 @@ const projects = [_][]const u8{
     "/home/jamie/mutant",
     "/home/jamie/inspector-z",
     "/home/jamie/preimp",
+    "/home/jamie/hytradboi",
 };
 
 pub const ProjectFileOpener = struct {
