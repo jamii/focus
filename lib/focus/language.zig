@@ -12,6 +12,7 @@ pub const Language = enum {
     Julia,
     Javascript,
     Imp2,
+    Nix,
     Unknown,
 
     pub fn fromFilename(filename: []const u8) Language {
@@ -28,6 +29,8 @@ pub const Language = enum {
             return .Javascript
         else if (std.mem.endsWith(u8, filename, ".imp2"))
             return .Imp2
+        else if (std.mem.endsWith(u8, filename, ".nix"))
+            return .Nix
         else
             return .Unknown;
     }
@@ -35,7 +38,7 @@ pub const Language = enum {
     pub fn commentString(self: Language) ?[]const u8 {
         return switch (self) {
             .Zig, .Java, .Javascript, .Imp2 => "//",
-            .Shell, .Julia => "#",
+            .Shell, .Julia, .Nix => "#",
             .Unknown => null,
         };
     }
