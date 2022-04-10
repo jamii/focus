@@ -98,8 +98,9 @@ pub const Window = struct {
 
         // no vsync - causes problems with multiple windows
         // see https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
-        if (c.SDL_GL_SetSwapInterval(0) != 0)
-            u.panic("Setting swap interval failed: {s}", .{c.SDL_GetError()});
+        // TODO lately this has been failing with 'That operation is not supported'
+        //if (c.SDL_GL_SetSwapInterval(0) != 0)
+        //    u.panic("Setting swap interval failed: {s}", .{c.SDL_GetError()});
 
         // accept unicode input
         // TODO does this need to be per window?
