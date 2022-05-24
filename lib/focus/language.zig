@@ -13,6 +13,7 @@ pub const Language = enum {
     Javascript,
     Imp2,
     Nix,
+    Clojure,
     Unknown,
 
     pub fn fromFilename(filename: []const u8) Language {
@@ -31,6 +32,8 @@ pub const Language = enum {
             return .Imp2
         else if (std.mem.endsWith(u8, filename, ".nix"))
             return .Nix
+        else if (std.mem.endsWith(u8, filename, ".clj") or std.mem.endsWith(u8, filename, ".cljs") or std.mem.endsWith(u8, filename, ".cljc"))
+            return .Clojure
         else
             return .Unknown;
     }
@@ -39,6 +42,7 @@ pub const Language = enum {
         return switch (self) {
             .Zig, .Java, .Javascript, .Imp2 => "//",
             .Shell, .Julia, .Nix => "#",
+            .Clojure => ";",
             .Unknown => null,
         };
     }
