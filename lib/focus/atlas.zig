@@ -15,8 +15,6 @@ pub const Atlas = struct {
     char_height: u.Coord,
     char_to_rect: []u.Rect,
     white_rect: u.Rect,
-    right_down_arrow_rect: u.Rect,
-    down_right_arrow_rect: u.Rect,
 
     pub fn init(allocator: u.Allocator, point_size: usize) Atlas {
 
@@ -33,7 +31,8 @@ pub const Atlas = struct {
         ) orelse u.panic("Font load failed: {s}", .{c.TTF_GetError()});
 
         // text to be rendered
-        var text = allocator.allocSentinel(u8, 128 + 6, 0) catch u.oom();
+        const num_chars = 128;
+        var text = allocator.allocSentinel(u8, num_chars, 0) catch u.oom();
         defer allocator.free(text);
 
         // going to overwrite this with a white block in final texture
@@ -47,16 +46,32 @@ pub const Atlas = struct {
             }
         }
 
-        // add special characters
-        std.mem.copy(u8, text[128..], "⤵⤷");
-
         // render
         const surface = c.TTF_RenderUTF8_Blended(font, text, c.SDL_Color{ .r = 255, .g = 255, .b = 255, .a = 255 }) orelse u.panic("Atlas render failed: {s}", .{c.TTF_GetError()});
         defer c.SDL_FreeSurface(surface);
 
         // copy the texture
-        u.assert(surface.*.format.*.format == c.SDL_PIXELFORMAT_ARGB8888);
-        const texture = allocator.dupe(u.Color, @ptrCast([*]u.Color, surface.*.pixels)[0..@intCast(usize, surface.*.w * surface.*.h)]) catch u.oom();
+        const texture = allocator.alloc(u.Color, @intCast(usize, surface.*.w * surface.*.h)) catch u.oom();
+        {
+            const format = surface.*.format.*;
+            u.assert(format.format == c.SDL_PIXELFORMAT_ARGB8888);
+            u.assert(format.BytesPerPixel == 4);
+            const pixels = @ptrCast([*]u32, @alignCast(@alignOf(u32), surface.*.pixels));
+            var y: usize = 0;
+            while (y < surface.*.h) : (y += 1) {
+                var x: usize = 0;
+                while (x < surface.*.w) : (x += 1) {
+                    const pixel = pixels[(y * @intCast(usize, (@divExact(surface.*.pitch, format.BytesPerPixel)))) + x];
+                    const color = u.Color{
+                        .a = @intCast(u8, ((pixel & format.Amask) >> @intCast(u5, format.Ashift)) << @intCast(u5, format.Aloss)),
+                        .r = @intCast(u8, ((pixel & format.Rmask) >> @intCast(u5, format.Rshift)) << @intCast(u5, format.Rloss)),
+                        .g = @intCast(u8, ((pixel & format.Gmask) >> @intCast(u5, format.Gshift)) << @intCast(u5, format.Gloss)),
+                        .b = @intCast(u8, ((pixel & format.Bmask) >> @intCast(u5, format.Bshift)) << @intCast(u5, format.Bloss)),
+                    };
+                    texture[(y * @intCast(usize, surface.*.w)) + x] = color;
+                }
+            }
+        }
 
         // make a white pixel
         texture[0] = u.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
@@ -64,7 +79,8 @@ pub const Atlas = struct {
 
         // calculate char sizes
         // assume monospaced font
-        const char_width = @intCast(u.Coord, @divTrunc(@intCast(usize, surface.*.w), 128 + 2));
+        // TODO with small fonts, the width can be non-integer
+        const char_width = @intCast(u.Coord, @divTrunc(@intCast(usize, surface.*.w), num_chars));
         const char_height = @intCast(u.Coord, surface.*.h);
 
         // calculate location of each char
@@ -81,18 +97,6 @@ pub const Atlas = struct {
                 };
             }
         }
-        const right_down_arrow_rect = u.Rect{
-            .x = 128 * char_width,
-            .y = 0,
-            .w = char_width,
-            .h = char_height,
-        };
-        const down_right_arrow_rect = u.Rect{
-            .x = 129 * char_width,
-            .y = 0,
-            .w = char_width,
-            .h = char_height,
-        };
 
         return Atlas{
             .allocator = allocator,
@@ -107,8 +111,6 @@ pub const Atlas = struct {
             .char_height = char_height,
             .char_to_rect = char_to_rect,
             .white_rect = white_rect,
-            .right_down_arrow_rect = right_down_arrow_rect,
-            .down_right_arrow_rect = down_right_arrow_rect,
         };
     }
 
