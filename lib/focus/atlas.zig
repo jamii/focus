@@ -32,17 +32,16 @@ pub const Atlas = struct {
 
         // text to be rendered
         const num_chars = 128;
-        var text = allocator.allocSentinel(u8, num_chars, 0) catch u.oom();
+        var text = allocator.allocSentinel(u8, num_chars * 2, 0) catch u.oom();
+        for (text) |*char| char.* = ' ';
         defer allocator.free(text);
 
-        // going to overwrite this with a white block in final texture
-        text[0] = ' ';
-
         // add all ascii chars
+        // (separated by spaces to avoid fire code ligatures)
         {
             var char: usize = 1;
-            while (char < text.len) : (char += 1) {
-                text[char] = @intCast(u8, char);
+            while (char < num_chars) : (char += 1) {
+                text[char * 2] = @intCast(u8, char);
             }
         }
 
@@ -80,7 +79,7 @@ pub const Atlas = struct {
         // calculate char sizes
         // assume monospaced font
         // TODO with small fonts, the width can be non-integer
-        const char_width = @intCast(u.Coord, @divTrunc(@intCast(usize, surface.*.w), num_chars));
+        const char_width = @intCast(u.Coord, @divTrunc(@intCast(usize, surface.*.w), num_chars * 2));
         const char_height = @intCast(u.Coord, surface.*.h);
 
         // calculate location of each char
@@ -90,7 +89,7 @@ pub const Atlas = struct {
             var char: usize = 1;
             while (char < text.len) : (char += 1) {
                 char_to_rect[char] = .{
-                    .x = @intCast(u.Coord, char) * char_width,
+                    .x = @intCast(u.Coord, char * 2) * char_width,
                     .y = 0,
                     .w = char_width,
                     .h = char_height,
