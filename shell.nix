@@ -2,19 +2,13 @@
 
 let
 
-  nixpkgs = builtins.fetchTarball {
-      name = "nixos-21.11";
-      url = "https://github.com/NixOS/nixpkgs/archive/refs/tags/21.11.tar.gz";
-      sha256 = "162dywda2dvfj1248afxc45kcrg83appjd0nmdb541hl7rnncf02";
-  };
+  hostPkgs = import <nixpkgs> {};
 
-  hostPkgs = import nixpkgs {};
-
-  armPkgs = import nixpkgs {
+  armPkgs = import <nixpkgs> {
     system = "aarch64-linux";
   };
 
-  crossPkgs = import nixpkgs {
+  crossPkgs = import <nixpkgs> {
     overlays = [(self: super: {
       inherit (armPkgs)
         gcc
@@ -38,7 +32,7 @@ let
             } else if (hostPkgs.system == "aarch64-linux") then {
                 url = "https://ziglang.org/download/0.9.0/zig-linux-aarch64-0.9.0.tar.xz";
                 sha256 = "00m6nxp64nf6pwq407by52l8i0f2m4mw6hj17jbjdjd267b6sgri";
-            } else 
+            } else
                 throw ("Unknown system " ++ hostPkgs.system)
         );
         dontConfigure = true;
