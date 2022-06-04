@@ -173,7 +173,7 @@ pub const Maker = struct {
 
                 if (command_o) |command| {
                     // add command to history
-                    const history_file = std.fs.cwd().openFile("/home/jamie/.local/share/fish/fish_history", .{ .write = true }) catch |err|
+                    const history_file = std.fs.cwd().openFile("/home/jamie/.local/share/fish/fish_history", .{ .mode = .write_only }) catch |err|
                         u.panic("Failed to open fish history: {}", .{err});
                     history_file.seekFromEnd(0) catch |err|
                         u.panic("Failed to seek to end of fish history: {}", .{err});

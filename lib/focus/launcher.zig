@@ -76,7 +76,7 @@ pub const Launcher = struct {
             var process = std.ChildProcess.init(
                 &[_][]const u8{ "fish", "-c", command },
                 self.app.frame_allocator,
-            ) catch |err| u.panic("Failed to init {s}: {}", .{ command, err });
+            );
             process.spawn() catch |err| u.panic("Failed to spawn {s}: {}", .{ command, err });
             window.close_after_frame = true;
         }

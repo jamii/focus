@@ -98,7 +98,7 @@ pub const Editor = struct {
             .last_event_ms = app.frame_time_ms,
             .options = options,
             .completer_o = completer_o,
-            .imp_repl_o = null,
+            //.imp_repl_o = null,
         };
         buffer.registerEditor(self);
         return self;
@@ -405,19 +405,19 @@ pub const Editor = struct {
                 range: [2]usize,
             };
             var squigglies = u.ArrayList(Squiggly).init(self.app.frame_allocator);
-            // draw eval/error squigglies
-            if (self.imp_repl_o) |imp_repl| {
-                if (imp_repl.last_request_id == imp_repl.last_response.id) {
-                    switch (imp_repl.last_response.kind) {
-                        .Ok => |ok_range_o| if (ok_range_o) |ok_range|
-                            squigglies.append(.{ .range = ok_range, .color = style.emphasisGreen }) catch u.oom(),
-                        .Err => |error_range_o| if (error_range_o) |error_range|
-                            squigglies.append(.{ .range = error_range, .color = style.emphasisRed }) catch u.oom(),
-                    }
-                }
-                for (imp_repl.last_response.warnings) |warning_range|
-                    squigglies.append(.{ .range = warning_range, .color = style.emphasisOrange }) catch u.oom();
-            }
+            //// draw eval/error squigglies
+            //if (self.imp_repl_o) |imp_repl| {
+            //    if (imp_repl.last_request_id == imp_repl.last_response.id) {
+            //        switch (imp_repl.last_response.kind) {
+            //            .Ok => |ok_range_o| if (ok_range_o) |ok_range|
+            //                squigglies.append(.{ .range = ok_range, .color = style.emphasisGreen }) catch u.oom(),
+            //            .Err => |error_range_o| if (error_range_o) |error_range|
+            //                squigglies.append(.{ .range = error_range, .color = style.emphasisRed }) catch u.oom(),
+            //        }
+            //    }
+            //    for (imp_repl.last_response.warnings) |warning_range|
+            //        squigglies.append(.{ .range = warning_range, .color = style.emphasisOrange }) catch u.oom();
+            //}
             for (squigglies.items) |squiggly| {
                 if (squiggly.range[0] != 0) {
                     const highlight_start_pos = u.min(u.max(squiggly.range[0], line_range[0]), line_range[1]);
@@ -1118,7 +1118,7 @@ pub const Editor = struct {
         var process = std.ChildProcess.init(
             &[_][]const u8{ "zig", "fmt", "--stdin" },
             self.app.frame_allocator,
-        ) catch |err| u.panic("Error initing zig fmt: {}", .{err});
+        );
         process.stdin_behavior = .Pipe;
         process.stdout_behavior = .Pipe;
         process.stderr_behavior = .Pipe;
@@ -1206,24 +1206,26 @@ pub const Editor = struct {
     }
 
     fn eval(self: *Editor) void {
-        if (self.imp_repl_o) |imp_repl| {
-            const cursor = self.getMainCursor();
-            imp_repl.setProgram(
-                self.buffer.bytes.items,
-                if (self.marked) .{ .Range = self.getSelectionRange(cursor) } else .{ .Point = cursor.head.pos },
-                .Eval,
-            );
-        }
+        _ = self;
+        //if (self.imp_repl_o) |imp_repl| {
+        //    const cursor = self.getMainCursor();
+        //    imp_repl.setProgram(
+        //        self.buffer.bytes.items,
+        //        if (self.marked) .{ .Range = self.getSelectionRange(cursor) } else .{ .Point = cursor.head.pos },
+        //        .Eval,
+        //    );
+        //}
     }
 
     fn commit(self: *Editor) void {
-        if (self.imp_repl_o) |imp_repl| {
-            const cursor = self.getMainCursor();
-            imp_repl.setProgram(
-                self.buffer.bytes.items,
-                if (self.marked) .{ .Range = self.getSelectionRange(cursor) } else .{ .Point = cursor.head.pos },
-                .Commit,
-            );
-        }
+        _ = self;
+        //if (self.imp_repl_o) |imp_repl| {
+        //    const cursor = self.getMainCursor();
+        //    imp_repl.setProgram(
+        //        self.buffer.bytes.items,
+        //        if (self.marked) .{ .Range = self.getSelectionRange(cursor) } else .{ .Point = cursor.head.pos },
+        //        .Commit,
+        //    );
+        //}
     }
 };
