@@ -6,7 +6,7 @@ const App = focus.App;
 const Buffer = focus.Buffer;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 const BufferSearcher = focus.BufferSearcher;
-const ImpRepl = focus.ImpRepl;
+//const ImpRepl = focus.ImpRepl;
 const Window = focus.Window;
 const style = focus.style;
 
@@ -55,7 +55,7 @@ pub const Editor = struct {
     last_event_ms: i64,
     options: Options,
     completer_o: ?Completer,
-    imp_repl_o: ?*ImpRepl,
+    //imp_repl_o: ?*ImpRepl,
 
     const Completer = struct {
         prefix: []const u8,
@@ -1195,13 +1195,14 @@ pub const Editor = struct {
     }
 
     fn openRepl(self: *Editor) void {
-        if (self.imp_repl_o == null) {
-            self.imp_repl_o = ImpRepl.init(self.app, self);
-            var window = Window.init(self.app, .NotFloating);
-            window.pushView(self.imp_repl_o.?);
-            _ = self.app.registerWindow(window);
-            self.eval();
-        }
+        _ = self;
+        //if (self.imp_repl_o == null) {
+        //    self.imp_repl_o = ImpRepl.init(self.app, self);
+        //    var window = Window.init(self.app, .NotFloating);
+        //    window.pushView(self.imp_repl_o.?);
+        //    _ = self.app.registerWindow(window);
+        //    self.eval();
+        //}
     }
 
     fn eval(self: *Editor) void {
