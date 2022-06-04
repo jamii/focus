@@ -26,14 +26,11 @@ let
   zig = hostPkgs.stdenv.mkDerivation {
         name = "zig";
         src = fetchTarball (
-            if (hostPkgs.system == "x86_64-linux") then {
-                url = "https://ziglang.org/download/0.9.0/zig-linux-x86_64-0.9.0.tar.xz";
-                sha256 = "1vagp72wxn6i9qscji6k3a1shy76jg4d6crmx9ijpch9kyn71c96";
-            } else if (hostPkgs.system == "aarch64-linux") then {
-                url = "https://ziglang.org/download/0.9.0/zig-linux-aarch64-0.9.0.tar.xz";
-                sha256 = "00m6nxp64nf6pwq407by52l8i0f2m4mw6hj17jbjdjd267b6sgri";
-            } else
-                throw ("Unknown system " ++ hostPkgs.system)
+            if (targetPkgs.system == "x86_64-linux") then {
+                url = "https://ziglang.org/builds/zig-linux-x86_64-0.10.0-dev.2473+e498fb155.tar.xz";
+                sha256 = "1iih9wcr5v2k2v384ljv4nalfzgy0kbb0ilz7jdn5gh4h9jhy086";
+            } else 
+            throw ("Unknown system " ++ targetPkgs.system)
         );
         dontConfigure = true;
         dontBuild = true;
