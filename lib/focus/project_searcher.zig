@@ -50,7 +50,7 @@ pub const ProjectSearcher = struct {
     }
 
     pub fn deinit(self: *ProjectSearcher) void {
-        if (self.child_process) |child_process| child_process.deinit();
+        if (self.child_process) |*child_process| child_process.deinit();
         self.selector.deinit();
         self.input.deinit();
         const buffer = self.preview_editor.buffer;
@@ -81,7 +81,7 @@ pub const ProjectSearcher = struct {
         if (input_changed == .Changed) {
             self.selector.selected = 0;
             self.selector.setTextAndRanges("", &.{});
-            if (self.child_process) |child_process| {
+            if (self.child_process) |*child_process| {
                 child_process.deinit();
                 self.child_process = null;
             }

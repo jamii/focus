@@ -218,7 +218,7 @@ pub const Buffer = struct {
                         u.panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                     },
                     .Auto => file: {
-                        if (std.fs.cwd().openFile(file_source.absolute_filename, .{ .read = false, .write = true })) |file| {
+                        if (std.fs.cwd().openFile(file_source.absolute_filename, .{ .mode = .write_only })) |file| {
                             file.setEndPos(0) catch |err| u.panic("{} while truncating {s}", .{ err, file_source.absolute_filename });
                             file.seekTo(0) catch |err| u.panic("{} while truncating {s}", .{ err, file_source.absolute_filename });
                             break :file file;

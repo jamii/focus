@@ -433,7 +433,14 @@ pub const Window = struct {
 
     pub fn pushView(self: *Window, view_ptr: anytype) void {
         if (self.getTopViewIfEditor()) |editor| editor.save(.Auto);
-        const tag_name = @typeName(@typeInfo(@TypeOf(view_ptr)).Pointer.child);
+        const tag_name = comptime tag_name: {
+            // TODO this is gross
+            const view_type_name = @typeName(@typeInfo(@TypeOf(view_ptr)).Pointer.child);
+            var iter = std.mem.split(u8, view_type_name, ".");
+            var last_part: ?[]const u8 = null;
+            while (iter.next()) |part| last_part = part;
+            break :tag_name last_part.?;
+        };
         const view = @unionInit(View, tag_name, view_ptr);
         self.views.append(view) catch u.oom();
     }

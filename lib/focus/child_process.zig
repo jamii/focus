@@ -4,15 +4,14 @@ const u = focus.util;
 const c = focus.util.c;
 
 pub const ChildProcess = struct {
-    child_process: *std.ChildProcess,
+    child_process: std.ChildProcess,
 
     pub fn init(allocator: u.Allocator, dirname: []const u8, args: []const []const u8) ChildProcess {
         const full_args = std.mem.concat(allocator, []const u8, &.{
             &.{@as([]const u8, "setsid")},
             args,
         }) catch u.oom();
-        const child_process = std.ChildProcess.init(full_args, allocator) catch |err|
-            u.panic("{} while running args: {s}", .{ err, full_args });
+        var child_process = std.ChildProcess.init(full_args, allocator);
         child_process.cwd = dirname;
         child_process.stdin_behavior = .Ignore;
         child_process.stdout_behavior = .Pipe;
@@ -26,12 +25,12 @@ pub const ChildProcess = struct {
         return .{ .child_process = child_process };
     }
 
-    pub fn deinit(self: ChildProcess) void {
+    pub fn deinit(self: *ChildProcess) void {
         const pgid = std.os.linux.syscall1(.getpgid, @bitCast(usize, @as(isize, self.child_process.pid)));
         std.os.kill(-@intCast(i32, pgid), std.os.SIG.KILL) catch {};
         self.child_process.stdout.?.close();
         self.child_process.stderr.?.close();
-        self.child_process.deinit();
+        _ = self.child_process.kill() catch {};
     }
 
     pub fn poll(self: ChildProcess) enum { Running, Finished } {
