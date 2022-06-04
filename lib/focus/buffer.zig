@@ -4,7 +4,7 @@ const u = focus.util;
 const c = focus.util.c;
 const App = focus.App;
 const Editor = focus.Editor;
-const ImpRepl = focus.ImpRepl;
+//const ImpRepl = focus.ImpRepl;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 const Language = focus.Language;
 
