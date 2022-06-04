@@ -3,6 +3,7 @@ const std = @import("std");
 //const imp2 = @import("imp2/build.zig");
 const Builder = std.build.Builder;
 const allocator = std.testing.allocator;
+const freetype = @import("mach/freetype/build.zig");
 
 pub fn build(b: *Builder) !void {
     const mode = b.standardReleaseOptions();
@@ -10,12 +11,12 @@ pub fn build(b: *Builder) !void {
     target.setGnuLibCVersion(2, 28, 0);
 
     const local = b.addExecutable("focus-local", "./bin/focus.zig");
-    try includeCommon(local);
+    try includeCommon(b, local);
     local.setBuildMode(mode);
     local.install();
 
     const cross = b.addExecutable("focus-cross", "./bin/focus.zig");
-    try includeCommon(cross);
+    try includeCommon(b, cross);
     cross.setBuildMode(mode);
     cross.setTarget(std.zig.CrossTarget{
         .cpu_arch = .aarch64,
@@ -35,7 +36,7 @@ pub fn build(b: *Builder) !void {
     run_step.dependOn(&run.step);
 }
 
-fn includeCommon(exe: *std.build.LibExeObjStep) !void {
+fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     exe.setMainPkgPath("./");
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("GL");
@@ -49,7 +50,8 @@ fn includeCommon(exe: *std.build.LibExeObjStep) !void {
     try includeNix(exe, "NIX_SDL2_TTF_DEV");
     try includeNix(exe, "NIX_PCRE2_DEV");
     exe.setOutputDir("./zig-cache");
-    imp2.addDeps(exe);
+    //imp2.addDeps(exe);
+    freetype.link(b, exe, .{});
 }
 
 fn includeNix(exe: *std.build.LibExeObjStep, env_var: []const u8) !void {
