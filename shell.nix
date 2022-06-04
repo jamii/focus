@@ -51,6 +51,7 @@ hostPkgs.mkShell rec {
   buildInputs = [
     zig
     hostPkgs.pkg-config
+    hostPkgs.git
     targetPkgs.libGL.all
     targetPkgs.xorg.libX11.dev
     targetPkgs.xorg.xorgproto
