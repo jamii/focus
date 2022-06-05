@@ -19,23 +19,28 @@ pub const Atlas = struct {
     pub fn init(allocator: u.Allocator, point_size: usize) Atlas {
 
         // init freetype
-        const lib = try freetype.Library.init();
+        const lib = freetype.Library.init() catch |err|
+            u.panic("Error initializing freetype: {}", .{err});
         defer lib.deinit();
 
         // load font
-        const face = try lib.newFaceMemory(fira_code, 0);
+        const face = lib.newFaceMemory(fira_code, 0) catch |err|
+            u.panic("Error loading font: {}", .{err});
         defer face.deinit();
 
         // set font size
-        try face.setCharSize(40 * 64, 0, 50, 0);
+        face.setCharSize(40 * 64, 0, 50, 0) catch |err|
+            u.panic("Error setting font size: {}", .{err});
 
         // TODO ???
         const num_chars: usize = 128;
-        const char_width: u.Coord = 32;
-        const char_height: u.Coord = 24;
+        const char_width: usize = 32;
+        const char_height: usize = 24;
 
         // going to draw everything into this texture
         const texture = allocator.alloc(u.Color, @intCast(usize, num_chars * char_width * char_height)) catch u.oom();
+        for (texture) |*pixel|
+            pixel.* = .{ .r = 0, .g = 0, .b = 0, .a = 0 };
         const texture_width = num_chars * char_width;
 
         // going to store the coordinates of each char within the texture here
@@ -44,23 +49,23 @@ pub const Atlas = struct {
         // render every ascii char
         var char: u8 = 0;
         while (char < num_chars) : (char += 1) {
-            try face.loadChar(char, .{ .render = true });
+            face.loadChar(char, .{ .render = true }) catch |err|
+                u.panic("Error rendering '{}': {}", .{ char, err });
             const glyph = face.glyph;
-            const x = @intCast(usize, glyph.bitmapLeft());
-            const y = char_height - @intCast(usize, glyph.bitmapTop());
+
             const bitmap = glyph.bitmap();
             var p: usize = 0;
             var q: usize = 0;
             const w = bitmap.width();
-            const x_max = x + w;
-            const y_max = y + bitmap.rows();
+            const h = bitmap.rows();
             var i: usize = 0;
-
-            while (i < x_max - x) : (i += 1) {
+            while (i < w) : (i += 1) {
                 var j: usize = 0;
-                while (j < y_max - y) : (j += 1) {
+                while (j < h) : (j += 1) {
                     if (i < char_width and j < char_height) {
-                        texture[(j * texture_width) + (char * char_width) + i] |= bitmap.buffer()[q * w + p];
+                        //const x = @intCast(usize, @intCast(i32, i) + glyph.bitmapLeft());
+                        //const y = @intCast(usize, @intCast(i32, j) + glyph.bitmapTop());
+                        texture[(j * texture_width) + (char * char_width) + i].a |= bitmap.buffer()[q * w + p];
                         q += 1;
                     }
                 }
