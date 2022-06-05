@@ -8,7 +8,7 @@ const fira_code = @embedFile("../../fonts/Fira_Code_v5.2/woff/FiraCode-Regular.w
 
 pub const Atlas = struct {
     allocator: u.Allocator,
-    point_size: usize,
+    char_size: usize,
     texture: []u.Color,
     texture_dims: u.Vec2,
     char_width: u.Coord,
@@ -16,7 +16,7 @@ pub const Atlas = struct {
     char_to_rect: []u.Rect,
     white_rect: u.Rect,
 
-    pub fn init(allocator: u.Allocator, point_size: usize) Atlas {
+    pub fn init(allocator: u.Allocator, char_size: usize) Atlas {
 
         // init freetype
         const lib = freetype.Library.init() catch |err|
@@ -29,13 +29,13 @@ pub const Atlas = struct {
         defer face.deinit();
 
         // set font size
-        face.setCharSize(40 * 64, 0, 50, 0) catch |err|
+        face.setPixelSizes(@intCast(u32, char_size), @intCast(u32, char_size)) catch |err|
             u.panic("Error setting font size: {}", .{err});
+        const char_width = char_size;
+        const char_height = char_size;
 
         // TODO ???
         const num_chars: usize = 128;
-        const char_width: usize = 32;
-        const char_height: usize = 24;
 
         // going to draw everything into this texture
         const texture = allocator.alloc(u.Color, @intCast(usize, num_chars * char_width * char_height)) catch u.oom();
@@ -74,10 +74,10 @@ pub const Atlas = struct {
             }
 
             char_to_rect[char] = .{
-                .x = @intCast(u.Coord, char) * char_width,
+                .x = @intCast(u.Coord, char * char_width),
                 .y = 0,
-                .w = char_width,
-                .h = char_height,
+                .w = @intCast(u.Coord, char_width),
+                .h = @intCast(u.Coord, char_height),
             };
         }
 
@@ -87,14 +87,14 @@ pub const Atlas = struct {
 
         return Atlas{
             .allocator = allocator,
-            .point_size = point_size,
+            .char_size = char_size,
             .texture = texture,
             .texture_dims = .{
-                .x = texture_width,
-                .y = char_height,
+                .x = @intCast(u.Coord, texture_width),
+                .y = @intCast(u.Coord, char_height),
             },
-            .char_width = char_width,
-            .char_height = char_height,
+            .char_width = @intCast(u.Coord, char_width),
+            .char_height = @intCast(u.Coord, char_height),
             .char_to_rect = char_to_rect,
             .white_rect = white_rect,
         };
