@@ -386,9 +386,9 @@ pub const App = struct {
 
     pub fn changeFontSize(self: *App, increment: isize) void {
         self.atlas.deinit();
-        const new_font_size = @intCast(isize, self.atlas.point_size) + increment;
-        if (new_font_size >= 0) {
-            self.atlas.* = Atlas.init(self.allocator, @intCast(usize, new_font_size));
+        const new_char_size = @intCast(isize, self.atlas.char_size) + increment;
+        if (new_char_size >= 0) {
+            self.atlas.* = Atlas.init(self.allocator, @intCast(usize, new_char_size));
             for (self.windows.items) |window| {
                 if (c.SDL_GL_MakeCurrent(window.sdl_window, window.gl_context) != 0)
                     u.panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
