@@ -41,7 +41,7 @@ pub const Atlas = struct {
                 face.loadChar(@intCast(u32, char), .{ .render = true }) catch |err|
                     u.panic("Error loading '{}': {}", .{ char, err });
 
-                const bitmap = face.glyph.bitmap();
+                const bitmap = face.glyph().bitmap();
                 const bitmap_width = bitmap.width();
                 const bitmap_height = bitmap.rows();
                 const bitmap_pitch = bitmap.pitch();
@@ -60,13 +60,13 @@ pub const Atlas = struct {
                     }
                 }
 
-                const glyph = face.glyph.glyph() catch |err|
+                const glyph = face.glyph().getGlyph() catch |err|
                     u.panic("Error getting glyph for '{}': {}", .{ char, err });
                 const cbox = glyph.getCBox(.pixels);
-                u.assert(cbox.yMax == face.glyph.bitmapTop());
-                u.assert(cbox.yMin == face.glyph.bitmapTop() - @intCast(i32, bitmap.rows()));
-                u.assert(cbox.xMin == face.glyph.bitmapLeft());
-                u.assert(cbox.xMax == face.glyph.bitmapLeft() + @intCast(i32, bitmap.width()));
+                u.assert(cbox.yMax == face.glyph().bitmapTop());
+                u.assert(cbox.yMin == face.glyph().bitmapTop() - @intCast(i32, bitmap.rows()));
+                u.assert(cbox.xMin == face.glyph().bitmapLeft());
+                u.assert(cbox.xMax == face.glyph().bitmapLeft() + @intCast(i32, bitmap.width()));
 
                 char_to_bitmap[char] = bitmap_copy;
                 char_to_cbox[char] = cbox;
@@ -104,8 +104,8 @@ pub const Atlas = struct {
                 var bx: i32 = 0;
                 while (bx < bitmap_width) : (bx += 1) {
                     // TODO use offsets here
-                    const tx = (@intCast(u.Coord, char) * char_width) + bx;
-                    const ty = by;
+                    const tx = (@intCast(u.Coord, char) * char_width) + bx + (cbox.xMin - max_cbox.xMin);
+                    const ty = by + (max_cbox.yMax - cbox.yMax);
                     const ti = @intCast(usize, (ty * @intCast(u.Coord, num_chars) * char_width) + tx);
                     const bi = @intCast(usize, (by * bitmap_width) + bx);
                     texture[ti] = bitmap[bi];

@@ -49,7 +49,7 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     try includeNix(exe, "NIX_PCRE2_DEV");
     exe.setOutputDir("./zig-cache");
     //imp2.addDeps(exe);
-    exe.addPackage(freetype.pkg);
+    exe.addPackage(freetype.freetype_pkg);
     freetype.link(b, exe, .{});
 }
 
