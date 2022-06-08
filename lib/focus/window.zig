@@ -484,7 +484,7 @@ pub const Window = struct {
                 self.app.atlas.char_to_rect[char]
             else
                 // TODO tofu
-                self.app.atlas.white_rect;
+                self.app.atlas.char_to_rect[0];
             const max_w = u.max(0, max_x - dst.x);
             const max_h = u.max(0, max_y - dst.y);
             const ratio_w = @intToFloat(f64, u.min(max_w, self.app.atlas.char_width)) / @intToFloat(f64, self.app.atlas.char_width);
