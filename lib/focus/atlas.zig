@@ -32,12 +32,12 @@ pub const Atlas = struct {
             u.panic("Error setting font size: {}", .{err});
 
         // render every ascii char
-        const num_chars: usize = 128;
-        const char_to_bitmap = allocator.alloc([]const u.Color, num_chars) catch u.oom();
-        const char_to_cbox = allocator.alloc(freetype.BBox, num_chars) catch u.oom();
+        const num_ascii_chars: usize = 128;
+        const char_to_bitmap = allocator.alloc([]const u.Color, num_ascii_chars) catch u.oom();
+        const char_to_cbox = allocator.alloc(freetype.BBox, num_ascii_chars) catch u.oom();
         {
             var char: usize = 0;
-            while (char < num_chars) : (char += 1) {
+            while (char < num_ascii_chars) : (char += 1) {
                 face.loadChar(@intCast(u32, char), .{ .render = true }) catch |err|
                     u.panic("Error loading '{}': {}", .{ char, err });
 
@@ -90,6 +90,7 @@ pub const Atlas = struct {
         const char_height = @intCast(u.Coord, max_cbox.yMax - max_cbox.yMin);
 
         // copy every char into a single texture
+        const num_chars = num_ascii_chars + 1; // ascii + one white box
         const texture = allocator.alloc(u.Color, num_chars * @intCast(usize, char_width * char_height)) catch u.oom();
         for (texture) |*pixel| pixel.* = .{ .r = 0, .g = 0, .b = 0, .a = 0 };
         const char_to_rect = allocator.alloc(u.Rect, num_chars) catch u.oom();
@@ -103,7 +104,6 @@ pub const Atlas = struct {
             while (by < bitmap_height) : (by += 1) {
                 var bx: i32 = 0;
                 while (bx < bitmap_width) : (bx += 1) {
-                    // TODO use offsets here
                     const tx = (@intCast(u.Coord, char) * char_width) + bx + (cbox.xMin - max_cbox.xMin);
                     const ty = by + (max_cbox.yMax - cbox.yMax);
                     const ti = @intCast(usize, (ty * @intCast(u.Coord, num_chars) * char_width) + tx);
@@ -121,8 +121,8 @@ pub const Atlas = struct {
         }
 
         // make a white pixel
-        texture[0] = u.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
-        const white_rect = u.Rect{ .x = 0, .y = 0, .w = 1, .h = 1 };
+        const white_rect = u.Rect{ .x = @intCast(u.Coord, num_ascii_chars) * char_width, .y = 0, .w = 1, .h = 1 };
+        texture[@intCast(usize, white_rect.x)] = u.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
 
         return Atlas{
             .allocator = allocator,
