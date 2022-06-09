@@ -51,6 +51,7 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     //imp2.addDeps(exe);
     exe.addPackage(freetype.freetype_pkg);
     freetype.link(b, exe, .{});
+    exe.omit_frame_pointer = false;
 }
 
 fn includeNix(exe: *std.build.LibExeObjStep, env_var: []const u8) !void {
