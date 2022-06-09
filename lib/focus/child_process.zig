@@ -30,7 +30,6 @@ pub const ChildProcess = struct {
         std.os.kill(-@intCast(i32, pgid), std.os.SIG.KILL) catch {};
         self.child_process.stdout.?.close();
         self.child_process.stderr.?.close();
-        _ = self.child_process.kill() catch {};
     }
 
     pub fn poll(self: ChildProcess) enum { Running, Finished } {
