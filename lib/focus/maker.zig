@@ -12,6 +12,50 @@ const Selector = focus.Selector;
 const ErrorLister = focus.ErrorLister;
 const ChildProcess = focus.ChildProcess;
 
+pub const MakerState = union(enum) {
+    ChoosingDir,
+    ChoosingCommand: struct {
+        dirname: []const u8,
+    },
+    Running: Running,
+
+    pub const Running = struct {
+        dirname: []const u8,
+        command: []const u8,
+        child_process: ChildProcess,
+        error_locations: []const ErrorLister.ErrorLocation,
+
+        const Self = @This();
+
+        pub fn init(app: *App, dirname: []const u8, command: []const u8) Self {
+            return .{
+                .dirname = dirname,
+                .command = command,
+                .child_process = ChildProcess.init(
+                    app.allocator,
+                    dirname,
+                    &.{ "fish", "--command", command },
+                ),
+                .error_locations = &.{},
+            };
+        }
+
+        fn clearErrorLocations(self: *Self, allocator: u.Allocator) void {
+            for (self.error_locations) |error_location|
+                error_location.deinit(allocator);
+            allocator.free(self.error_locations);
+            self.error_locations = &.{};
+        }
+
+        fn deinit(self: *Self, allocator: u.Allocator) void {
+            self.clearErrorLocations(allocator);
+            self.child_process.deinit();
+            allocator.free(self.command);
+            allocator.free(self.dirname);
+        }
+    };
+};
+
 pub const Maker = struct {
     app: *App,
     input: SingleLineEditor,
@@ -19,32 +63,7 @@ pub const Maker = struct {
     result_editor: *Editor,
     history_string: []const u8,
     history: []const []const u8,
-    state: union(enum) {
-        ChoosingDir,
-        ChoosingCommand: struct {
-            dirname: []const u8,
-        },
-        Running: struct {
-            dirname: []const u8,
-            command: []const u8,
-            child_process: ChildProcess,
-            error_locations: []const ErrorLister.ErrorLocation,
-
-            const Self = @This();
-            fn clearErrorLocations(self: *Self, allocator: u.Allocator) void {
-                for (self.error_locations) |error_location|
-                    error_location.deinit(allocator);
-                allocator.free(self.error_locations);
-                self.error_locations = &.{};
-            }
-            fn deinit(self: *Self, allocator: u.Allocator) void {
-                self.clearErrorLocations(allocator);
-                self.child_process.deinit();
-                allocator.free(self.command);
-                allocator.free(self.dirname);
-            }
-        },
-    },
+    state: MakerState,
 
     pub fn init(app: *App) *Maker {
         const empty_buffer = Buffer.initEmpty(app, .{
@@ -182,16 +201,7 @@ pub const Maker = struct {
                     history_file.close();
 
                     // start running
-                    self.state = .{ .Running = .{
-                        .dirname = choosing_command.dirname,
-                        .command = command,
-                        .child_process = ChildProcess.init(
-                            self.app.allocator,
-                            choosing_command.dirname,
-                            &.{ "fish", "--command", command },
-                        ),
-                        .error_locations = &.{},
-                    } };
+                    self.state = .{ .Running = MakerState.Running.init(self.app, choosing_command.dirname, command) };
                 }
             },
             .Running => |*running| {

@@ -13,6 +13,7 @@ pub const ProjectSearcher = @import("./focus/project_searcher.zig").ProjectSearc
 pub const Launcher = @import("./focus/launcher.zig").Launcher;
 // pub const ImpRepl = @import("./focus/imp_repl.zig").ImpRepl;
 pub const Maker = @import("./focus/maker.zig").Maker;
+pub const MakerState = @import("./focus/maker.zig").MakerState;
 pub const ErrorLister = @import("./focus/error_lister.zig").ErrorLister;
 pub const Window = @import("./focus/window.zig").Window;
 pub const Language = @import("./focus/language.zig").Language;
@@ -24,9 +25,31 @@ const u = util;
 const c = util.c;
 
 pub const Request = union(enum) {
-    CreateEmptyWindow,
-    CreateLauncherWindow,
+    CreateEmptyWindow: Void,
+    CreateLauncherWindow: Void,
     CreateEditorWindow: []const u8,
+    CreateMakerWindow: struct {
+        dirname: []const u8,
+        command: []const u8,
+    },
+
+    // Can't use std.json for this
+    // https://github.com/ziglang/zig/issues/9735
+    pub fn toJson(self: Request, writer: anytype) @TypeOf(writer).Error!void {
+        switch (self) {
+            .CreateEmptyWindow => {
+                try std.fmt.format(writer, "{\"CreateEmptyWindow\": null}", .{});
+            },
+            .CreateLauncherWindow => {
+                try std.fmt.format(writer, "{\"CreateLauncherWindow\": null}", .{});
+            },
+            .CreateEditorWindow => |filename| {
+                try std.fmt.format(writer, "{\"CreateEditorWindow\": \"{s}\"}", .{std.zig.fmtEscapes(filename)});
+            },
+            .CreateEditorWindow => |filename| {
+                try std.fmt.format(writer, "{\"CreateEditorWindow\": {s}}", .{std.zig.fmtEscapes(filename)});
+            },
+    }
 };
 
 // TODO this should just be std.net.Address, but it calculates the wrong address length for abstract domain sockets
@@ -120,17 +143,16 @@ pub fn createClientSocket() std.os.socket_t {
     return socket;
 }
 
-pub fn sendRequest(client_socket: std.os.socket_t, server_socket: ServerSocket, request: Request) void {
-    const message = switch (request) {
-        .CreateEmptyWindow => "CreateEmptyWindow",
-        .CreateLauncherWindow => "CreateLauncherWindow",
-        .CreateEditorWindow => |filename| filename,
-    };
-    const len = std.os.sendto(client_socket, message, 0, &server_socket.address.address.any, server_socket.address.address_len) catch |err| u.panic("Failed to send request: {}", .{err});
-    u.assert(len == message.len);
+pub fn sendRequest(allocator: u.Allocator, client_socket: std.os.socket_t, server_socket: ServerSocket, request: Request) void {
+    var message = u.ArrayList(u8).init(allocator);
+    defer message.deinit();
+    std.json.stringify(request, .{}, message.writer()) catch u.oom();
+    u.dump(message.items);
+    const len = std.os.sendto(client_socket, message.items, 0, &server_socket.address.address.any, server_socket.address.address_len) catch |err| u.panic("Failed to send request: {}", .{err});
+    u.assert(len == message.items.len);
 }
 
-pub fn receiveRequest(buffer: []u8, server_socket: ServerSocket) ?RequestAndClientAddress {
+pub fn receiveRequest(allocator: u.Allocator, buffer: []u8, server_socket: ServerSocket) ?RequestAndClientAddress {
     var client_address: std.os.sockaddr = undefined;
     // TODO have no idea if this is the correct value
     var client_address_len: std.os.socklen_t = @sizeOf(std.os.sockaddr);
@@ -141,12 +163,9 @@ pub fn receiveRequest(buffer: []u8, server_socket: ServerSocket) ?RequestAndClie
         }
     };
     const message = buffer[0..len];
-    const request = if (std.mem.eql(u8, message, "CreateEmptyWindow"))
-        .CreateEmptyWindow
-    else if (std.mem.eql(u8, message, "CreateLauncherWindow"))
-        .CreateLauncherWindow
-    else
-        Request{ .CreateEditorWindow = message };
+    var token_stream = std.json.TokenStream.init(message);
+    const request = std.json.parse(Request, &token_stream, .{ .allocator = allocator }) catch |err|
+        u.panic("Bad request {}: {s}", .{ err, message });
     return RequestAndClientAddress{
         .request = request,
         .client_address = .{
@@ -311,6 +330,13 @@ pub const App = struct {
                 const new_editor = Editor.init(self, new_buffer, .{});
                 new_window.pushView(new_editor);
             },
+            .CreateMakerWindow => |args| {
+                new_window = self.registerWindow(Window.init(self, .NotFloating));
+                new_window.client_address_o = client_address;
+                const new_maker = Maker.init(self);
+                new_maker.state = .{ .Running = MakerState.Running.init(self, args.dirname, args.command) };
+                new_window.pushView(new_maker);
+            },
         }
         // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
         // without this, keypresses sometimes get sent to the current window instead of the new window
@@ -326,7 +352,7 @@ pub const App = struct {
 
         // check for requests
         var buffer = self.frame_allocator.alloc(u8, 256 * 1024) catch u.oom();
-        while (receiveRequest(buffer, self.server_socket)) |request_and_client_address| {
+        while (receiveRequest(self.frame_allocator, buffer, self.server_socket)) |request_and_client_address| {
             self.handleRequest(request_and_client_address.request, request_and_client_address.client_address);
         }
 

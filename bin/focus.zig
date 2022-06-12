@@ -20,15 +20,21 @@ pub fn main() void {
     var arena = focus.util.ArenaAllocator.init(allocator);
 
     const args = std.process.argsAlloc(arena.allocator()) catch focus.util.oom();
-
     var action: Action = .{ .Request = .CreateEmptyWindow };
-    for (args[1..]) |c_arg| {
-        const arg: []const u8 = c_arg;
+    var arg_ix: usize = 1;
+    while (arg_ix < args.len) : (arg_ix += 1) {
+        const arg: []const u8 = args[arg_ix];
         if (std.mem.startsWith(u8, arg, "--")) {
             if (focus.util.deepEqual(arg, "--angel")) {
                 action = .Angel;
             } else if (focus.util.deepEqual(arg, "--launcher")) {
                 action = .{ .Request = .CreateLauncherWindow };
+            } else if (focus.util.deepEqual(arg, "--maker")) {
+                arg_ix += 1;
+                const dirname: []const u8 = args[arg_ix];
+                arg_ix += 1;
+                const command: []const u8 = args[arg_ix];
+                action = .{ .Request = .{ .CreateMakerWindow = .{ .dirname = dirname, .command = command } } };
             } else {
                 focus.util.panic("Unrecognized arg: {s}", .{arg});
             }
@@ -61,7 +67,7 @@ pub fn main() void {
 
             // ask the main process to do something
             const client_socket = focus.createClientSocket();
-            focus.sendRequest(client_socket, server_socket, request);
+            focus.sendRequest(allocator, client_socket, server_socket, request);
 
             // wait until it's done
             const exit_code = focus.waitReply(client_socket);
