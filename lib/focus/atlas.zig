@@ -45,18 +45,19 @@ pub const Atlas = struct {
                 const bitmap_width = bitmap.width();
                 const bitmap_height = bitmap.rows();
                 const bitmap_pitch = bitmap.pitch();
-                const buffer = bitmap.buffer();
                 const bitmap_copy = allocator.alloc(u.Color, bitmap_width * bitmap_height) catch u.oom();
-                var x: usize = 0;
-                while (x < bitmap_width) : (x += 1) {
-                    var y: usize = 0;
-                    while (y < bitmap_height) : (y += 1) {
-                        bitmap_copy[(y * bitmap_width) + x] = .{
-                            .r = 255,
-                            .g = 255,
-                            .b = 255,
-                            .a = buffer[(y * @intCast(usize, bitmap_pitch)) + x],
-                        };
+                if (bitmap.buffer()) |buffer| {
+                    var x: usize = 0;
+                    while (x < bitmap_width) : (x += 1) {
+                        var y: usize = 0;
+                        while (y < bitmap_height) : (y += 1) {
+                            bitmap_copy[(y * bitmap_width) + x] = .{
+                                .r = 255,
+                                .g = 255,
+                                .b = 255,
+                                .a = buffer[(y * @intCast(usize, bitmap_pitch)) + x],
+                            };
+                        }
                     }
                 }
 
