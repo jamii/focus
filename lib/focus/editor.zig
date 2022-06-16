@@ -101,6 +101,12 @@ pub const Editor = struct {
             //.imp_repl_o = null,
         };
         buffer.registerEditor(self);
+
+        // restore last cursor head / center pos
+        var cursor = self.getMainCursor();
+        self.goPos(cursor, u.min(self.buffer.getBufferEnd(), self.buffer.last_cursor_head));
+        self.wanted_center_pos = self.buffer.last_center_pos;
+
         return self;
     }
 
@@ -122,8 +128,7 @@ pub const Editor = struct {
         // if window width has changed, need to update line wrapping and keep viewport at same pos
         const max_chars_per_line = @intCast(usize, @divTrunc(text_rect.w, self.app.atlas.char_width));
         if (self.line_wrapped_buffer.max_chars_per_line != max_chars_per_line) {
-            const prev_center_wrapped_line = @intCast(usize, @divTrunc(self.top_pixel + @divTrunc(self.last_text_rect_h, 2), self.app.atlas.char_height));
-            const prev_center_pos = self.line_wrapped_buffer.getPosForLine(u.min(self.line_wrapped_buffer.countLines() - 1, prev_center_wrapped_line));
+            const prev_center_pos = self.getCenterPos(self.last_text_rect_h);
             self.line_wrapped_buffer.max_chars_per_line = max_chars_per_line;
             self.line_wrapped_buffer.update();
             self.scrollPosToCenter(text_rect, prev_center_pos);
@@ -342,6 +347,10 @@ pub const Editor = struct {
             // eval with new cursor position
             self.eval();
         }
+
+        // update buffer last cursor_head/center_pos
+        self.buffer.last_cursor_head = self.getMainCursor().head.pos;
+        self.buffer.last_center_pos = self.getCenterPos(text_rect.h);
 
         // calculate visible range
         // ensure we don't scroll off the top or bottom of the buffer
@@ -1167,6 +1176,11 @@ pub const Editor = struct {
             self.scrollPosToCenter(text_rect, pos);
             cursor.tail = cursor.head;
         }
+    }
+
+    pub fn getCenterPos(self: *Editor, text_rect_h: u.Coord) usize {
+        const prev_center_wrapped_line = @intCast(usize, @divTrunc(self.top_pixel + @divTrunc(text_rect_h, 2), self.app.atlas.char_height));
+        return self.line_wrapped_buffer.getPosForLine(u.min(self.line_wrapped_buffer.countLines() - 1, prev_center_wrapped_line));
     }
 
     // Can't actually change scroll until frame, because might not have updated line wrapping yet

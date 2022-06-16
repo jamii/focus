@@ -76,6 +76,10 @@ pub const Buffer = struct {
     options: Options,
     last_focused_ms: i64,
 
+    // store cursor head and center pos of last open editor, so if we open a new editor it can start in the same place
+    last_cursor_head: usize,
+    last_center_pos: usize,
+
     pub fn initEmpty(app: *App, options: Options) *Buffer {
         const self = app.allocator.create(Buffer) catch u.oom();
         self.* = Buffer{
@@ -92,6 +96,8 @@ pub const Buffer = struct {
             .editors = u.ArrayList(*Editor).init(app.allocator),
             .options = options,
             .last_focused_ms = 0,
+            .last_cursor_head = 0,
+            .last_center_pos = 0,
         };
         self.updateLineRanges();
         return self;
