@@ -542,7 +542,7 @@ pub const Editor = struct {
             // if cursor moved, reset completer prefix
             if (self.getMainCursor().head.pos != completer.last_pos) {
                 self.app.allocator.free(completer.prefix);
-                completer.prefix = self.app.dupe(self.buffer.getCompletionsPrefix(self.getMainCursor().head.pos));
+                completer.prefix = self.app.dupe(self.buffer.getCompletionPrefix(self.getMainCursor().head.pos));
                 completer.prefix_pos = self.getMainCursor().head.pos - completer.prefix.len;
                 completer.next_completion_ix = 0;
                 completer.last_pos = self.getMainCursor().head.pos;

@@ -538,10 +538,6 @@ pub const Buffer = struct {
         return self.bytes.items[pos];
     }
 
-    fn isLikeIdent(byte: u8) bool {
-        return (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z') or (byte >= '0' and byte <= '9') or (byte == '_');
-    }
-
     fn updateLineRanges(self: *Buffer) void {
         var line_ranges = &self.line_ranges;
         const bytes = self.bytes.items;
@@ -563,156 +559,85 @@ pub const Buffer = struct {
 
         for (self.completions.items) |completion| self.app.allocator.free(completion);
         self.completions.resize(0) catch u.oom();
-
-        const bytes = self.bytes.items;
-        const len = bytes.len;
-        const completions = &self.completions;
-        var start: usize = 0;
-        while (start < len) {
-            var end = start;
-            while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
-            if (end > start) completions.append(self.app.dupe(bytes[start..end])) catch u.oom();
-            start = end + 1;
-            while (start < len and !isLikeIdent(bytes[start])) : (start += 1) {}
-        }
-
-        std.sort.sort([]const u8, completions.items, {}, struct {
+        self.completions.appendSlice(self.language.getTokens(self.app.allocator, self.bytes.items, .{ 0, self.bytes.items.len })) catch u.oom();
+        std.sort.sort([]const u8, self.completions.items, {}, struct {
             fn lessThan(_: void, a: []const u8, b: []const u8) bool {
                 return std.mem.lessThan(u8, a, b);
             }
         }.lessThan);
     }
 
+    // always called with entire lines
     fn removeRangeFromCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
         if (!self.options.enable_completions) return;
 
-        const bytes = self.bytes.items;
-        const completions = &self.completions;
-        var start = range_start;
-        while (start < range_end) {
-            var end = start;
-            while (end < range_end and isLikeIdent(bytes[end])) : (end += 1) {}
-            if (end > start) {
-                const completions_items = completions.items;
-                const completion = bytes[start..end];
-                var left: usize = 0;
-                var right: usize = completions_items.len;
-
-                const pos = pos: {
-                    while (left < right) {
-                        const mid = left + (right - left) / 2;
-                        switch (std.mem.order(u8, completion, completions_items[mid])) {
-                            .eq => break :pos mid,
-                            .gt => left = mid + 1,
-                            .lt => right = mid,
-                        }
-                    }
-                    // completion should definitely exist in the list
-                    u.panic("how", .{});
-                };
-
-                const removed = completions.orderedRemove(pos);
-                self.app.allocator.free(removed);
-            }
-            start = end + 1;
-            while (start < range_end and !isLikeIdent(bytes[start])) : (start += 1) {}
+        const completion_ranges = self.language.getTokenRanges(self.app.frame_allocator, self.bytes.items, .{ range_start, range_end });
+        for (completion_ranges) |completion_range| {
+            const completion = self.bytes.items[completion_range[0]..completion_range[1]];
+            const pos = u.binarySearch([]const u8, completion, self.completions.items, {}, (struct {
+                fn compare(_: void, a: []const u8, b: []const u8) std.math.Order {
+                    return std.mem.order(u8, a, b);
+                }
+            }).compare).Found;
+            const removed = self.completions.orderedRemove(pos);
+            self.app.allocator.free(removed);
         }
     }
 
+    // always called with entire lines
     fn addRangeToCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
         if (!self.options.enable_completions) return;
 
-        const bytes = self.bytes.items;
-        const completions = &self.completions;
-        var start = range_start;
-        while (start < range_end) {
-            var end = start;
-            while (end < range_end and isLikeIdent(bytes[end])) : (end += 1) {}
-            if (end > start) {
-                const completions_items = completions.items;
-                const completion = bytes[start..end];
-                var left: usize = 0;
-                var right: usize = completions_items.len;
-
-                const pos = pos: {
-                    while (left < right) {
-                        const mid = left + (right - left) / 2;
-                        switch (std.mem.order(u8, completion, completions_items[mid])) {
-                            .eq => break :pos mid,
-                            .gt => left = mid + 1,
-                            .lt => right = mid,
-                        }
-                    }
-                    // completion might not be in the list, but there is where it should be added
-                    break :pos left;
-                };
-
-                completions.insert(pos, self.app.dupe(completion)) catch u.oom();
-            }
-            start = end + 1;
-            while (start < range_end and !isLikeIdent(bytes[start])) : (start += 1) {}
+        const new_completions = self.language.getTokens(self.app.allocator, self.bytes.items, .{ range_start, range_end });
+        for (new_completions) |new_completion| {
+            const pos = u.binarySearch([]const u8, new_completion, self.completions.items, {}, (struct {
+                fn compare(_: void, a: []const u8, b: []const u8) std.math.Order {
+                    return std.mem.order(u8, a, b);
+                }
+            }).compare).position();
+            self.completions.insert(pos, self.app.dupe(new_completion)) catch u.oom();
         }
     }
 
     pub fn getCompletionsInto(self: *Buffer, prefix: []const u8, results: *u.ArrayList([]const u8)) void {
-        const completions = &self.completions;
-        const completions_items = completions.items;
-        var left: usize = 0;
-        var right: usize = completions_items.len;
-
-        const start = pos: {
-            while (left < right) {
-                const mid = left + (right - left) / 2;
-                switch (std.mem.order(u8, prefix, completions_items[mid])) {
-                    .eq => break :pos mid,
-                    .gt => left = mid + 1,
-                    .lt => right = mid,
-                }
+        // find first completion that might match prefix
+        const start = u.binarySearch([]const u8, prefix, self.completions.items, {}, (struct {
+            fn compare(_: void, a: []const u8, b: []const u8) std.math.Order {
+                return std.mem.order(u8, a, b);
             }
-            // prefix might not be in the list, but there is where suffixes of it might start
-            break :pos left;
-        };
+        }).compare).position();
 
+        // search for last completion that matches prefix
         var end = start;
+        const completions_items = self.completions.items;
         const len = completions_items.len;
-        while (end < len and std.mem.startsWith(u8, completions_items[end], prefix)) : (end += 1) {
-            if (end == 0 or !std.mem.eql(u8, completions_items[end - 1], completions_items[end]))
-                if (!std.mem.eql(u8, prefix, completions_items[end]))
-                    results.append(completions_items[end]) catch u.oom();
+        while (end < len) : (end += 1) {
+            const completion = completions_items[end];
+            if (!std.mem.startsWith(u8, completion, prefix)) break;
+            if (completion.len > prefix.len)
+                results.append(completions_items[end]) catch u.oom();
         }
     }
 
-    pub fn getCompletionsPrefix(self: *Buffer, pos: usize) []const u8 {
-        const bytes = self.bytes.items;
-        var start = pos;
-        while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
-        return bytes[start..pos];
+    pub fn getCompletionRange(self: *Buffer, pos: usize) [2]usize {
+        return self.language.getTokenRangeAround(self.app.frame_allocator, self.bytes.items, pos) orelse .{ pos, pos };
     }
 
-    pub fn getCompletionsToken(self: *Buffer, pos: usize) []const u8 {
-        const bytes = self.bytes.items;
-        const len = bytes.len;
-        var start = pos;
-        while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
-        var end = pos;
-        while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
-        return bytes[start..end];
+    pub fn getCompletionPrefix(self: *Buffer, pos: usize) []const u8 {
+        const range = self.getCompletionRange(pos);
+        return self.bytes.items[range[0]..pos];
+    }
+
+    pub fn getCompletionToken(self: *Buffer, pos: usize) []const u8 {
+        const range = self.getCompletionRange(pos);
+        return self.bytes.items[range[0]..range[1]];
     }
 
     pub fn insertCompletion(self: *Buffer, pos: usize, completion: []const u8) void {
-        const bytes = self.bytes.items;
-        const len = bytes.len;
-
-        // get range of current token
-        var start = pos;
-        while (start > 0 and isLikeIdent(bytes[start - 1])) : (start -= 1) {}
-        var end = pos;
-        while (end < len and isLikeIdent(bytes[end])) : (end += 1) {}
-
-        // replace completion
+        const token_range = self.getCompletionRange(pos);
         // (insert before delete so completion gets duped before self.completions updates)
-        self.insert(start, completion);
-        self.delete(start + completion.len, end + completion.len);
+        self.insert(token_range[0], completion);
+        self.delete(token_range[0] + completion.len, token_range[1] + completion.len);
     }
 
     pub fn registerEditor(self: *Buffer, editor: *Editor) void {
