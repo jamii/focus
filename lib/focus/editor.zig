@@ -1115,36 +1115,8 @@ pub const Editor = struct {
     }
 
     pub fn tryFormat(self: *Editor) void {
-        if (self.buffer.getFilename()) |filename| {
-            if (std.mem.endsWith(u8, filename, ".zig")) {
-                self.buffer.newUndoGroup();
-                self.zigFormat();
-            }
-        }
-    }
-
-    pub fn zigFormat(self: *Editor) void {
-        var process = std.ChildProcess.init(
-            &[_][]const u8{ "zig", "fmt", "--stdin" },
-            self.app.frame_allocator,
-        );
-        process.stdin_behavior = .Pipe;
-        process.stdout_behavior = .Pipe;
-        process.stderr_behavior = .Pipe;
-        process.spawn() catch |err| u.panic("Error spawning zig fmt: {}", .{err});
-        process.stdin.?.writer().writeAll(self.buffer.bytes.items) catch |err| u.panic("Error writing to zig fmt: {}", .{err});
-        process.stdin.?.close();
-        process.stdin = null;
-        // NOTE this is fragile - currently zig fmt closes stdout before stderr so this works but reading the other way round will sometimes block
-        const stdout = process.stdout.?.reader().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024 * 1024) catch |err| u.panic("Error reading zig fmt stdout: {}", .{err});
-        const stderr = process.stderr.?.reader().readAllAlloc(self.app.frame_allocator, 10 * 1024 * 1024) catch |err| u.panic("Error reading zig fmt stderr: {}", .{err});
-        const result = process.wait() catch |err| u.panic("Error waiting for zig fmt: {}", .{err});
-        u.assert(result == .Exited);
-        if (result.Exited != 0) {
-            u.warn("Error formatting zig buffer: {s}", .{stderr});
-        } else {
-            self.buffer.replace(stdout);
-        }
+        if (self.buffer.language.format(self.app.frame_allocator, self.buffer.bytes.items)) |new_source|
+            self.buffer.replace(new_source);
     }
 
     pub fn save(self: *Editor, source: Buffer.SaveSource) void {

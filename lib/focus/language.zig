@@ -212,4 +212,18 @@ pub const Language = enum {
         }
         return null;
     }
+
+    pub fn format(self: Language, allocator: u.Allocator, source: []const u8) ?[]const u8 {
+        switch (self) {
+            .Zig => {
+                const source_z = allocator.dupeZ(u8, source) catch u.oom();
+                defer allocator.free(source_z);
+                var tree = std.zig.parse(allocator, source_z) catch u.oom();
+                if (tree.errors.len > 0) return null;
+                defer tree.deinit(allocator);
+                return tree.render(allocator) catch u.oom();
+            },
+            else => return null,
+        }
+    }
 };
