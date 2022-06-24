@@ -137,7 +137,7 @@ pub const Language = enum {
                 std.mem.set(u.Color, colors, style.text_color);
             },
         }
-        return colors[range[0] - range[0] ..];
+        return colors[init_range[0] - range[0] ..];
     }
 
     fn isLikeIdent(self: Language, char: u8, is_first_char: bool) bool {
