@@ -71,6 +71,8 @@ pub const Window = struct {
                 .client_api = .opengl_api,
                 .decorated = false,
                 .floating = (floating == .Floating),
+                // sway does not respect .floating but it will float non-resizable windows
+                .resizable = (floating == .NotFloating),
             },
         ) catch |err|
             u.panic("Error creating glfw window: {}", .{err});
