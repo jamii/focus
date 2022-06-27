@@ -146,10 +146,6 @@ pub const Editor = struct {
         }
 
         // handle events
-        // if we get textinput, we'll also get the keydown first
-        // if the keydown is mapped to a command, we'll do that and ignore the textinput
-        // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
-        var accept_char_input = false;
         var completer_event: enum {
             None,
             Down,
@@ -191,13 +187,13 @@ pub const Editor = struct {
                             .z => self.undo(text_rect),
                             .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
                             .tab => for (self.cursors.items) |*cursor| self.indent(cursor),
-                            else => accept_char_input = true,
+                            else => {},
                         }
                     } else if (key_event.mods.control and key_event.mods.shift) {
                         switch (key_event.key) {
                             .z => self.redo(text_rect),
                             .d => self.removeLastMatch(),
-                            else => accept_char_input = true,
+                            else => {},
                         }
                     } else if (key_event.mods.alt) {
                         switch (key_event.key) {
@@ -216,12 +212,12 @@ pub const Editor = struct {
                                 self.top_pixel = 0;
                             },
                             .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
-                            else => accept_char_input = true,
+                            else => {},
                         }
                     } else if (key_event.mods.shift) {
                         switch (key_event.key) {
                             .tab => completer_event = .Up,
-                            else => accept_char_input = true,
+                            else => {},
                         }
                     } else {
                         switch (key_event.key) {
@@ -241,18 +237,16 @@ pub const Editor = struct {
                                 self.clearMark();
                             },
                             .tab => completer_event = .Down,
-                            else => accept_char_input = true,
+                            else => {},
                         }
                     }
                 },
                 .char_input => |char_input_event| {
-                    if (accept_char_input) {
-                        var text = [4]u8{ 0, 0, 0, 0 };
-                        const len = std.unicode.utf8Encode(char_input_event.codepoint, &text) catch |err|
-                            u.panic("Error encoding codepoint {}: {}", .{ char_input_event.codepoint, err });
-                        for (self.cursors.items) |*cursor| self.insert(cursor, text[0..len]);
-                        self.clearMark();
-                    }
+                    var text = [4]u8{ 0, 0, 0, 0 };
+                    const len = std.unicode.utf8Encode(char_input_event.codepoint, &text) catch |err|
+                        u.panic("Error encoding codepoint {}: {}", .{ char_input_event.codepoint, err });
+                    for (self.cursors.items) |*cursor| self.insert(cursor, text[0..len]);
+                    self.clearMark();
                 },
                 .mouse_press => |mouse_press_event| {
                     if (mouse_press_event.button == .left) {
