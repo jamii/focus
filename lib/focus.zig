@@ -20,6 +20,7 @@ pub const ChildProcess = @import("./focus/child_process.zig").ChildProcess;
 pub const style = @import("./focus/style.zig");
 
 const std = @import("std");
+const glfw = @import("glfw");
 const u = util;
 const c = util.c;
 
@@ -204,9 +205,14 @@ pub const App = struct {
     last_buffer_opener_selected: usize,
     last_error_lister_selected: usize,
 
+    fn glfw_error_callback(error_code: glfw.Error, description: [:0]const u8) void {
+        std.debug.print("{}: {s}", .{ error_code, description });
+    }
+
     pub fn init(allocator: u.Allocator, server_socket: ServerSocket) *App {
-        if (c.SDL_Init(c.SDL_INIT_VIDEO) != 0)
-            u.panic("SDL init failed: {s}", .{c.SDL_GetError()});
+        glfw.setErrorCallback(glfw_error_callback);
+        glfw.init(.{}) catch |err|
+            u.panic("Error starting glfw: {}", .{err});
 
         var atlas = allocator.create(Atlas) catch u.oom();
         atlas.* = Atlas.init(allocator, 16);
@@ -259,6 +265,8 @@ pub const App = struct {
         if (u.builtin.mode == .Debug) {
             _ = @import("root").gpa.detectLeaks();
         }
+
+        glfw.terminate();
     }
 
     pub fn quit(self: *App) noreturn {
@@ -390,9 +398,7 @@ pub const App = struct {
         if (new_char_size_pixels >= 0) {
             self.atlas.* = Atlas.init(self.allocator, @intCast(usize, new_char_size_pixels));
             for (self.windows.items) |window| {
-                if (c.SDL_GL_MakeCurrent(window.sdl_window, window.gl_context) != 0)
-                    u.panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
-                Window.loadAtlasTexture(self.atlas);
+                window.loadAtlasTexture(self.atlas);
             }
         }
     }

@@ -64,4 +64,5 @@ hostPkgs.mkShell rec {
   # but without, sometimes causes https://github.com/swaywm/sway/issues/5227
   # SDL_VIDEODRIVER="wayland";
   NIX_PCRE2_DEV = targetPkgs.pcre2.dev;
+  LD_LIBRARY_PATH="${targetPkgs.libGL}/lib";
 }

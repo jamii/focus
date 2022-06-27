@@ -1,4 +1,5 @@
 const std = @import("std");
+const glfw = @import("glfw");
 const focus = @import("../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
@@ -39,9 +40,9 @@ pub const Window = struct {
     // client socket who opened this window, need to tell them when we close
     client_address_o: ?focus.Address,
 
+    glfw_window: glfw.Window,
+
     sdl_window: *c.SDL_Window,
-    width: u.Coord,
-    height: u.Coord,
 
     gl_context: c.SDL_GLContext,
     texture_buffer: u.ArrayList(u.Quad(u.Vec2f)),
@@ -56,6 +57,21 @@ pub const Window = struct {
         // pretty arbitrary
         const init_width: usize = 1920;
         const init_height: usize = 1080;
+
+        const glfw_window = glfw.Window.create(
+            init_width,
+            init_height,
+            "focus",
+            null,
+            null,
+            .{
+                .client_api = .opengl_api,
+                .decorated = false,
+                .floating = (floating == .Floating),
+            },
+        ) catch |err|
+            u.panic("Error creating glfw window: {}", .{err});
+        _ = glfw_window; // TODO
 
         // init window
         const floating_flag = if (floating == .NotFloating) c.SDL_WINDOW_RESIZABLE else 0;
@@ -93,8 +109,9 @@ pub const Window = struct {
         c.glEnableClientState(c.GL_TEXTURE_COORD_ARRAY);
         c.glEnableClientState(c.GL_COLOR_ARRAY);
 
-        // init texture
-        Window.loadAtlasTexture(app.atlas);
+        // accept unicode input
+        // TODO does this need to be per window?
+        c.SDL_StartTextInput();
 
         // no vsync - causes problems with multiple windows
         // see https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
@@ -102,14 +119,23 @@ pub const Window = struct {
         if (c.SDL_GL_SetSwapInterval(0) != 0)
             u.panic("Setting swap interval failed: {s}", .{c.SDL_GetError()});
 
-        // accept unicode input
-        // TODO does this need to be per window?
-        c.SDL_StartTextInput();
+        glfw.makeContextCurrent(glfw_window) catch |err|
+            u.panic("Error making context current: {}", .{err});
+        c.glEnable(c.GL_BLEND);
+        c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
+        c.glDisable(c.GL_CULL_FACE);
+        c.glDisable(c.GL_DEPTH_TEST);
+        c.glEnable(c.GL_TEXTURE_2D);
+        c.glEnableClientState(c.GL_VERTEX_ARRAY);
+        c.glEnableClientState(c.GL_TEXTURE_COORD_ARRAY);
+        c.glEnableClientState(c.GL_COLOR_ARRAY);
 
-        // TODO ignore MOUSEMOTION since we just look at current state
-        // c.SDL_EventState( c.SDL_MOUSEMOTION, c.SDL_IGNORE );
+        // no vsync - causes problems with multiple windows
+        // see https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
+        glfw.swapInterval(0) catch |err|
+            u.panic("Setting swap interval failed: {}", .{err});
 
-        return Window{
+        const self = Window{
             .app = app,
             .views = u.ArrayList(View).init(app.allocator),
             .popped_views = u.ArrayList(View).init(app.allocator),
@@ -117,9 +143,8 @@ pub const Window = struct {
 
             .client_address_o = null,
 
+            .glfw_window = glfw_window,
             .sdl_window = sdl_window,
-            .width = init_width,
-            .height = init_height,
 
             .gl_context = gl_context,
             .texture_buffer = u.ArrayList(u.Quad(u.Vec2f)).init(app.allocator),
@@ -127,16 +152,36 @@ pub const Window = struct {
             .color_buffer = u.ArrayList(u.Quad(u.Color)).init(app.allocator),
             .index_buffer = u.ArrayList([2]u.Tri(u32)).init(app.allocator),
         };
+
+        self.loadAtlasTexture(app.atlas);
+
+        return self;
     }
 
-    pub fn loadAtlasTexture(atlas: *Atlas) void {
-        var id: u32 = undefined;
-        c.glGenTextures(1, &id);
-        c.glBindTexture(c.GL_TEXTURE_2D, id);
-        c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, atlas.texture.ptr);
-        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
-        c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
-        u.assert(c.glGetError() == 0);
+    pub fn loadAtlasTexture(self: Window, atlas: *Atlas) void {
+        if (c.SDL_GL_MakeCurrent(self.sdl_window, self.gl_context) != 0)
+            u.panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
+        {
+            var id: u32 = undefined;
+            c.glGenTextures(1, &id);
+            c.glBindTexture(c.GL_TEXTURE_2D, id);
+            c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, atlas.texture.ptr);
+            c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
+            c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
+            u.assert(c.glGetError() == 0);
+        }
+
+        glfw.makeContextCurrent(self.glfw_window) catch |err|
+            u.panic("Error making context current: {}", .{err});
+        {
+            var id: u32 = undefined;
+            c.glGenTextures(1, &id);
+            c.glBindTexture(c.GL_TEXTURE_2D, id);
+            c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, atlas.texture.ptr);
+            c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
+            c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
+            u.assert(c.glGetError() == 0);
+        }
     }
 
     pub fn deinit(self: *Window) void {
@@ -154,6 +199,9 @@ pub const Window = struct {
         self.deinitPoppedViews();
         self.popped_views.deinit();
         self.views.deinit();
+
+        // TODO do I need to destroy the gl context?
+        self.glfw_window.destroy();
     }
 
     pub fn getTopView(self: *Window) ?View {
@@ -181,12 +229,19 @@ pub const Window = struct {
 
     pub fn frame(self: *Window, events: []const c.SDL_Event) void {
         // figure out window size
+
         var w: c_int = undefined;
         var h: c_int = undefined;
         c.SDL_GL_GetDrawableSize(self.sdl_window, &w, &h);
-        self.width = @intCast(u.Coord, w);
-        self.height = @intCast(u.Coord, h);
-        const window_rect = u.Rect{ .x = 0, .y = 0, .w = self.width, .h = self.height };
+
+        const window_size = self.glfw_window.getSize() catch |err|
+            u.panic("Error getting window size: {}", .{err});
+        const window_rect = u.Rect{
+            .x = 0,
+            .y = 0,
+            .w = @intCast(u.Coord, window_size.width),
+            .h = @intCast(u.Coord, window_size.height),
+        };
 
         var view_events = u.ArrayList(c.SDL_Event).init(self.app.frame_allocator);
 
@@ -300,6 +355,13 @@ pub const Window = struct {
             if (self.getTopViewIfEditor()) |editor|
                 editor.buffer.last_focused_ms = self.app.frame_time_ms;
         }
+        const focused_attrib = self.glfw_window.getAttrib(.focused) catch |err|
+            u.panic("Error getting .focused attrib: {}", .{err});
+        if (focused_attrib != 0) {
+            if (self.getTopViewIfEditor()) |editor| {
+                editor.buffer.last_focused_ms = self.app.frame_time_ms;
+            }
+        }
 
         // run view frame
         if (self.getTopView()) |view| {
@@ -332,19 +394,27 @@ pub const Window = struct {
             window_title = self.app.frame_allocator.dupeZ(u8, filename) catch u.oom();
         }
         c.SDL_SetWindowTitle(self.sdl_window, window_title);
+        self.glfw_window.setTitle(window_title) catch |err|
+            u.panic("Error setting title: {}", .{err});
 
         // render
+
         if (c.SDL_GL_MakeCurrent(self.sdl_window, self.gl_context) != 0)
             u.panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
 
         c.glClearColor(0, 0, 0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
 
-        c.glViewport(0, 0, self.width, self.height);
+        c.glViewport(
+            0,
+            0,
+            @intCast(c_int, window_size.width),
+            @intCast(c_int, window_size.height),
+        );
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPushMatrix();
         c.glLoadIdentity();
-        c.glOrtho(0.0, @intToFloat(f32, self.width), @intToFloat(f32, self.height), 0.0, -1.0, 1.0);
+        c.glOrtho(0.0, @intToFloat(f32, window_size.width), @intToFloat(f32, window_size.height), 0.0, -1.0, 1.0);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPushMatrix();
         c.glLoadIdentity();
@@ -360,6 +430,39 @@ pub const Window = struct {
         c.glPopMatrix();
 
         c.SDL_GL_SwapWindow(self.sdl_window);
+
+        glfw.makeContextCurrent(self.glfw_window) catch |err|
+            u.panic("Error making context current: {}", .{err});
+
+        c.glClearColor(0, 0, 0, 1);
+        c.glClear(c.GL_COLOR_BUFFER_BIT);
+
+        c.glViewport(
+            0,
+            0,
+            @intCast(c_int, window_size.width),
+            @intCast(c_int, window_size.height),
+        );
+        c.glMatrixMode(c.GL_PROJECTION);
+        c.glPushMatrix();
+        c.glLoadIdentity();
+        c.glOrtho(0.0, @intToFloat(f32, window_size.width), @intToFloat(f32, window_size.height), 0.0, -1.0, 1.0);
+        c.glMatrixMode(c.GL_MODELVIEW);
+        c.glPushMatrix();
+        c.glLoadIdentity();
+
+        c.glTexCoordPointer(2, c.GL_FLOAT, 0, self.texture_buffer.items.ptr);
+        c.glVertexPointer(2, c.GL_FLOAT, 0, self.vertex_buffer.items.ptr);
+        c.glColorPointer(4, c.GL_UNSIGNED_BYTE, 0, self.color_buffer.items.ptr);
+        c.glDrawElements(c.GL_TRIANGLES, @intCast(c_int, self.index_buffer.items.len) * 6, c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
+
+        c.glMatrixMode(c.GL_MODELVIEW);
+        c.glPopMatrix();
+        c.glMatrixMode(c.GL_PROJECTION);
+        c.glPopMatrix();
+
+        self.glfw_window.swapBuffers() catch |err|
+            u.panic("Error swapping buffers: {}", .{err});
 
         // reset
         self.texture_buffer.resize(0) catch u.oom();
