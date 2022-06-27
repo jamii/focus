@@ -49,7 +49,8 @@ pub const Event = union(enum) {
 fn keyCallback(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
     const events = window.getUserPointer(u.ArrayList(Event)) orelse unreachable;
     switch (action) {
-        .press => events.append(.{
+        // TODO mach doesn't register repeat
+        .press, .repeat => events.append(.{
             .key_press = .{
                 .key = key,
                 .mods = mods,
@@ -61,7 +62,6 @@ fn keyCallback(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.A
                 .mods = mods,
             },
         }) catch u.oom(),
-        else => {},
     }
 
     _ = scancode;
