@@ -7,12 +7,12 @@ const glfw = @import("mach/glfw/build.zig");
 
 pub fn build(b: *Builder) !void {
     const mode = b.standardReleaseOptions();
-    var target = b.standardTargetOptions(.{});
-    target.setGnuLibCVersion(2, 28, 0);
+    const target = b.standardTargetOptions(.{});
 
     const local = b.addExecutable("focus-local", "./bin/focus.zig");
     try includeCommon(b, local);
     local.setBuildMode(mode);
+    local.setTarget(target);
     local.install();
 
     const cross = b.addExecutable("focus-cross", "./bin/focus.zig");
