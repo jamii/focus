@@ -41,10 +41,6 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("GL");
     exe.linkSystemLibrary("pcre2-8");
-    try includeNix(exe, "NIX_LIBGL_DEV");
-    try includeNix(exe, "NIX_XORGPROTO_DEV");
-    try includeNix(exe, "NIX_LIBX11_DEV");
-    try includeNix(exe, "NIX_PCRE2_DEV");
     exe.setOutputDir("./zig-cache");
     exe.addPackage(freetype.freetype_pkg);
     freetype.link(b, exe, .{});
@@ -59,12 +55,4 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
         .system_sdk = .{},
     });
     exe.omit_frame_pointer = false;
-}
-
-fn includeNix(exe: *std.build.LibExeObjStep, env_var: []const u8) !void {
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
-    try buf.appendSlice(std.os.getenv(env_var).?);
-    try buf.appendSlice("/include");
-    exe.addIncludeDir(buf.items);
 }

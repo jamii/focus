@@ -45,18 +45,9 @@ in
 hostPkgs.mkShell rec {
   buildInputs = [
     zig
-    hostPkgs.pkg-config
     hostPkgs.git
     targetPkgs.libGL.all
     targetPkgs.xorg.libX11.dev
-    targetPkgs.xorg.xorgproto
     targetPkgs.pcre2.all
   ];
-  FOCUS="nixos@192.168.1.83";
-  NIX_GCC=targetPkgs.gcc;
-  NIX_LIBGL_DEV=targetPkgs.libGL.dev;
-  NIX_LIBX11_DEV=targetPkgs.xorg.libX11.dev;
-  NIX_XORGPROTO_DEV=targetPkgs.xorg.xorgproto;
-  NIX_PCRE2_DEV = targetPkgs.pcre2.dev;
-  LD_LIBRARY_PATH="${targetPkgs.libGL}/lib";
 }
