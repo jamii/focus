@@ -16,6 +16,7 @@ const Launcher = focus.Launcher;
 const Maker = focus.Maker;
 const ErrorLister = focus.ErrorLister;
 const style = focus.style;
+const mach_compat = focus.mach_compat;
 
 pub const View = union(enum) {
     Editor: *Editor,
@@ -40,6 +41,7 @@ pub const Window = struct {
     // client socket who opened this window, need to tell them when we close
     client_address_o: ?focus.Address,
 
+    events: *u.ArrayList(mach_compat.Event),
     glfw_window: glfw.Window,
 
     sdl_window: *c.SDL_Window,
@@ -58,6 +60,9 @@ pub const Window = struct {
         const init_width: usize = 1920;
         const init_height: usize = 1080;
 
+        const events = app.allocator.create(u.ArrayList(mach_compat.Event)) catch u.oom();
+        events.* = u.ArrayList(mach_compat.Event).init(app.allocator);
+
         const glfw_window = glfw.Window.create(
             init_width,
             init_height,
@@ -71,7 +76,8 @@ pub const Window = struct {
             },
         ) catch |err|
             u.panic("Error creating glfw window: {}", .{err});
-        _ = glfw_window; // TODO
+
+        mach_compat.setCallbacks(glfw_window, events);
 
         // init window
         const floating_flag = if (floating == .NotFloating) c.SDL_WINDOW_RESIZABLE else 0;
@@ -143,6 +149,7 @@ pub const Window = struct {
 
             .client_address_o = null,
 
+            .events = events,
             .glfw_window = glfw_window,
             .sdl_window = sdl_window,
 
@@ -202,6 +209,9 @@ pub const Window = struct {
 
         // TODO do I need to destroy the gl context?
         self.glfw_window.destroy();
+
+        self.events.deinit();
+        self.app.allocator.destroy(self.events);
     }
 
     pub fn getTopView(self: *Window) ?View {
@@ -227,7 +237,7 @@ pub const Window = struct {
             return null;
     }
 
-    pub fn frame(self: *Window, events: []const c.SDL_Event) void {
+    pub fn frame(self: *Window) void {
         // figure out window size
 
         var w: c_int = undefined;
@@ -243,18 +253,18 @@ pub const Window = struct {
             .h = @intCast(u.Coord, window_size.height),
         };
 
-        var view_events = u.ArrayList(c.SDL_Event).init(self.app.frame_allocator);
-
         // handle events
+        const events = self.events.toOwnedSlice();
+        defer self.app.allocator.free(events);
+        var view_events = u.ArrayList(mach_compat.Event).init(self.app.frame_allocator);
         for (events) |event| {
             var handled = false;
-            switch (event.type) {
-                c.SDL_KEYDOWN => {
-                    const sym = event.key.keysym;
-                    if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
-                        switch (sym.sym) {
-                            'q' => if (self.getTopViewIfEditor() == null) self.popView(),
-                            'o' => {
+            switch (event) {
+                .key_press => |key_event| {
+                    if (key_event.mods.control) {
+                        switch (key_event.key) {
+                            .q => if (self.getTopViewIfEditor() == null) self.popView(),
+                            .o => {
                                 const init_path = if (self.getTopViewFilename()) |filename|
                                     std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch u.oom()
                                 else
@@ -263,12 +273,12 @@ pub const Window = struct {
                                 self.pushView(file_opener);
                                 handled = true;
                             },
-                            'p' => {
+                            .p => {
                                 const project_file_opener = ProjectFileOpener.init(self.app);
                                 self.pushView(project_file_opener);
                                 handled = true;
                             },
-                            'n' => {
+                            .n => {
                                 if (self.getTopViewIfEditor()) |editor| {
                                     const new_window = self.app.registerWindow(Window.init(self.app, .NotFloating));
                                     const new_editor = Editor.init(self.app, editor.buffer, .{});
@@ -277,15 +287,15 @@ pub const Window = struct {
                                 }
                                 handled = true;
                             },
-                            '-' => {
+                            .minus => {
                                 self.app.changeFontSize(-1);
                                 handled = true;
                             },
-                            '=' => {
+                            .equal => {
                                 self.app.changeFontSize(1);
                                 handled = true;
                             },
-                            'm' => {
+                            .m => {
                                 const maker = Maker.init(self.app);
                                 self.pushView(maker);
                                 handled = true;
@@ -293,9 +303,9 @@ pub const Window = struct {
                             else => {},
                         }
                     }
-                    if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
-                        switch (sym.sym) {
-                            'f' => {
+                    if (key_event.mods.alt) {
+                        switch (key_event.key) {
+                            .f => {
                                 var project_dir: []const u8 = "/home/jamie";
                                 if (self.getTopViewIfEditor()) |editor| {
                                     if (editor.buffer.getFilename()) |filename| {
@@ -316,12 +326,12 @@ pub const Window = struct {
                                 self.pushView(project_searcher);
                                 handled = true;
                             },
-                            'p' => {
+                            .p => {
                                 const buffer_opener = BufferOpener.init(self.app);
                                 self.pushView(buffer_opener);
                                 handled = true;
                             },
-                            'm' => {
+                            .m => {
                                 const error_lister = ErrorLister.init(self.app);
                                 self.pushView(error_lister);
                                 handled = true;
@@ -330,37 +340,21 @@ pub const Window = struct {
                         }
                     }
                 },
-                c.SDL_WINDOWEVENT => {
-                    switch (event.window.event) {
-                        c.SDL_WINDOWEVENT_FOCUS_LOST => {
-                            if (self.getTopViewIfEditor()) |editor| editor.save(.Auto);
-                            handled = true;
-                        },
-                        c.SDL_WINDOWEVENT_CLOSE => {
-                            self.close_after_frame = true;
-                            handled = true;
-                        },
-                        else => {},
+                .focus_lost => {
+                    if (self.getTopViewIfEditor()) |editor| {
+                        editor.save(.Auto);
+                        editor.buffer.last_lost_focus_ms = self.app.frame_time_ms;
                     }
+                    handled = true;
+                },
+                .window_closed => {
+                    self.close_after_frame = true;
+                    handled = true;
                 },
                 else => {},
             }
-            // delegate other events to editor
+            // delegate other events to view
             if (!handled) view_events.append(event) catch u.oom();
-        }
-
-        // check focus
-        const window_flags = c.SDL_GetWindowFlags(self.sdl_window);
-        if (@intCast(c_int, window_flags) & (c.SDL_WINDOW_INPUT_FOCUS | c.SDL_WINDOW_MOUSE_FOCUS) != 0) {
-            if (self.getTopViewIfEditor()) |editor|
-                editor.buffer.last_focused_ms = self.app.frame_time_ms;
-        }
-        const focused_attrib = self.glfw_window.getAttrib(.focused) catch |err|
-            u.panic("Error getting .focused attrib: {}", .{err});
-        if (focused_attrib != 0) {
-            if (self.getTopViewIfEditor()) |editor| {
-                editor.buffer.last_focused_ms = self.app.frame_time_ms;
-            }
         }
 
         // run view frame

@@ -8,6 +8,7 @@ const Editor = focus.Editor;
 const Window = focus.Window;
 const style = focus.style;
 const Selector = focus.Selector;
+const mach_compat = focus.mach_compat;
 
 pub const SingleLineEditor = struct {
     app: *App,
@@ -35,15 +36,15 @@ pub const SingleLineEditor = struct {
         self.buffer.deinit();
     }
 
-    pub fn frame(self: *SingleLineEditor, window: *Window, rect: u.Rect, events: []const c.SDL_Event) enum { Changed, Unchanged } {
+    pub fn frame(self: *SingleLineEditor, window: *Window, rect: u.Rect, events: []const mach_compat.Event) enum { Changed, Unchanged } {
         const prev_text = self.app.dupe(self.getText());
 
         // filter out multiline events
-        var editor_events = u.ArrayList(c.SDL_Event).init(self.app.frame_allocator);
+        var editor_events = u.ArrayList(mach_compat.Event).init(self.app.frame_allocator);
         for (events) |event| {
-            if (event.type == c.SDL_KEYDOWN) {
-                if (event.key.keysym.sym == c.SDLK_RETURN) continue;
-                if ((event.key.keysym.mod == c.KMOD_LALT or event.key.keysym.mod == c.KMOD_RALT) and (event.key.keysym.sym == 'k' or event.key.keysym.sym == 'i')) continue;
+            if (event == .key_press) {
+                if (event.key_press.key == .enter) continue;
+                if (event.key_press.mods.alt and (event.key_press.key == .k or event.key_press.key == .i)) continue;
             }
             editor_events.append(event) catch u.oom();
         }

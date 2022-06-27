@@ -11,6 +11,7 @@ const SingleLineEditor = focus.SingleLineEditor;
 const Selector = focus.Selector;
 const ErrorLister = focus.ErrorLister;
 const ChildProcess = focus.ChildProcess;
+const mach_compat = focus.mach_compat;
 
 pub const Maker = struct {
     app: *App,
@@ -101,7 +102,7 @@ pub const Maker = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *Maker, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *Maker, window: *Window, rect: u.Rect, events: []const mach_compat.Event) void {
         switch (self.state) {
             .ChoosingDir => {
                 const layout = window.layoutSearcher(rect);

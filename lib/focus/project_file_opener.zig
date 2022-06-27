@@ -9,6 +9,7 @@ const SingleLineEditor = focus.SingleLineEditor;
 const Window = focus.Window;
 const style = focus.style;
 const Selector = focus.Selector;
+const mach_compat = focus.mach_compat;
 
 const projects = [_][]const u8{
     "/home/jamie/exo/",
@@ -95,7 +96,7 @@ pub const ProjectFileOpener = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *ProjectFileOpener, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *ProjectFileOpener, window: *Window, rect: u.Rect, events: []const mach_compat.Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
@@ -167,6 +168,6 @@ pub const ProjectFileOpener = struct {
         }
 
         // run preview frame
-        self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
+        self.preview_editor.frame(window, layout.preview, &[0]mach_compat.Event{});
     }
 };

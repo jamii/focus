@@ -9,6 +9,7 @@ const SingleLineEditor = focus.SingleLineEditor;
 const Window = focus.Window;
 const style = focus.style;
 const Selector = focus.Selector;
+const mach_compat = focus.mach_compat;
 
 pub const BufferOpener = struct {
     app: *App,
@@ -51,7 +52,7 @@ pub const BufferOpener = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *BufferOpener, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *BufferOpener, window: *Window, rect: u.Rect, events: []const mach_compat.Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
@@ -70,7 +71,7 @@ pub const BufferOpener = struct {
             // sort by most recently focused
             std.sort.sort(Entry, entries.items, {}, (struct {
                 fn lessThan(_: void, a: Entry, b: Entry) bool {
-                    return b.value_ptr.*.last_focused_ms < a.value_ptr.*.last_focused_ms;
+                    return b.value_ptr.*.last_lost_focus_ms < a.value_ptr.*.last_lost_focus_ms;
                 }
             }).lessThan);
             for (entries.items) |entry| {
@@ -121,6 +122,6 @@ pub const BufferOpener = struct {
         }
 
         // run preview frame
-        self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
+        self.preview_editor.frame(window, layout.preview, &[0]mach_compat.Event{});
     }
 };

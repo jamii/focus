@@ -6,6 +6,7 @@ const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
 const Window = focus.Window;
+const mach_compat = focus.mach_compat;
 
 pub const Selector = struct {
     app: *App,
@@ -68,36 +69,35 @@ pub const Selector = struct {
         self.ranges = self.app.dupe(ranges);
     }
 
-    pub fn logic(self: *Selector, events: []const c.SDL_Event, num_items: usize) Action {
+    pub fn logic(self: *Selector, events: []const mach_compat.Event, num_items: usize) Action {
         var action: Action = .None;
         const old_selected = self.selected;
         for (events) |event| {
-            switch (event.type) {
-                c.SDL_KEYDOWN => {
-                    const sym = event.key.keysym;
-                    if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
-                        switch (sym.sym) {
-                            'k' => self.selected += 1,
-                            'i' => if (self.selected != 0) {
+            switch (event) {
+                .key_press => |key_press_event| {
+                    if (key_press_event.mods.control) {
+                        switch (key_press_event.key) {
+                            .k => self.selected += 1,
+                            .i => if (self.selected != 0) {
                                 self.selected -= 1;
                             },
-                            c.SDLK_RETURN => {
+                            .enter => {
                                 action = .SelectRaw;
                             },
                             else => {},
                         }
-                    } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
-                        switch (sym.sym) {
-                            'k' => self.selected = num_items - 1,
-                            'i' => self.selected = 0,
-                            c.SDLK_RETURN => {
+                    } else if (key_press_event.mods.alt) {
+                        switch (key_press_event.key) {
+                            .k => self.selected = num_items - 1,
+                            .i => self.selected = 0,
+                            .enter => {
                                 action = .SelectAll;
                             },
                             else => {},
                         }
-                    } else if (sym.mod == 0) {
-                        switch (sym.sym) {
-                            c.SDLK_RETURN => if (num_items != 0) {
+                    } else {
+                        switch (key_press_event.key) {
+                            .enter => if (num_items != 0) {
                                 action = .SelectOne;
                             },
                             else => {},
@@ -114,7 +114,7 @@ pub const Selector = struct {
         return action;
     }
 
-    pub fn frame(self: *Selector, window: *Window, rect: u.Rect, events: []const c.SDL_Event) Action {
+    pub fn frame(self: *Selector, window: *Window, rect: u.Rect, events: []const mach_compat.Event) Action {
         const action = self.logic(events, self.ranges.len);
 
         // set selection
@@ -129,7 +129,7 @@ pub const Selector = struct {
         }
 
         // render
-        self.editor.frame(window, rect, &[0]c.SDL_Event{});
+        self.editor.frame(window, rect, &[0]mach_compat.Event{});
 
         return action;
     }

@@ -18,6 +18,7 @@ pub const Window = @import("./focus/window.zig").Window;
 pub const Language = @import("./focus/language.zig").Language;
 pub const ChildProcess = @import("./focus/child_process.zig").ChildProcess;
 pub const style = @import("./focus/style.zig");
+pub const mach_compat = @import("./focus/mach_compat.zig");
 
 const std = @import("std");
 const glfw = @import("glfw");
@@ -322,7 +323,8 @@ pub const App = struct {
         }
         // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
         // without this, keypresses sometimes get sent to the current window instead of the new window
-        new_window.frame(&[0]c.SDL_Event{});
+        // TODO do we still need this with glfw?
+        new_window.frame();
     }
 
     pub fn frame(self: *App) void {
@@ -338,54 +340,21 @@ pub const App = struct {
             self.handleRequest(request_and_client_address.request, request_and_client_address.client_address);
         }
 
-        // fetch events
-        var events = u.ArrayList(c.SDL_Event).init(self.frame_allocator);
-        {
-            var event: c.SDL_Event = undefined;
-            while (c.SDL_PollEvent(&event) != 0) {
-                if (event.type == c.SDL_QUIT) {
-                    // ignore - we're a daemon, we can have zero windows if we want to
-                } else {
-                    events.append(event) catch u.oom();
-                }
-            }
-        }
-
         // refresh buffers
         var buffer_iter = self.buffers.iterator();
         while (buffer_iter.next()) |entry| {
             entry.value_ptr.*.refresh();
         }
 
+        // poll events
+        // TODO use waitEventsTimeout to handle fps
+        glfw.pollEvents() catch |err|
+            u.panic("Error polling events: {}", .{err});
+
         // run window frames
         // copy window list because it might change during frame
         const current_windows = self.frame_allocator.dupe(*Window, self.windows.items) catch u.oom();
-        for (current_windows) |window| {
-            var window_events = u.ArrayList(c.SDL_Event).init(self.frame_allocator);
-            for (events.items) |event| {
-                const window_id_o: ?u32 = switch (event.type) {
-                    c.SDL_WINDOWEVENT => event.window.windowID,
-                    c.SDL_KEYDOWN, c.SDL_KEYUP => event.key.windowID,
-                    c.SDL_TEXTEDITING => event.edit.windowID,
-                    c.SDL_TEXTINPUT => event.text.windowID,
-                    c.SDL_MOUSEBUTTONDOWN, c.SDL_MOUSEBUTTONUP => event.button.windowID,
-                    c.SDL_MOUSEWHEEL => event.wheel.windowID,
-
-                    else => null,
-                };
-                if (window_id_o) |window_id| {
-                    if (window_id == c.SDL_GetWindowID(window.sdl_window) or
-                        // need to react to mouse up even if it happened outside the window
-                        event.type == c.SDL_MOUSEBUTTONUP)
-                    {
-                        window_events.append(event) catch u.oom();
-                    }
-                }
-            }
-            window.frame(window_events.items);
-        }
-
-        // TODO separate frame from vsync. if vsync takes more than, say, 1s/120 then we must have missed a frame
+        for (current_windows) |window| window.frame();
     }
 
     pub fn dupe(self: *App, slice: anytype) @TypeOf(slice) {

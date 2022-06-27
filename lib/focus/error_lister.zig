@@ -8,6 +8,7 @@ const Editor = focus.Editor;
 const Window = focus.Window;
 const style = focus.style;
 const Selector = focus.Selector;
+const mach_compat = focus.mach_compat;
 
 pub const ErrorLister = struct {
     app: *App,
@@ -66,7 +67,7 @@ pub const ErrorLister = struct {
         }
     };
 
-    pub fn frame(self: *ErrorLister, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *ErrorLister, window: *Window, rect: u.Rect, events: []const mach_compat.Event) void {
         const layout = window.layoutLister(rect);
 
         // get error locations

@@ -74,7 +74,7 @@ pub const Buffer = struct {
     // editors must unregister before buffer deinits
     editors: u.ArrayList(*Editor),
     options: Options,
-    last_focused_ms: i64,
+    last_lost_focus_ms: i64,
 
     // store cursor head and center pos of last open editor, so if we open a new editor it can start in the same place
     last_cursor_head: usize,
@@ -95,7 +95,7 @@ pub const Buffer = struct {
             .completions = u.ArrayList([]const u8).init(app.allocator),
             .editors = u.ArrayList(*Editor).init(app.allocator),
             .options = options,
-            .last_focused_ms = 0,
+            .last_lost_focus_ms = 0,
             .last_cursor_head = 0,
             .last_center_pos = 0,
         };

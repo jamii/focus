@@ -9,6 +9,7 @@ const SingleLineEditor = focus.SingleLineEditor;
 const Selector = focus.Selector;
 const Window = focus.Window;
 const style = focus.style;
+const mach_compat = focus.mach_compat;
 
 pub const BufferSearcher = struct {
     app: *App,
@@ -54,7 +55,7 @@ pub const BufferSearcher = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *BufferSearcher, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *BufferSearcher, window: *Window, rect: u.Rect, events: []const mach_compat.Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
@@ -126,7 +127,7 @@ pub const BufferSearcher = struct {
         self.updateEditor(self.preview_editor, action, result_poss.items, filter);
 
         // run preview frame
-        self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
+        self.preview_editor.frame(window, layout.preview, &[0]mach_compat.Event{});
     }
 
     fn updateEditor(self: *BufferSearcher, editor: *Editor, action: Selector.Action, result_poss: []usize, filter: []const u8) void {

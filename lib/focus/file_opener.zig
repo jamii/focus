@@ -9,6 +9,7 @@ const Window = focus.Window;
 const style = focus.style;
 const SingleLineEditor = focus.SingleLineEditor;
 const Selector = focus.Selector;
+const mach_compat = focus.mach_compat;
 
 pub const FileOpener = struct {
     app: *App,
@@ -47,15 +48,10 @@ pub const FileOpener = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *FileOpener, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *FileOpener, window: *Window, rect: u.Rect, events: []const mach_compat.Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
-        // handle events
-        for (events) |event| {
-            switch (event.type) {
-                else => {},
-            }
-        }
+        // no event handling
 
         // run input frame
         const input_changed = self.input.frame(window, layout.input, events);
@@ -153,6 +149,6 @@ pub const FileOpener = struct {
         }
 
         // run preview frame
-        self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
+        self.preview_editor.frame(window, layout.preview, &[0]mach_compat.Event{});
     }
 };

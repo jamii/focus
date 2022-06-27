@@ -1,4 +1,5 @@
 const std = @import("std");
+const glfw = @import("glfw");
 const focus = @import("../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
@@ -9,6 +10,7 @@ const BufferSearcher = focus.BufferSearcher;
 //const ImpRepl = focus.ImpRepl;
 const Window = focus.Window;
 const style = focus.style;
+const mach_compat = focus.mach_compat;
 
 pub const Point = struct {
     // what char we're at
@@ -119,7 +121,7 @@ pub const Editor = struct {
         self.app.allocator.destroy(self);
     }
 
-    pub fn frame(self: *Editor, window: *Window, frame_rect: u.Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *Editor, window: *Window, frame_rect: u.Rect, events: []const mach_compat.Event) void {
         var text_rect = frame_rect;
         const status_rect = if (self.options.show_status_bar) text_rect.splitBottom(self.app.atlas.char_height, 0) else null;
         const left_gutter_rect = text_rect.splitLeft(self.app.atlas.char_width, 0);
@@ -150,7 +152,7 @@ pub const Editor = struct {
         // if we get textinput, we'll also get the keydown first
         // if the keydown is mapped to a command, we'll do that and ignore the textinput
         // TODO this assumes that they always arrive in the same frame, which the sdl docs are not clear about
-        var accept_textinput = false;
+        var accept_char_input = false;
         var completer_event: enum {
             None,
             Down,
@@ -158,121 +160,114 @@ pub const Editor = struct {
         } = .None;
         for (events) |event| {
             self.last_event_ms = self.app.frame_time_ms;
-            switch (event.type) {
-                c.SDL_KEYDOWN => {
-                    const sym = event.key.keysym;
-                    if (sym.mod == c.KMOD_LCTRL or sym.mod == c.KMOD_RCTRL) {
-                        switch (sym.sym) {
-                            ' ' => self.toggleMark(),
-                            'c' => {
+            switch (event) {
+                .key_press => |key_event| {
+                    if (key_event.mods.control and !key_event.mods.shift) {
+                        switch (key_event.key) {
+                            .space => self.toggleMark(),
+                            .c => {
                                 for (self.cursors.items) |*cursor| self.copy(cursor);
                                 self.clearMark();
                             },
-                            'x' => {
+                            .x => {
                                 for (self.cursors.items) |*cursor| self.cut(cursor);
                                 self.clearMark();
                             },
-                            'v' => {
+                            .v => {
                                 for (self.cursors.items) |*cursor| self.paste(cursor);
                                 self.clearMark();
                             },
-                            'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
-                            'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                            'k' => for (self.cursors.items) |*cursor| self.goWrappedDown(cursor),
-                            'i' => for (self.cursors.items) |*cursor| self.goWrappedUp(cursor),
-                            'q' => {
+                            .j => for (self.cursors.items) |*cursor| self.goLeft(cursor),
+                            .l => for (self.cursors.items) |*cursor| self.goRight(cursor),
+                            .k => for (self.cursors.items) |*cursor| self.goWrappedDown(cursor),
+                            .i => for (self.cursors.items) |*cursor| self.goWrappedUp(cursor),
+                            .q => {
                                 self.collapseCursors();
                                 self.clearMark();
                             },
-                            'd' => self.addNextMatch(),
-                            's' => self.save(.User),
-                            'f' => {
+                            .d => self.addNextMatch(),
+                            .s => self.save(.User),
+                            .f => {
                                 const buffer_searcher = BufferSearcher.init(self.app, self);
                                 window.pushView(buffer_searcher);
                             },
-                            'z' => self.undo(text_rect),
-                            '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
-                            c.SDLK_TAB => for (self.cursors.items) |*cursor| self.indent(cursor),
-                            c.SDLK_RETURN => self.openRepl(),
-                            else => accept_textinput = true,
+                            .z => self.undo(text_rect),
+                            .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
+                            .tab => for (self.cursors.items) |*cursor| self.indent(cursor),
+                            .enter => self.openRepl(),
+                            else => accept_char_input = true,
                         }
-                    } else if (sym.mod == c.KMOD_LCTRL | c.KMOD_LSHIFT or
-                        sym.mod == c.KMOD_LCTRL | c.KMOD_RSHIFT or
-                        sym.mod == c.KMOD_RCTRL | c.KMOD_LSHIFT or
-                        sym.mod == c.KMOD_RCTRL | c.KMOD_RSHIFT)
-                    {
-                        switch (sym.sym) {
-                            'z' => self.redo(text_rect),
-                            'd' => self.removeLastMatch(),
-                            else => accept_textinput = true,
+                    } else if (key_event.mods.control and key_event.mods.shift) {
+                        switch (key_event.key) {
+                            .z => self.redo(text_rect),
+                            .d => self.removeLastMatch(),
+                            else => accept_char_input = true,
                         }
-                    } else if (sym.mod == c.KMOD_LALT or sym.mod == c.KMOD_RALT) {
-                        switch (sym.sym) {
-                            ' ' => for (self.cursors.items) |*cursor| self.swapHead(cursor),
-                            'j' => for (self.cursors.items) |*cursor| self.goRealLineStart(cursor),
-                            'l' => for (self.cursors.items) |*cursor| self.goRealLineEnd(cursor),
-                            'k' => {
+                    } else if (key_event.mods.alt) {
+                        switch (key_event.key) {
+                            .space => for (self.cursors.items) |*cursor| self.swapHead(cursor),
+                            .j => for (self.cursors.items) |*cursor| self.goRealLineStart(cursor),
+                            .l => for (self.cursors.items) |*cursor| self.goRealLineEnd(cursor),
+                            .k => {
                                 for (self.cursors.items) |*cursor| self.goBufferEnd(cursor);
                                 // hardcode because we want to scroll even if cursor didn't move
                                 const num_lines = self.line_wrapped_buffer.countLines();
                                 self.top_pixel = @intCast(u.Coord, if (num_lines == 0) 0 else num_lines - 1) * self.app.atlas.char_height;
                             },
-                            'i' => {
+                            .i => {
                                 for (self.cursors.items) |*cursor| self.goBufferStart(cursor);
                                 // hardcode because we want to scroll even if cursor didn't move
                                 self.top_pixel = 0;
                             },
-                            '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
-                            c.SDLK_RETURN => self.commit(),
-                            else => accept_textinput = true,
+                            .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
+                            .enter => self.commit(),
+                            else => accept_char_input = true,
                         }
-                    } else if (sym.mod == c.KMOD_LSHIFT or sym.mod == c.KMOD_RSHIFT) {
-                        switch (sym.sym) {
-                            c.SDLK_TAB => completer_event = .Up,
-                            else => accept_textinput = true,
+                    } else if (key_event.mods.shift) {
+                        switch (key_event.key) {
+                            .tab => completer_event = .Up,
+                            else => accept_char_input = true,
                         }
-                    } else if (sym.mod == 0) {
-                        switch (sym.sym) {
-                            c.SDLK_BACKSPACE => {
+                    } else {
+                        switch (key_event.key) {
+                            .backspace => {
                                 for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
                                 self.clearMark();
                             },
-                            c.SDLK_RETURN => {
+                            .delete => {
+                                for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
+                                self.clearMark();
+                            },
+                            .enter => {
                                 for (self.cursors.items) |*cursor| {
                                     self.insert(cursor, &[1]u8{'\n'});
                                     self.indent(cursor);
                                 }
                                 self.clearMark();
                             },
-                            c.SDLK_TAB => completer_event = .Down,
-                            c.SDLK_DELETE => {
-                                for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
-                                self.clearMark();
-                            },
-                            else => accept_textinput = true,
+                            .tab => completer_event = .Down,
+                            else => accept_char_input = true,
                         }
-                    } else {
-                        accept_textinput = true;
                     }
                 },
-                c.SDL_TEXTINPUT => {
-                    if (accept_textinput) {
-                        const text = event.text.text[0..std.mem.indexOfScalar(u8, &event.text.text, 0).?];
-                        for (self.cursors.items) |*cursor| self.insert(cursor, text);
+                .char_input => |char_input_event| {
+                    if (accept_char_input) {
+                        var text = [4]u8{ 0, 0, 0, 0 };
+                        const len = std.unicode.utf8Encode(char_input_event.codepoint, &text) catch |err|
+                            u.panic("Error encoding codepoint {}: {}", .{ char_input_event.codepoint, err });
+                        for (self.cursors.items) |*cursor| self.insert(cursor, text[0..len]);
                         self.clearMark();
                     }
                 },
-                c.SDL_MOUSEBUTTONDOWN => {
-                    const button = event.button;
-                    if (button.button == c.SDL_BUTTON_LEFT) {
-                        const mouse_x = @intCast(u.Coord, button.x);
-                        const mouse_y = @intCast(u.Coord, button.y);
+                .mouse_press => |mouse_press_event| {
+                    if (mouse_press_event.button == .left) {
+                        const mouse_x = @floatToInt(u.Coord, mouse_press_event.pos.xpos);
+                        const mouse_y = @floatToInt(u.Coord, mouse_press_event.pos.ypos);
                         if (text_rect.contains(mouse_x, mouse_y)) {
                             const line = @divTrunc(self.top_pixel + (mouse_y - text_rect.y), self.app.atlas.char_height);
                             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
                             const pos = self.line_wrapped_buffer.getPosForLineCol(u.min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, line)), @intCast(usize, col));
-                            const mod = c.SDL_GetModState();
-                            if (mod == c.KMOD_LCTRL or mod == c.KMOD_RCTRL) {
+                            if (mouse_press_event.mods.control) {
                                 self.dragging = .CtrlDragging;
                                 var cursor = self.newCursor();
                                 self.updatePos(&cursor.head, pos);
@@ -288,31 +283,26 @@ pub const Editor = struct {
                         }
                     }
                 },
-                c.SDL_MOUSEBUTTONUP => {
-                    const button = event.button;
-                    if (button.button == c.SDL_BUTTON_LEFT) {
+                .mouse_release => |mouse_release_event| {
+                    if (mouse_release_event.button == .left) {
                         self.dragging = .NotDragging;
                     }
                 },
-                c.SDL_MOUSEWHEEL => {
-                    self.top_pixel -= scroll_amount * @intCast(i16, event.wheel.y);
+                .mouse_scroll => |mouse_scroll_event| {
+                    self.top_pixel -= scroll_amount * @floatToInt(i16, mouse_scroll_event.yoffset);
                 },
                 else => {},
             }
         }
 
         // handle mouse drag
-        // (might be dragging outside window, so can't rely on SDL_MOUSEMOTION
+        // (might be dragging outside window, so can't rely on mouse_motion events)
         if (self.dragging != .NotDragging) {
             // get mouse state
-            var global_mouse_x: c_int = undefined;
-            var global_mouse_y: c_int = undefined;
-            _ = c.SDL_GetGlobalMouseState(&global_mouse_x, &global_mouse_y);
-            var window_x: c_int = undefined;
-            var window_y: c_int = undefined;
-            c.SDL_GetWindowPosition(window.sdl_window, &window_x, &window_y);
-            const mouse_x = @intCast(u.Coord, global_mouse_x - window_x);
-            const mouse_y = @intCast(u.Coord, global_mouse_y - window_y);
+            const mouse_pos = window.glfw_window.getCursorPos() catch |err|
+                u.panic("Error getting cursor pos: {}", .{err});
+            const mouse_x = @floatToInt(u.Coord, mouse_pos.xpos);
+            const mouse_y = @floatToInt(u.Coord, mouse_pos.ypos);
 
             // update selection of dragged cursor
             const line = @divTrunc(self.top_pixel + mouse_y - text_rect.y, self.app.atlas.char_height);
@@ -895,9 +885,8 @@ pub const Editor = struct {
         if (cursor.head.pos == cursor.tail.pos) return;
         const text = self.dupeSelection(self.app.frame_allocator, cursor);
         const textZ = self.app.frame_allocator.dupeZ(u8, text) catch u.oom();
-        if (c.SDL_SetClipboardText(textZ) != 0) {
-            u.panic("{s} while setting system clipboard", .{c.SDL_GetError()});
-        }
+        glfw.setClipboardString(textZ) catch |err|
+            u.panic("Error while setting system clipboard: {}", .{err});
     }
 
     pub fn cut(self: *Editor, cursor: *Cursor) void {
@@ -906,12 +895,10 @@ pub const Editor = struct {
     }
 
     pub fn paste(self: *Editor, cursor: *Cursor) void {
-        if (c.SDL_GetClipboardText()) |text| {
-            defer c.SDL_free(text);
-            self.insert(cursor, std.mem.span(text));
-        } else {
-            u.warn("{s} while getting system clipboard", .{c.SDL_GetError()});
-        }
+        const text = glfw.getClipboardString() catch |err|
+            u.panic("Error while getting system clipboard: {}", .{err});
+        // text is owned by glfw, don't need to free
+        self.insert(cursor, std.mem.span(text));
     }
 
     // TODO rename to addCursor

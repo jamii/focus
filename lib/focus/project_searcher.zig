@@ -10,6 +10,7 @@ const Window = focus.Window;
 const style = focus.style;
 const Selector = focus.Selector;
 const ChildProcess = focus.ChildProcess;
+const mach_compat = focus.mach_compat;
 
 pub const ProjectSearcher = struct {
     app: *App,
@@ -71,7 +72,7 @@ pub const ProjectSearcher = struct {
         }
     }
 
-    pub fn frame(self: *ProjectSearcher, window: *Window, rect: u.Rect, events: []const c.SDL_Event) void {
+    pub fn frame(self: *ProjectSearcher, window: *Window, rect: u.Rect, events: []const mach_compat.Event) void {
         const layout = window.layoutSearcherWithPreview(rect);
 
         // run input frame
@@ -171,6 +172,6 @@ pub const ProjectSearcher = struct {
         }
 
         // run preview frame
-        self.preview_editor.frame(window, layout.preview, &[0]c.SDL_Event{});
+        self.preview_editor.frame(window, layout.preview, &[0]mach_compat.Event{});
     }
 };
