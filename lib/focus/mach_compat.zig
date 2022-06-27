@@ -4,38 +4,19 @@ const focus = @import("../focus.zig");
 const u = focus.util;
 
 pub const Event = union(enum) {
-    key_press: struct {
-        key: glfw.Key,
-        // TODO these fields are not in mach platform
-        mods: glfw.Mods,
-    },
-    key_release: struct {
-        key: glfw.Key,
-        // TODO these fields are not in mach platform
-        mods: glfw.Mods,
-    },
+    key_press: KeyEvent,
+    // TODO mach doesn't register key_repeat
+    key_repeat: KeyEvent,
+    key_release: KeyEvent,
     char_input: struct {
         codepoint: u21,
     },
     mouse_motion: struct {
-        // These are in window coordinates (not framebuffer coords)
         x: f64,
         y: f64,
     },
-    mouse_press: struct {
-        button: glfw.mouse_button.MouseButton,
-        // These are in window coordinates (not framebuffer coords)
-        // TODO these fields are not in mach platform
-        pos: glfw.Window.CursorPos,
-        mods: glfw.Mods,
-    },
-    mouse_release: struct {
-        button: glfw.mouse_button.MouseButton,
-        // These are in window coordinates (not framebuffer coords)
-        // TODO these fields are not in mach platform
-        pos: glfw.Window.CursorPos,
-        mods: glfw.Mods,
-    },
+    mouse_press: MouseButtonEvent,
+    mouse_release: MouseButtonEvent,
     mouse_scroll: struct {
         xoffset: f32,
         yoffset: f32,
@@ -46,26 +27,32 @@ pub const Event = union(enum) {
     window_closed,
 };
 
+pub const KeyEvent = struct {
+    key: glfw.Key,
+    // TODO these fields are not in mach platform
+    mods: glfw.Mods,
+};
+
+pub const MouseButtonEvent = struct {
+    button: glfw.mouse_button.MouseButton,
+    // TODO these fields are not in mach platform
+    pos: glfw.Window.CursorPos,
+    mods: glfw.Mods,
+};
+
 fn keyCallback(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
     const events = window.getUserPointer(u.ArrayList(Event)) orelse unreachable;
-    switch (action) {
-        // TODO mach doesn't register repeat
-        .press, .repeat => events.append(.{
-            .key_press = .{
-                .key = key,
-                .mods = mods,
-            },
-        }) catch u.oom(),
-        .release => events.append(.{
-            .key_release = .{
-                .key = key,
-                .mods = mods,
-            },
-        }) catch u.oom(),
-    }
-
+    const key_event = KeyEvent{
+        .key = key,
+        .mods = mods,
+    };
+    const event = switch (action) {
+        .press => Event{ .key_press = key_event },
+        .repeat => Event{ .key_press = key_event },
+        .release => Event{ .key_release = key_event },
+    };
+    events.append(event) catch u.oom();
     _ = scancode;
-    _ = mods;
 }
 
 fn mouseMotionCallback(window: glfw.Window, xpos: f64, ypos: f64) void {
@@ -82,25 +69,16 @@ fn mouseButtonCallback(window: glfw.Window, button: glfw.mouse_button.MouseButto
     const events = window.getUserPointer(u.ArrayList(Event)) orelse unreachable;
     const cursor_pos = window.getCursorPos() catch |err|
         u.panic("Error getting cursor pos: {}", .{err});
+    const mouse_button_event = MouseButtonEvent{
+        .button = button,
+        .pos = cursor_pos,
+        .mods = mods,
+    };
     switch (action) {
-        .press => events.append(.{
-            .mouse_press = .{
-                .button = button,
-                .pos = cursor_pos,
-                .mods = mods,
-            },
-        }) catch u.oom(),
-        .release => events.append(.{
-            .mouse_release = .{
-                .button = button,
-                .pos = cursor_pos,
-                .mods = mods,
-            },
-        }) catch u.oom(),
+        .press => events.append(.{ .mouse_press = mouse_button_event }) catch u.oom(),
+        .release => events.append(.{ .mouse_release = mouse_button_event }) catch u.oom(),
         else => {},
     }
-
-    _ = mods;
 }
 
 fn scrollCallback(window: glfw.Window, xoffset: f64, yoffset: f64) void {
