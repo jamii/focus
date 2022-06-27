@@ -13,11 +13,12 @@ const mach_compat = focus.mach_compat;
 
 pub const BufferOpener = struct {
     app: *App,
+    ignore_buffer: ?*Buffer,
     preview_editor: *Editor,
     input: SingleLineEditor,
     selector: Selector,
 
-    pub fn init(app: *App) *BufferOpener {
+    pub fn init(app: *App, ignore_buffer: ?*Buffer) *BufferOpener {
         const empty_buffer = Buffer.initEmpty(app, .{
             .limit_load_bytes = true,
             .enable_completions = false,
@@ -38,6 +39,7 @@ pub const BufferOpener = struct {
         const self = app.allocator.create(BufferOpener) catch u.oom();
         self.* = BufferOpener{
             .app = app,
+            .ignore_buffer = ignore_buffer,
             .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
@@ -66,7 +68,8 @@ pub const BufferOpener = struct {
             var entries = u.ArrayList(Entry).init(self.app.frame_allocator);
             var buffers_iter = self.app.buffers.iterator();
             while (buffers_iter.next()) |entry| {
-                entries.append(entry) catch u.oom();
+                if (entry.value_ptr.* != self.ignore_buffer)
+                    entries.append(entry) catch u.oom();
             }
             // sort by most recently focused
             std.sort.sort(Entry, entries.items, {}, (struct {
