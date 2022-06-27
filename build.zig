@@ -4,6 +4,7 @@ const std = @import("std");
 const Builder = std.build.Builder;
 const allocator = std.testing.allocator;
 const freetype = @import("mach/freetype/build.zig");
+const glfw = @import("mach/glfw/build.zig");
 
 pub fn build(b: *Builder) !void {
     const mode = b.standardReleaseOptions();
@@ -51,6 +52,16 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     //imp2.addDeps(exe);
     exe.addPackage(freetype.freetype_pkg);
     freetype.link(b, exe, .{});
+    exe.addPackage(glfw.pkg);
+    glfw.link(b, exe, .{
+        .vulkan = false,
+        .metal = false,
+        .opengl = true,
+        .gles = false,
+        // TODO try wayland
+        .linux_window_manager = .X11,
+        .system_sdk = .{},
+    });
     exe.omit_frame_pointer = false;
 }
 
