@@ -44,9 +44,6 @@ pub const Window = struct {
     events: *u.ArrayList(mach_compat.Event),
     glfw_window: glfw.Window,
 
-    sdl_window: *c.SDL_Window,
-
-    gl_context: c.SDL_GLContext,
     texture_buffer: u.ArrayList(u.Quad(u.Vec2f)),
     vertex_buffer: u.ArrayList(u.Quad(u.Vec2f)),
     color_buffer: u.ArrayList(u.Quad(u.Color)),
@@ -63,6 +60,7 @@ pub const Window = struct {
         const events = app.allocator.create(u.ArrayList(mach_compat.Event)) catch u.oom();
         events.* = u.ArrayList(mach_compat.Event).init(app.allocator);
 
+        // init window
         const glfw_window = glfw.Window.create(
             init_width,
             init_height,
@@ -76,55 +74,9 @@ pub const Window = struct {
             },
         ) catch |err|
             u.panic("Error creating glfw window: {}", .{err});
-
         mach_compat.setCallbacks(glfw_window, events);
 
-        // init window
-        const floating_flag = if (floating == .NotFloating) c.SDL_WINDOW_RESIZABLE else 0;
-        const flags = c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_BORDERLESS | c.SDL_WINDOW_ALLOW_HIGHDPI | floating_flag;
-        //@compileLog(@TypeOf(c.SDL_WINDOW_OPENGL), @TypeOf(c.SDL_WINDOW_BORDERLESS), @TypeOf(c.SDL_WINDOW_ALLOW_HIGHDPI));
-        const sdl_window = c.SDL_CreateWindow(
-            "focus",
-            c.SDL_WINDOWPOS_UNDEFINED,
-            c.SDL_WINDOWPOS_UNDEFINED,
-            @as(c_int, init_width),
-            @as(c_int, init_height),
-            @intCast(u32, flags),
-        ) orelse u.panic("SDL window creation failed: {s}", .{c.SDL_GetError()});
-
-        // TODO zig compiler can't handle this macro-fest yet
-        //var info: c.SDL_SysWMinfo = undefined;
-        //c.SDL_VERSION(&info.version);
-        //if (!SDL_GetWindowWMInfo(sdl_window, &info)) {
-        //   u.panic("Could not get window info: {s}", .{c.SDL_GetError()});
-        //}
-        //if (info.subsystem != c.SDL_SYSWM_WAYLAND) {
-        //    u.panic("Wanted wayland, got subsystem={}", .{info.subsystem});
-        //}
-
         // init gl
-        const gl_context = c.SDL_GL_CreateContext(sdl_window);
-        if (c.SDL_GL_MakeCurrent(sdl_window, gl_context) != 0)
-            u.panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
-        c.glEnable(c.GL_BLEND);
-        c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
-        c.glDisable(c.GL_CULL_FACE);
-        c.glDisable(c.GL_DEPTH_TEST);
-        c.glEnable(c.GL_TEXTURE_2D);
-        c.glEnableClientState(c.GL_VERTEX_ARRAY);
-        c.glEnableClientState(c.GL_TEXTURE_COORD_ARRAY);
-        c.glEnableClientState(c.GL_COLOR_ARRAY);
-
-        // accept unicode input
-        // TODO does this need to be per window?
-        c.SDL_StartTextInput();
-
-        // no vsync - causes problems with multiple windows
-        // see https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
-        // TODO lately this has been failing with 'That operation is not supported'
-        if (c.SDL_GL_SetSwapInterval(0) != 0)
-            u.panic("Setting swap interval failed: {s}", .{c.SDL_GetError()});
-
         glfw.makeContextCurrent(glfw_window) catch |err|
             u.panic("Error making context current: {}", .{err});
         c.glEnable(c.GL_BLEND);
@@ -151,9 +103,7 @@ pub const Window = struct {
 
             .events = events,
             .glfw_window = glfw_window,
-            .sdl_window = sdl_window,
 
-            .gl_context = gl_context,
             .texture_buffer = u.ArrayList(u.Quad(u.Vec2f)).init(app.allocator),
             .vertex_buffer = u.ArrayList(u.Quad(u.Vec2f)).init(app.allocator),
             .color_buffer = u.ArrayList(u.Quad(u.Color)).init(app.allocator),
@@ -166,18 +116,6 @@ pub const Window = struct {
     }
 
     pub fn loadAtlasTexture(self: Window, atlas: *Atlas) void {
-        if (c.SDL_GL_MakeCurrent(self.sdl_window, self.gl_context) != 0)
-            u.panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
-        {
-            var id: u32 = undefined;
-            c.glGenTextures(1, &id);
-            c.glBindTexture(c.GL_TEXTURE_2D, id);
-            c.glTexImage2D(c.GL_TEXTURE_2D, 0, c.GL_ALPHA, atlas.texture_dims.x, atlas.texture_dims.y, 0, c.GL_RGBA, c.GL_UNSIGNED_BYTE, atlas.texture.ptr);
-            c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MIN_FILTER, c.GL_NEAREST);
-            c.glTexParameteri(c.GL_TEXTURE_2D, c.GL_TEXTURE_MAG_FILTER, c.GL_NEAREST);
-            u.assert(c.glGetError() == 0);
-        }
-
         glfw.makeContextCurrent(self.glfw_window) catch |err|
             u.panic("Error making context current: {}", .{err});
         {
@@ -196,8 +134,12 @@ pub const Window = struct {
         self.color_buffer.deinit();
         self.vertex_buffer.deinit();
         self.texture_buffer.deinit();
-        c.SDL_GL_DeleteContext(self.gl_context);
-        c.SDL_DestroyWindow(self.sdl_window);
+
+        // TODO do I need to destroy the gl context?
+        self.glfw_window.destroy();
+
+        self.events.deinit();
+        self.app.allocator.destroy(self.events);
 
         while (self.views.items.len > 0) {
             const view = self.views.pop();
@@ -206,12 +148,6 @@ pub const Window = struct {
         self.deinitPoppedViews();
         self.popped_views.deinit();
         self.views.deinit();
-
-        // TODO do I need to destroy the gl context?
-        self.glfw_window.destroy();
-
-        self.events.deinit();
-        self.app.allocator.destroy(self.events);
     }
 
     pub fn getTopView(self: *Window) ?View {
@@ -239,11 +175,6 @@ pub const Window = struct {
 
     pub fn frame(self: *Window) void {
         // figure out window size
-
-        var w: c_int = undefined;
-        var h: c_int = undefined;
-        c.SDL_GL_GetDrawableSize(self.sdl_window, &w, &h);
-
         const window_size = self.glfw_window.getSize() catch |err|
             u.panic("Error getting window size: {}", .{err});
         const window_rect = u.Rect{
@@ -254,107 +185,113 @@ pub const Window = struct {
         };
 
         // handle events
-        const events = self.events.toOwnedSlice();
-        defer self.app.allocator.free(events);
         var view_events = u.ArrayList(mach_compat.Event).init(self.app.frame_allocator);
-        for (events) |event| {
-            var handled = false;
-            switch (event) {
-                .key_press => |key_event| {
-                    if (key_event.mods.control) {
-                        switch (key_event.key) {
-                            .q => if (self.getTopViewIfEditor() == null) self.popView(),
-                            .o => {
-                                const init_path = if (self.getTopViewFilename()) |filename|
-                                    std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch u.oom()
-                                else
-                                    "/home/jamie/";
-                                const file_opener = FileOpener.init(self.app, init_path);
-                                self.pushView(file_opener);
-                                handled = true;
-                            },
-                            .p => {
-                                const project_file_opener = ProjectFileOpener.init(self.app);
-                                self.pushView(project_file_opener);
-                                handled = true;
-                            },
-                            .n => {
-                                if (self.getTopViewIfEditor()) |editor| {
-                                    const new_window = self.app.registerWindow(Window.init(self.app, .NotFloating));
-                                    const new_editor = Editor.init(self.app, editor.buffer, .{});
-                                    new_editor.top_pixel = editor.top_pixel;
-                                    new_window.pushView(new_editor);
-                                }
-                                handled = true;
-                            },
-                            .minus => {
-                                self.app.changeFontSize(-1);
-                                handled = true;
-                            },
-                            .equal => {
-                                self.app.changeFontSize(1);
-                                handled = true;
-                            },
-                            .m => {
-                                const maker = Maker.init(self.app);
-                                self.pushView(maker);
-                                handled = true;
-                            },
-                            else => {},
-                        }
-                    }
-                    if (key_event.mods.alt) {
-                        switch (key_event.key) {
-                            .f => {
-                                var project_dir: []const u8 = "/home/jamie";
-                                if (self.getTopViewIfEditor()) |editor| {
-                                    if (editor.buffer.getFilename()) |filename| {
-                                        const dirname = std.fs.path.dirname(filename).?;
-                                        var root = dirname;
-                                        while (!u.deepEqual(root, "/")) {
-                                            const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch u.oom();
-                                            if (std.fs.openFileAbsolute(git_path, .{})) |file| {
-                                                file.close();
-                                                break;
-                                            } else |_| {}
-                                            root = std.fs.path.dirname(root).?;
-                                        }
-                                        project_dir = if (u.deepEqual(root, "/")) dirname else root;
+        {
+            const events = self.events.toOwnedSlice();
+            defer self.app.allocator.free(events);
+            for (events) |event| {
+                var handled = false;
+                switch (event) {
+                    .key_press => |key_event| {
+                        if (key_event.mods.control) {
+                            switch (key_event.key) {
+                                .q => if (self.getTopViewIfEditor() == null) self.popView(),
+                                .o => {
+                                    const init_path = if (self.getTopViewFilename()) |filename|
+                                        std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch u.oom()
+                                    else
+                                        "/home/jamie/";
+                                    const file_opener = FileOpener.init(self.app, init_path);
+                                    self.pushView(file_opener);
+                                    handled = true;
+                                },
+                                .p => {
+                                    const project_file_opener = ProjectFileOpener.init(self.app);
+                                    self.pushView(project_file_opener);
+                                    handled = true;
+                                },
+                                .n => {
+                                    if (self.getTopViewIfEditor()) |editor| {
+                                        const new_window = self.app.registerWindow(Window.init(self.app, .NotFloating));
+                                        const new_editor = Editor.init(self.app, editor.buffer, .{});
+                                        new_editor.top_pixel = editor.top_pixel;
+                                        new_window.pushView(new_editor);
                                     }
-                                }
-                                const project_searcher = ProjectSearcher.init(self.app, project_dir);
-                                self.pushView(project_searcher);
-                                handled = true;
-                            },
-                            .p => {
-                                const buffer_opener = BufferOpener.init(self.app);
-                                self.pushView(buffer_opener);
-                                handled = true;
-                            },
-                            .m => {
-                                const error_lister = ErrorLister.init(self.app);
-                                self.pushView(error_lister);
-                                handled = true;
-                            },
-                            else => {},
+                                    handled = true;
+                                },
+                                .minus => {
+                                    self.app.changeFontSize(-1);
+                                    handled = true;
+                                },
+                                .equal => {
+                                    self.app.changeFontSize(1);
+                                    handled = true;
+                                },
+                                .m => {
+                                    const maker = Maker.init(self.app);
+                                    self.pushView(maker);
+                                    handled = true;
+                                },
+                                else => {},
+                            }
                         }
-                    }
-                },
-                .focus_lost => {
-                    if (self.getTopViewIfEditor()) |editor| {
-                        editor.save(.Auto);
-                        editor.buffer.last_lost_focus_ms = self.app.frame_time_ms;
-                    }
-                    handled = true;
-                },
-                .window_closed => {
-                    self.close_after_frame = true;
-                    handled = true;
-                },
-                else => {},
+                        if (key_event.mods.alt) {
+                            switch (key_event.key) {
+                                .f => {
+                                    var project_dir: []const u8 = "/home/jamie";
+                                    if (self.getTopViewIfEditor()) |editor| {
+                                        if (editor.buffer.getFilename()) |filename| {
+                                            const dirname = std.fs.path.dirname(filename).?;
+                                            var root = dirname;
+                                            while (!u.deepEqual(root, "/")) {
+                                                const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch u.oom();
+                                                if (std.fs.openFileAbsolute(git_path, .{})) |file| {
+                                                    file.close();
+                                                    break;
+                                                } else |_| {}
+                                                root = std.fs.path.dirname(root).?;
+                                            }
+                                            project_dir = if (u.deepEqual(root, "/")) dirname else root;
+                                        }
+                                    }
+                                    const project_searcher = ProjectSearcher.init(self.app, project_dir);
+                                    self.pushView(project_searcher);
+                                    handled = true;
+                                },
+                                .p => {
+                                    const ignore_buffer = if (self.getTopViewIfEditor()) |editor|
+                                        editor.buffer
+                                    else
+                                        null;
+                                    const buffer_opener = BufferOpener.init(self.app, ignore_buffer);
+                                    self.pushView(buffer_opener);
+                                    handled = true;
+                                },
+                                .m => {
+                                    const error_lister = ErrorLister.init(self.app);
+                                    self.pushView(error_lister);
+                                    handled = true;
+                                },
+                                else => {},
+                            }
+                        }
+                    },
+                    .focus_lost => {
+                        if (self.getTopViewIfEditor()) |editor| {
+                            editor.save(.Auto);
+                            editor.buffer.last_lost_focus_ms = self.app.frame_time_ms;
+                        }
+                        handled = true;
+                    },
+                    .window_closed => {
+                        self.close_after_frame = true;
+                        handled = true;
+                    },
+                    else => {},
+                }
+                // delegate other events to view
+                if (!handled) view_events.append(event) catch u.oom();
             }
-            // delegate other events to view
-            if (!handled) view_events.append(event) catch u.oom();
         }
 
         // run view frame
@@ -386,50 +323,14 @@ pub const Window = struct {
         if (self.getTopViewFilename()) |filename| {
             window_title = self.app.frame_allocator.dupeZ(u8, filename) catch u.oom();
         }
-        c.SDL_SetWindowTitle(self.sdl_window, window_title);
         self.glfw_window.setTitle(window_title) catch |err|
             u.panic("Error setting title: {}", .{err});
 
         // render
-
-        if (c.SDL_GL_MakeCurrent(self.sdl_window, self.gl_context) != 0)
-            u.panic("Switching to GL context failed: {s}", .{c.SDL_GetError()});
-
-        c.glClearColor(0, 0, 0, 1);
-        c.glClear(c.GL_COLOR_BUFFER_BIT);
-
-        c.glViewport(
-            0,
-            0,
-            @intCast(c_int, window_size.width),
-            @intCast(c_int, window_size.height),
-        );
-        c.glMatrixMode(c.GL_PROJECTION);
-        c.glPushMatrix();
-        c.glLoadIdentity();
-        c.glOrtho(0.0, @intToFloat(f32, window_size.width), @intToFloat(f32, window_size.height), 0.0, -1.0, 1.0);
-        c.glMatrixMode(c.GL_MODELVIEW);
-        c.glPushMatrix();
-        c.glLoadIdentity();
-
-        c.glTexCoordPointer(2, c.GL_FLOAT, 0, self.texture_buffer.items.ptr);
-        c.glVertexPointer(2, c.GL_FLOAT, 0, self.vertex_buffer.items.ptr);
-        c.glColorPointer(4, c.GL_UNSIGNED_BYTE, 0, self.color_buffer.items.ptr);
-        c.glDrawElements(c.GL_TRIANGLES, @intCast(c_int, self.index_buffer.items.len) * 6, c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
-
-        c.glMatrixMode(c.GL_MODELVIEW);
-        c.glPopMatrix();
-        c.glMatrixMode(c.GL_PROJECTION);
-        c.glPopMatrix();
-
-        c.SDL_GL_SwapWindow(self.sdl_window);
-
         glfw.makeContextCurrent(self.glfw_window) catch |err|
             u.panic("Error making context current: {}", .{err});
-
         c.glClearColor(0, 0, 0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
-
         c.glViewport(
             0,
             0,
@@ -443,17 +344,14 @@ pub const Window = struct {
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPushMatrix();
         c.glLoadIdentity();
-
         c.glTexCoordPointer(2, c.GL_FLOAT, 0, self.texture_buffer.items.ptr);
         c.glVertexPointer(2, c.GL_FLOAT, 0, self.vertex_buffer.items.ptr);
         c.glColorPointer(4, c.GL_UNSIGNED_BYTE, 0, self.color_buffer.items.ptr);
         c.glDrawElements(c.GL_TRIANGLES, @intCast(c_int, self.index_buffer.items.len) * 6, c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
-
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPopMatrix();
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPopMatrix();
-
         self.glfw_window.swapBuffers() catch |err|
             u.panic("Error swapping buffers: {}", .{err});
 

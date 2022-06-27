@@ -14,7 +14,6 @@ let
         gcc
         mesa
         libGL
-        SDL2
       ;
     })];
     crossSystem = hostPkgs.lib.systems.examples.aarch64-multiplatform;
@@ -51,7 +50,6 @@ hostPkgs.mkShell rec {
     targetPkgs.libGL.all
     targetPkgs.xorg.libX11.dev
     targetPkgs.xorg.xorgproto
-    targetPkgs.SDL2.all
     targetPkgs.pcre2.all
   ];
   FOCUS="nixos@192.168.1.83";
@@ -59,10 +57,6 @@ hostPkgs.mkShell rec {
   NIX_LIBGL_DEV=targetPkgs.libGL.dev;
   NIX_LIBX11_DEV=targetPkgs.xorg.libX11.dev;
   NIX_XORGPROTO_DEV=targetPkgs.xorg.xorgproto;
-  NIX_SDL2_DEV=targetPkgs.SDL2.dev;
-  # TODO with SDL_VIDEODRIVER=wayland, SDL doesn't seem to respect xkb settings eg caps vs ctrl
-  # but without, sometimes causes https://github.com/swaywm/sway/issues/5227
-  # SDL_VIDEODRIVER="wayland";
   NIX_PCRE2_DEV = targetPkgs.pcre2.dev;
   LD_LIBRARY_PATH="${targetPkgs.libGL}/lib";
 }
