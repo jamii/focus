@@ -1,3 +1,9 @@
+Wayland bugs:
+No text key repeat
+Repeat scroll down on file_opener causes hang
+
+---
+
 A low-latency text editor.
 
 Probably not useful for anyone but me, but perhaps a useful starting point to fork off your own editor.

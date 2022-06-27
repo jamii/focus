@@ -7,12 +7,12 @@ const glfw = @import("mach/glfw/build.zig");
 
 pub fn build(b: *Builder) !void {
     const mode = b.standardReleaseOptions();
-    var target = b.standardTargetOptions(.{});
-    target.setGnuLibCVersion(2, 28, 0);
+    const target = b.standardTargetOptions(.{});
 
     const local = b.addExecutable("focus-local", "./bin/focus.zig");
     try includeCommon(b, local);
     local.setBuildMode(mode);
+    local.setTarget(target);
     local.install();
 
     const cross = b.addExecutable("focus-cross", "./bin/focus.zig");
@@ -41,6 +41,7 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("GL");
     exe.linkSystemLibrary("pcre2-8");
+    exe.linkSystemLibrary("xkbcommon");
     try includeNix(exe, "NIX_LIBGL_DEV");
     try includeNix(exe, "NIX_XORGPROTO_DEV");
     try includeNix(exe, "NIX_LIBX11_DEV");
@@ -54,8 +55,7 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
         .metal = false,
         .opengl = true,
         .gles = false,
-        // TODO try wayland
-        .linux_window_manager = .X11,
+        .linux_window_manager = .Wayland,
         .system_sdk = .{},
     });
     exe.omit_frame_pointer = false;

@@ -51,6 +51,8 @@ hostPkgs.mkShell rec {
     targetPkgs.xorg.libX11.dev
     targetPkgs.xorg.xorgproto
     targetPkgs.pcre2.all
+    targetPkgs.libxkbcommon.all
+    targetPkgs.wayland
   ];
   FOCUS="nixos@192.168.1.83";
   NIX_GCC=targetPkgs.gcc;
@@ -58,5 +60,6 @@ hostPkgs.mkShell rec {
   NIX_LIBX11_DEV=targetPkgs.xorg.libX11.dev;
   NIX_XORGPROTO_DEV=targetPkgs.xorg.xorgproto;
   NIX_PCRE2_DEV = targetPkgs.pcre2.dev;
-  LD_LIBRARY_PATH="${targetPkgs.libGL}/lib";
+  LD_LIBRARY_PATH="${targetPkgs.libGL}/lib;${targetPkgs.libxkbcommon.dev}/lib;
+    ${targetPkgs.wayland}/lib";
 }

@@ -68,6 +68,7 @@ pub const Window = struct {
             null,
             null,
             .{
+                .focused = false, // wayland doesn't allow autofocus
                 .client_api = .opengl_api,
                 .decorated = false,
                 .floating = (floating == .Floating),
