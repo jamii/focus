@@ -367,7 +367,6 @@ pub const Window = struct {
                 .BufferSearcher => |buffer_searcher| buffer_searcher.frame(self, window_rect, view_events.items),
                 .ProjectSearcher => |project_searcher| project_searcher.frame(self, window_rect, view_events.items),
                 .Launcher => |launcher| launcher.frame(self, window_rect, view_events.items),
-                //.ImpRepl => |imp_repl| imp_repl.frame(self, window_rect, view_events.items),
                 .Maker => |maker| maker.frame(self, window_rect, view_events.items),
                 .ErrorLister => |error_lister| error_lister.frame(self, window_rect, view_events.items),
             }

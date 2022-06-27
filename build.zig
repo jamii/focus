@@ -1,6 +1,5 @@
 const builtin = @import("builtin");
 const std = @import("std");
-//const imp2 = @import("imp2/build.zig");
 const Builder = std.build.Builder;
 const allocator = std.testing.allocator;
 const freetype = @import("mach/freetype/build.zig");
@@ -41,15 +40,12 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     exe.setMainPkgPath("./");
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("GL");
-    exe.linkSystemLibrary("SDL2");
     exe.linkSystemLibrary("pcre2-8");
     try includeNix(exe, "NIX_LIBGL_DEV");
     try includeNix(exe, "NIX_XORGPROTO_DEV");
     try includeNix(exe, "NIX_LIBX11_DEV");
-    try includeNix(exe, "NIX_SDL2_DEV");
     try includeNix(exe, "NIX_PCRE2_DEV");
     exe.setOutputDir("./zig-cache");
-    //imp2.addDeps(exe);
     exe.addPackage(freetype.freetype_pkg);
     freetype.link(b, exe, .{});
     exe.addPackage(glfw.pkg);

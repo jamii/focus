@@ -57,7 +57,6 @@ pub const Editor = struct {
     last_event_ms: i64,
     options: Options,
     completer_o: ?Completer,
-    //imp_repl_o: ?*ImpRepl,
 
     const Completer = struct {
         prefix: []const u8,
@@ -100,7 +99,6 @@ pub const Editor = struct {
             .last_event_ms = app.frame_time_ms,
             .options = options,
             .completer_o = completer_o,
-            //.imp_repl_o = null,
         };
         buffer.registerEditor(self);
 
@@ -113,7 +111,6 @@ pub const Editor = struct {
     }
 
     pub fn deinit(self: *Editor) void {
-        // self.imp_repl_o will deinit itself when repl window is closed
         if (self.completer_o) |completer| self.app.allocator.free(completer.prefix);
         self.buffer.deregisterEditor(self);
         self.cursors.deinit();
@@ -194,7 +191,6 @@ pub const Editor = struct {
                             .z => self.undo(text_rect),
                             .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
                             .tab => for (self.cursors.items) |*cursor| self.indent(cursor),
-                            .enter => self.openRepl(),
                             else => accept_char_input = true,
                         }
                     } else if (key_event.mods.control and key_event.mods.shift) {
@@ -220,7 +216,6 @@ pub const Editor = struct {
                                 self.top_pixel = 0;
                             },
                             .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
-                            .enter => self.commit(),
                             else => accept_char_input = true,
                         }
                     } else if (key_event.mods.shift) {
@@ -333,9 +328,6 @@ pub const Editor = struct {
             // scroll it into editor
             self.prev_main_cursor_head_pos = self.getMainCursor().head.pos;
             self.scrollPosIntoView(text_rect, self.getMainCursor().head.pos);
-
-            // eval with new cursor position
-            self.eval();
         }
 
         // update buffer last cursor_head/center_pos
@@ -404,19 +396,6 @@ pub const Editor = struct {
                 range: [2]usize,
             };
             var squigglies = u.ArrayList(Squiggly).init(self.app.frame_allocator);
-            //// draw eval/error squigglies
-            //if (self.imp_repl_o) |imp_repl| {
-            //    if (imp_repl.last_request_id == imp_repl.last_response.id) {
-            //        switch (imp_repl.last_response.kind) {
-            //            .Ok => |ok_range_o| if (ok_range_o) |ok_range|
-            //                squigglies.append(.{ .range = ok_range, .color = style.emphasisGreen }) catch u.oom(),
-            //            .Err => |error_range_o| if (error_range_o) |error_range|
-            //                squigglies.append(.{ .range = error_range, .color = style.emphasisRed }) catch u.oom(),
-            //        }
-            //    }
-            //    for (imp_repl.last_response.warnings) |warning_range|
-            //        squigglies.append(.{ .range = warning_range, .color = style.emphasisOrange }) catch u.oom();
-            //}
             for (squigglies.items) |squiggly| {
                 if (squiggly.range[0] != 0) {
                     const highlight_start_pos = u.min(u.max(squiggly.range[0], line_range[0]), line_range[1]);
@@ -770,7 +749,6 @@ pub const Editor = struct {
                 }
             }
         }
-        self.eval();
     }
 
     pub fn delete(self: *Editor, start: usize, end: usize) void {
@@ -788,7 +766,6 @@ pub const Editor = struct {
                 self.updateCol(point);
             }
         }
-        self.eval();
     }
 
     pub fn updateBeforeReplace(self: *Editor) [][2][2]usize {
@@ -811,7 +788,6 @@ pub const Editor = struct {
                 self.updatePos(point, pos);
             }
         }
-        self.eval();
     }
 
     pub fn deleteSelection(self: *Editor, cursor: *Cursor) void {
@@ -1165,40 +1141,5 @@ pub const Editor = struct {
             self.top_pixel = cursor_top_pixel - @intCast(isize, text_rect.h) + @intCast(isize, self.app.atlas.char_height);
         if (cursor_bottom_pixel <= self.top_pixel + @intCast(isize, self.app.atlas.char_height))
             self.top_pixel = cursor_top_pixel;
-    }
-
-    fn openRepl(self: *Editor) void {
-        _ = self;
-        //if (self.imp_repl_o == null) {
-        //    self.imp_repl_o = ImpRepl.init(self.app, self);
-        //    var window = Window.init(self.app, .NotFloating);
-        //    window.pushView(self.imp_repl_o.?);
-        //    _ = self.app.registerWindow(window);
-        //    self.eval();
-        //}
-    }
-
-    fn eval(self: *Editor) void {
-        _ = self;
-        //if (self.imp_repl_o) |imp_repl| {
-        //    const cursor = self.getMainCursor();
-        //    imp_repl.setProgram(
-        //        self.buffer.bytes.items,
-        //        if (self.marked) .{ .Range = self.getSelectionRange(cursor) } else .{ .Point = cursor.head.pos },
-        //        .Eval,
-        //    );
-        //}
-    }
-
-    fn commit(self: *Editor) void {
-        _ = self;
-        //if (self.imp_repl_o) |imp_repl| {
-        //    const cursor = self.getMainCursor();
-        //    imp_repl.setProgram(
-        //        self.buffer.bytes.items,
-        //        if (self.marked) .{ .Range = self.getSelectionRange(cursor) } else .{ .Point = cursor.head.pos },
-        //        .Commit,
-        //    );
-        //}
     }
 };

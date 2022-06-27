@@ -3,7 +3,6 @@ const focus = @import("../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
 const style = focus.style;
-const imp2 = @import("../../imp2/lib/imp.zig");
 
 pub const Language = enum {
     Zig,
@@ -11,7 +10,6 @@ pub const Language = enum {
     Shell,
     Julia,
     Javascript,
-    Imp2,
     Nix,
     Clojure,
     Unknown,
@@ -28,8 +26,6 @@ pub const Language = enum {
             return .Julia
         else if (std.mem.endsWith(u8, filename, ".js"))
             return .Javascript
-        else if (std.mem.endsWith(u8, filename, ".imp2"))
-            return .Imp2
         else if (std.mem.endsWith(u8, filename, ".nix"))
             return .Nix
         else if (std.mem.endsWith(u8, filename, ".clj") or std.mem.endsWith(u8, filename, ".cljs") or std.mem.endsWith(u8, filename, ".cljc"))
@@ -40,7 +36,7 @@ pub const Language = enum {
 
     pub fn commentString(self: Language) ?[]const u8 {
         return switch (self) {
-            .Zig, .Java, .Javascript, .Imp2 => "//",
+            .Zig, .Java, .Javascript => "//",
             .Shell, .Julia, .Nix => "#",
             .Clojure => ";",
             .Unknown => null,
@@ -93,43 +89,6 @@ pub const Language = enum {
                             colors[token.loc.start..token.loc.end],
                             style.keyword_color,
                         ),
-                    }
-                }
-            },
-            .Imp2 => {
-                var arena = u.ArenaAllocator.init(allocator);
-                defer arena.deinit();
-                var error_info: ?imp2.lang.pass.parse.ErrorInfo = null;
-                var parser = imp2.lang.pass.parse.Parser{
-                    .arena = &arena,
-                    .source = source[range[0]..range[1]],
-                    .exprs = u.ArrayList(imp2.lang.repr.syntax.Expr).init(arena.allocator()),
-                    .from_source = u.ArrayList([2]usize).init(arena.allocator()),
-                    .position = 0,
-                    .error_info = &error_info,
-                };
-                std.mem.set(u.Color, colors, style.comment_color);
-                while (true) {
-                    const start = parser.position;
-                    if (parser.nextTokenMaybe()) |maybe_token| {
-                        if (maybe_token) |token| {
-                            switch (token) {
-                                .EOF => break,
-                                .Number, .Text, .Name => std.mem.set(
-                                    u.Color,
-                                    colors[start..parser.position],
-                                    style.identColor(parser.source[start..parser.position]),
-                                ),
-                                else => std.mem.set(
-                                    u.Color,
-                                    colors[start..parser.position],
-                                    style.keyword_color,
-                                ),
-                            }
-                        }
-                    } else |err| {
-                        if (err == error.OutOfMemory) u.oom();
-                        parser.position += 1;
                     }
                 }
             },
