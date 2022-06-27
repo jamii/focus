@@ -206,7 +206,7 @@ pub const App = struct {
     last_error_lister_selected: usize,
 
     fn glfw_error_callback(error_code: glfw.Error, description: [:0]const u8) void {
-        std.debug.print("{}: {s}", .{ error_code, description });
+        std.debug.print("{}: {s}\n", .{ error_code, description });
     }
 
     pub fn init(allocator: u.Allocator, server_socket: ServerSocket) *App {
