@@ -175,11 +175,16 @@ const ns_per_frame = @divTrunc(1_000_000_000, 60);
 
 pub fn run(allocator: u.Allocator, server_socket: ServerSocket) void {
     var app = App.init(allocator, server_socket);
+    var timer = std.time.Timer.start() catch u.panic("Couldn't start timer", .{});
     while (true) {
+        _ = timer.lap();
         app.frame();
-        if (app.windows.items.len == 0)
-            // usually on vsync for frame timing, but if we have nothing to render then we'll spin
-            std.time.sleep(ns_per_frame);
+        const used_ns = timer.read();
+        if (used_ns < ns_per_frame)
+            // TODO can we correct for drift from sleep imprecision?
+            std.time.sleep(ns_per_frame - used_ns)
+        else
+            u.warn("Frame took {} ns\n", .{used_ns});
     }
 }
 

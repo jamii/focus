@@ -81,8 +81,6 @@ pub const Window = struct {
         // init gl
         glfw.makeContextCurrent(glfw_window) catch |err|
             u.panic("Error making context current: {}", .{err});
-        glfw.swapInterval(1) catch |err|
-            u.panic("Setting swap interval failed: {}", .{err});
         c.glEnable(c.GL_BLEND);
         c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
         c.glDisable(c.GL_CULL_FACE);
@@ -91,6 +89,10 @@ pub const Window = struct {
         c.glEnableClientState(c.GL_VERTEX_ARRAY);
         c.glEnableClientState(c.GL_TEXTURE_COORD_ARRAY);
         c.glEnableClientState(c.GL_COLOR_ARRAY);
+
+        // disable vsync - too many problems with multiple windows on multiple desktops
+        glfw.swapInterval(0) catch |err|
+            u.panic("Setting swap interval failed: {}", .{err});
 
         const self = Window{
             .app = app,
