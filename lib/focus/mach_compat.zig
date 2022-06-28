@@ -48,7 +48,7 @@ fn keyCallback(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.A
     };
     const event = switch (action) {
         .press => Event{ .key_press = key_event },
-        .repeat => Event{ .key_press = key_event },
+        .repeat => Event{ .key_repeat = key_event },
         .release => Event{ .key_release = key_event },
     };
     events.append(event) catch u.oom();
