@@ -42,7 +42,7 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     exe.linkSystemLibrary("GL");
     exe.linkSystemLibrary("pcre2-8");
     exe.setOutputDir("./zig-cache");
-    exe.addPackage(freetype.freetype_pkg);
+    exe.addPackage(freetype.pkg);
     freetype.link(b, exe, .{});
     exe.addPackage(glfw.pkg);
     glfw.link(b, exe, .{
@@ -51,7 +51,8 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
         .opengl = true,
         .gles = false,
         // TODO try wayland
-        .linux_window_manager = .X11,
+        .x11 = true,
+        .wayland = false,
         .system_sdk = .{},
     });
     exe.omit_frame_pointer = false;
