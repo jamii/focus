@@ -74,7 +74,7 @@ pub const Selector = struct {
         const old_selected = self.selected;
         for (events) |event| {
             switch (event) {
-                .key_press => |key_press_event| {
+                .key_press, .key_repeat => |key_press_event| {
                     if (key_press_event.mods.control) {
                         switch (key_press_event.key) {
                             .k => self.selected += 1,

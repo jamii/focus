@@ -194,7 +194,7 @@ pub const Window = struct {
             for (events) |event| {
                 var handled = false;
                 switch (event) {
-                    .key_press => |key_event| {
+                    .key_press, .key_repeat => |key_event| {
                         if (key_event.mods.control) {
                             switch (key_event.key) {
                                 .q => if (self.getTopViewIfEditor() == null) self.popView(),

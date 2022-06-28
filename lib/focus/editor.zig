@@ -154,7 +154,7 @@ pub const Editor = struct {
         for (events) |event| {
             self.last_event_ms = self.app.frame_time_ms;
             switch (event) {
-                .key_press => |key_event| {
+                .key_press, .key_repeat => |key_event| {
                     if (key_event.mods.control and !key_event.mods.shift) {
                         switch (key_event.key) {
                             .space => self.toggleMark(),
