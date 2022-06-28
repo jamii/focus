@@ -344,9 +344,7 @@ pub const Editor = struct {
         const visible_end_line = visible_start_line + num_visible_lines;
 
         // draw background
-        window.queueRect(text_rect, style.background_color);
-        window.queueRect(left_gutter_rect, style.background_color);
-        window.queueRect(right_gutter_rect, style.background_color);
+        window.queueRect(frame_rect, style.background_color);
 
         // can't draw if the window is too narrow
         if (max_chars_per_line == 0) return;

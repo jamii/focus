@@ -478,7 +478,7 @@ pub const Window = struct {
             var src = if (char < self.app.atlas.char_to_rect.len)
                 self.app.atlas.char_to_rect[char]
             else
-                // TODO tofu
+                // tofu
                 self.app.atlas.char_to_rect[0];
             const max_w = u.max(0, max_x - dst.x);
             const max_h = u.max(0, max_y - dst.y);
