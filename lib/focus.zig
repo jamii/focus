@@ -175,15 +175,7 @@ const ns_per_frame = @divTrunc(1_000_000_000, 60);
 
 pub fn run(allocator: u.Allocator, server_socket: ServerSocket) void {
     var app = App.init(allocator, server_socket);
-    var timer = std.time.Timer.start() catch u.panic("Couldn't start timer", .{});
-    while (true) {
-        _ = timer.lap();
-        app.frame();
-        const used_ns = timer.read();
-        if (used_ns > ns_per_frame) u.warn("Frame took {} ns\n", .{used_ns});
-        // TODO can we correct for drift from sleep imprecision?
-        if (used_ns < ns_per_frame) std.time.sleep(ns_per_frame - used_ns);
-    }
+    while (true) app.frame();
 }
 
 pub const App = struct {

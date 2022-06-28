@@ -81,6 +81,8 @@ pub const Window = struct {
         // init gl
         glfw.makeContextCurrent(glfw_window) catch |err|
             u.panic("Error making context current: {}", .{err});
+        glfw.swapInterval(1) catch |err|
+            u.panic("Setting swap interval failed: {}", .{err});
         c.glEnable(c.GL_BLEND);
         c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
         c.glDisable(c.GL_CULL_FACE);
@@ -89,11 +91,6 @@ pub const Window = struct {
         c.glEnableClientState(c.GL_VERTEX_ARRAY);
         c.glEnableClientState(c.GL_TEXTURE_COORD_ARRAY);
         c.glEnableClientState(c.GL_COLOR_ARRAY);
-
-        // no vsync - causes problems with multiple windows
-        // see https://stackoverflow.com/questions/29617370/multiple-opengl-contexts-multiple-windows-multithreading-and-vsync
-        glfw.swapInterval(0) catch |err|
-            u.panic("Setting swap interval failed: {}", .{err});
 
         const self = Window{
             .app = app,
