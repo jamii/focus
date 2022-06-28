@@ -175,7 +175,12 @@ const ns_per_frame = @divTrunc(1_000_000_000, 60);
 
 pub fn run(allocator: u.Allocator, server_socket: ServerSocket) void {
     var app = App.init(allocator, server_socket);
-    while (true) app.frame();
+    while (true) {
+        app.frame();
+        if (app.windows.items.len == 0)
+            // usually on vsync for frame timing, but if we have nothing to render then we'll spin
+            std.time.sleep(ns_per_frame);
+    }
 }
 
 pub const App = struct {
