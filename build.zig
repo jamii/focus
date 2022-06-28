@@ -50,8 +50,9 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
         .metal = false,
         .opengl = true,
         .gles = false,
-        // TODO try wayland
         .x11 = true,
+        // TODO try wayland
+        // https://github.com/hexops/mach/issues/347
         .wayland = false,
         .system_sdk = .{},
     });
