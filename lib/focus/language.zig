@@ -95,6 +95,7 @@ pub const Language = enum {
                 }
             },
             .Clojure => {
+                // TODO parse only on changes
                 var tokenizer = clojure.Tokenizer.init(source);
                 std.mem.set(u.Color, colors, style.comment_color);
                 while (true) {
