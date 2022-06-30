@@ -110,7 +110,7 @@ pub const Tokenizer = struct {
                     '#' => state = .dispatch,
                     ' ', ',', '\r', '\n', '\t' => state = .whitespace,
                     '0'...'9' => state = .number,
-                    'a'...'z', 'A'...'Z', '*', '+', '!', '_', '?', '<', '>', '=' => {
+                    'a'...'z', 'A'...'Z', '&', '*', '+', '!', '_', '?', '<', '>', '=', '.', '$' => {
                         enough_chars = true;
                         state = .symbol;
                     },
@@ -202,10 +202,7 @@ pub const Tokenizer = struct {
                         return .err;
                     },
                     '^' => return .meta,
-                    '#' => {
-                        symbol_token = .symbolic_value;
-                        state = .symbol;
-                    },
+                    '#' => return .symbolic_value,
                     '\'' => return .var_symbol,
                     '"' => {
                         string_token = .regex;
@@ -217,7 +214,7 @@ pub const Tokenizer = struct {
                     '!' => state = .comment,
                     '<' => state = .unreadable,
                     '_' => return .discard,
-                    'a'...'z', 'A'...'Z', '*', '+', '>' => {
+                    'a'...'z', 'A'...'Z', '&', '*', '+', '>' => {
                         symbol_token = .tag;
                         enough_chars = true;
                         state = .symbol;
@@ -268,14 +265,21 @@ pub const Tokenizer = struct {
                 },
                 .symbol => switch (char) {
                     // TODO validate symbols
-                    'a'...'z', 'A'...'Z', '*', '+', '!', '_', '?', '<', '>', '=', '0'...'9', '\'', '-', '.', '$', '/', '#' => enough_chars = true,
+                    'a'...'z', 'A'...'Z', '&', '*', '+', '!', '_', '?', '<', '>', '=', '0'...'9', '\'', '-', '.', '$', '/', '#' => enough_chars = true,
                     else => {
                         self.pos -= 1;
                         return if (enough_chars) symbol_token else .err;
                     },
                 },
                 .minus => switch (char) {
-                    'a'...'z', 'A'...'Z', '*', '+', '!', '_', '?', '<', '>', '=', '\'', '-', '.', '$', '/', '#' => state = .symbol,
+                    'a'...'z', 'A'...'Z', '&', '*', '+', '!', '_', '?', '<', '>', '=', '\'', '-', '.', '$', '/', '#' => {
+                        enough_chars = true;
+                        state = .symbol;
+                    },
+                    ' ', ',', '\r', '\n', '\t', '(', ')', '[', ']', '{', '}', '"' => {
+                        self.pos -= 1;
+                        return .symbol;
+                    },
                     '0'...'9' => state = .number,
                     else => return .err,
                 },
@@ -451,11 +455,11 @@ test "keywords" {
 test "dispatch" {
     try testTokenize("#", &.{.err});
     try testTokenize("#^1", &.{ .meta, .number });
-    try testTokenize("##", &.{.err});
-    try testTokenize("##NaN", &.{.symbolic_value});
-    try testTokenize("##-NaN", &.{.symbolic_value});
-    try testTokenize("##Inf", &.{.symbolic_value});
-    try testTokenize("##-Inf", &.{.symbolic_value});
+    try testTokenize("##", &.{.symbolic_value});
+    try testTokenize("##NaN", &.{ .symbolic_value, .symbol });
+    try testTokenize("##-NaN", &.{ .symbolic_value, .symbol });
+    try testTokenize("##Inf", &.{ .symbolic_value, .symbol });
+    try testTokenize("##-Inf", &.{ .symbolic_value, .symbol });
     try testTokenize("#'foo", &.{ .var_symbol, .symbol });
     try testTokenize("#'[]", &.{ .var_symbol, .open_vec, .close_vec }); // yeah, this parses in clojure
     try testTokenize(
@@ -487,9 +491,6 @@ test "dispatch" {
     try testTokenize("#::{}", &.{ .namespaced_map_this, .open_map, .close_map });
     try testTokenize("#::foo", &.{ .namespaced_map_this, .symbol });
     try testTokenize("#:foo{}", &.{ .namespaced_map_alias, .symbol, .open_map, .close_map });
-
-    // these should fail validation
-    try testTokenize("##foo", &.{.symbolic_value});
 }
 
 test "boundaries" {
@@ -516,101 +517,15 @@ test "boundaries" {
     , &.{ .open_vec, .character_unicode_escape, .open_vec, .close_vec, .close_vec });
 }
 
-test "real code" {}
+test "real code" {
+    try testTokenize("(- 1)", &.{ .open_list, .symbol, .whitespace, .number, .close_list });
 
-//[\u0043"foo"]
-//[\C "foo"]
+    try testTokenize(
+        \\(.startsWith(:uri request) "/out")
+    , &.{ .open_list, .symbol, .open_list, .keyword, .whitespace, .symbol, .close_list, .whitespace, .string, .close_list });
 
-//[\u0043%4]
-
-//[\u0043#foo]
-
-//[\u0043#foo[]]
-
-//user=> [\u0043{}]
-//[\C {}]
-
-//user=> [\u0043#{}]
-
-//user=> #(%20)
-//#object[user$eval265$fn__266 0x1c025cb "user$eval265$fn__266@1c025cb"]
-//user=> #(%)
-//#object[user$eval271$fn__272 0x5ecba515 "user$eval271$fn__272@5ecba515"]
-//user=> #(%1)
-//#object[user$eval277$fn__278 0x60723d6a "user$eval277$fn__278@60723d6a"]
-//user=> #(%1&)
-
-//user=> [##NaN1 ]
-//Syntax error reading source at (REPL:53:8).
-//Unknown symbolic value: ##NaN1
-//Syntax error reading source at (REPL:53:10).
-//Unmatched delimiter: ]
-//user=> [##NaN 1]
-//[##NaN 1]
-//user=> [##NaN"foo"]
-//[##NaN "foo"]
-
-//user=> #? () ()
-//()
-//user=> [#? () ()]
-//[()]
-//user=>
-
-//user=> (def -a1)
-//#'user/-a1
-//user=> (def -1a)
-//Syntax error reading source at (REPL:78:9).
-//Invalid number: -1a
-//Syntax error reading source at (REPL:78:10).
-//Unmatched delimiter: )
-
-//(def ab'cd)
-
-//user=> (def -'foo)
-//#'user/-'foo
-
-//user=> '-/
-//Syntax error reading source at (REPL:90:0).
-//Invalid token: -/
-//user=> '-//
-//-//
-
-//user=> #>foo []
-//Syntax error reading source at (REPL:91:9).
-//No reader function for tag >foo
-
-//user=> 32r123Zz
-//34922
-//user=> 32N1
-//Syntax error reading source at (REPL:99:0).
-//Invalid number: 32N1
-
-//user=> 32r123N1
-//1117921
-
-//user=> :1
-//:1
-//user=> :/
-//:/
-//user=> :$
-//:$
-//user=> :.
-//:.
-//user=> :#
-//:#
-//user=> :#
-//user=> :Ã
-//:Ã
-
-//[:as[]]
-
-//[\o5[]]
-
-//user=> #'#inst "2022-06-30T15:45:28.733-00:00"
-//Syntax error (ClassCastException) compiling var at (REPL:0:0).
-//class java.util.Date cannot be cast to class clojure.lang.Symbol (java.util.Date is in module java.base of loader 'bootstrap'; clojure.lang.Symbol is in unnamed module of loader 'app')
-
-//user=> ##inst "2022-06-30T15:45:28.733-00:00"
-//Syntax error reading source at (REPL:9:7).
-//Unknown symbolic value: ##inst
-//"2022-06-30T15:45:28.733-00:00"
+    // TODO clojure does this
+    //try testTokenize(
+    //    \\##inst "2022-06-30T15:45:28.733-00:00"
+    //, &.{ .symbolic_value, .tag, .whitespace, .string });
+}
