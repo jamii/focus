@@ -129,6 +129,9 @@ pub const Language = enum {
                 var tokenizer = std.zig.Tokenizer.init(source_z);
                 while (true) {
                     var token = tokenizer.next();
+                    if (token.loc.end > token.loc.start and source_z[token.loc.end - 1] == '\n')
+                        // make sure that no tokens include the \n
+                        token.loc.end -= 1;
                     switch (token.tag) {
                         .eof => break,
                         else => token_ranges.append(.{
