@@ -94,6 +94,37 @@ pub const Language = enum {
                     }
                 }
             },
+            .Clojure => {
+                var tokenizer = clojure.Tokenizer.init(source);
+                std.mem.set(u.Color, colors, style.comment_color);
+                while (true) {
+                    const source_start = tokenizer.pos;
+                    const token = tokenizer.next();
+                    const source_end = tokenizer.pos;
+                    if (token == .eof) break;
+                    if (source_end < range[0] or source_start > range[1]) continue;
+                    const colors_start = if (source_start > range[0]) source_start - range[0] else 0;
+                    const colors_end = if (source_end > range[1]) range[1] - range[0] else source_end - range[0];
+                    switch (token) {
+                        .err => std.mem.set(
+                            u.Color,
+                            colors[colors_start..colors_end],
+                            style.emphasisRed,
+                        ),
+                        .symbol, .keyword => std.mem.set(
+                            u.Color,
+                            colors[colors_start..colors_end],
+                            style.identColor(source[source_start..source_end]),
+                        ),
+                        .comment => {},
+                        else => std.mem.set(
+                            u.Color,
+                            colors[colors_start..colors_end],
+                            style.keyword_color,
+                        ),
+                    }
+                }
+            },
             else => {
                 std.mem.set(u.Color, colors, style.text_color);
             },
