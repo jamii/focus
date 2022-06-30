@@ -4,6 +4,8 @@ const u = focus.util;
 const c = focus.util.c;
 const style = focus.style;
 
+pub const clojure = @import("./language/clojure.zig");
+
 pub const Language = enum {
     Zig,
     Java,
