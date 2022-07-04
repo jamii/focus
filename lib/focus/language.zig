@@ -97,12 +97,27 @@ pub const Language = union(enum) {
         };
     }
 
-    pub fn getTokenRangeAround(self: Language, pos: usize) ?[2]usize {
+    pub fn getParenMatches(self: Language) []const ?usize {
+        return switch (self) {
+            .Zig => |state| state.paren_matches,
+            .Clojure => |state| state.paren_matches,
+            else => &.{},
+        };
+    }
+
+    pub fn getTokenIxAround(self: Language, pos: usize) ?usize {
         const token_ranges = self.getTokenRanges();
-        for (token_ranges) |token_range| {
-            if (token_range[0] <= pos and pos <= token_range[1]) return token_range;
+        for (token_ranges) |token_range, i| {
+            if (token_range[0] <= pos and pos < token_range[1]) return i;
         }
         return null;
+    }
+
+    pub fn getTokenRangeAround(self: Language, pos: usize) ?[2]usize {
+        return if (self.getTokenIxAround(pos)) |token_ix|
+            self.getTokenRanges()[token_ix]
+        else
+            null;
     }
 
     pub fn format(self: Language, source: []const u8) ?[]const u8 {
@@ -112,48 +127,10 @@ pub const Language = union(enum) {
         };
     }
 
-    pub fn isCloseParen(char: u8) bool {
-        return char == ')' or char == '}' or char == ']';
-    }
-
-    pub fn isOpenParen(char: u8) bool {
-        return char == '(' or char == '{' or char == '[';
-    }
-
-    fn matchParenBackwards(self: *Language, source: []const u8, pos: usize) ?usize {
-        _ = self;
-        var num_closing: usize = 0;
-        var search_pos = pos;
-        while (search_pos > 0) : (search_pos -= 1) {
-            const char = source[search_pos];
-            if (isCloseParen(char)) num_closing += 1;
-            if (isOpenParen(char)) num_closing -= 1;
-            if (num_closing == 0) return search_pos;
-        }
-        return null;
-    }
-
-    fn matchParenForwards(self: *Language, source: []const u8, pos: usize) ?usize {
-        _ = self;
-        const len = source.len;
-        var num_opening: usize = 0;
-        var search_pos = pos;
-        while (search_pos < len) : (search_pos += 1) {
-            const char = source[search_pos];
-            if (isCloseParen(char)) num_opening -= 1;
-            if (isOpenParen(char)) num_opening += 1;
-            if (num_opening == 0) return search_pos;
-        }
-        return null;
-    }
-
-    pub fn matchParen(self: *Language, source: []const u8, pos: usize) ?[2]usize {
-        if (pos < source.len and isOpenParen(source[pos]))
-            if (self.matchParenForwards(source, pos)) |matching_pos|
-                return [2]usize{ pos, matching_pos };
-        if (pos > 0 and isCloseParen(source[pos - 1]))
-            if (self.matchParenBackwards(source, pos - 1)) |matching_pos|
-                return [2]usize{ pos - 1, matching_pos };
+    pub fn matchParen(self: Language, pos: usize) ?usize {
+        if (self.getTokenIxAround(pos)) |token_ix|
+            if (self.getParenMatches()[token_ix]) |matching_ix|
+                return self.getTokenRanges()[matching_ix][0];
         return null;
     }
 };

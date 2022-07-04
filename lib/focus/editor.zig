@@ -351,25 +351,27 @@ pub const Editor = struct {
         if (max_chars_per_line == 0) return;
 
         // draw matching paren
-        if (self.buffer.language.matchParen(
-            self.buffer.bytes.items,
-            self.getMainCursor().head.pos,
-        )) |matching_poss| {
-            for (matching_poss) |matching_pos| {
-                const line_col = self.line_wrapped_buffer.getLineColForPos(matching_pos);
-                if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
-                    const line_top_pixel = @intCast(u.Coord, line_col[0]) * self.app.atlas.char_height;
-                    const y = text_rect.y + @intCast(u.Coord, line_top_pixel - self.top_pixel);
-                    const x = text_rect.x + @intCast(u.Coord, line_col[1]) * self.app.atlas.char_width;
-                    window.queueRect(
-                        .{
-                            .x = x,
-                            .y = @intCast(u.Coord, y),
-                            .w = self.app.atlas.char_width,
-                            .h = self.app.atlas.char_height,
-                        },
-                        style.paren_match_color,
-                    );
+        {
+            const pos = self.getMainCursor().head.pos;
+            if (pos > 0) {
+                if (self.buffer.language.matchParen(pos - 1)) |matching_pos| {
+                    for ([2]usize{ pos - 1, matching_pos }) |highlight_pos| {
+                        const line_col = self.line_wrapped_buffer.getLineColForPos(highlight_pos);
+                        if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
+                            const line_top_pixel = @intCast(u.Coord, line_col[0]) * self.app.atlas.char_height;
+                            const y = text_rect.y + @intCast(u.Coord, line_top_pixel - self.top_pixel);
+                            const x = text_rect.x + @intCast(u.Coord, line_col[1]) * self.app.atlas.char_width;
+                            window.queueRect(
+                                .{
+                                    .x = x,
+                                    .y = @intCast(u.Coord, y),
+                                    .w = self.app.atlas.char_width,
+                                    .h = self.app.atlas.char_height,
+                                },
+                                style.paren_match_color,
+                            );
+                        }
+                    }
                 }
             }
         }

@@ -67,6 +67,8 @@ pub const State = struct {
     }
 
     pub fn deinit(self: *State) void {
+        self.allocator.free(self.paren_matches);
+        self.allocator.free(self.paren_levels);
         self.allocator.free(self.token_ranges);
         self.allocator.free(self.tokens);
         self.* = undefined;
@@ -81,8 +83,10 @@ pub const State = struct {
     pub fn updateAfterChange(self: *State, source: []const u8, insert_range: [2]usize) void {
         _ = insert_range;
         const allocator = self.allocator;
+        const mode = self.mode;
         self.deinit();
         self.* = State.init(allocator, source);
+        self.mode = mode;
     }
 
     pub fn toggleMode(self: *State) void {
