@@ -269,14 +269,13 @@ pub const Buffer = struct {
     }
 
     pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
-        // TODO avoid hacky fake key
-        const line = std.sort.binarySearch([2]usize, [2]usize{ pos, pos }, self.line_ranges.items, {}, struct {
-            fn compare(_: void, key: [2]usize, item: [2]usize) std.math.Order {
-                if (key[0] < item[0]) return .lt;
-                if (key[0] > item[1]) return .gt;
+        const line = u.binarySearch([2]usize, pos, self.line_ranges.items, {}, struct {
+            fn compare(_: void, pos_: usize, item: [2]usize) std.math.Order {
+                if (pos_ < item[0]) return .lt;
+                if (pos_ > item[1]) return .gt;
                 return .eq;
             }
-        }.compare).?;
+        }.compare).Found;
         const line_range = self.line_ranges.items[line];
         return .{ line, pos - line_range[0] };
     }
