@@ -518,7 +518,7 @@ pub const Editor = struct {
             if (completer.prefix.len == 0) break :completer;
 
             // get completions
-            const completions = self.app.getCompletions(completer.prefix);
+            const completions = self.app.getCompletions(std.meta.activeTag(self.buffer.language), completer.prefix);
 
             if (completions.len == 0) break :completer;
 

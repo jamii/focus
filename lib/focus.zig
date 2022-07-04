@@ -373,12 +373,13 @@ pub const App = struct {
         }
     }
 
-    pub fn getCompletions(self: *App, prefix: []const u8) [][]const u8 {
+    pub fn getCompletions(self: *App, language: std.meta.Tag(Language), prefix: []const u8) [][]const u8 {
         var results = u.ArrayList([]const u8).init(self.frame_allocator);
 
         var buffer_iter = self.buffers.iterator();
         while (buffer_iter.next()) |entry| {
-            entry.value_ptr.*.getCompletionsInto(prefix, &results);
+            if (std.meta.activeTag(entry.value_ptr.*.language) == language)
+                entry.value_ptr.*.getCompletionsInto(prefix, &results);
         }
 
         std.sort.sort([]const u8, results.items, {}, struct {
