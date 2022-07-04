@@ -146,6 +146,8 @@ pub const Buffer = struct {
 
         self.bytes.deinit();
 
+        self.language.deinit();
+
         self.source.deinit(self.app);
 
         self.app.allocator.destroy(self);

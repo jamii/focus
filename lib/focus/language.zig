@@ -4,10 +4,11 @@ const u = focus.util;
 const c = focus.util.c;
 const style = focus.style;
 
+pub const zig = @import("./language/zig.zig");
 pub const clojure = @import("./language/clojure.zig");
 
 pub const Language = union(enum) {
-    Zig,
+    Zig: zig.State,
     Clojure: clojure.State,
     Java,
     Shell,
@@ -19,7 +20,7 @@ pub const Language = union(enum) {
     pub fn init(allocator: u.Allocator, filename: []const u8, source: []const u8) Language {
         // TODO writing this as `return if ...` causes a confusing compiler error
         if (std.mem.endsWith(u8, filename, ".zig"))
-            return .Zig
+            return .{ .Zig = zig.State.init(allocator, source) }
         else if (std.mem.endsWith(u8, filename, ".clj") or std.mem.endsWith(u8, filename, ".cljs") or std.mem.endsWith(u8, filename, ".cljc"))
             return .{ .Clojure = clojure.State.init(allocator, source) }
         else if (std.mem.endsWith(u8, filename, ".java"))
@@ -37,13 +38,16 @@ pub const Language = union(enum) {
     }
 
     pub fn deinit(self: *Language) void {
-        switch (self) {
-            .Clojure => |state| state.deinit(),
+        switch (self.*) {
+            .Zig => |*state| state.deinit(),
+            .Clojure => |*state| state.deinit(),
+            else => {},
         }
     }
 
     pub fn updateBeforeChange(self: *Language, source: []const u8, delete_range: [2]usize) void {
         switch (self.*) {
+            .Zig => |*state| state.updateBeforeChange(source, delete_range),
             .Clojure => |*state| state.updateBeforeChange(source, delete_range),
             else => {},
         }
@@ -51,6 +55,7 @@ pub const Language = union(enum) {
 
     pub fn updateAfterChange(self: *Language, source: []const u8, insert_range: [2]usize) void {
         switch (self.*) {
+            .Zig => |*state| state.updateAfterChange(source, insert_range),
             .Clojure => |*state| state.updateAfterChange(source, insert_range),
             else => {},
         }
@@ -77,44 +82,7 @@ pub const Language = union(enum) {
         const colors = allocator.alloc(u.Color, range[1] - range[0]) catch u.oom();
         std.mem.set(u.Color, colors, style.text_color);
         switch (self) {
-            .Zig => {
-                const source_z = allocator.dupeZ(u8, source[range[0]..range[1]]) catch u.oom();
-                defer allocator.free(source_z);
-                var tokenizer = std.zig.Tokenizer.init(source_z);
-                std.mem.set(u.Color, colors, style.comment_color);
-                while (true) {
-                    var token = tokenizer.next();
-                    switch (token.tag) {
-                        .eof => break,
-                        .doc_comment, .container_doc_comment => {},
-                        .identifier, .builtin, .integer_literal, .float_literal => std.mem.set(
-                            u.Color,
-                            colors[token.loc.start..token.loc.end],
-                            style.identColor(tokenizer.buffer[token.loc.start..token.loc.end]),
-                        ),
-                        .keyword_try, .keyword_catch => std.mem.set(
-                            u.Color,
-                            colors[token.loc.start..token.loc.end],
-                            style.emphasisRed,
-                        ),
-                        .keyword_defer, .keyword_errdefer => std.mem.set(
-                            u.Color,
-                            colors[token.loc.start..token.loc.end],
-                            style.emphasisOrange,
-                        ),
-                        .keyword_break, .keyword_continue, .keyword_return => std.mem.set(
-                            u.Color,
-                            colors[token.loc.start..token.loc.end],
-                            style.emphasisGreen,
-                        ),
-                        else => std.mem.set(
-                            u.Color,
-                            colors[token.loc.start..token.loc.end],
-                            style.keyword_color,
-                        ),
-                    }
-                }
-            },
+            .Zig => |state| state.highlight(source, range, colors),
             .Clojure => |state| state.highlight(source, range, colors),
             else => {},
         }
@@ -135,22 +103,10 @@ pub const Language = union(enum) {
         var token_ranges = u.ArrayList([2]usize).init(allocator);
         defer token_ranges.deinit();
         switch (self) {
-            .Zig => {
-                const source_z = allocator.dupeZ(u8, source[range[0]..range[1]]) catch u.oom();
-                defer allocator.free(source_z);
-                var tokenizer = std.zig.Tokenizer.init(source_z);
-                while (true) {
-                    var token = tokenizer.next();
-                    if (token.loc.end > token.loc.start and source_z[token.loc.end - 1] == '\n')
-                        // make sure that no tokens include the \n
-                        token.loc.end -= 1;
-                    switch (token.tag) {
-                        .eof => break,
-                        else => token_ranges.append(.{
-                            range[0] + token.loc.start,
-                            range[0] + token.loc.end,
-                        }) catch u.oom(),
-                    }
+            .Zig => |state| {
+                for (state.token_ranges) |token_range| {
+                    if (token_range[1] < range[0] or token_range[0] > range[1]) continue;
+                    token_ranges.append(token_range) catch u.oom();
                 }
             },
             .Clojure => |state| {
@@ -193,17 +149,10 @@ pub const Language = union(enum) {
         return null;
     }
 
-    pub fn format(self: Language, allocator: u.Allocator, source: []const u8) ?[]const u8 {
-        switch (self) {
-            .Zig => {
-                const source_z = allocator.dupeZ(u8, source) catch u.oom();
-                defer allocator.free(source_z);
-                var tree = std.zig.parse(allocator, source_z) catch u.oom();
-                if (tree.errors.len > 0) return null;
-                defer tree.deinit(allocator);
-                return tree.render(allocator) catch u.oom();
-            },
-            else => return null,
-        }
+    pub fn format(self: Language, source: []const u8) ?[]const u8 {
+        return switch (self) {
+            .Zig => |state| state.format(source),
+            else => null,
+        };
     }
 };

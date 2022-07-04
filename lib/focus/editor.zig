@@ -1070,7 +1070,7 @@ pub const Editor = struct {
     }
 
     pub fn tryFormat(self: *Editor) void {
-        if (self.buffer.language.format(self.app.frame_allocator, self.buffer.bytes.items)) |new_source|
+        if (self.buffer.language.format(self.buffer.bytes.items)) |new_source|
             self.buffer.replace(new_source);
     }
 
