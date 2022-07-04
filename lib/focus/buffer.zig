@@ -70,7 +70,7 @@ pub const Buffer = struct {
     redos: u.ArrayList([]Edit),
     modified_since_last_save: bool,
     line_ranges: u.ArrayList([2]usize),
-    completions: u.ArrayList([]const u8),
+    completions: u.ArrayList([2]usize),
     // editors must unregister before buffer deinits
     editors: u.ArrayList(*Editor),
     options: Options,
@@ -92,7 +92,7 @@ pub const Buffer = struct {
             .redos = u.ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
             .line_ranges = u.ArrayList([2]usize).init(app.allocator),
-            .completions = u.ArrayList([]const u8).init(app.allocator),
+            .completions = u.ArrayList([2]usize).init(app.allocator),
             .editors = u.ArrayList(*Editor).init(app.allocator),
             .options = options,
             .last_lost_focus_ms = 0,
@@ -124,7 +124,6 @@ pub const Buffer = struct {
         u.assert(self.editors.items.len == 0);
         self.editors.deinit();
 
-        for (self.completions.items) |completion| self.app.allocator.free(completion);
         self.completions.deinit();
 
         self.line_ranges.deinit();
@@ -353,9 +352,6 @@ pub const Buffer = struct {
     }
 
     fn rawInsert(self: *Buffer, pos: usize, bytes: []const u8) void {
-        const line_start = self.getLineStart(pos);
-        const line_end = self.getLineEnd(pos);
-        self.removeRangeFromCompletions(line_start, line_end);
         self.language.updateBeforeChange(self.bytes.items, .{ pos, pos });
 
         self.bytes.resize(self.bytes.items.len + bytes.len) catch u.oom();
@@ -363,7 +359,7 @@ pub const Buffer = struct {
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
 
         self.language.updateAfterChange(self.bytes.items, .{ pos, pos + bytes.len });
-        self.addRangeToCompletions(line_start, line_end + bytes.len);
+        self.updateCompletions();
 
         self.updateLineRanges();
         self.modified_since_last_save = true;
@@ -376,16 +372,13 @@ pub const Buffer = struct {
         u.assert(start <= end);
         u.assert(end <= self.bytes.items.len);
 
-        const line_start = self.getLineStart(start);
-        const line_end = self.getLineEnd(end);
-        self.removeRangeFromCompletions(line_start, line_end);
         self.language.updateBeforeChange(self.bytes.items, .{ start, end });
 
         std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
         self.bytes.shrinkAndFree(self.bytes.items.len - (end - start));
 
         self.language.updateAfterChange(self.bytes.items, .{ start, start });
-        self.addRangeToCompletions(line_start, line_end - (end - start));
+        self.updateCompletions();
 
         self.updateLineRanges();
         self.modified_since_last_save = true;
@@ -566,53 +559,20 @@ pub const Buffer = struct {
     fn updateCompletions(self: *Buffer) void {
         if (!self.options.enable_completions) return;
 
-        for (self.completions.items) |completion| self.app.allocator.free(completion);
         self.completions.resize(0) catch u.oom();
-        self.completions.appendSlice(self.language.getTokens(self.app.allocator, self.bytes.items, .{ 0, self.bytes.items.len })) catch u.oom();
-        std.sort.sort([]const u8, self.completions.items, {}, struct {
-            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-                return std.mem.lessThan(u8, a, b);
+        self.completions.appendSlice(self.language.getTokenRanges()) catch u.oom();
+        std.sort.sort([2]usize, self.completions.items, self.bytes.items, struct {
+            fn lessThan(source: []const u8, a: [2]usize, b: [2]usize) bool {
+                return std.mem.lessThan(u8, source[a[0]..a[1]], source[b[0]..b[1]]);
             }
         }.lessThan);
     }
 
-    // always called with entire lines
-    fn removeRangeFromCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
-        if (!self.options.enable_completions) return;
-
-        const completion_ranges = self.language.getTokenRanges(self.app.frame_allocator, self.bytes.items, .{ range_start, range_end });
-        for (completion_ranges) |completion_range| {
-            const completion = self.bytes.items[completion_range[0]..completion_range[1]];
-            const pos = u.binarySearch([]const u8, completion, self.completions.items, {}, (struct {
-                fn compare(_: void, a: []const u8, b: []const u8) std.math.Order {
-                    return std.mem.order(u8, a, b);
-                }
-            }).compare).Found;
-            const removed = self.completions.orderedRemove(pos);
-            self.app.allocator.free(removed);
-        }
-    }
-
-    // always called with entire lines
-    fn addRangeToCompletions(self: *Buffer, range_start: usize, range_end: usize) void {
-        if (!self.options.enable_completions) return;
-
-        const new_completions = self.language.getTokens(self.app.allocator, self.bytes.items, .{ range_start, range_end });
-        for (new_completions) |new_completion| {
-            const pos = u.binarySearch([]const u8, new_completion, self.completions.items, {}, (struct {
-                fn compare(_: void, a: []const u8, b: []const u8) std.math.Order {
-                    return std.mem.order(u8, a, b);
-                }
-            }).compare).position();
-            self.completions.insert(pos, self.app.dupe(new_completion)) catch u.oom();
-        }
-    }
-
     pub fn getCompletionsInto(self: *Buffer, prefix: []const u8, results: *u.ArrayList([]const u8)) void {
         // find first completion that might match prefix
-        const start = u.binarySearch([]const u8, prefix, self.completions.items, {}, (struct {
-            fn compare(_: void, a: []const u8, b: []const u8) std.math.Order {
-                return std.mem.order(u8, a, b);
+        const start = u.binarySearch([2]usize, prefix, self.completions.items, self.bytes.items, (struct {
+            fn compare(source: []const u8, a: []const u8, b: [2]usize) std.math.Order {
+                return std.mem.order(u8, a, source[b[0]..b[1]]);
             }
         }).compare).position();
 
@@ -621,15 +581,16 @@ pub const Buffer = struct {
         const completions_items = self.completions.items;
         const len = completions_items.len;
         while (end < len) : (end += 1) {
-            const completion = completions_items[end];
+            const completion_range = completions_items[end];
+            const completion = self.bytes.items[completion_range[0]..completion_range[1]];
             if (!std.mem.startsWith(u8, completion, prefix)) break;
-            if (completion.len > prefix.len)
-                results.append(completions_items[end]) catch u.oom();
+            if (completion.len > prefix.len) // completion != prefix
+                results.append(completion) catch u.oom();
         }
     }
 
     pub fn getCompletionRange(self: *Buffer, pos: usize) [2]usize {
-        return self.language.getTokenRangeAround(self.app.frame_allocator, self.bytes.items, pos) orelse .{ pos, pos };
+        return self.language.getTokenRangeAround(pos) orelse .{ pos, pos };
     }
 
     pub fn getCompletionPrefix(self: *Buffer, pos: usize) []const u8 {
@@ -644,9 +605,8 @@ pub const Buffer = struct {
 
     pub fn insertCompletion(self: *Buffer, pos: usize, completion: []const u8) void {
         const token_range = self.getCompletionRange(pos);
-        // (insert before delete so completion gets duped before self.completions updates)
+        self.delete(token_range[0], token_range[1]);
         self.insert(token_range[0], completion);
-        self.delete(token_range[0] + completion.len, token_range[1] + completion.len);
     }
 
     pub fn registerEditor(self: *Buffer, editor: *Editor) void {

@@ -704,10 +704,10 @@ pub const BinarySearchResult = union(enum) {
 
 pub fn binarySearch(
     comptime T: type,
-    key: T,
+    key: anytype,
     items: []const T,
     context: anytype,
-    comptime compareFn: fn (context: @TypeOf(context), lhs: T, rhs: T) std.math.Order,
+    comptime compareFn: fn (context: @TypeOf(context), lhs: @TypeOf(key), rhs: T) std.math.Order,
 ) BinarySearchResult {
     var left: usize = 0;
     var right: usize = items.len;
