@@ -58,7 +58,7 @@ pub const State = struct {
             .token_ranges = token_ranges.toOwnedSlice(),
             .paren_levels = paren_levels,
             .paren_matches = paren_matches,
-            .mode = .Normal,
+            .mode = .NoStructure,
         };
     }
 
