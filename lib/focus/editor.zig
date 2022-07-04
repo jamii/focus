@@ -187,6 +187,7 @@ pub const Editor = struct {
                             .z => self.undo(text_rect),
                             .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
                             .tab => for (self.cursors.items) |*cursor| self.indent(cursor),
+                            .one => self.buffer.language.toggleMode(),
                             else => {},
                         }
                     } else if (key_event.mods.control and key_event.mods.shift) {

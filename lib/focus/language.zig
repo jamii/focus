@@ -61,6 +61,14 @@ pub const Language = union(enum) {
         }
     }
 
+    pub fn toggleMode(self: *Language) void {
+        switch (self.*) {
+            .Zig => |*state| state.toggleMode(),
+            .Clojure => |*state| state.toggleMode(),
+            else => {},
+        }
+    }
+
     pub fn commentString(self: Language) ?[]const u8 {
         return switch (self) {
             .Zig, .Java, .Javascript => "//",

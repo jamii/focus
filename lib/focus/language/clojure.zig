@@ -11,6 +11,10 @@ pub const State = struct {
     token_ranges: []const [2]usize,
     paren_levels: []const usize,
     paren_matches: []const ?usize,
+    mode: enum {
+        Normal,
+        Parens,
+    },
 
     pub const Paren = struct {
         level: usize,
@@ -58,6 +62,7 @@ pub const State = struct {
             .token_ranges = token_ranges.toOwnedSlice(),
             .paren_levels = paren_levels,
             .paren_matches = paren_matches,
+            .mode = .Normal,
         };
     }
 
@@ -80,6 +85,13 @@ pub const State = struct {
         self.* = State.init(allocator, source);
     }
 
+    pub fn toggleMode(self: *State) void {
+        self.mode = switch (self.mode) {
+            .Normal => .Parens,
+            .Parens => .Normal,
+        };
+    }
+
     pub fn highlight(self: State, source: []const u8, range: [2]usize, colors: []u.Color) void {
         std.mem.set(u.Color, colors, style.comment_color);
         for (self.token_ranges) |token_range, i| {
@@ -91,8 +103,8 @@ pub const State = struct {
             const token = self.tokens[i];
             const color = switch (token) {
                 .err => style.emphasisRed,
-                .symbol, .keyword => style.identColor(source[source_start..source_end]),
-                .comment, .whitespace => style.comment_color,
+                .symbol, .keyword => if (self.mode == .Parens) style.comment_color else style.identColor(source[source_start..source_end]),
+                .comment, .whitespace => if (self.mode == .Parens) style.comment_color else style.comment_color,
                 .open_list, .open_map, .open_vec, .open_set, .open_fun, .close_list, .close_map, .close_vec => color: {
                     var is_good_match = false;
                     if (self.paren_matches[i]) |matching_ix| {
@@ -108,12 +120,14 @@ pub const State = struct {
                         };
                     }
                     break :color if (is_good_match)
-                        style.comment_color
-                        // style.parenColor(self.paren_levels[i])
+                        if (self.mode == .Parens)
+                            style.parenColor(self.paren_levels[i])
+                        else
+                            style.comment_color
                     else
                         style.emphasisRed;
                 },
-                else => style.keyword_color,
+                else => if (self.mode == .Parens) style.comment_color else style.keyword_color,
             };
             std.mem.set(u.Color, colors[colors_start..colors_end], color);
         }
