@@ -514,7 +514,11 @@ pub const Buffer = struct {
         if (!self.options.enable_completions) return;
 
         self.completions.resize(0) catch u.oom();
-        self.completions.appendSlice(self.language.getTokenRanges()) catch u.oom();
+        const token_ranges = self.language.getTokenRanges();
+        for (token_ranges) |token_range| {
+            if (std.mem.indexOfScalar(u8, self.bytes.items[token_range[0]..token_range[1]], '\n') != null) continue;
+            self.completions.append(token_range) catch u.oom();
+        }
         std.sort.sort([2]usize, self.completions.items, self.bytes.items, struct {
             fn lessThan(source: []const u8, a: [2]usize, b: [2]usize) bool {
                 return std.mem.lessThan(u8, source[a[0]..a[1]], source[b[0]..b[1]]);
