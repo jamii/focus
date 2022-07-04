@@ -2,8 +2,69 @@ const std = @import("std");
 const focus = @import("../../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
+const style = focus.style;
 
-// https://github.com/clojure/clojure/blob/master/src/jvm/clojure/lang/LispReader.java
+pub const State = struct {
+    allocator: u.Allocator,
+    tokens: []const Token,
+    token_ranges: []const [2]usize,
+
+    pub fn init(allocator: u.Allocator, source: []const u8) State {
+        var tokens = u.ArrayList(Token).init(allocator);
+        var token_ranges = u.ArrayList([2]usize).init(allocator);
+        var tokenizer = Tokenizer.init(source);
+        while (true) {
+            const start = tokenizer.pos;
+            const token = tokenizer.next();
+            const end = tokenizer.pos;
+            if (token == .eof) break;
+            tokens.append(token) catch u.oom();
+            token_ranges.append(.{ start, end }) catch u.oom();
+        }
+        return .{
+            .allocator = allocator,
+            .tokens = tokens.toOwnedSlice(),
+            .token_ranges = token_ranges.toOwnedSlice(),
+        };
+    }
+
+    pub fn deinit(self: *State) void {
+        self.allocator.free(self.token_ranges);
+        self.allocator.free(self.tokens);
+        self.* = undefined;
+    }
+
+    pub fn updateBeforeChange(self: *State, source: []const u8, delete_range: [2]usize) void {
+        _ = self;
+        _ = source;
+        _ = delete_range;
+    }
+
+    pub fn updateAfterChange(self: *State, source: []const u8, insert_range: [2]usize) void {
+        _ = insert_range;
+        const allocator = self.allocator;
+        self.deinit();
+        self.* = State.init(allocator, source);
+    }
+
+    pub fn highlight(self: State, source: []const u8, range: [2]usize, colors: []u.Color) void {
+        std.mem.set(u.Color, colors, style.comment_color);
+        for (self.token_ranges) |token_range, i| {
+            const source_start = token_range[0];
+            const source_end = token_range[1];
+            if (source_end < range[0] or source_start > range[1]) continue;
+            const colors_start = if (source_start > range[0]) source_start - range[0] else 0;
+            const colors_end = if (source_end > range[1]) range[1] - range[0] else source_end - range[0];
+            const color = switch (self.tokens[i]) {
+                .err => style.emphasisRed,
+                .symbol, .keyword => style.identColor(source[source_start..source_end]),
+                .comment => style.comment_color,
+                else => style.keyword_color,
+            };
+            std.mem.set(u.Color, colors[colors_start..colors_end], color);
+        }
+    }
+};
 
 pub const Token = enum {
     quote,
@@ -45,6 +106,27 @@ pub const Token = enum {
     err,
 };
 
+const TokenizerState = enum {
+    start,
+    string,
+    string_escape,
+    unquote,
+    comment,
+    character,
+    character_unicode_escape,
+    character_octal_escape,
+    arg,
+    dispatch,
+    reader_conditional,
+    namespaced_map,
+    whitespace,
+    number,
+    symbol,
+    minus,
+    keyword,
+    unreadable,
+};
+
 pub const Tokenizer = struct {
     source: []const u8,
     pos: usize,
@@ -56,29 +138,9 @@ pub const Tokenizer = struct {
         };
     }
 
-    const State = enum {
-        start,
-        string,
-        string_escape,
-        unquote,
-        comment,
-        character,
-        character_unicode_escape,
-        character_octal_escape,
-        arg,
-        dispatch,
-        reader_conditional,
-        namespaced_map,
-        whitespace,
-        number,
-        symbol,
-        minus,
-        keyword,
-        unreadable,
-    };
-
+    // https://github.com/clojure/clojure/blob/master/src/jvm/clojure/lang/LispReader.java
     pub fn next(self: *Tokenizer) Token {
-        var state: State = .start;
+        var state = TokenizerState.start;
         const source_len = self.source.len;
         var string_token: Token = .string;
         var symbol_token: Token = .symbol;
@@ -110,7 +172,7 @@ pub const Tokenizer = struct {
                     '#' => state = .dispatch,
                     ' ', ',', '\r', '\n', '\t' => state = .whitespace,
                     '0'...'9' => state = .number,
-                    'a'...'z', 'A'...'Z', '&', '*', '+', '!', '_', '?', '<', '>', '=', '.', '$' => {
+                    'a'...'z', 'A'...'Z', '&', '*', '+', '!', '_', '?', '<', '>', '=', '.', '$', '/' => {
                         enough_chars = true;
                         state = .symbol;
                     },
@@ -528,4 +590,13 @@ test "real code" {
     //try testTokenize(
     //    \\##inst "2022-06-30T15:45:28.733-00:00"
     //, &.{ .symbolic_value, .tag, .whitespace, .string });
+
+    // TODO
+    //    user=> #/ {}
+    //Syntax error reading source at (REPL:3:6).
+    //No reader function for tag /
+    //user=> #/foo {}
+    //Syntax error reading source at (REPL:4:6).
+    //Invalid token: /foo
+    //{}
 }

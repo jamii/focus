@@ -112,7 +112,7 @@ pub const Buffer = struct {
                 .mtime = 0,
             },
         };
-        self.language = Language.fromFilename(absolute_filename);
+        self.language = Language.init(app.allocator, absolute_filename, &.{});
         self.load(.Init);
         self.undos.resize(0) catch u.oom();
         self.modified_since_last_save = false;
@@ -354,11 +354,13 @@ pub const Buffer = struct {
         const line_start = self.getLineStart(pos);
         const line_end = self.getLineEnd(pos);
         self.removeRangeFromCompletions(line_start, line_end);
+        self.language.updateBeforeChange(self.bytes.items, .{ pos, pos });
 
         self.bytes.resize(self.bytes.items.len + bytes.len) catch u.oom();
         std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
         std.mem.copy(u8, self.bytes.items[pos..], bytes);
 
+        self.language.updateAfterChange(self.bytes.items, .{ pos, pos + bytes.len });
         self.addRangeToCompletions(line_start, line_end + bytes.len);
 
         self.updateLineRanges();
@@ -375,10 +377,12 @@ pub const Buffer = struct {
         const line_start = self.getLineStart(start);
         const line_end = self.getLineEnd(end);
         self.removeRangeFromCompletions(line_start, line_end);
+        self.language.updateBeforeChange(self.bytes.items, .{ start, end });
 
         std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
         self.bytes.shrinkAndFree(self.bytes.items.len - (end - start));
 
+        self.language.updateAfterChange(self.bytes.items, .{ start, start });
         self.addRangeToCompletions(line_start, line_end - (end - start));
 
         self.updateLineRanges();
@@ -395,9 +399,12 @@ pub const Buffer = struct {
         }
         std.mem.reverse([][2][2]usize, line_colss.items);
 
+        self.language.updateBeforeChange(self.bytes.items, .{ 0, self.bytes.items.len });
+
         self.bytes.resize(0) catch u.oom();
         self.bytes.appendSlice(new_bytes) catch u.oom();
 
+        self.language.updateAfterChange(self.bytes.items, .{ 0, self.bytes.items.len });
         self.updateCompletions();
 
         self.updateLineRanges();

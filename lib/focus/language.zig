@@ -6,20 +6,22 @@ const style = focus.style;
 
 pub const clojure = @import("./language/clojure.zig");
 
-pub const Language = enum {
+pub const Language = union(enum) {
     Zig,
+    Clojure: clojure.State,
     Java,
     Shell,
     Julia,
     Javascript,
     Nix,
-    Clojure,
     Unknown,
 
-    pub fn fromFilename(filename: []const u8) Language {
+    pub fn init(allocator: u.Allocator, filename: []const u8, source: []const u8) Language {
         // TODO writing this as `return if ...` causes a confusing compiler error
         if (std.mem.endsWith(u8, filename, ".zig"))
             return .Zig
+        else if (std.mem.endsWith(u8, filename, ".clj") or std.mem.endsWith(u8, filename, ".cljs") or std.mem.endsWith(u8, filename, ".cljc"))
+            return .{ .Clojure = clojure.State.init(allocator, source) }
         else if (std.mem.endsWith(u8, filename, ".java"))
             return .Java
         else if (std.mem.endsWith(u8, filename, ".sh"))
@@ -30,10 +32,28 @@ pub const Language = enum {
             return .Javascript
         else if (std.mem.endsWith(u8, filename, ".nix"))
             return .Nix
-        else if (std.mem.endsWith(u8, filename, ".clj") or std.mem.endsWith(u8, filename, ".cljs") or std.mem.endsWith(u8, filename, ".cljc"))
-            return .Clojure
         else
             return .Unknown;
+    }
+
+    pub fn deinit(self: *Language) void {
+        switch (self) {
+            .Clojure => |state| state.deinit(),
+        }
+    }
+
+    pub fn updateBeforeChange(self: *Language, source: []const u8, delete_range: [2]usize) void {
+        switch (self.*) {
+            .Clojure => |*state| state.updateBeforeChange(source, delete_range),
+            else => {},
+        }
+    }
+
+    pub fn updateAfterChange(self: *Language, source: []const u8, insert_range: [2]usize) void {
+        switch (self.*) {
+            .Clojure => |*state| state.updateAfterChange(source, insert_range),
+            else => {},
+        }
     }
 
     pub fn commentString(self: Language) ?[]const u8 {
@@ -55,6 +75,7 @@ pub const Language = enum {
     pub fn highlight(self: Language, allocator: u.Allocator, source: []const u8, init_range: [2]usize) []const u.Color {
         const range = extendRangeToLineBoundary(source, init_range);
         const colors = allocator.alloc(u.Color, range[1] - range[0]) catch u.oom();
+        std.mem.set(u.Color, colors, style.text_color);
         switch (self) {
             .Zig => {
                 const source_z = allocator.dupeZ(u8, source[range[0]..range[1]]) catch u.oom();
@@ -94,61 +115,18 @@ pub const Language = enum {
                     }
                 }
             },
-            .Clojure => {
-                // TODO parse only on changes
-                var tokenizer = clojure.Tokenizer.init(source);
-                std.mem.set(u.Color, colors, style.comment_color);
-                while (true) {
-                    const source_start = tokenizer.pos;
-                    const token = tokenizer.next();
-                    const source_end = tokenizer.pos;
-                    if (token == .eof) break;
-                    if (source_end < range[0] or source_start > range[1]) continue;
-                    const colors_start = if (source_start > range[0]) source_start - range[0] else 0;
-                    const colors_end = if (source_end > range[1]) range[1] - range[0] else source_end - range[0];
-                    switch (token) {
-                        .err => std.mem.set(
-                            u.Color,
-                            colors[colors_start..colors_end],
-                            style.emphasisRed,
-                        ),
-                        .symbol, .keyword => std.mem.set(
-                            u.Color,
-                            colors[colors_start..colors_end],
-                            style.identColor(source[source_start..source_end]),
-                        ),
-                        .comment => {},
-                        else => std.mem.set(
-                            u.Color,
-                            colors[colors_start..colors_end],
-                            style.keyword_color,
-                        ),
-                    }
-                }
-            },
-            else => {
-                std.mem.set(u.Color, colors, style.text_color);
-            },
+            .Clojure => |state| state.highlight(source, range, colors),
+            else => {},
         }
         return colors[init_range[0] - range[0] ..];
     }
 
     fn isLikeIdent(self: Language, char: u8, is_first_char: bool) bool {
-        return switch (self) {
-            // https://clojure.org/reference/reader#_symbols
-            .Clojure => switch (char) {
-                'a'...'z', 'A'...'Z', '*', '+', '!', '-', '_', '\'', '?', '<', '>', '=' => true,
-                // not technically true, but useful to treat keywords as whole tokens
-                ':' => true,
-                '0'...'9' => !is_first_char,
-                else => false,
-            },
-            // generic
-            else => switch (char) {
-                'a'...'z', 'A'...'Z', '_' => true,
-                '0'...'9' => !is_first_char,
-                else => false,
-            },
+        _ = self;
+        return switch (char) {
+            'a'...'z', 'A'...'Z', '_' => true,
+            '0'...'9' => !is_first_char,
+            else => false,
         };
     }
 
@@ -173,6 +151,12 @@ pub const Language = enum {
                             range[0] + token.loc.end,
                         }) catch u.oom(),
                     }
+                }
+            },
+            .Clojure => |state| {
+                for (state.token_ranges) |token_range| {
+                    if (token_range[1] < range[0] or token_range[0] > range[1]) continue;
+                    token_ranges.append(token_range) catch u.oom();
                 }
             },
             else => {
