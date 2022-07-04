@@ -6,15 +6,16 @@ const style = focus.style;
 
 pub const zig = @import("./language/zig.zig");
 pub const clojure = @import("./language/clojure.zig");
+pub const generic = @import("./language/generic.zig");
 
 pub const Language = union(enum) {
     Zig: zig.State,
     Clojure: clojure.State,
-    Java,
-    Shell,
-    Julia,
-    Javascript,
-    Nix,
+    Java: generic.State,
+    Shell: generic.State,
+    Julia: generic.State,
+    Javascript: generic.State,
+    Nix: generic.State,
     Unknown,
 
     pub fn init(allocator: u.Allocator, filename: []const u8, source: []const u8) Language {
@@ -24,15 +25,15 @@ pub const Language = union(enum) {
         else if (std.mem.endsWith(u8, filename, ".clj") or std.mem.endsWith(u8, filename, ".cljs") or std.mem.endsWith(u8, filename, ".cljc"))
             return .{ .Clojure = clojure.State.init(allocator, source) }
         else if (std.mem.endsWith(u8, filename, ".java"))
-            return .Java
+            return .{ .Java = generic.State.init(allocator, "//", source) }
         else if (std.mem.endsWith(u8, filename, ".sh"))
-            return .Shell
+            return .{ .Shell = generic.State.init(allocator, "#", source) }
         else if (std.mem.endsWith(u8, filename, ".jl"))
-            return .Julia
+            return .{ .Julia = generic.State.init(allocator, "#", source) }
         else if (std.mem.endsWith(u8, filename, ".js"))
-            return .Javascript
+            return .{ .Javascript = generic.State.init(allocator, "//", source) }
         else if (std.mem.endsWith(u8, filename, ".nix"))
-            return .Nix
+            return .{ .Nix = generic.State.init(allocator, "#", source) }
         else
             return .Unknown;
     }
@@ -49,7 +50,8 @@ pub const Language = union(enum) {
         switch (self.*) {
             .Zig => |*state| state.updateBeforeChange(source, delete_range),
             .Clojure => |*state| state.updateBeforeChange(source, delete_range),
-            else => {},
+            .Java, .Shell, .Julia, .Javascript, .Nix => |*state| state.updateBeforeChange(source, delete_range),
+            .Unknown => {},
         }
     }
 
@@ -57,7 +59,8 @@ pub const Language = union(enum) {
         switch (self.*) {
             .Zig => |*state| state.updateAfterChange(source, insert_range),
             .Clojure => |*state| state.updateAfterChange(source, insert_range),
-            else => {},
+            .Java, .Shell, .Julia, .Javascript, .Nix => |*state| state.updateAfterChange(source, insert_range),
+            .Unknown => {},
         }
     }
 
@@ -65,15 +68,16 @@ pub const Language = union(enum) {
         switch (self.*) {
             .Zig => |*state| state.toggleMode(),
             .Clojure => |*state| state.toggleMode(),
-            else => {},
+            .Java, .Shell, .Julia, .Javascript, .Nix => |*state| state.toggleMode(),
+            .Unknown => {},
         }
     }
 
     pub fn commentString(self: Language) ?[]const u8 {
         return switch (self) {
-            .Zig, .Java, .Javascript => "//",
-            .Shell, .Julia, .Nix => "#",
+            .Zig => "//",
             .Clojure => ";",
+            .Java, .Shell, .Julia, .Javascript, .Nix => |*state| state.comment_string,
             .Unknown => null,
         };
     }
@@ -84,7 +88,8 @@ pub const Language = union(enum) {
         switch (self) {
             .Zig => |state| state.highlight(source, range, colors),
             .Clojure => |state| state.highlight(source, range, colors),
-            else => {},
+            .Java, .Shell, .Julia, .Javascript, .Nix => |state| state.highlight(source, range, colors),
+            .Unknown => {},
         }
         return colors;
     }
@@ -93,7 +98,8 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => |state| state.token_ranges,
             .Clojure => |state| state.token_ranges,
-            else => &.{},
+            .Java, .Shell, .Julia, .Javascript, .Nix => |state| state.token_ranges,
+            .Unknown => &[0][2]usize{},
         };
     }
 
@@ -101,7 +107,8 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => |state| state.paren_matches,
             .Clojure => |state| state.paren_matches,
-            else => &.{},
+            .Java, .Shell, .Julia, .Javascript, .Nix => |state| state.paren_matches,
+            .Unknown => &[0]?usize{},
         };
     }
 

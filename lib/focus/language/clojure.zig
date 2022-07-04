@@ -16,11 +16,6 @@ pub const State = struct {
         Parens,
     },
 
-    pub const Paren = struct {
-        level: usize,
-        matching_token_ix: usize,
-    };
-
     pub fn init(allocator: u.Allocator, source: []const u8) State {
         var tokens = u.ArrayList(Token).init(allocator);
         var token_ranges = u.ArrayList([2]usize).init(allocator);
