@@ -3,11 +3,19 @@ const focus = @import("../../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
 const style = focus.style;
+const language = focus.language;
 
 pub const State = struct {
     allocator: u.Allocator,
     tokens: []const Token,
     token_ranges: []const [2]usize,
+    paren_levels: []const usize,
+    paren_matches: []const ?usize,
+
+    pub const Paren = struct {
+        level: usize,
+        matching_token_ix: usize,
+    };
 
     pub fn init(allocator: u.Allocator, source: []const u8) State {
         var tokens = u.ArrayList(Token).init(allocator);
@@ -21,10 +29,35 @@ pub const State = struct {
             tokens.append(token) catch u.oom();
             token_ranges.append(.{ start, end }) catch u.oom();
         }
+
+        const paren_levels = allocator.alloc(usize, tokens.items.len) catch u.oom();
+        std.mem.set(usize, paren_levels, 0);
+        const paren_matches = allocator.alloc(?usize, tokens.items.len) catch u.oom();
+        std.mem.set(?usize, paren_matches, null);
+        var paren_match_stack = u.ArrayList(usize).init(allocator);
+        for (tokens.items) |token, ix| {
+            switch (token) {
+                .open_list, .open_vec, .open_map, .open_fun, .open_set => {
+                    paren_match_stack.append(ix) catch u.oom();
+                },
+                .close_list, .close_vec, .close_map => {
+                    if (paren_match_stack.popOrNull()) |matching_ix| {
+                        paren_levels[ix] = paren_match_stack.items.len;
+                        paren_levels[matching_ix] = paren_match_stack.items.len;
+                        paren_matches[ix] = matching_ix;
+                        paren_matches[matching_ix] = ix;
+                    }
+                },
+                else => {},
+            }
+        }
+
         return .{
             .allocator = allocator,
             .tokens = tokens.toOwnedSlice(),
             .token_ranges = token_ranges.toOwnedSlice(),
+            .paren_levels = paren_levels,
+            .paren_matches = paren_matches,
         };
     }
 
@@ -55,10 +88,31 @@ pub const State = struct {
             if (source_end < range[0] or source_start > range[1]) continue;
             const colors_start = if (source_start > range[0]) source_start - range[0] else 0;
             const colors_end = if (source_end > range[1]) range[1] - range[0] else source_end - range[0];
-            const color = switch (self.tokens[i]) {
+            const token = self.tokens[i];
+            const color = switch (token) {
                 .err => style.emphasisRed,
                 .symbol, .keyword => style.identColor(source[source_start..source_end]),
-                .comment => style.comment_color,
+                .comment, .whitespace => style.comment_color,
+                .open_list, .open_map, .open_vec, .open_set, .open_fun, .close_list, .close_map, .close_vec => color: {
+                    var is_good_match = false;
+                    if (self.paren_matches[i]) |matching_ix| {
+                        const matching_token = self.tokens[matching_ix];
+                        is_good_match = switch (token) {
+                            .open_list, .open_fun => matching_token == .close_list,
+                            .open_map, .open_set => matching_token == .close_map,
+                            .open_vec => matching_token == .close_vec,
+                            .close_list => matching_token == .open_list or matching_token == .open_fun,
+                            .close_map => matching_token == .open_map or matching_token == .open_set,
+                            .close_vec => matching_token == .open_vec,
+                            else => unreachable,
+                        };
+                    }
+                    break :color if (is_good_match)
+                        style.comment_color
+                        // style.parenColor(self.paren_levels[i])
+                    else
+                        style.emphasisRed;
+                },
                 else => style.keyword_color,
             };
             std.mem.set(u.Color, colors[colors_start..colors_end], color);

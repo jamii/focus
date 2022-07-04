@@ -3,6 +3,7 @@ const focus = @import("../../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
 const style = focus.style;
+const language = focus.language;
 
 pub const State = struct {
     allocator: u.Allocator,

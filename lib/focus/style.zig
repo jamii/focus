@@ -23,6 +23,16 @@ pub fn identColor(ident: []const u8) u.Color {
     );
 }
 
+pub fn parenColor(level: usize) u.Color {
+    const hash = @bitReverse(u64, u.deepHash(level));
+    return u.Color.hsla(
+        @intToFloat(f64, hash % 359),
+        1.0,
+        0.8,
+        1.0,
+    );
+}
+
 pub const emphasisRed = u.Color.hsla(0, 1.0, 0.5, 1.0);
 pub const emphasisOrange = u.Color.hsla(30, 1.0, 0.5, 1.0);
 pub const emphasisGreen = u.Color.hsla(120, 1.0, 0.5, 1.0);

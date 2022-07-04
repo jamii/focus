@@ -350,7 +350,10 @@ pub const Editor = struct {
         if (max_chars_per_line == 0) return;
 
         // draw matching paren
-        if (self.buffer.matchParen(self.getMainCursor().head.pos)) |matching_poss| {
+        if (self.buffer.language.matchParen(
+            self.buffer.bytes.items,
+            self.getMainCursor().head.pos,
+        )) |matching_poss| {
             for (matching_poss) |matching_pos| {
                 const line_col = self.line_wrapped_buffer.getLineColForPos(matching_pos);
                 if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
