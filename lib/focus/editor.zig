@@ -189,6 +189,7 @@ pub const Editor = struct {
                             .tab => for (self.cursors.items) |*cursor| self.indent(cursor),
                             .one => self.buffer.language.toggleMode(),
                             .zero => self.goMatchingParen(),
+                            .backspace => self.deleteToken(),
                             else => {},
                         }
                     } else if (key_event.mods.control and key_event.mods.shift) {
@@ -354,24 +355,22 @@ pub const Editor = struct {
         // draw matching paren
         {
             const pos = self.getMainCursor().head.pos;
-            if (pos > 0) {
-                if (self.buffer.language.matchParen(pos - 1)) |matching_pos| {
-                    for ([2]usize{ pos - 1, matching_pos }) |highlight_pos| {
-                        const line_col = self.line_wrapped_buffer.getLineColForPos(highlight_pos);
-                        if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
-                            const line_top_pixel = @intCast(u.Coord, line_col[0]) * self.app.atlas.char_height;
-                            const y = text_rect.y + @intCast(u.Coord, line_top_pixel - self.top_pixel);
-                            const x = text_rect.x + @intCast(u.Coord, line_col[1]) * self.app.atlas.char_width;
-                            window.queueRect(
-                                .{
-                                    .x = x,
-                                    .y = @intCast(u.Coord, y),
-                                    .w = self.app.atlas.char_width,
-                                    .h = self.app.atlas.char_height,
-                                },
-                                style.paren_match_color,
-                            );
-                        }
+            if (self.buffer.language.matchParen(pos)) |matching_pos| {
+                for ([2]usize{ pos - 1, matching_pos }) |highlight_pos| {
+                    const line_col = self.line_wrapped_buffer.getLineColForPos(highlight_pos);
+                    if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
+                        const line_top_pixel = @intCast(u.Coord, line_col[0]) * self.app.atlas.char_height;
+                        const y = text_rect.y + @intCast(u.Coord, line_top_pixel - self.top_pixel);
+                        const x = text_rect.x + @intCast(u.Coord, line_col[1]) * self.app.atlas.char_width;
+                        window.queueRect(
+                            .{
+                                .x = x,
+                                .y = @intCast(u.Coord, y),
+                                .w = self.app.atlas.char_width,
+                                .h = self.app.atlas.char_height,
+                            },
+                            style.paren_match_color,
+                        );
                     }
                 }
             }
@@ -1145,9 +1144,18 @@ pub const Editor = struct {
     fn goMatchingParen(self: *Editor) void {
         for (self.cursors.items) |*cursor| {
             const pos = cursor.head.pos;
-            if (pos > 0)
-                if (self.buffer.language.matchParen(pos - 1)) |matching_pos|
-                    self.goPos(cursor, matching_pos + 1);
+            if (self.buffer.language.matchParen(pos)) |matching_pos|
+                self.goPos(cursor, matching_pos + 1);
+        }
+    }
+
+    fn deleteToken(self: *Editor) void {
+        for (self.cursors.items) |*cursor| {
+            const pos = cursor.head.pos;
+            if (self.buffer.language.getTokenIxBefore(pos)) |token_ix| {
+                const range = self.buffer.language.getTokenRanges()[token_ix];
+                self.buffer.delete(range[0], pos);
+            }
         }
     }
 };

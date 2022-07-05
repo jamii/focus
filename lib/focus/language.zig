@@ -136,7 +136,7 @@ pub const Language = union(enum) {
     }
 
     pub fn matchParen(self: Language, pos: usize) ?usize {
-        if (self.getTokenIxAfter(pos)) |token_ix|
+        if (self.getTokenIxBefore(pos)) |token_ix|
             if (self.getParenMatches()[token_ix]) |matching_ix|
                 return self.getTokenRanges()[matching_ix][0];
         return null;
