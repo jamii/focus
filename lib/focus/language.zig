@@ -114,18 +114,12 @@ pub const Language = union(enum) {
 
     pub fn getTokenIxBefore(self: Language, pos: usize) ?usize {
         const token_ranges = self.getTokenRanges();
-        for (token_ranges) |token_range, i| {
-            if (token_range[0] < pos and pos <= token_range[1]) return i;
+        var return_ix: ?usize = null;
+        for (token_ranges) |token_range, ix| {
+            if (token_range[0] >= pos) break;
+            return_ix = ix;
         }
-        return null;
-    }
-
-    pub fn getTokenIxAfter(self: Language, pos: usize) ?usize {
-        const token_ranges = self.getTokenRanges();
-        for (token_ranges) |token_range, i| {
-            if (token_range[0] <= pos and pos < token_range[1]) return i;
-        }
-        return null;
+        return return_ix;
     }
 
     pub fn format(self: Language, source: []const u8) ?[]const u8 {
@@ -136,9 +130,12 @@ pub const Language = union(enum) {
     }
 
     pub fn matchParen(self: Language, pos: usize) ?usize {
-        if (self.getTokenIxBefore(pos)) |token_ix|
-            if (self.getParenMatches()[token_ix]) |matching_ix|
-                return self.getTokenRanges()[matching_ix][0];
+        if (self.getTokenIxBefore(pos)) |token_ix| {
+            const token_range = self.getTokenRanges()[token_ix];
+            if (token_range[1] >= pos)
+                if (self.getParenMatches()[token_ix]) |matching_ix|
+                    return self.getTokenRanges()[matching_ix][1];
+        }
         return null;
     }
 };
