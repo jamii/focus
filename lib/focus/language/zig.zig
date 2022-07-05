@@ -10,6 +10,7 @@ pub const State = struct {
     tokens: []const std.zig.Token.Tag,
     token_ranges: []const [2]usize,
     paren_levels: []const usize,
+    paren_parents: []const ?usize,
     paren_matches: []const ?usize,
     mode: enum {
         Normal,
@@ -32,21 +33,27 @@ pub const State = struct {
 
         const paren_levels = allocator.alloc(usize, tokens.items.len) catch u.oom();
         std.mem.set(usize, paren_levels, 0);
+        const paren_parents = allocator.alloc(?usize, tokens.items.len) catch u.oom();
+        std.mem.set(?usize, paren_parents, null);
         const paren_matches = allocator.alloc(?usize, tokens.items.len) catch u.oom();
         std.mem.set(?usize, paren_matches, null);
         var paren_match_stack = u.ArrayList(usize).init(allocator);
         for (tokens.items) |token, ix| {
             switch (token) {
-                .l_paren, .l_brace, .l_bracket => {
-                    paren_match_stack.append(ix) catch u.oom();
-                },
                 .r_paren, .r_brace, .r_bracket => {
                     if (paren_match_stack.popOrNull()) |matching_ix| {
-                        paren_levels[ix] = paren_match_stack.items.len;
-                        paren_levels[matching_ix] = paren_match_stack.items.len;
                         paren_matches[ix] = matching_ix;
                         paren_matches[matching_ix] = ix;
                     }
+                },
+                else => {},
+            }
+            if (paren_match_stack.items.len > 0)
+                paren_parents[ix] = paren_match_stack.items[paren_match_stack.items.len - 1];
+            paren_levels[ix] = paren_match_stack.items.len;
+            switch (token) {
+                .l_paren, .l_brace, .l_bracket => {
+                    paren_match_stack.append(ix) catch u.oom();
                 },
                 else => {},
             }
@@ -57,6 +64,7 @@ pub const State = struct {
             .tokens = tokens.toOwnedSlice(),
             .token_ranges = token_ranges.toOwnedSlice(),
             .paren_levels = paren_levels,
+            .paren_parents = paren_parents,
             .paren_matches = paren_matches,
             .mode = .NoStructure,
         };
@@ -64,6 +72,7 @@ pub const State = struct {
 
     pub fn deinit(self: *State) void {
         self.allocator.free(self.paren_matches);
+        self.allocator.free(self.paren_parents);
         self.allocator.free(self.paren_levels);
         self.allocator.free(self.token_ranges);
         self.allocator.free(self.tokens);
@@ -148,5 +157,13 @@ pub const State = struct {
         if (tree.errors.len > 0) return null;
         defer tree.deinit(self.allocator);
         return tree.render(self.allocator) catch u.oom();
+    }
+
+    pub fn getAddedIndent(self: State, token_ix: usize) usize {
+        const token = self.tokens[token_ix];
+        return switch (token) {
+            .l_paren, .l_brace, .l_bracket => 4,
+            else => 0,
+        };
     }
 };

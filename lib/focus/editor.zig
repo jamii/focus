@@ -949,54 +949,16 @@ pub const Editor = struct {
             while (this_line_start_pos + this_indent < self.buffer.bytes.items.len and self.buffer.bytes.items[this_line_start_pos + this_indent] == ' ') {
                 this_indent += 1;
             }
-            const line_start_char = if (this_line_start_pos + this_indent < self.buffer.bytes.items.len) self.buffer.bytes.items[this_line_start_pos + this_indent] else 0;
 
-            // work out prev line indent
-            var prev_indent: usize = 0;
-            if (edit_cursor.head.pos != 0) {
-
-                // skip blank lines
-                while (true) {
-                    self.goRealUp(edit_cursor);
-                    var start = edit_cursor.head.pos;
-                    const end = self.buffer.getLineEnd(edit_cursor.head.pos);
-                    var is_blank = true;
-                    while (start < end) : (start += 1) {
-                        if (self.buffer.bytes.items[start] != ' ') is_blank = false;
-                    }
-                    if (!is_blank or start == 0) break;
-                }
-
-                const line_end_pos = self.buffer.getLineEnd(edit_cursor.head.pos);
-                const line_end_char = if (line_end_pos > 0 and line_end_pos - 1 < self.buffer.bytes.items.len) self.buffer.bytes.items[line_end_pos - 1] else 0;
-
-                self.goRealLineStart(edit_cursor);
-                const prev_line_start_pos = edit_cursor.head.pos;
-                while (prev_line_start_pos + prev_indent < self.buffer.bytes.items.len and self.buffer.bytes.items[prev_line_start_pos + prev_indent] == ' ') {
-                    prev_indent += 1;
-                }
-
-                // add extra indent when opening a block
-                // TODO this is kind of fragile
-                switch (line_end_char) {
-                    '(', '{', '[' => prev_indent += 4,
-                    else => {},
-                }
-            } // else prev_indent=0 is fine
-
-            // dedent when closing a block
-            switch (line_start_char) {
-                ')', '}', ']' => prev_indent = u.subSaturating(prev_indent, 4),
-                else => {},
-            }
+            const ideal_indent = self.buffer.language.getIdealIndent(this_line_start_pos);
 
             // adjust indent
             edit_cursor.head.pos = this_line_start_pos;
-            if (this_indent > prev_indent) {
-                self.delete(this_line_start_pos, this_line_start_pos + this_indent - prev_indent);
+            if (this_indent > ideal_indent) {
+                self.delete(this_line_start_pos, this_line_start_pos + this_indent - ideal_indent);
             }
-            if (this_indent < prev_indent) {
-                var spaces = self.app.frame_allocator.alloc(u8, prev_indent - this_indent) catch u.oom();
+            if (this_indent < ideal_indent) {
+                var spaces = self.app.frame_allocator.alloc(u8, ideal_indent - this_indent) catch u.oom();
                 std.mem.set(u8, spaces, ' ');
                 // TODO this might delete the selection :S
                 const old_marked = self.marked;
@@ -1013,7 +975,7 @@ pub const Editor = struct {
 
     pub fn modifyComment(self: *Editor, cursor: *Cursor, action: enum { Insert, Remove }) void {
         // see if we know how to comment this language
-        const comment_string = self.buffer.language.commentString() orelse return;
+        const comment_string = self.buffer.language.getCommentString() orelse return;
 
         // figure out how many lines we're going to comment _before_ we start changing them
         const range = self.getSelectionRange(cursor);

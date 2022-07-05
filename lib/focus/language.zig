@@ -73,7 +73,7 @@ pub const Language = union(enum) {
         }
     }
 
-    pub fn commentString(self: Language) ?[]const u8 {
+    pub fn getCommentString(self: Language) ?[]const u8 {
         return switch (self) {
             .Zig => "//",
             .Clojure => ";",
@@ -100,6 +100,24 @@ pub const Language = union(enum) {
             .Clojure => |state| state.token_ranges,
             .Java, .Shell, .Julia, .Javascript, .Nix => |state| state.token_ranges,
             .Unknown => &[0][2]usize{},
+        };
+    }
+
+    pub fn getParenLevels(self: Language) []const usize {
+        return switch (self) {
+            .Zig => |state| state.paren_levels,
+            .Clojure => |state| state.paren_levels,
+            .Java, .Shell, .Julia, .Javascript, .Nix => |state| state.paren_levels,
+            .Unknown => &[0]?usize{},
+        };
+    }
+
+    pub fn getParenParents(self: Language) []const ?usize {
+        return switch (self) {
+            .Zig => |state| state.paren_parents,
+            .Clojure => |state| state.paren_parents,
+            .Java, .Shell, .Julia, .Javascript, .Nix => |state| state.paren_parents,
+            .Unknown => &[0]?usize{},
         };
     }
 
@@ -146,5 +164,21 @@ pub const Language = union(enum) {
                     return self.getTokenRanges()[matching_ix][1];
         }
         return null;
+    }
+
+    pub fn getIdealIndent(self: Language, pos: usize) usize {
+        var token_ix = self.getTokenIxAfter(pos) orelse return 0;
+        var indent: usize = 0;
+        const paren_parents = self.getParenParents();
+        while (true) {
+            token_ix = paren_parents[token_ix] orelse break;
+            indent += switch (self) {
+                .Zig => |state| state.getAddedIndent(token_ix),
+                .Clojure => |state| state.getAddedIndent(token_ix),
+                .Java, .Shell, .Julia, .Javascript, .Nix => |state| state.getAddedIndent(token_ix),
+                .Unknown => 0,
+            };
+        }
+        return indent;
     }
 };

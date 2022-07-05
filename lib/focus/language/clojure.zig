@@ -10,6 +10,7 @@ pub const State = struct {
     tokens: []const Token,
     token_ranges: []const [2]usize,
     paren_levels: []const usize,
+    paren_parents: []const ?usize,
     paren_matches: []const ?usize,
     mode: enum {
         Normal,
@@ -31,21 +32,27 @@ pub const State = struct {
 
         const paren_levels = allocator.alloc(usize, tokens.items.len) catch u.oom();
         std.mem.set(usize, paren_levels, 0);
+        const paren_parents = allocator.alloc(?usize, tokens.items.len) catch u.oom();
+        std.mem.set(?usize, paren_parents, null);
         const paren_matches = allocator.alloc(?usize, tokens.items.len) catch u.oom();
         std.mem.set(?usize, paren_matches, null);
         var paren_match_stack = u.ArrayList(usize).init(allocator);
         for (tokens.items) |token, ix| {
             switch (token) {
-                .open_list, .open_vec, .open_map, .open_fun, .open_set => {
-                    paren_match_stack.append(ix) catch u.oom();
-                },
                 .close_list, .close_vec, .close_map => {
                     if (paren_match_stack.popOrNull()) |matching_ix| {
-                        paren_levels[ix] = paren_match_stack.items.len;
-                        paren_levels[matching_ix] = paren_match_stack.items.len;
                         paren_matches[ix] = matching_ix;
                         paren_matches[matching_ix] = ix;
                     }
+                },
+                else => {},
+            }
+            if (paren_match_stack.items.len > 0)
+                paren_parents[ix] = paren_match_stack.items[paren_match_stack.items.len - 1];
+            paren_levels[ix] = paren_match_stack.items.len;
+            switch (token) {
+                .open_list, .open_vec, .open_map, .open_fun, .open_set => {
+                    paren_match_stack.append(ix) catch u.oom();
                 },
                 else => {},
             }
@@ -56,6 +63,7 @@ pub const State = struct {
             .tokens = tokens.toOwnedSlice(),
             .token_ranges = token_ranges.toOwnedSlice(),
             .paren_levels = paren_levels,
+            .paren_parents = paren_parents,
             .paren_matches = paren_matches,
             .mode = .Normal,
         };
@@ -63,6 +71,7 @@ pub const State = struct {
 
     pub fn deinit(self: *State) void {
         self.allocator.free(self.paren_matches);
+        self.allocator.free(self.paren_parents);
         self.allocator.free(self.paren_levels);
         self.allocator.free(self.token_ranges);
         self.allocator.free(self.tokens);
@@ -130,6 +139,15 @@ pub const State = struct {
             };
             std.mem.set(u.Color, colors[colors_start..colors_end], color);
         }
+    }
+
+    pub fn getAddedIndent(self: State, token_ix: usize) usize {
+        const token = self.tokens[token_ix];
+        return switch (token) {
+            .open_list, .open_fun => 2,
+            .open_vec, .open_map, .open_set => 1,
+            else => 0,
+        };
     }
 };
 
