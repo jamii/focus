@@ -190,6 +190,7 @@ pub const Editor = struct {
                             .one => self.buffer.language.toggleMode(),
                             .zero => self.goMatchingParen(),
                             .backspace => self.deleteToken(),
+                            .apostrophe => self.selectParent(),
                             else => {},
                         }
                     } else if (key_event.mods.control and key_event.mods.shift) {
@@ -1119,6 +1120,22 @@ pub const Editor = struct {
             if (self.buffer.language.getTokenIxBefore(pos)) |token_ix| {
                 const range = self.buffer.language.getTokenRanges()[token_ix];
                 self.buffer.delete(range[0], pos);
+            }
+        }
+    }
+
+    fn selectParent(self: *Editor) void {
+        const token_ranges = self.buffer.language.getTokenRanges();
+        const paren_parents = self.buffer.language.getParenParents();
+        const paren_matches = self.buffer.language.getParenMatches();
+        self.setMark();
+        for (self.cursors.items) |*cursor| {
+            if (self.buffer.language.getTokenIxBefore(cursor.head.pos)) |token_ix| {
+                if (paren_parents[token_ix]) |parent_ix| {
+                    self.updatePos(&cursor.head, token_ranges[parent_ix][0]);
+                    const matching_ix = paren_matches[parent_ix] orelse parent_ix;
+                    self.updatePos(&cursor.tail, token_ranges[matching_ix][0]);
+                }
             }
         }
     }
