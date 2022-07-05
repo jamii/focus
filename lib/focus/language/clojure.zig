@@ -205,6 +205,27 @@ pub const Tokenizer = struct {
         };
     }
 
+    inline fn is_whitespace(char: u8) bool {
+        return switch (char) {
+            0, ' ', ',', '\r', '\n', '\t' => true,
+            else => false,
+        };
+    }
+
+    inline fn is_terminator(char: u8) bool {
+        return switch (char) {
+            0, ' ', ',', '\r', '\n', '\t', '(', ')', '[', ']', '{', '}', '"' => true,
+            else => false,
+        };
+    }
+
+    inline fn is_symbol(char: u8) bool {
+        return switch (char) {
+            'a'...'z', 'A'...'Z', '&', '*', '+', '!', '_', '?', '<', '>', '=', '0'...'9', '\'', '-', '.', '$', '/', '#' => true,
+            else => false,
+        };
+    }
+
     // https://github.com/clojure/clojure/blob/master/src/jvm/clojure/lang/LispReader.java
     pub fn next(self: *Tokenizer) Token {
         var state = TokenizerState.start;
@@ -237,15 +258,19 @@ pub const Tokenizer = struct {
                     '\\' => state = .character,
                     '%' => state = .arg,
                     '#' => state = .dispatch,
-                    ' ', ',', '\r', '\n', '\t' => state = .whitespace,
                     '0'...'9' => state = .number,
-                    'a'...'z', 'A'...'Z', '&', '*', '+', '!', '_', '?', '<', '>', '=', '.', '$', '/' => {
-                        enough_chars = true;
-                        state = .symbol;
-                    },
                     '-' => state = .minus,
                     ':' => state = .keyword,
-                    else => return .err,
+                    else => {
+                        if (is_whitespace(char)) {
+                            state = .whitespace;
+                        } else if (is_symbol(char)) {
+                            enough_chars = true;
+                            state = .symbol;
+                        } else {
+                            return .err;
+                        }
+                    },
                 },
                 .string => switch (char) {
                     0 => {
@@ -280,39 +305,43 @@ pub const Tokenizer = struct {
                     },
                     else => {},
                 },
-                .character => if (!enough_chars)
-                    switch (char) {
-                        0, ' ', ',', '\r', '\n', '\t' => {
-                            self.pos -= 1;
-                            return .err;
-                        },
-                        'u' => state = .character_unicode_escape,
-                        'o' => state = .character_octal_escape,
-                        // TODO handle unicode
-                        else => enough_chars = true,
-                    }
-                else switch (char) {
-                    0, ' ', ',', '\r', '\n', '\t', '(', ')', '[', ']', '{', '}', '"' => {
+                .character => {
+                    if (!enough_chars) {
+                        switch (char) {
+                            'u' => state = .character_unicode_escape,
+                            'o' => state = .character_octal_escape,
+                            // TODO handle unicode
+                            else => {
+                                if (is_whitespace(char)) {
+                                    self.pos -= 1;
+                                    return .err;
+                                } else {
+                                    enough_chars = true;
+                                }
+                            },
+                        }
+                    } else if (is_terminator(char)) {
                         self.pos -= 1;
                         return .character;
-                    },
-                    else => {},
+                    } else {}
                 },
-                .character_unicode_escape => switch (char) {
-                    0, ' ', ',', '\r', '\n', '\t', '(', ')', '[', ']', '{', '}', '"' => {
+                .character_unicode_escape => {
+                    if (is_terminator(char)) {
                         // TODO validate character
                         self.pos -= 1;
                         return if (enough_chars) .character_unicode_escape else .character;
-                    },
-                    else => enough_chars = true,
+                    } else {
+                        enough_chars = true;
+                    }
                 },
-                .character_octal_escape => switch (char) {
-                    0, ' ', ',', '\r', '\n', '\t', '(', ')', '[', ']', '{', '}', '"' => {
+                .character_octal_escape => {
+                    if (is_terminator(char)) {
                         // TODO validate character
                         self.pos -= 1;
                         return if (enough_chars) .character_octal_escape else .character;
-                    },
-                    else => enough_chars = true,
+                    } else {
+                        enough_chars = true;
+                    }
                 },
                 .arg => switch (char) {
                     '0'...'9' => enough_chars = true,
@@ -343,14 +372,17 @@ pub const Tokenizer = struct {
                     '!' => state = .comment,
                     '<' => state = .unreadable,
                     '_' => return .discard,
-                    'a'...'z', 'A'...'Z', '&', '*', '+', '>' => {
-                        symbol_token = .tag;
-                        enough_chars = true;
-                        state = .symbol;
-                    },
                     '?' => state = .reader_conditional,
                     ':' => state = .namespaced_map,
-                    else => return .err,
+                    else => {
+                        if (is_symbol(char)) {
+                            symbol_token = .tag;
+                            enough_chars = true;
+                            state = .symbol;
+                        } else {
+                            return .err;
+                        }
+                    },
                 },
                 // The syntax inside unreadable is undefined.
                 // Clojure just panics.
@@ -392,37 +424,42 @@ pub const Tokenizer = struct {
                         return .number;
                     },
                 },
-                .symbol => switch (char) {
-                    // TODO validate symbols
-                    'a'...'z', 'A'...'Z', '&', '*', '+', '!', '_', '?', '<', '>', '=', '0'...'9', '\'', '-', '.', '$', '/', '#' => enough_chars = true,
-                    else => {
+                .symbol => {
+                    if (is_symbol(char)) {
+                        enough_chars = true;
+                    } else {
                         self.pos -= 1;
                         return if (enough_chars) symbol_token else .err;
-                    },
+                    }
                 },
                 .minus => switch (char) {
-                    'a'...'z', 'A'...'Z', '&', '*', '+', '!', '_', '?', '<', '>', '=', '\'', '-', '.', '$', '/', '#' => {
-                        enough_chars = true;
-                        state = .symbol;
-                    },
-                    ' ', ',', '\r', '\n', '\t', '(', ')', '[', ']', '{', '}', '"' => {
-                        self.pos -= 1;
-                        return .symbol;
-                    },
                     '0'...'9' => state = .number,
-                    else => return .err,
+                    else => {
+                        if (is_symbol(char)) {
+                            enough_chars = true;
+                            state = .symbol;
+                        } else if (is_terminator(char)) {
+                            self.pos -= 1;
+                            return .symbol;
+                        } else {
+                            return .err;
+                        }
+                    },
                 },
                 .keyword => switch (char) {
                     0 => {
                         self.pos -= 1;
                         return if (enough_chars) .keyword else .err;
                     },
-                    ' ', ',', '\r', '\n', '\t', '(', ')', '[', ']', '{', '}', '"' => {
-                        // TODO validate keywords
-                        self.pos -= 1;
-                        return .keyword;
+                    else => {
+                        if (is_terminator(char)) {
+                            // TODO validate keywords
+                            self.pos -= 1;
+                            return .keyword;
+                        } else {
+                            enough_chars = true;
+                        }
                     },
-                    else => enough_chars = true,
                 },
             }
         }
@@ -658,12 +695,5 @@ test "real code" {
     //    \\##inst "2022-06-30T15:45:28.733-00:00"
     //, &.{ .symbolic_value, .tag, .whitespace, .string });
 
-    // TODO
-    //    user=> #/ {}
-    //Syntax error reading source at (REPL:3:6).
-    //No reader function for tag /
-    //user=> #/foo {}
-    //Syntax error reading source at (REPL:4:6).
-    //Invalid token: /foo
-    //{}
+    try testTokenize("#/ {}", &.{ .tag, .whitespace, .open_map, .close_map });
 }
