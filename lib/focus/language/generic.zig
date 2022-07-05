@@ -209,7 +209,7 @@ pub const Tokenizer = struct {
                     else => return .unknown,
                 },
                 .identifier => switch (char) {
-                    'a'...'z', 'A'...'Z', '0'...'9', '_' => {},
+                    'a'...'z', 'A'...'Z', '0'...'9', '_', '-' => {},
                     else => {
                         self.pos -= 1;
                         return .identifier;
