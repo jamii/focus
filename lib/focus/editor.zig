@@ -188,6 +188,7 @@ pub const Editor = struct {
                             .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
                             .tab => for (self.cursors.items) |*cursor| self.indent(cursor),
                             .one => self.buffer.language.toggleMode(),
+                            .zero => self.goMatchingParen(),
                             else => {},
                         }
                     } else if (key_event.mods.control and key_event.mods.shift) {
@@ -1139,5 +1140,14 @@ pub const Editor = struct {
             self.top_pixel = cursor_top_pixel - @intCast(isize, text_rect.h) + @intCast(isize, self.app.atlas.char_height);
         if (cursor_bottom_pixel <= self.top_pixel + @intCast(isize, self.app.atlas.char_height))
             self.top_pixel = cursor_top_pixel;
+    }
+
+    fn goMatchingParen(self: *Editor) void {
+        for (self.cursors.items) |*cursor| {
+            const pos = cursor.head.pos;
+            if (pos > 0)
+                if (self.buffer.language.matchParen(pos - 1)) |matching_pos|
+                    self.goPos(cursor, matching_pos + 1);
+        }
     }
 };
