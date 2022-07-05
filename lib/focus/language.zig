@@ -166,19 +166,59 @@ pub const Language = union(enum) {
         return null;
     }
 
-    pub fn getIdealIndent(self: Language, pos: usize) usize {
-        var token_ix = self.getTokenIxAfter(pos) orelse return 0;
-        var indent: usize = 0;
-        const paren_parents = self.getParenParents();
-        while (true) {
-            token_ix = paren_parents[token_ix] orelse break;
-            indent += switch (self) {
-                .Zig => |state| state.getAddedIndent(token_ix),
-                .Clojure => |state| state.getAddedIndent(token_ix),
-                .Java, .Shell, .Julia, .Javascript, .Nix => |state| state.getAddedIndent(token_ix),
-                .Unknown => 0,
-            };
-        }
-        return indent;
+    pub fn getAddedIndent(self: Language, token_ix: usize) usize {
+        return switch (self) {
+            .Zig => |state| state.getAddedIndent(token_ix),
+            .Clojure => |state| state.getAddedIndent(token_ix),
+            .Java, .Shell, .Julia, .Javascript, .Nix => |state| state.getAddedIndent(token_ix),
+            .Unknown => 0,
+        };
+    }
+
+    pub fn getIdealIndent(self: Language, source: []const u8, line_start_pos: usize) usize {
+        const anchor: struct {
+            ix: usize,
+            added_indent: usize,
+        } = anchor: {
+            if (self.getTokenIxAfter(line_start_pos)) |after_ix|
+                if (self.getParenMatches()[after_ix]) |matching_ix|
+                    if (matching_ix < after_ix)
+                        // line starts with closing paren
+                        // align with the opening paren
+                        break :anchor .{ .ix = matching_ix, .added_indent = 0 };
+
+            if (self.getTokenIxBefore(line_start_pos)) |before_ix| {
+                const added_indent = self.getAddedIndent(before_ix);
+                if (added_indent != 0)
+                    // prev line ends with opening paren
+                    // indent from the opening paren
+                    break :anchor .{ .ix = before_ix, .added_indent = added_indent };
+
+                if (self.getParenParents()[before_ix]) |parent_ix|
+                    // prev line is in some paren pair
+                    // indent with the opening paren of that pair
+                    break :anchor .{ .ix = parent_ix, .added_indent = self.getAddedIndent(parent_ix) };
+            }
+
+            // nothing to align with
+            // give up
+            return 0;
+        };
+
+        const anchor_range = self.getTokenRanges()[anchor.ix];
+        const anchor_line_start = if (std.mem.lastIndexOfScalar(u8, source[0..anchor_range[0]], '\n')) |n|
+            n + 1
+        else
+            0;
+        var anchor_text_start = anchor_line_start;
+        // TODO handle alternative whitespace
+        while (anchor_text_start < anchor_range[0] and source[anchor_text_start] == ' ') : (anchor_text_start += 1) {}
+        const anchor_indent = anchor_text_start - anchor_line_start;
+        const anchor_pos = anchor_range[0] - anchor_line_start;
+
+        return switch (self) {
+            .Clojure => anchor_pos + anchor.added_indent,
+            else => anchor_indent + anchor.added_indent,
+        };
     }
 };

@@ -951,7 +951,7 @@ pub const Editor = struct {
                 this_indent += 1;
             }
 
-            const ideal_indent = self.buffer.language.getIdealIndent(this_line_start_pos);
+            const ideal_indent = self.buffer.language.getIdealIndent(self.buffer.bytes.items, this_line_start_pos);
 
             // adjust indent
             edit_cursor.head.pos = this_line_start_pos;
