@@ -103,7 +103,7 @@ pub const State = struct {
             const color = switch (token) {
                 .err => style.emphasisRed,
                 .symbol, .keyword => if (self.mode == .Parens) style.comment_color else style.identColor(source[source_start..source_end]),
-                .comment, .whitespace => if (self.mode == .Parens) style.comment_color else style.comment_color,
+                .comment, .whitespace => style.comment_color,
                 .open_list, .open_map, .open_vec, .open_set, .open_fun, .close_list, .close_map, .close_vec => color: {
                     var is_good_match = false;
                     if (self.paren_matches[i]) |matching_ix| {
