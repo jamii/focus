@@ -1133,8 +1133,8 @@ pub const Editor = struct {
             if (self.buffer.language.getTokenIxBefore(cursor.head.pos)) |token_ix| {
                 if (paren_parents[token_ix]) |parent_ix| {
                     self.updatePos(&cursor.head, token_ranges[parent_ix][0]);
-                    const matching_ix = paren_matches[parent_ix] orelse parent_ix;
-                    self.updatePos(&cursor.tail, token_ranges[matching_ix][0]);
+                    const matching_ix = paren_matches[parent_ix] orelse token_ranges.len - 1;
+                    self.updatePos(&cursor.tail, token_ranges[matching_ix][1]);
                 }
             }
         }
