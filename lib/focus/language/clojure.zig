@@ -690,10 +690,5 @@ test "real code" {
         \\(.startsWith(:uri request) "/out")
     , &.{ .open_list, .symbol, .open_list, .keyword, .whitespace, .symbol, .close_list, .whitespace, .string, .close_list });
 
-    // TODO clojure does this
-    //try testTokenize(
-    //    \\##inst "2022-06-30T15:45:28.733-00:00"
-    //, &.{ .symbolic_value, .tag, .whitespace, .string });
-
     try testTokenize("#/ {}", &.{ .tag, .whitespace, .open_map, .close_map });
 }
