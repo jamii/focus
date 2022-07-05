@@ -122,6 +122,15 @@ pub const Language = union(enum) {
         return return_ix;
     }
 
+    pub fn getTokenIxAfter(self: Language, pos: usize) ?usize {
+        const token_ranges = self.getTokenRanges();
+        for (token_ranges) |token_range, ix| {
+            if (token_range[0] >= pos)
+                return ix;
+        }
+        return null;
+    }
+
     pub fn format(self: Language, source: []const u8) ?[]const u8 {
         return switch (self) {
             .Zig => |state| state.format(source),
