@@ -155,8 +155,35 @@ pub const Language = union(enum) {
     pub fn format(self: Language, source: []const u8) ?[]const u8 {
         return switch (self) {
             .Zig => |state| state.format(source),
-            else => null,
+            .Clojure => |state| stripTrailingWhitespace(state.allocator, source),
+            .Java, .Shell, .Julia, .Javascript, .Nix => |state| stripTrailingWhitespace(state.allocator, source),
+            .Unknown => null,
         };
+    }
+
+    pub fn stripTrailingWhitespace(allocator: u.Allocator, source: []const u8) []const u8 {
+        var new_source = u.ArrayList(u8).init(allocator);
+        defer new_source.deinit();
+        var line_start: usize = 0;
+        var line_end: usize = 0;
+        var i: usize = 0;
+        while (true) {
+            if (i >= source.len) {
+                new_source.appendSlice(source[line_start..line_end]) catch u.oom();
+                break;
+            } else if (source[i] == '\n') {
+                new_source.appendSlice(source[line_start..line_end]) catch u.oom();
+                new_source.append('\n') catch u.oom();
+                i += 1;
+                line_start = i;
+                line_end = i;
+            } else {
+                if (source[i] != ' ')
+                    line_end = i + 1;
+                i += 1;
+            }
+        }
+        return new_source.toOwnedSlice();
     }
 
     pub fn matchParen(self: Language, pos: usize) ?usize {
