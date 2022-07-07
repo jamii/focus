@@ -22,7 +22,10 @@ pub const Language = union(enum) {
         // TODO writing this as `return if ...` causes a confusing compiler error
         if (std.mem.endsWith(u8, filename, ".zig"))
             return .{ .Zig = zig.State.init(allocator, source) }
-        else if (std.mem.endsWith(u8, filename, ".clj") or std.mem.endsWith(u8, filename, ".cljs") or std.mem.endsWith(u8, filename, ".cljc"))
+        else if (std.mem.endsWith(u8, filename, ".clj") or
+            std.mem.endsWith(u8, filename, ".cljs") or
+            std.mem.endsWith(u8, filename, ".cljc") or
+            std.mem.endsWith(u8, filename, ".edn"))
             return .{ .Clojure = clojure.State.init(allocator, source) }
         else if (std.mem.endsWith(u8, filename, ".java"))
             return .{ .Java = generic.State.init(allocator, "//", source) }
