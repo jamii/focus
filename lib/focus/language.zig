@@ -244,7 +244,7 @@ pub const Language = union(enum) {
         // TODO handle alternative whitespace
         while (anchor_text_start < anchor_range[0] and source[anchor_text_start] == ' ') : (anchor_text_start += 1) {}
         const anchor_indent = anchor_text_start - anchor_line_start;
-        const anchor_pos = anchor_range[1] - anchor_line_start;
+        const anchor_pos = anchor_range[1] - 1 - anchor_line_start;
 
         return switch (self) {
             .Clojure => anchor_pos + anchor.added_indent,
