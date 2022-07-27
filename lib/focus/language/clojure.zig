@@ -225,7 +225,7 @@ pub const Tokenizer = struct {
 
     inline fn is_whitespace(char: u8) bool {
         return switch (char) {
-            0, ' ', ',', '\r', '\n', '\t' => true,
+            ' ', ',', '\r', '\n', '\t' => true,
             else => false,
         };
     }
@@ -427,12 +427,11 @@ pub const Tokenizer = struct {
                         return .namespaced_map_alias;
                     },
                 },
-                .whitespace => switch (char) {
-                    ' ', ',', '\r', '\t' => {},
-                    else => {
+                .whitespace => {
+                    if (!is_whitespace(char)) {
                         self.pos -= 1;
                         return .whitespace;
-                    },
+                    }
                 },
                 .number => switch (char) {
                     // TODO validate numbers
