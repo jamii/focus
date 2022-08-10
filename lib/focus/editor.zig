@@ -160,7 +160,7 @@ pub const Editor = struct {
                             .space => self.toggleMark(),
                             .c => {
                                 for (self.cursors.items) |*cursor| self.copy(cursor);
-                                self.clearMark();
+                                // don't clear mark - often want to select -> copy -> edit -> move -> paste
                             },
                             .x => {
                                 for (self.cursors.items) |*cursor| self.cut(cursor);
