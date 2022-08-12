@@ -12,18 +12,14 @@ const Selector = focus.Selector;
 const mach_compat = focus.mach_compat;
 
 const projects = [_][]const u8{
-    "/home/jamie/exo/",
-    "/home/jamie/exo-secret/",
-    "/home/jamie/imp/",
-    "/home/jamie/focus/",
-    "/home/jamie/tower/",
-    "/home/jamie/zig/",
-    "/home/jamie/blog",
-    "/home/jamie/dida",
-    "/home/jamie/mutant",
-    "/home/jamie/inspector-z",
+    "/home/jamie/bin",
+    "/home/jamie/secret",
+    "/home/jamie/imp",
     "/home/jamie/preimp",
-    "/home/jamie/hytradboi",
+    "/home/jamie/focus",
+    "/home/jamie/tower",
+    "/home/jamie/zig",
+    "/home/jamie/blog",
 };
 
 pub const ProjectFileOpener = struct {
