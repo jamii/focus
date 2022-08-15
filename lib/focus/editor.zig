@@ -33,6 +33,7 @@ pub const Cursor = struct {
 pub const Dragging = enum {
     NotDragging,
     Dragging,
+    ShiftDragging,
     CtrlDragging,
 };
 
@@ -265,6 +266,11 @@ pub const Editor = struct {
                                 var cursor = self.newCursor();
                                 self.updatePos(&cursor.head, pos);
                                 self.updatePos(&cursor.tail, pos);
+                            } else if (mouse_press_event.mods.shift) {
+                                self.dragging = .ShiftDragging;
+                                self.marked = true;
+                                var cursor = self.getMainCursor();
+                                self.updatePos(&cursor.head, pos);
                             } else {
                                 self.dragging = .Dragging;
                                 self.collapseCursors();
@@ -301,20 +307,11 @@ pub const Editor = struct {
             const line = @divTrunc(self.top_pixel + mouse_y - text_rect.y, self.app.atlas.char_height);
             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
             const pos = self.line_wrapped_buffer.getPosForLineCol(u.min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, u.max(line, 0))), @intCast(usize, u.max(col, 0)));
-            if (self.dragging == .CtrlDragging) {
-                var cursor = &self.cursors.items[self.cursors.items.len - 1];
-                if (cursor.tail.pos != pos and !self.marked) {
-                    self.setMark();
-                }
-                self.updatePos(&cursor.head, pos);
-            } else {
-                for (self.cursors.items) |*cursor| {
-                    if (cursor.tail.pos != pos and !self.marked) {
-                        self.setMark();
-                    }
-                    self.updatePos(&cursor.head, pos);
-                }
+            var cursor = &self.cursors.items[self.cursors.items.len - 1];
+            if (cursor.tail.pos != pos and !self.marked) {
+                self.setMark();
             }
+            self.updatePos(&cursor.head, pos);
 
             // if dragging outside window, scroll
             if (mouse_y <= text_rect.y) self.top_pixel -= scroll_amount;
