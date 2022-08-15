@@ -869,8 +869,10 @@ pub const Editor = struct {
     }
 
     pub fn paste(self: *Editor, cursor: *Cursor) void {
-        const text = glfw.getClipboardString() catch |err|
-            u.panic("Error while getting system clipboard: {}", .{err});
+        const text = glfw.getClipboardString() catch
+        // https://www.glfw.org/docs/3.0/group__clipboard.html
+        // returns an error if the clipboard is empty or contents can't be converted to utf8 string
+            return;
         // text is owned by glfw, don't need to free
         self.insert(cursor, std.mem.span(text));
     }
