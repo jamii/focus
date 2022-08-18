@@ -12,8 +12,7 @@ const Selector = focus.Selector;
 const mach_compat = focus.mach_compat;
 
 const projects = [_][]const u8{
-    "/home/jamie/bin",
-    "/home/jamie/secret",
+    "/home/jamie",
     "/home/jamie/imp",
     "/home/jamie/preimp",
     "/home/jamie/focus",
