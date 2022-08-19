@@ -427,7 +427,10 @@ pub const Window = struct {
     // view api
 
     pub fn pushView(self: *Window, view_ptr: anytype) void {
-        if (self.getTopViewIfEditor()) |editor| editor.save(.Auto);
+        if (self.getTopViewIfEditor()) |editor| {
+            editor.save(.Auto);
+            editor.buffer.last_lost_focus_ms = self.app.frame_time_ms;
+        }
         const tag_name = comptime tag_name: {
             // TODO this is gross
             const view_type_name = @typeName(@typeInfo(@TypeOf(view_ptr)).Pointer.child);
@@ -441,6 +444,10 @@ pub const Window = struct {
     }
 
     pub fn popView(self: *Window) void {
+        if (self.getTopViewIfEditor()) |editor| {
+            editor.save(.Auto);
+            editor.buffer.last_lost_focus_ms = self.app.frame_time_ms;
+        }
         if (self.views.items.len > 0) {
             const view = self.views.pop();
             // can't clean up view right away because we might still be inside it's frame function
