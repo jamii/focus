@@ -11,16 +11,6 @@ const style = focus.style;
 const Selector = focus.Selector;
 const mach_compat = focus.mach_compat;
 
-const projects = [_][]const u8{
-    "/home/jamie",
-    "/home/jamie/imp",
-    "/home/jamie/preimp",
-    "/home/jamie/focus",
-    "/home/jamie/tower",
-    "/home/jamie/zig",
-    "/home/jamie/blog",
-};
-
 pub const ProjectFileOpener = struct {
     app: *App,
     preview_editor: *Editor,
@@ -45,8 +35,21 @@ pub const ProjectFileOpener = struct {
         var selector = Selector.init(app);
         selector.selected = app.last_project_file_opener_selected;
 
+        var projects = u.ArrayList(u8).init(app.frame_allocator);
+        {
+            const file = std.fs.cwd().openFile("/home/jamie/secret/projects", .{}) catch |err|
+                u.panic("{} while opening /home/jamie/secret/projects", .{err});
+            defer file.close();
+            file.reader().readAllArrayList(&projects, std.math.maxInt(usize)) catch |err|
+                u.panic("{} while reading /home/jamie/secret/projects", .{err});
+        }
+
         var paths = u.ArrayList([]const u8).init(app.allocator);
-        for (projects) |project| {
+        var projects_iter = std.mem.split(u8, projects.items, "\n");
+        while (projects_iter.next()) |project_untrimmed| {
+            const project = std.mem.trim(u8, project_untrimmed, " ");
+            if (project.len == 0) continue;
+            if (std.mem.startsWith(u8, project, "#")) continue;
             const result = std.ChildProcess.exec(.{
                 .allocator = app.frame_allocator,
                 .argv = &[_][]const u8{ "rg", "--files", "-0" },
