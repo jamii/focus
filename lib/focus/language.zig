@@ -152,6 +152,14 @@ pub const Language = union(enum) {
         return null;
     }
 
+    pub fn getIdentifierRangeAt(self: Language, pos: usize) ?[2]usize {
+        const token_ix = self.getTokenIxBefore(pos) orelse self.getTokenIxAfter(pos) orelse return null;
+        switch (self) {
+            .Zig => |state| return if (state.tokens[token_ix] == .identifier) (state.token_ranges[token_ix]) else null,
+            else => return null,
+        }
+    }
+
     pub fn format(self: Language, source: []const u8) ?[]const u8 {
         return switch (self) {
             .Zig => |state| state.format(source),

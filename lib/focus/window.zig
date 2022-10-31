@@ -239,23 +239,16 @@ pub const Window = struct {
                         if (key_event.mods.alt) {
                             switch (key_event.key) {
                                 .f => {
-                                    var project_dir: []const u8 = "/home/jamie";
-                                    if (self.getTopViewIfEditor()) |editor| {
-                                        if (editor.buffer.getFilename()) |filename| {
-                                            const dirname = std.fs.path.dirname(filename).?;
-                                            var root = dirname;
-                                            while (!u.deepEqual(root, "/")) {
-                                                const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch u.oom();
-                                                if (std.fs.openFileAbsolute(git_path, .{})) |file| {
-                                                    file.close();
-                                                    break;
-                                                } else |_| {}
-                                                root = std.fs.path.dirname(root).?;
-                                            }
-                                            project_dir = if (u.deepEqual(root, "/")) dirname else root;
-                                        }
-                                    }
-                                    const project_searcher = ProjectSearcher.init(self.app, project_dir);
+                                    const project_dir = if (self.getTopViewIfEditor()) |editor|
+                                        editor.buffer.getProjectDir()
+                                    else
+                                        null;
+                                    const project_searcher = ProjectSearcher.init(
+                                        self.app,
+                                        project_dir orelse "/home/jamie",
+                                        .FixedStrings,
+                                        null,
+                                    );
                                     self.pushView(project_searcher);
                                     handled = true;
                                 },

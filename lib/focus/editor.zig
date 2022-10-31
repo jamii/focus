@@ -7,6 +7,7 @@ const App = focus.App;
 const Buffer = focus.Buffer;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 const BufferSearcher = focus.BufferSearcher;
+const ProjectSearcher = focus.ProjectSearcher;
 //const ImpRepl = focus.ImpRepl;
 const Window = focus.Window;
 const style = focus.style;
@@ -185,6 +186,19 @@ pub const Editor = struct {
                                 const buffer_searcher = BufferSearcher.init(self.app, self);
                                 window.pushView(buffer_searcher);
                             },
+                            .g => {
+                                const project_dir = self.buffer.getProjectDir() orelse "/home/jamie";
+                                if (self.buffer.language.getIdentifierRangeAt(self.getMainCursor().head.pos)) |identifier_range| {
+                                    const identifier = self.buffer.bytes.items[identifier_range[0]..identifier_range[1]];
+                                    var filter = u.ArrayList(u8).init(self.app.frame_allocator);
+                                    std.fmt.format(filter.writer(),
+                                        \\fn {s}\(|const {s} =|var {s} =| {s}:
+                                    , .{ identifier, identifier, identifier, identifier }) catch u.oom();
+                                    self.app.last_project_search_selected = 0;
+                                    const project_searcher = ProjectSearcher.init(self.app, project_dir, .Regexp, filter.toOwnedSlice());
+                                    window.pushView(project_searcher);
+                                }
+                            },
                             .z => self.undo(text_rect),
                             .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
                             .tab => for (self.cursors.items) |*cursor| self.indent(cursor),
@@ -217,6 +231,19 @@ pub const Editor = struct {
                                 self.top_pixel = 0;
                             },
                             .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
+                            .g => {
+                                const project_dir = self.buffer.getProjectDir() orelse "/home/jamie";
+                                if (self.buffer.language.getIdentifierRangeAt(self.getMainCursor().head.pos)) |identifier_range| {
+                                    const identifier = self.buffer.bytes.items[identifier_range[0]..identifier_range[1]];
+                                    var filter = u.ArrayList(u8).init(self.app.frame_allocator);
+                                    std.fmt.format(filter.writer(),
+                                        \\{s}
+                                    , .{identifier}) catch u.oom();
+                                    self.app.last_project_search_selected = 0;
+                                    const project_searcher = ProjectSearcher.init(self.app, project_dir, .FixedStrings, filter.toOwnedSlice());
+                                    window.pushView(project_searcher);
+                                }
+                            },
                             else => {},
                         }
                     } else if (key_event.mods.shift) {

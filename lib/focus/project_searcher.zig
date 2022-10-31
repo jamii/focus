@@ -16,11 +16,17 @@ pub const ProjectSearcher = struct {
     app: *App,
     project_dir: []const u8,
     preview_editor: *Editor,
+    filter_mode: FilterMode,
     input: SingleLineEditor,
     selector: Selector,
     child_process: ?ChildProcess,
 
-    pub fn init(app: *App, project_dir: []const u8) *ProjectSearcher {
+    const FilterMode = enum {
+        FixedStrings,
+        Regexp,
+    };
+
+    pub fn init(app: *App, project_dir: []const u8, init_filter_mode: FilterMode, init_filter: ?[]const u8) *ProjectSearcher {
         const empty_buffer = Buffer.initEmpty(app, .{
             .enable_completions = false,
             .enable_undo = false,
@@ -29,7 +35,7 @@ pub const ProjectSearcher = struct {
             .show_status_bar = false,
             .show_completer = false,
         });
-        const input = SingleLineEditor.init(app, app.last_search_filter);
+        const input = SingleLineEditor.init(app, init_filter orelse app.last_search_filter);
         input.editor.goRealLineStart(input.editor.getMainCursor());
         input.editor.setMark();
         input.editor.goRealLineEnd(input.editor.getMainCursor());
@@ -42,6 +48,7 @@ pub const ProjectSearcher = struct {
             .app = app,
             .project_dir = project_dir,
             .preview_editor = preview_editor,
+            .filter_mode = init_filter_mode,
             .input = input,
             .selector = selector,
             .child_process = null,
@@ -67,7 +74,17 @@ pub const ProjectSearcher = struct {
             self.child_process = ChildProcess.init(
                 self.app.allocator,
                 self.project_dir,
-                &[_][]const u8{ "rg", "--line-number", "--sort", "path", "--fixed-strings", filter },
+                &[_][]const u8{
+                    "rg",
+                    "--line-number",
+                    "--sort",
+                    "path",
+                    switch (self.filter_mode) {
+                        .FixedStrings => "--fixed-strings",
+                        .Regexp => "--regexp",
+                    },
+                    filter,
+                },
             );
         }
     }
