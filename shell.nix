@@ -27,7 +27,7 @@ let
             if (targetPkgs.system == "x86_64-linux") then {
                 url = "https://ziglang.org/builds/zig-linux-x86_64-0.10.0-dev.2473+e498fb155.tar.xz";
                 sha256 = "1iih9wcr5v2k2v384ljv4nalfzgy0kbb0ilz7jdn5gh4h9jhy086";
-            } else 
+            } else
             throw ("Unknown system " ++ targetPkgs.system)
         );
         dontConfigure = true;
@@ -48,6 +48,5 @@ hostPkgs.mkShell rec {
     hostPkgs.git
     targetPkgs.libGL.all
     targetPkgs.xorg.libX11.dev
-    targetPkgs.pcre2.all
   ];
 }

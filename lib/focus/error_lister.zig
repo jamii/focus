@@ -76,7 +76,7 @@ pub const ErrorLister = struct {
             if (other_window.getTopView()) |view| {
                 switch (view) {
                     .Maker => |maker| switch (maker.state) {
-                        .Running => |running| error_locations.appendSlice(running.error_locations) catch u.oom(),
+                        .Running => |running| error_locations.appendSlice(running.error_locations.items) catch u.oom(),
                         else => {},
                     },
                     else => {},

@@ -29,17 +29,18 @@ pub const Maker = struct {
             dirname: []const u8,
             command: []const u8,
             child_process: ChildProcess,
-            error_locations: []const ErrorLister.ErrorLocation,
+            error_locations: u.ArrayList(ErrorLister.ErrorLocation),
 
             const Self = @This();
             fn clearErrorLocations(self: *Self, allocator: u.Allocator) void {
-                for (self.error_locations) |error_location|
+                for (self.error_locations.items) |error_location|
                     error_location.deinit(allocator);
-                allocator.free(self.error_locations);
-                self.error_locations = &.{};
+                self.error_locations.shrinkRetainingCapacity(0);
             }
             fn deinit(self: *Self, allocator: u.Allocator) void {
-                self.clearErrorLocations(allocator);
+                for (self.error_locations.items) |error_location|
+                    error_location.deinit(allocator);
+                self.error_locations.deinit();
                 self.child_process.deinit();
                 allocator.free(self.command);
                 allocator.free(self.dirname);
@@ -191,7 +192,7 @@ pub const Maker = struct {
                             choosing_command.dirname,
                             &.{ "fish", "--command", command },
                         ),
-                        .error_locations = &.{},
+                        .error_locations = u.ArrayList(ErrorLister.ErrorLocation).init(self.app.allocator),
                     } };
                 }
             },
@@ -200,40 +201,99 @@ pub const Maker = struct {
                 if (new_text.len > 0) {
                     self.result_editor.buffer.insert(self.result_editor.buffer.getBufferEnd(), new_text);
                     // parse results
-                    var error_locations = u.ArrayList(ErrorLister.ErrorLocation).init(self.app.allocator);
-                    defer error_locations.deinit();
+                    running.clearErrorLocations(self.app.allocator);
+                    const error_locations = &running.error_locations;
                     const text = self.result_editor.buffer.bytes.items;
-                    for (u.regex_search(
-                        self.app.frame_allocator,
-                        text,
-                        \\([\S^:]+):(\d+):(\d+)
-                        ,
-                    )) |match| {
-                        const line = std.fmt.parseInt(
-                            usize,
-                            text[match.captures[1][0]..match.captures[1][1]],
-                            10,
-                        ) catch continue;
-                        const col = std.fmt.parseInt(
-                            usize,
-                            text[match.captures[2][0]..match.captures[2][1]],
-                            10,
-                        ) catch continue;
-                        const path = text[match.captures[0][0]..match.captures[0][1]];
+                    var match_start: usize = 0;
+                    next_match: while (match_start < text.len) {
+                        // (whitespace|":")!+ ":"
+                        const path_start = match_start;
+                        var path_end = path_start;
+                        while (path_end < text.len) {
+                            switch (text[path_end]) {
+                                ' ', '\t', '\r', '\n', ':' => {
+                                    break;
+                                },
+                                else => {
+                                    path_end += 1;
+                                },
+                            }
+                        }
+                        if (path_start == path_end) {
+                            match_start = path_end + 1;
+                            continue :next_match;
+                        }
+
+                        if (path_end >= text.len or text[path_end] != ':')
+                            break;
+
+                        // digit+ :
+                        const line_start = path_end + 1;
+                        var line_end = line_start;
+                        while (line_end < text.len) {
+                            switch (text[line_end]) {
+                                '0'...'9' => {
+                                    line_end += 1;
+                                },
+                                else => {
+                                    break;
+                                },
+                            }
+                        }
+                        if (line_start == line_end) {
+                            match_start = line_end + 1;
+                            continue :next_match;
+                        }
+
+                        if (path_end >= text.len or text[path_end] != ':')
+                            break;
+
+                        // digit+
+                        const col_start = line_end + 1;
+                        var col_end = col_start;
+                        while (col_start < text.len) {
+                            switch (text[col_end]) {
+                                '0'...'9' => {
+                                    col_end += 1;
+                                },
+                                else => {
+                                    break;
+                                },
+                            }
+                        }
+                        if (col_start == col_end) {
+                            match_start = col_end + 1;
+                            continue :next_match;
+                        }
+
+                        match_start = col_end + 1;
+
+                        const path = text[path_start..path_end];
                         const full_path = std.fs.path.resolve(self.app.allocator, &.{
                             running.dirname,
                             path,
-                        }) catch |err| u.panic("Error when resolving path {s}: {}", .{ path, err });
+                        }) catch continue :next_match;
+
+                        const line = std.fmt.parseInt(
+                            usize,
+                            text[line_start..line_end],
+                            10,
+                        ) catch continue :next_match;
+
+                        const col = std.fmt.parseInt(
+                            usize,
+                            text[col_start..col_end],
+                            10,
+                        ) catch continue :next_match;
+
                         error_locations.append(.{
                             .report_buffer = self.result_editor.buffer,
-                            .report_location = match.matched,
+                            .report_location = .{ path_start, col_end },
                             .path = full_path,
                             .line = line,
                             .col = col,
                         }) catch u.oom();
                     }
-                    running.clearErrorLocations(self.app.allocator);
-                    running.error_locations = error_locations.toOwnedSlice();
                 }
 
                 // show results in editor

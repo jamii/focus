@@ -40,7 +40,6 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     exe.setMainPkgPath("./");
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("GL");
-    exe.linkSystemLibrary("pcre2-8");
     exe.setOutputDir("./zig-cache");
     exe.addPackage(freetype.pkg);
     freetype.link(b, exe, .{});
