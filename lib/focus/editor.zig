@@ -244,6 +244,7 @@ pub const Editor = struct {
                                     window.pushView(project_searcher);
                                 }
                             },
+                            .o => self.openOnWeb(),
                             else => {},
                         }
                     } else if (key_event.mods.shift) {
@@ -1168,5 +1169,54 @@ pub const Editor = struct {
                 }
             }
         }
+    }
+
+    fn openOnWeb(self: *Editor) void {
+        const project_dir = self.buffer.getProjectDir() orelse return;
+
+        const origin = origin: {
+            const result = std.ChildProcess.exec(.{
+                .allocator = self.app.frame_allocator,
+                .argv = &[_][]const u8{ "git", "config", "--get", "remote.origin.url" },
+                .cwd = project_dir,
+                .max_output_bytes = 128 * 1024 * 1024,
+            }) catch |err| u.panic("{} while calling git", .{err});
+            u.assert(result.term == .Exited and result.term.Exited == 0);
+            break :origin result.stdout;
+        };
+
+        // `origin` should look like:
+        // git@github.com:jamii/focus.git
+        if (!std.mem.startsWith(u8, origin, "git@github.com:")) return;
+        const org_and_repo_start = "git@github.com:".len;
+        const org_and_repo_end = std.mem.indexOf(u8, origin, ".git") orelse return;
+        const org_and_repo = origin[org_and_repo_start..org_and_repo_end];
+
+        const commit = commit: {
+            const result = std.ChildProcess.exec(.{
+                .allocator = self.app.frame_allocator,
+                .argv = &[_][]const u8{ "git", "rev-parse", "HEAD" },
+                .cwd = project_dir,
+                .max_output_bytes = 128 * 1024 * 1024,
+            }) catch |err| u.panic("{} while calling git", .{err});
+            u.assert(result.term == .Exited and result.term.Exited == 0);
+            break :commit std.mem.trim(u8, result.stdout, " \n");
+        };
+
+        const relative_path = self.buffer.getFilenameRelativeToProjectDir() orelse return;
+
+        const line = self.buffer.getLineColForPos(self.getMainCursor().head.pos)[0];
+
+        const command = u.format(self.app.frame_allocator, "$BROWSER https://github.com/{s}/blob/{s}/{s}#L{} & disown", .{
+            org_and_repo,
+            commit,
+            relative_path,
+            line + 1,
+        });
+        var process = std.ChildProcess.init(
+            &[_][]const u8{ "fish", "-c", command },
+            self.app.frame_allocator,
+        );
+        process.spawn() catch |err| u.panic("Failed to spawn {s}: {}", .{ command, err });
     }
 };

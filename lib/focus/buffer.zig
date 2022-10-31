@@ -599,20 +599,24 @@ pub const Buffer = struct {
     }
 
     pub fn getProjectDir(self: *Buffer) ?[]const u8 {
-        if (self.getFilename()) |filename| {
-            const dirname = std.fs.path.dirname(filename).?;
-            var root = dirname;
-            while (!u.deepEqual(root, "/")) {
-                const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch u.oom();
-                if (std.fs.openFileAbsolute(git_path, .{})) |file| {
-                    file.close();
-                    break;
-                } else |_| {}
-                root = std.fs.path.dirname(root).?;
-            }
-            return if (u.deepEqual(root, "/")) dirname else root;
-        } else {
-            return null;
+        const filename = self.getFilename() orelse return null;
+        const dirname = std.fs.path.dirname(filename).?;
+        var root = dirname;
+        while (!u.deepEqual(root, "/")) {
+            const git_path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ root, ".git" }) catch u.oom();
+            if (std.fs.openFileAbsolute(git_path, .{})) |file| {
+                file.close();
+                break;
+            } else |_| {}
+            root = std.fs.path.dirname(root).?;
         }
+        return if (u.deepEqual(root, "/")) dirname else root;
+    }
+
+    pub fn getFilenameRelativeToProjectDir(self: *Buffer) ?[]const u8 {
+        const filename = self.getFilename() orelse return null;
+        const project_dir = self.getProjectDir() orelse return null;
+        u.assert(std.mem.startsWith(u8, filename, project_dir));
+        return filename[project_dir.len..];
     }
 };
