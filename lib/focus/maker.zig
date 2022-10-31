@@ -204,69 +204,69 @@ pub const Maker = struct {
                     running.clearErrorLocations(self.app.allocator);
                     const error_locations = &running.error_locations;
                     const text = self.result_editor.buffer.bytes.items;
-                    var match_start: usize = 0;
-                    next_match: while (match_start < text.len) {
+                    var i: usize = 0;
+                    next_match: while (i < text.len) {
                         // (whitespace|":")!+ ":"
-                        const path_start = match_start;
-                        var path_end = path_start;
-                        while (path_end < text.len) {
-                            switch (text[path_end]) {
+                        const path_start = i;
+                        while (i < text.len) {
+                            switch (text[i]) {
                                 ' ', '\t', '\r', '\n', ':' => {
                                     break;
                                 },
                                 else => {
-                                    path_end += 1;
+                                    i += 1;
                                 },
                             }
                         }
+                        const path_end = i;
                         if (path_start == path_end) {
-                            match_start = path_end + 1;
+                            i += 1;
                             continue :next_match;
                         }
 
-                        if (path_end >= text.len or text[path_end] != ':')
-                            break;
+                        if (i < text.len and text[i] == ':')
+                            i += 1
+                        else
+                            continue :next_match;
 
                         // digit+ :
-                        const line_start = path_end + 1;
-                        var line_end = line_start;
-                        while (line_end < text.len) {
-                            switch (text[line_end]) {
+                        const line_start = i;
+                        while (i < text.len) {
+                            switch (text[i]) {
                                 '0'...'9' => {
-                                    line_end += 1;
+                                    i += 1;
                                 },
                                 else => {
                                     break;
                                 },
                             }
                         }
+                        const line_end = i;
                         if (line_start == line_end) {
-                            match_start = line_end + 1;
                             continue :next_match;
                         }
 
-                        if (path_end >= text.len or text[path_end] != ':')
-                            break;
-
-                        // digit+
-                        const col_start = line_end + 1;
-                        var col_end = col_start;
-                        while (col_start < text.len) {
-                            switch (text[col_end]) {
-                                '0'...'9' => {
-                                    col_end += 1;
-                                },
-                                else => {
-                                    break;
-                                },
+                        // (":" digit+)?
+                        var col_start: ?usize = null;
+                        var col_end: ?usize = null;
+                        if (i < text.len and text[i] == ':') {
+                            i += 1;
+                            col_start = i;
+                            while (i < text.len) {
+                                switch (text[i]) {
+                                    '0'...'9' => {
+                                        i += 1;
+                                    },
+                                    else => {
+                                        break;
+                                    },
+                                }
+                            }
+                            col_end = i;
+                            if (col_start.? == col_end.?) {
+                                continue :next_match;
                             }
                         }
-                        if (col_start == col_end) {
-                            match_start = col_end + 1;
-                            continue :next_match;
-                        }
-
-                        match_start = col_end + 1;
 
                         const path = text[path_start..path_end];
                         const full_path = std.fs.path.resolve(self.app.allocator, &.{
@@ -280,15 +280,18 @@ pub const Maker = struct {
                             10,
                         ) catch continue :next_match;
 
-                        const col = std.fmt.parseInt(
-                            usize,
-                            text[col_start..col_end],
-                            10,
-                        ) catch continue :next_match;
+                        const col = if (col_start == null)
+                            1
+                        else
+                            std.fmt.parseInt(
+                                usize,
+                                text[col_start.?..col_end.?],
+                                10,
+                            ) catch continue :next_match;
 
                         error_locations.append(.{
                             .report_buffer = self.result_editor.buffer,
-                            .report_location = .{ path_start, col_end },
+                            .report_location = .{ path_start, i },
                             .path = full_path,
                             .line = line,
                             .col = col,
