@@ -27,10 +27,32 @@ pub const LineWrappedBuffer = struct {
     }
 
     pub fn update(self: *LineWrappedBuffer) void {
+        self.wrapped_line_ranges.shrinkRetainingCapacity(0);
+        self.updateFromLineRanges(self.buffer.line_ranges.items);
+    }
+
+    pub fn updateAfterAppend(self: *LineWrappedBuffer, append_pos: usize) void {
+        const line_ranges = self.buffer.line_ranges.items;
+        const wrapped_line_ranges = &self.wrapped_line_ranges;
+
+        var line_start_ix = line_ranges.len -| 1;
+        while (line_start_ix > 0 and line_ranges[line_start_ix][1] > append_pos) : (line_start_ix -= 1) {}
+
+        const start_pos = line_ranges[line_start_ix][0];
+        while (wrapped_line_ranges.popOrNull()) |wrapped_line_range| {
+            if (wrapped_line_range[0] < start_pos) {
+                wrapped_line_ranges.append(wrapped_line_range) catch u.oom();
+                break;
+            }
+        }
+
+        self.updateFromLineRanges(line_ranges[line_start_ix..]);
+    }
+
+    fn updateFromLineRanges(self: *LineWrappedBuffer, line_ranges: []const [2]usize) void {
         const bytes = self.buffer.bytes.items;
         const wrapped_line_ranges = &self.wrapped_line_ranges;
-        wrapped_line_ranges.resize(0) catch u.oom();
-        for (self.buffer.line_ranges.items) |real_line_range| {
+        for (line_ranges) |real_line_range| {
             const real_line_end = real_line_range[1];
             var line_start: usize = real_line_range[0];
             if (real_line_end - line_start <= self.max_chars_per_line) {

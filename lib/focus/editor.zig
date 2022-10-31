@@ -763,7 +763,11 @@ pub const Editor = struct {
     }
 
     pub fn updateAfterInsert(self: *Editor, start: usize, bytes: []const u8) void {
-        self.line_wrapped_buffer.update();
+        const is_append = (start + bytes.len == self.buffer.getBufferEnd());
+        if (is_append)
+            self.line_wrapped_buffer.updateAfterAppend(start)
+        else
+            self.line_wrapped_buffer.update();
         for (self.cursors.items) |*cursor| {
             for (&[2]*Point{ &cursor.head, &cursor.tail }) |point| {
                 // TODO ptr compare is because we want paste to leave each cursor after its own insert

@@ -306,6 +306,8 @@ pub const Buffer = struct {
     }
 
     fn rawInsert(self: *Buffer, pos: usize, bytes: []const u8) void {
+        const is_append = (pos == self.getBufferEnd());
+
         self.language.updateBeforeChange(self.bytes.items, .{ pos, pos });
 
         self.bytes.resize(self.bytes.items.len + bytes.len) catch u.oom();
@@ -315,7 +317,10 @@ pub const Buffer = struct {
         self.language.updateAfterChange(self.bytes.items, .{ pos, pos + bytes.len });
         self.updateCompletions();
 
-        self.updateLineRanges();
+        if (is_append)
+            self.updateLineRangesAfterAppend()
+        else
+            self.updateLineRanges();
         self.modified_since_last_save = true;
         for (self.editors.items) |editor| {
             editor.updateAfterInsert(pos, bytes);
@@ -502,6 +507,21 @@ pub const Buffer = struct {
         self.line_ranges.resize(0) catch u.oom();
 
         var start: usize = 0;
+        while (start <= len) {
+            var end = start;
+            while (end < len and bytes[end] != '\n') : (end += 1) {}
+            line_ranges.append(.{ start, end }) catch u.oom();
+            start = end + 1;
+        }
+    }
+
+    fn updateLineRangesAfterAppend(self: *Buffer) void {
+        var line_ranges = &self.line_ranges;
+        const bytes = self.bytes.items;
+        const len = bytes.len;
+
+        var start = if (self.line_ranges.popOrNull()) |range| range[0] else 0;
+
         while (start <= len) {
             var end = start;
             while (end < len and bytes[end] != '\n') : (end += 1) {}
