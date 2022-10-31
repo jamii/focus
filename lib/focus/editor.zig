@@ -622,7 +622,13 @@ pub const Editor = struct {
 
         // draw statusbar
         if (self.options.show_status_bar) {
-            window.queueRect(status_rect.?, style.status_background_color);
+            window.queueRect(
+                status_rect.?,
+                if (self.buffer.deleted_since_last_save)
+                    style.emphasisRed
+                else
+                    style.status_background_color,
+            );
             // use real line_col instead of wrapped
             const line_col = self.buffer.getLineColForPos(self.getMainCursor().head.pos);
             const filename = self.buffer.getFilename() orelse "";

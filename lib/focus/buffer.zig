@@ -69,6 +69,7 @@ pub const Buffer = struct {
     doing: u.ArrayList(Edit),
     redos: u.ArrayList([]Edit),
     modified_since_last_save: bool,
+    deleted_since_last_save: bool,
     line_ranges: u.ArrayList([2]usize),
     completions: u.ArrayList([2]usize),
     // editors must unregister before buffer deinits
@@ -91,6 +92,7 @@ pub const Buffer = struct {
             .doing = u.ArrayList(Edit).init(app.allocator),
             .redos = u.ArrayList([]Edit).init(app.allocator),
             .modified_since_last_save = false,
+            .deleted_since_last_save = false,
             .line_ranges = u.ArrayList([2]usize).init(app.allocator),
             .completions = u.ArrayList([2]usize).init(app.allocator),
             .editors = u.ArrayList(*Editor).init(app.allocator),
@@ -198,6 +200,7 @@ pub const Buffer = struct {
                         // if file has been deleted, leave buffer as is
                         error.FileNotFound => {
                             self.modified_since_last_save = true;
+                            self.deleted_since_last_save = true;
                             return;
                         },
                         else => u.panic("{} while refreshing {s}", .{ err, file_source.absolute_filename }),
@@ -247,6 +250,7 @@ pub const Buffer = struct {
                 const stat = file.stat() catch |err| u.panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 file_source.mtime = stat.mtime;
                 self.modified_since_last_save = false;
+                self.deleted_since_last_save = false;
 
                 self.app.handleAfterSave();
             },
