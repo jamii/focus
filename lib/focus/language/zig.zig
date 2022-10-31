@@ -3,7 +3,7 @@ const focus = @import("../../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
 const style = focus.style;
-const language = focus.language;
+const Language = focus.Language;
 
 pub const State = struct {
     allocator: u.Allocator,
@@ -17,6 +17,7 @@ pub const State = struct {
         NoStructure,
         Parens,
     },
+    squigglies: []const Language.Squiggly,
 
     pub fn init(allocator: u.Allocator, source: []const u8) State {
         var tokens = u.ArrayList(std.zig.Token.Tag).init(allocator);
@@ -59,6 +60,21 @@ pub const State = struct {
             }
         }
 
+        var squigglies = u.ArrayList(Language.Squiggly).init(allocator);
+        {
+            var line_start: usize = 0;
+            while (line_start < source.len) {
+                var line_end = line_start;
+                while (line_end < source.len and source[line_end] != '\n') : (line_end += 1) {}
+                if (line_end - line_start >= 100)
+                    squigglies.append(.{
+                        .color = style.emphasisOrange,
+                        .range = .{ line_start + 99, line_end },
+                    }) catch u.oom();
+                line_start = line_end + 1;
+            }
+        }
+
         return .{
             .allocator = allocator,
             .tokens = tokens.toOwnedSlice(),
@@ -67,6 +83,7 @@ pub const State = struct {
             .paren_parents = paren_parents,
             .paren_matches = paren_matches,
             .mode = .NoStructure,
+            .squigglies = squigglies.toOwnedSlice(),
         };
     }
 

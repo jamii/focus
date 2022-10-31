@@ -18,6 +18,11 @@ pub const Language = union(enum) {
     Nix: generic.State,
     Unknown,
 
+    pub const Squiggly = struct {
+        color: u.Color,
+        range: [2]usize,
+    };
+
     pub fn init(allocator: u.Allocator, filename: []const u8, source: []const u8) Language {
         // TODO writing this as `return if ...` causes a confusing compiler error
         if (std.mem.endsWith(u8, filename, ".zig"))
@@ -258,5 +263,12 @@ pub const Language = union(enum) {
             .Clojure => anchor_pos + anchor.added_indent,
             else => anchor_indent + anchor.added_indent,
         };
+    }
+
+    pub fn getSquigglies(self: Language) []const Language.Squiggly {
+        switch (self) {
+            .Zig => |state| return state.squigglies,
+            else => return &[0]Language.Squiggly{},
+        }
     }
 };

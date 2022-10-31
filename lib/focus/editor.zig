@@ -417,12 +417,7 @@ pub const Editor = struct {
             const line_top_pixel = @intCast(u.Coord, line_ix) * self.app.atlas.char_height;
             const y = text_rect.y + @intCast(u.Coord, line_top_pixel - self.top_pixel);
 
-            const Squiggly = struct {
-                color: u.Color,
-                range: [2]usize,
-            };
-            var squigglies = u.ArrayList(Squiggly).init(self.app.frame_allocator);
-            for (squigglies.items) |squiggly| {
+            for (self.buffer.language.getSquigglies()) |squiggly| {
                 if (squiggly.range[0] != 0) {
                     const highlight_start_pos = u.min(u.max(squiggly.range[0], line_range[0]), line_range[1]);
                     const highlight_end_pos = u.min(u.max(squiggly.range[1], line_range[0]), line_range[1]);
