@@ -196,7 +196,8 @@ pub const Tokenizer = struct {
         var state = TokenizerState.start;
         const source_len = self.source.len;
         while (true) {
-            if (self.pos < source_len and
+            if (state == .start and
+                self.pos < source_len and
                 source_len - self.pos > self.comment_string.len and
                 u.deepEqual(self.source[self.pos .. self.pos + self.comment_string.len], self.comment_string))
             {
