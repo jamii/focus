@@ -158,7 +158,7 @@ pub const Window = struct {
             return null;
     }
 
-    fn getTopViewIfEditor(self: *Window) ?*Editor {
+    pub fn getTopViewIfEditor(self: *Window) ?*Editor {
         if (self.getTopView()) |view| {
             switch (view) {
                 .Editor => |editor| return editor,

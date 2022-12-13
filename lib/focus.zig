@@ -341,10 +341,10 @@ pub const App = struct {
             self.handleRequest(request_and_client_address.request, request_and_client_address.client_address);
         }
 
-        // refresh buffers
-        var buffer_iter = self.buffers.iterator();
-        while (buffer_iter.next()) |entry| {
-            entry.value_ptr.*.refresh();
+        // refresh visible buffers
+        for (self.windows.items) |window| {
+            if (window.getTopViewIfEditor()) |editor|
+                editor.buffer.refresh();
         }
 
         // poll events

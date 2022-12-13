@@ -191,7 +191,6 @@ pub const Tokenizer = struct {
         };
     }
 
-    // https://github.com/clojure/clojure/blob/master/src/jvm/clojure/lang/LispReader.java
     pub fn next(self: *Tokenizer) Token {
         var state = TokenizerState.start;
         const source_len = self.source.len;
