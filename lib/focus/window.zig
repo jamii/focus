@@ -313,7 +313,7 @@ pub const Window = struct {
         }
 
         // set window title
-        var window_title: [*c]const u8 = "";
+        var window_title: [:0]const u8 = "";
         if (self.getTopViewFilename()) |filename| {
             window_title = self.app.frame_allocator.dupeZ(u8, filename) catch u.oom();
         }

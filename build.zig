@@ -2,8 +2,8 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Builder = std.build.Builder;
 const allocator = std.testing.allocator;
-const freetype = @import("mach/freetype/build.zig");
-const glfw = @import("mach/glfw/build.zig");
+const freetype = @import("mach/libs/freetype/build.zig");
+const glfw = @import("mach/libs/glfw/build.zig");
 
 pub fn build(b: *Builder) !void {
     const mode = b.standardReleaseOptions();
@@ -44,7 +44,7 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     exe.addPackage(freetype.pkg);
     freetype.link(b, exe, .{});
     exe.addPackage(glfw.pkg);
-    glfw.link(b, exe, .{
+    try glfw.link(b, exe, .{
         .vulkan = false,
         .metal = false,
         .opengl = true,

@@ -134,7 +134,7 @@ pub const State = struct {
                 style.comment_color;
             const color = switch (token) {
                 .doc_comment, .container_doc_comment => style.comment_color,
-                .identifier, .builtin, .integer_literal, .float_literal => if (self.mode == .Parens) style.comment_color else style.identColor(source[source_start..source_end]),
+                .identifier, .builtin, .number_literal => if (self.mode == .Parens) style.comment_color else style.identColor(source[source_start..source_end]),
                 .keyword_try, .keyword_catch, .keyword_error => if (self.mode == .Parens) style.comment_color else style.emphasisRed,
                 .keyword_defer, .keyword_errdefer => if (self.mode == .Parens) style.comment_color else style.emphasisOrange,
                 .keyword_break, .keyword_continue, .keyword_return => if (self.mode == .Parens) style.comment_color else style.emphasisGreen,

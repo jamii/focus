@@ -23,7 +23,7 @@ pub const Atlas = struct {
         defer lib.deinit();
 
         // load font
-        const face = lib.newFaceMemory(fira_code, 0) catch |err|
+        const face = lib.createFaceMemory(fira_code, 0) catch |err|
             u.panic("Error loading font: {}", .{err});
         defer face.deinit();
 

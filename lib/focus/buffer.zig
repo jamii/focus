@@ -185,7 +185,7 @@ pub const Buffer = struct {
             }
             self.source.File.mtime = result.mtime;
         } else |err| {
-            const message = u.format(self.app.frame_allocator, "{} while loading {s}", .{ err, self.getFilename() });
+            const message = u.format(self.app.frame_allocator, "{} while loading {s}", .{ err, self.getFilename().? });
             std.debug.print("{s}\n", .{message});
             self.replace(message);
         }

@@ -25,8 +25,8 @@ let
         name = "zig";
         src = fetchTarball (
             if (targetPkgs.system == "x86_64-linux") then {
-                url = "https://ziglang.org/builds/zig-linux-x86_64-0.10.0-dev.2473+e498fb155.tar.xz";
-                sha256 = "1iih9wcr5v2k2v384ljv4nalfzgy0kbb0ilz7jdn5gh4h9jhy086";
+                url = "https://ziglang.org/builds/zig-linux-x86_64-0.10.0-dev.4476+0f0076666.tar.xz";
+                sha256 = "1p2xmkxk2hfa7qc5hfm2ga1pv9c2nlh92f3jjwkvhagkln83plsm";
             } else
             throw ("Unknown system " ++ targetPkgs.system)
         );
