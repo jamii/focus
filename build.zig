@@ -38,7 +38,7 @@ pub fn build(b: *Builder) !void {
 
 fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     exe.setMainPkgPath("./");
-    exe.linkSystemLibrary("c");
+    exe.linkLibC();
     exe.linkSystemLibrary("GL");
     exe.setOutputDir("./zig-cache");
     exe.addPackage(freetype.pkg);
