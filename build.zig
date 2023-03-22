@@ -2,49 +2,27 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Builder = std.build.Builder;
 const allocator = std.testing.allocator;
-const freetype = @import("mach/freetype/build.zig");
-const glfw = @import("mach/glfw/build.zig");
+const freetype = @import("mach/libs/freetype/build.zig");
+const glfw = @import("mach/libs/glfw/build.zig");
 
 pub fn build(b: *Builder) !void {
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
 
-    const local = b.addExecutable("focus-local", "./bin/focus.zig");
-    try includeCommon(b, local);
-    local.setBuildMode(mode);
-    local.setTarget(target);
-    local.install();
-
-    const cross = b.addExecutable("focus-cross", "./bin/focus.zig");
-    try includeCommon(b, cross);
-    cross.setBuildMode(mode);
-    cross.setTarget(std.zig.CrossTarget{
-        .cpu_arch = .aarch64,
-        .os_tag = .linux,
-        .abi = .gnu,
+    const focus_exe = b.addExecutable(.{
+        .name = "focus",
+        .root_source_file = .{ .path = "./bin/focus.zig" },
+        .target = target,
+        .optimize = optimize,
     });
-    cross.install();
-
-    const local_step = b.step("local", "Build for local");
-    local_step.dependOn(&local.step);
-
-    const cross_step = b.step("cross", "Build for focus");
-    cross_step.dependOn(&cross.step);
-
-    const run = local.run();
-    const run_step = b.step("run", "Run locally");
-    run_step.dependOn(&run.step);
-}
-
-fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
-    exe.setMainPkgPath("./");
-    exe.linkLibC();
-    exe.linkSystemLibrary("GL");
-    exe.setOutputDir("./zig-cache");
-    exe.addPackage(freetype.pkg);
-    freetype.link(b, exe, .{});
-    exe.addPackage(glfw.pkg);
-    glfw.link(b, exe, .{
+    focus_exe.setMainPkgPath("./");
+    focus_exe.linkLibC();
+    focus_exe.linkSystemLibrary("GL");
+    focus_exe.setOutputDir("./zig-cache");
+    focus_exe.addModule("freetype", freetype.module(b));
+    freetype.link(b, focus_exe, .{});
+    focus_exe.addModule("glfw", glfw.module(b));
+    try glfw.link(b, focus_exe, .{
         .vulkan = false,
         .metal = false,
         .opengl = true,
@@ -55,5 +33,13 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
         .wayland = false,
         .system_sdk = .{},
     });
-    exe.omit_frame_pointer = false;
+    focus_exe.omit_frame_pointer = false;
+    focus_exe.install();
+
+    const focus_exe_step = b.step("focus", "build your Minimalist text editor");
+    focus_exe_step.dependOn(&focus_exe.step);
+
+    const run = focus_exe.run();
+    const run_step = b.step("run", "Run focus");
+    run_step.dependOn(&run.step);
 }

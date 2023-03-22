@@ -62,22 +62,6 @@
         "type": "github"
       }
     },
-    "mach": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1679264116,
-        "narHash": "sha256-2HDLR09KFzi7H4KkIrOiorp7evHOdVxL+sN+cFzmPdI=",
-        "owner": "hexops",
-        "repo": "mach",
-        "rev": "624ab118dbf431a267ec6a9b7644be5bb586489f",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hexops",
-        "repo": "mach",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1672580127,
@@ -114,7 +98,6 @@
       "inputs": {
         "flake-compat": "flake-compat",
         "flake-utils": "flake-utils",
-        "mach": "mach",
         "nixpkgs": "nixpkgs",
         "zig": "zig"
       }
@@ -126,11 +109,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1679400494,
-        "narHash": "sha256-eobo+zGljkuMVrXAcwUhc4ENp/PgMXs6HObBs66Uhhc=",
+        "lastModified": 1679669017,
+        "narHash": "sha256-FUvrE/4HKsrl/CedvQuoJa+vDr9lM7elI28cJs9uSHs=",
         "owner": "mitchellh",
         "repo": "zig-overlay",
-        "rev": "10db68c9ddccb420b1222c6dafcabd232d719a83",
+        "rev": "810cecd27319cb79feb4a8e79ac7ad40c7826235",
         "type": "github"
       },
       "original": {

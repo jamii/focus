@@ -1,3 +1,3 @@
 [submodule "mach"]
 	path = mach
-	url = git@github.com:jamii/mach.git
+	url = git@github:hexops/mach.git

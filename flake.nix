@@ -6,12 +6,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     zig.url = "github:mitchellh/zig-overlay";
 
-    mach = {
-      url = github:hexops/mach;
-      flake = false;
-    };
-
-    # Used for shell.nix
+    # Used for shell.nix compatibility
     flake-compat = {
       url = github:edolstra/flake-compat;
       flake = false;
@@ -27,7 +22,9 @@
     overlays = [
       # Other overlays
       (final: prev: {
-        zigpkgs = inputs.zig.packages.${prev.system};
+        # Replace `master` with a Zig version or a build date to pin package
+        # Show available versions using: nix flake show 'github:mitchellh/zig-overlay'
+        zigpkg = inputs.zig.packages.${prev.system}.master;
       })
     ];
 
@@ -37,14 +34,23 @@
     flake-utils.lib.eachSystem systems (
       system: let
         pkgs = import nixpkgs {inherit overlays system;};
+
       in rec {
         devShells.default = pkgs.mkShell {
-          addBuildRoots = [ inputs.mach ];
           nativeBuildInputs = with pkgs; [
-            zigpkgs.master
+            zigpkg
             libGL.all
             xorg.libX11.dev
           ];
+          shellHook = ''
+            # Create symlinks in project root
+            # HACK: Symlink doesn't get deleted when `nix develop` shell is exitted
+            # Zig stdlib - useful for browsing
+            if [ ! -L ./zig-stdlib ]; then
+              ln -s ${pkgs.zigpkg} ./zig-stdlib
+            fi
+          '';
+
         };
 
         # For compatibility with older versions of the `nix` binary
