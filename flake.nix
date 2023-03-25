@@ -1,5 +1,5 @@
 {
-  description = "An empty project that uses Zig.";
+  description = "Minimalist text editor written in Zig";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/release-22.05";
