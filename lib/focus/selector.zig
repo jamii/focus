@@ -56,7 +56,7 @@ pub const Selector = struct {
             text.append('\n') catch u.oom();
             ranges.append(.{ start, end }) catch u.oom();
         }
-        self.setTextAndRanges(text.toOwnedSlice(), ranges.toOwnedSlice());
+        self.setTextAndRanges(text.toOwnedSlice() catch u.oom(), ranges.toOwnedSlice() catch u.oom());
     }
 
     pub fn setTextAndRanges(self: *Selector, text: []const u8, ranges: []const [2]usize) void {

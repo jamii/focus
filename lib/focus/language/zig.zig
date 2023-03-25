@@ -39,7 +39,7 @@ pub const State = struct {
         const paren_matches = allocator.alloc(?usize, tokens.items.len) catch u.oom();
         std.mem.set(?usize, paren_matches, null);
         var paren_match_stack = u.ArrayList(usize).init(allocator);
-        for (tokens.items) |token, ix| {
+        for (tokens.items, 0..) |token, ix| {
             switch (token) {
                 .r_paren, .r_brace, .r_bracket => {
                     if (paren_match_stack.popOrNull()) |matching_ix| {
@@ -77,13 +77,13 @@ pub const State = struct {
 
         return .{
             .allocator = allocator,
-            .tokens = tokens.toOwnedSlice(),
-            .token_ranges = token_ranges.toOwnedSlice(),
+            .tokens = tokens.toOwnedSlice() catch u.oom(),
+            .token_ranges = token_ranges.toOwnedSlice() catch u.oom(),
             .paren_levels = paren_levels,
             .paren_parents = paren_parents,
             .paren_matches = paren_matches,
             .mode = .NoStructure,
-            .squigglies = squigglies.toOwnedSlice(),
+            .squigglies = squigglies.toOwnedSlice() catch u.oom(),
         };
     }
 
@@ -121,7 +121,7 @@ pub const State = struct {
 
     pub fn highlight(self: State, source: []const u8, range: [2]usize, colors: []u.Color) void {
         std.mem.set(u.Color, colors, style.comment_color);
-        for (self.token_ranges) |token_range, i| {
+        for (self.token_ranges, 0..) |token_range, i| {
             const source_start = token_range[0];
             const source_end = token_range[1];
             if (source_end < range[0] or source_start > range[1]) continue;
@@ -134,7 +134,7 @@ pub const State = struct {
                 style.comment_color;
             const color = switch (token) {
                 .doc_comment, .container_doc_comment => style.comment_color,
-                .identifier, .builtin, .integer_literal, .float_literal => if (self.mode == .Parens) style.comment_color else style.identColor(source[source_start..source_end]),
+                .identifier, .builtin, .number_literal => if (self.mode == .Parens) style.comment_color else style.identColor(source[source_start..source_end]),
                 .keyword_try, .keyword_catch, .keyword_error => if (self.mode == .Parens) style.comment_color else style.emphasisRed,
                 .keyword_defer, .keyword_errdefer => if (self.mode == .Parens) style.comment_color else style.emphasisOrange,
                 .keyword_break, .keyword_continue, .keyword_return => if (self.mode == .Parens) style.comment_color else style.emphasisGreen,
@@ -170,7 +170,7 @@ pub const State = struct {
     pub fn format(self: State, source: []const u8) ?[]const u8 {
         const source_z = self.allocator.dupeZ(u8, source) catch u.oom();
         defer self.allocator.free(source_z);
-        var tree = std.zig.parse(self.allocator, source_z) catch u.oom();
+        var tree = std.zig.Ast.parse(self.allocator, source_z, .zig) catch u.oom();
         if (tree.errors.len > 0) return null;
         defer tree.deinit(self.allocator);
         return tree.render(self.allocator) catch u.oom();

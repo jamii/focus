@@ -121,7 +121,7 @@ pub const ProjectSearcher = struct {
                         result_ranges.append(.{ start, end }) catch u.oom();
                     start = end + 1;
                 }
-                self.selector.setRanges(result_ranges.toOwnedSlice());
+                self.selector.setRanges(result_ranges.toOwnedSlice() catch u.oom());
             }
         }
 

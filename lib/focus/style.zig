@@ -14,7 +14,7 @@ pub const multi_cursor_color = u.Color.hsla(150, 1.0, 0.5, 1.0);
 pub const paren_match_color = u.Color.hsla(150, 1.0, 0.5, 0.3);
 
 pub fn identColor(ident: []const u8) u.Color {
-    const hash = @bitReverse(u64, u.deepHash(ident));
+    const hash = @bitReverse(u.deepHash(ident));
     return u.Color.hsla(
         @intToFloat(f64, hash % 359),
         1.0,
@@ -24,7 +24,7 @@ pub fn identColor(ident: []const u8) u.Color {
 }
 
 pub fn parenColor(level: usize) u.Color {
-    const hash = @bitReverse(u64, u.deepHash(level));
+    const hash = @bitReverse(u.deepHash(level));
     return u.Color.hsla(
         @intToFloat(f64, hash % 359),
         1.0,

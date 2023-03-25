@@ -76,7 +76,7 @@ pub const ProjectFileOpener = struct {
             .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
-            .paths = paths.toOwnedSlice(),
+            .paths = paths.toOwnedSlice() catch u.oom(),
         };
         return self;
     }

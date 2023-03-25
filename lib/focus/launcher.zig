@@ -32,7 +32,8 @@ pub const Launcher = struct {
             u.assert(result.term == .Exited and result.term.Exited == 0);
             var lines = std.mem.split(u8, result.stdout, "\n");
             while (lines.next()) |line| {
-                const command = std.mem.split(u8, line, "\t").next().?;
+                var it = std.mem.split(u8, line, "\t");
+                const command = it.first();
                 exes.append(app.dupe(command)) catch u.oom();
             }
         }
@@ -42,7 +43,7 @@ pub const Launcher = struct {
             .app = app,
             .input = input,
             .selector = selector,
-            .exes = exes.toOwnedSlice(),
+            .exes = exes.toOwnedSlice() catch u.oom(),
         };
         return self;
     }

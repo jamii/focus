@@ -26,15 +26,15 @@ pub const ChildProcess = struct {
     }
 
     pub fn deinit(self: *ChildProcess) void {
-        const pgid = std.os.linux.syscall1(.getpgid, @bitCast(usize, @as(isize, self.child_process.pid)));
+        const pgid = std.os.linux.syscall1(.getpgid, @bitCast(usize, @as(isize, self.child_process.id)));
         std.os.kill(-@intCast(i32, pgid), std.os.SIG.KILL) catch {};
         self.child_process.stdout.?.close();
         self.child_process.stderr.?.close();
     }
 
     pub fn poll(self: ChildProcess) enum { Running, Finished } {
-        const wait = std.os.waitpid(self.child_process.pid, std.os.linux.WNOHANG);
-        return if (wait.pid == self.child_process.pid) .Finished else .Running;
+        const wait = std.os.waitpid(self.child_process.id, std.os.linux.WNOHANG);
+        return if (wait.id == self.child_process.id) .Finished else .Running;
     }
 
     pub fn read(self: ChildProcess, allocator: u.Allocator) []const u8 {
@@ -58,6 +58,6 @@ pub const ChildProcess = struct {
             }
         }
         bytes.shrinkAndFree(start);
-        return bytes.toOwnedSlice();
+        return bytes.toOwnedSlice() catch u.oom();
     }
 };

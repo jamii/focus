@@ -28,7 +28,11 @@ pub fn panic(comptime fmt: []const u8, args: anytype) noreturn {
                 error.OutOfMemory => break :message "OOM inside panic",
             }
         };
-        break :message buf.toOwnedSlice();
+        break :message buf.toOwnedSlice() catch |err| {
+            switch (err) {
+                error.OutOfMemory => break :message "OOM inside panic",
+            }
+        };
     };
     @panic(message);
 }
@@ -343,7 +347,7 @@ pub fn fuzzy_search(allocator: Allocator, items: []const []const u8, filter: []c
             var score: usize = std.math.maxInt(usize);
             var any_match = false;
             const filter_start_char = filter[0];
-            for (item) |start_char, start| {
+            for (item, 0..) |start_char, start| {
                 if (start_char == filter_start_char) {
                     var is_match = true;
                     var end = start;
@@ -377,7 +381,7 @@ pub fn fuzzy_search(allocator: Allocator, items: []const []const u8, filter: []c
     for (scored_items.items) |scored_item| {
         results.append(scored_item.item) catch oom();
     }
-    return results.toOwnedSlice();
+    return results.toOwnedSlice() catch oom();
 }
 
 pub fn fuzzy_search_paths(allocator: Allocator, path: []const u8) ![]const []const u8 {
@@ -395,7 +399,7 @@ pub fn fuzzy_search_paths(allocator: Allocator, path: []const u8) ![]const []con
             }
         }
         if (dirname_o) |dirname| {
-            var dir = try std.fs.cwd().openDir(dirname, .{ .iterate = true });
+            var dir = try std.fs.cwd().openIterableDir(dirname, .{});
             defer dir.close();
             var dir_iter = dir.iterate();
             while (dir_iter.next() catch |err| panic("{} while iterating dir {s}", .{ err, dirname })) |entry| {
@@ -403,7 +407,7 @@ pub fn fuzzy_search_paths(allocator: Allocator, path: []const u8) ![]const []con
                     var result = ArrayList(u8).init(allocator);
                     result.appendSlice(entry.name) catch oom();
                     if (entry.kind == .Directory) result.append('/') catch oom();
-                    results.append(result.toOwnedSlice()) catch oom();
+                    results.append(result.toOwnedSlice() catch oom()) catch oom();
                 }
             }
         }
@@ -413,7 +417,7 @@ pub fn fuzzy_search_paths(allocator: Allocator, path: []const u8) ![]const []con
             return std.mem.lessThan(u8, a, b);
         }
     }.lessThan);
-    return results.toOwnedSlice();
+    return results.toOwnedSlice() catch oom();
 }
 
 const Match = struct {
@@ -472,7 +476,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
                     if (a.len > b.len) {
                         return .GreaterThan;
                     }
-                    for (a) |a_elem, a_ix| {
+                    for (a, 0..) |a_elem, a_ix| {
                         const ordering = deepCompare(a_elem, b[a_ix]);
                         if (ordering != .Equal) {
                             return ordering;
@@ -499,7 +503,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
             }
         },
         .Array => {
-            for (a) |a_elem, a_ix| {
+            for (a, 0..) |a_elem, a_ix| {
                 const ordering = deepCompare(a_elem, b[a_ix]);
                 if (ordering != .Equal) {
                     return ordering;
@@ -579,7 +583,7 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
         else => {},
     }
     switch (ti) {
-        .Int => @call(.{ .modifier = .always_inline }, hasher.update, .{std.mem.asBytes(&key)}),
+        .Int => @call(.always_inline, hasher.update, .{std.mem.asBytes(&key)}),
         .Float => |info| deepHashInto(hasher, @bitCast(std.Int(.unsigned, info.bits), key)),
         .Bool => deepHashInto(hasher, @boolToInt(key)),
         .Enum => deepHashInto(hasher, @enumToInt(key)),

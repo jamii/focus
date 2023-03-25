@@ -195,7 +195,7 @@ pub const Editor = struct {
                                         \\fn {s}\(|const {s} =|var {s} =| {s}:
                                     , .{ identifier, identifier, identifier, identifier }) catch u.oom();
                                     self.app.last_project_search_selected = 0;
-                                    const project_searcher = ProjectSearcher.init(self.app, project_dir, .Regexp, filter.toOwnedSlice());
+                                    const project_searcher = ProjectSearcher.init(self.app, project_dir, .Regexp, filter.toOwnedSlice() catch u.oom());
                                     window.pushView(project_searcher);
                                 }
                             },
@@ -240,7 +240,7 @@ pub const Editor = struct {
                                         \\{s}
                                     , .{identifier}) catch u.oom();
                                     self.app.last_project_search_selected = 0;
-                                    const project_searcher = ProjectSearcher.init(self.app, project_dir, .FixedStrings, filter.toOwnedSlice());
+                                    const project_searcher = ProjectSearcher.init(self.app, project_dir, .FixedStrings, filter.toOwnedSlice() catch u.oom());
                                     window.pushView(project_searcher);
                                 }
                             },
@@ -326,8 +326,7 @@ pub const Editor = struct {
         // (might be dragging outside window, so can't rely on mouse_motion events)
         if (self.dragging != .NotDragging) {
             // get mouse state
-            const mouse_pos = window.glfw_window.getCursorPos() catch |err|
-                u.panic("Error getting cursor pos: {}", .{err});
+            const mouse_pos = window.glfw_window.getCursorPos();
             const mouse_x = @floatToInt(u.Coord, mouse_pos.xpos);
             const mouse_y = @floatToInt(u.Coord, mouse_pos.ypos);
 
@@ -483,7 +482,7 @@ pub const Editor = struct {
 
             // draw text
             // TODO clip text at the top of the editor, not only the bottom
-            for (line) |char, i| {
+            for (line, 0..) |char, i| {
                 const highlighter_color = highlighter_colors[line_range[0] + i - min_pos];
                 window.queueText(
                     .{
@@ -578,7 +577,7 @@ pub const Editor = struct {
 
             // draw completions
             window.queueRect(completer_rect, style.status_background_color);
-            for (completions) |completion, i| {
+            for (completions, 0..) |completion, i| {
                 if (i > completions_shown) break;
                 var rect = completer_rect;
                 rect.y += @intCast(u.Coord, i) * self.app.atlas.char_height;
@@ -807,13 +806,13 @@ pub const Editor = struct {
                 self.buffer.getLineColForPos(cursor.tail.pos),
             }) catch u.oom();
         }
-        return line_cols.toOwnedSlice();
+        return line_cols.toOwnedSlice() catch u.oom();
     }
 
     pub fn updateAfterReplace(self: *Editor, line_cols: [][2][2]usize) void {
         self.line_wrapped_buffer.update();
-        for (self.cursors.items) |*cursor, i| {
-            for (&[2]*Point{ &cursor.head, &cursor.tail }) |point, j| {
+        for (self.cursors.items, 0..) |*cursor, i| {
+            for (&[2]*Point{ &cursor.head, &cursor.tail }, 0..) |point, j| {
                 const line_col = line_cols[i][j];
                 const pos = self.buffer.getPosForLineCol(u.min(line_col[0], self.buffer.countLines() - 1), line_col[1]);
                 self.updatePos(point, pos);
@@ -892,8 +891,7 @@ pub const Editor = struct {
         if (cursor.head.pos == cursor.tail.pos) return;
         const text = self.dupeSelection(self.app.frame_allocator, cursor);
         const textZ = self.app.frame_allocator.dupeZ(u8, text) catch u.oom();
-        glfw.setClipboardString(textZ) catch |err|
-            u.panic("Error while setting system clipboard: {}", .{err});
+        glfw.setClipboardString(textZ);
     }
 
     pub fn cut(self: *Editor, cursor: *Cursor) void {
@@ -902,12 +900,10 @@ pub const Editor = struct {
     }
 
     pub fn paste(self: *Editor, cursor: *Cursor) void {
-        const text = glfw.getClipboardString() catch
-        // https://www.glfw.org/docs/3.0/group__clipboard.html
-        // returns an error if the clipboard is empty or contents can't be converted to utf8 string
-            return;
+        const text = glfw.getClipboardString();
         // text is owned by glfw, don't need to free
-        self.insert(cursor, std.mem.span(text));
+        if (text) |txt|
+            self.insert(cursor, txt);
     }
 
     // TODO rename to addCursor
@@ -1026,7 +1022,7 @@ pub const Editor = struct {
                         const end = self.buffer.getLineEnd(start);
 
                         // find first non-whitespace char
-                        for (self.buffer.bytes.items[start..end]) |byte, i| {
+                        for (self.buffer.bytes.items[start..end], 0..) |byte, i| {
                             if (byte != ' ') {
                                 minimum_indent = u.min(minimum_indent, i);
                                 break;

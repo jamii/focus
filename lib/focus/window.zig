@@ -61,26 +61,31 @@ pub const Window = struct {
         events.* = u.ArrayList(mach_compat.Event).init(app.allocator);
 
         // init window
-        const glfw_window = glfw.Window.create(
-            init_width,
-            init_height,
-            "focus",
-            null,
-            null,
-            .{
-                .client_api = .opengl_api,
-                .decorated = false,
-                .floating = (floating == .Floating),
-                // sway does not respect .floating but it will float non-resizable windows
-                .resizable = (floating == .NotFloating),
-            },
-        ) catch |err|
-            u.panic("Error creating glfw window: {}", .{err});
+        const glfw_window = glfw_window: {
+            const optional_glfw_window =
+                glfw.Window.create(
+                    init_width,
+                    init_height,
+                    "focus",
+                    null,
+                    null,
+                    .{
+                        .client_api = .opengl_api,
+                        .decorated = false,
+                        .floating = (floating == .Floating),
+                        // sway does not respect .floating but it will float non-resizable windows
+                        .resizable = (floating == .NotFloating),
+                    },
+            );
+            if (optional_glfw_window) |window|
+                break :glfw_window window
+            else
+                u.panic("Error creating glfw window", .{});
+        };
         mach_compat.setCallbacks(glfw_window, events);
 
         // init gl
-        glfw.makeContextCurrent(glfw_window) catch |err|
-            u.panic("Error making context current: {}", .{err});
+        glfw.makeContextCurrent(glfw_window);
         c.glEnable(c.GL_BLEND);
         c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
         c.glDisable(c.GL_CULL_FACE);
@@ -91,8 +96,7 @@ pub const Window = struct {
         c.glEnableClientState(c.GL_COLOR_ARRAY);
 
         // disable vsync - too many problems with multiple windows on multiple desktops
-        glfw.swapInterval(0) catch |err|
-            u.panic("Setting swap interval failed: {}", .{err});
+        glfw.swapInterval(0);
 
         const self = Window{
             .app = app,
@@ -117,8 +121,7 @@ pub const Window = struct {
     }
 
     pub fn loadAtlasTexture(self: Window, atlas: *Atlas) void {
-        glfw.makeContextCurrent(self.glfw_window) catch |err|
-            u.panic("Error making context current: {}", .{err});
+        glfw.makeContextCurrent(self.glfw_window);
         {
             var id: u32 = undefined;
             c.glGenTextures(1, &id);
@@ -176,8 +179,7 @@ pub const Window = struct {
 
     pub fn frame(self: *Window) void {
         // figure out window size
-        const window_size = self.glfw_window.getSize() catch |err|
-            u.panic("Error getting window size: {}", .{err});
+        const window_size = self.glfw_window.getSize();
         const window_rect = u.Rect{
             .x = 0,
             .y = 0,
@@ -188,7 +190,7 @@ pub const Window = struct {
         // handle events
         var view_events = u.ArrayList(mach_compat.Event).init(self.app.frame_allocator);
         {
-            const events = self.events.toOwnedSlice();
+            const events = self.events.toOwnedSlice() catch u.oom();
             defer self.app.allocator.free(events);
             for (events) |event| {
                 var handled = false;
@@ -317,12 +319,10 @@ pub const Window = struct {
         if (self.getTopViewFilename()) |filename| {
             window_title = self.app.frame_allocator.dupeZ(u8, filename) catch u.oom();
         }
-        self.glfw_window.setTitle(window_title) catch |err|
-            u.panic("Error setting title: {}", .{err});
+        self.glfw_window.setTitle(window_title);
 
         // render
-        glfw.makeContextCurrent(self.glfw_window) catch |err|
-            u.panic("Error making context current: {}", .{err});
+        glfw.makeContextCurrent(self.glfw_window);
         c.glClearColor(0, 0, 0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
         c.glViewport(
@@ -346,8 +346,7 @@ pub const Window = struct {
         c.glPopMatrix();
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPopMatrix();
-        self.glfw_window.swapBuffers() catch |err|
-            u.panic("Error swapping buffers: {}", .{err});
+        self.glfw_window.swapBuffers();
 
         // reset
         self.texture_buffer.resize(0) catch u.oom();

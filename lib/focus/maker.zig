@@ -81,7 +81,7 @@ pub const Maker = struct {
             .selector = selector,
             .result_editor = result_editor,
             .history_string = history_string,
-            .history = history.toOwnedSlice(),
+            .history = history.toOwnedSlice() catch u.oom(),
             .state = .ChoosingDir,
         };
         return self;
