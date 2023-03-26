@@ -2,6 +2,7 @@ const std = @import("std");
 const focus = @import("../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
+const focus_paths = @import("focus_paths");
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -37,11 +38,11 @@ pub const ProjectFileOpener = struct {
 
         var projects = u.ArrayList(u8).init(app.frame_allocator);
         {
-            const file = std.fs.cwd().openFile("/home/jamie/secret/projects", .{}) catch |err|
-                u.panic("{} while opening /home/jamie/secret/projects", .{err});
+            const file = std.fs.cwd().openFile(focus_paths.projects_file_path, .{}) catch |err|
+                u.panic("{} while opening {s}", .{err, focus_paths.projects_file_path});
             defer file.close();
             file.reader().readAllArrayList(&projects, std.math.maxInt(usize)) catch |err|
-                u.panic("{} while reading /home/jamie/secret/projects", .{err});
+                u.panic("{} while reading {s}", .{err, focus_paths.projects_file_path});
         }
 
         var paths = u.ArrayList([]const u8).init(app.allocator);

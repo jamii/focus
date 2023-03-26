@@ -2,6 +2,7 @@ const std = @import("std");
 const focus = @import("../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
+const focus_paths = @import("focus_paths");
 const App = focus.App;
 const Buffer = focus.Buffer;
 const Editor = focus.Editor;
@@ -26,7 +27,7 @@ pub const Launcher = struct {
             const result = std.ChildProcess.exec(.{
                 .allocator = app.frame_allocator,
                 .argv = &[_][]const u8{ "fish", "-C", "complete -C ''" },
-                .cwd = "/home/jamie",
+                .cwd = focus_paths.home_path,
                 .max_output_bytes = 128 * 1024 * 1024,
             }) catch |err| u.panic("{} while calling compgen", .{err});
             u.assert(result.term == .Exited and result.term.Exited == 0);
