@@ -313,15 +313,6 @@ pub const Vec2f = packed struct {
     y: f32,
 };
 
-pub fn Tri(comptime t: type) type {
-    // TODO which direction?
-    return packed struct {
-        a: t,
-        b: t,
-        c: t,
-    };
-}
-
 pub fn Quad(comptime t: type) type {
     return packed struct {
         tl: t,

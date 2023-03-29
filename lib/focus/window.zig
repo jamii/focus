@@ -47,7 +47,7 @@ pub const Window = struct {
     texture_buffer: u.ArrayList(u.Quad(u.Vec2f)),
     vertex_buffer: u.ArrayList(u.Quad(u.Vec2f)),
     color_buffer: u.ArrayList(u.Quad(u.Color)),
-    index_buffer: u.ArrayList([2]u.Tri(u32)),
+    index_buffer: u.ArrayList(u32),
 
     pub fn init(
         app: *App,
@@ -112,7 +112,7 @@ pub const Window = struct {
             .texture_buffer = u.ArrayList(u.Quad(u.Vec2f)).init(app.allocator),
             .vertex_buffer = u.ArrayList(u.Quad(u.Vec2f)).init(app.allocator),
             .color_buffer = u.ArrayList(u.Quad(u.Color)).init(app.allocator),
-            .index_buffer = u.ArrayList([2]u.Tri(u32)).init(app.allocator),
+            .index_buffer = u.ArrayList(u32).init(app.allocator),
         };
 
         self.loadAtlasTexture(app.atlas);
@@ -341,7 +341,7 @@ pub const Window = struct {
         c.glTexCoordPointer(2, c.GL_FLOAT, 0, self.texture_buffer.items.ptr);
         c.glVertexPointer(2, c.GL_FLOAT, 0, self.vertex_buffer.items.ptr);
         c.glColorPointer(4, c.GL_UNSIGNED_BYTE, 0, self.color_buffer.items.ptr);
-        c.glDrawElements(c.GL_TRIANGLES, @intCast(c_int, self.index_buffer.items.len) * 6, c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
+        c.glDrawElements(c.GL_TRIANGLES, @intCast(c_int, self.index_buffer.items.len), c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPopMatrix();
         c.glMatrixMode(c.GL_PROJECTION);
@@ -381,6 +381,7 @@ pub const Window = struct {
         const vy = @intToFloat(f32, dst.y);
         const vw = @intToFloat(f32, dst.w);
         const vh = @intToFloat(f32, dst.h);
+        const vertex_ix = @intCast(u32, self.vertex_buffer.items.len * 4);
         self.vertex_buffer.append(.{
             .tl = .{ .x = vx, .y = vy },
             .tr = .{ .x = vx + vw, .y = vy },
@@ -395,18 +396,14 @@ pub const Window = struct {
             .br = color,
         }) catch u.oom();
 
-        const vertex_ix = @intCast(u32, self.index_buffer.items.len * 4);
-        self.index_buffer.append(.{
-            .{
-                .a = vertex_ix + 0,
-                .b = vertex_ix + 1,
-                .c = vertex_ix + 2,
-            },
-            .{
-                .a = vertex_ix + 2,
-                .b = vertex_ix + 3,
-                .c = vertex_ix + 1,
-            },
+        self.index_buffer.appendSlice(&.{
+            vertex_ix + 0,
+            vertex_ix + 1,
+            vertex_ix + 2,
+
+            vertex_ix + 2,
+            vertex_ix + 3,
+            vertex_ix + 1,
         }) catch u.oom();
     }
 
