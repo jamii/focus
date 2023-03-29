@@ -13,7 +13,7 @@ pub fn build(b: *Builder) !void {
     config.addOption(
         []const u8,
         "home_path",
-        b.option([]const u8, "home-path", "") orelse "/home/jamie",
+        b.option([]const u8, "home-path", "") orelse "/home/jamie/",
     );
     config.addOption(
         []const u8,

@@ -4,5 +4,5 @@ Not intended ot be useful for anyone but me, but perhaps a useful starting point
 
 ``` sh
 nix-shell
-zig build run -Doptimize=ReleaseSafe -Dhome-path=/home/jamie -Dprojects-file-path=/home/jamie/secret/projects
+zig build run -Doptimize=ReleaseSafe -Dhome-path=/home/jamie/ -Dprojects-file-path=/home/jamie/secret/projects
 ```
