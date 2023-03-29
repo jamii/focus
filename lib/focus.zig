@@ -323,10 +323,6 @@ pub const App = struct {
                 new_window.pushView(new_editor);
             },
         }
-        // TODO this is a hack - it seems like windows can't receive focus until after their first frame?
-        // without this, keypresses sometimes get sent to the current window instead of the new window
-        // TODO do we still need this with glfw?
-        new_window.frame();
     }
 
     pub fn frame(self: *App) void {

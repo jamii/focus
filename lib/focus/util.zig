@@ -206,8 +206,6 @@ pub const Rect = struct {
         return Rect{ .x = self.x + margin, .y = self.y + margin, .w = self.w - (2 * margin), .h = self.h - (2 * margin) };
     }
 
-    // TODO split into pointers
-
     pub fn splitLeft(self: *Rect, w: Coord, margin: Coord) Rect {
         assert(self.w >= w);
         const split = Rect{ .x = self.x, .y = self.y, .w = w, .h = self.h };

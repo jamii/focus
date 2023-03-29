@@ -3,9 +3,10 @@ const glfw = @import("glfw");
 const focus = @import("../focus.zig");
 const u = focus.util;
 
+// TODO switch to mach.platform when stable
+
 pub const Event = union(enum) {
     key_press: KeyEvent,
-    // TODO mach doesn't register key_repeat
     key_repeat: KeyEvent,
     key_release: KeyEvent,
     char_input: struct {
@@ -21,7 +22,6 @@ pub const Event = union(enum) {
         xoffset: f32,
         yoffset: f32,
     },
-    // TODO these events are not in mach platform
     focus_gained,
     focus_lost,
     window_closed,
@@ -29,13 +29,11 @@ pub const Event = union(enum) {
 
 pub const KeyEvent = struct {
     key: glfw.Key,
-    // TODO these fields are not in mach platform
     mods: glfw.Mods,
 };
 
 pub const MouseButtonEvent = struct {
     button: glfw.mouse_button.MouseButton,
-    // TODO these fields are not in mach platform
     pos: glfw.Window.CursorPos,
     mods: glfw.Mods,
 };
