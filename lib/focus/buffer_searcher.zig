@@ -85,7 +85,7 @@ pub const BufferSearcher = struct {
                     result.appendNTimes(' ', max_line_string.len - line_string.len + 1) catch u.oom();
                     result.appendSlice(selection) catch u.oom();
 
-                    results.append(result.toOwnedSlice()) catch u.oom();
+                    results.append(result.toOwnedSlice() catch u.oom()) catch u.oom();
                     result_poss.append(found_pos) catch u.oom();
 
                     pos = found_pos + filter.len;
@@ -96,7 +96,7 @@ pub const BufferSearcher = struct {
 
         // update selection
         self.selector.selected = u.max(result_poss.items.len, 1) - 1;
-        for (result_poss.items) |result_pos, i| {
+        for (result_poss.items, 0..) |result_pos, i| {
             if (self.selection_pos < result_pos + filter.len) {
                 self.selector.selected = i;
                 break;
@@ -145,7 +145,7 @@ pub const BufferSearcher = struct {
                 }
             },
             .SelectAll => {
-                for (result_poss) |pos, i| {
+                for (result_poss, 0..) |pos, i| {
                     var cursor = if (i == 0) editor.getMainCursor() else editor.newCursor();
                     editor.goPos(cursor, pos + filter.len);
                     editor.updatePos(&cursor.tail, pos);

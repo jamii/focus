@@ -47,7 +47,7 @@ pub const Window = struct {
     texture_buffer: u.ArrayList(u.Quad(u.Vec2f)),
     vertex_buffer: u.ArrayList(u.Quad(u.Vec2f)),
     color_buffer: u.ArrayList(u.Quad(u.Color)),
-    index_buffer: u.ArrayList([2]u.Tri(u32)),
+    index_buffer: u.ArrayList(u32),
 
     pub fn init(
         app: *App,
@@ -61,26 +61,31 @@ pub const Window = struct {
         events.* = u.ArrayList(mach_compat.Event).init(app.allocator);
 
         // init window
-        const glfw_window = glfw.Window.create(
-            init_width,
-            init_height,
-            "focus",
-            null,
-            null,
-            .{
-                .client_api = .opengl_api,
-                .decorated = false,
-                .floating = (floating == .Floating),
-                // sway does not respect .floating but it will float non-resizable windows
-                .resizable = (floating == .NotFloating),
-            },
-        ) catch |err|
-            u.panic("Error creating glfw window: {}", .{err});
+        const glfw_window = glfw_window: {
+            const optional_glfw_window =
+                glfw.Window.create(
+                init_width,
+                init_height,
+                "focus",
+                null,
+                null,
+                .{
+                    .client_api = .opengl_api,
+                    .decorated = false,
+                    .floating = (floating == .Floating),
+                    // sway does not respect .floating but it will float non-resizable windows
+                    .resizable = (floating == .NotFloating),
+                },
+            );
+            if (optional_glfw_window) |window|
+                break :glfw_window window
+            else
+                u.panic("Error creating glfw window", .{});
+        };
         mach_compat.setCallbacks(glfw_window, events);
 
         // init gl
-        glfw.makeContextCurrent(glfw_window) catch |err|
-            u.panic("Error making context current: {}", .{err});
+        glfw.makeContextCurrent(glfw_window);
         c.glEnable(c.GL_BLEND);
         c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
         c.glDisable(c.GL_CULL_FACE);
@@ -91,8 +96,7 @@ pub const Window = struct {
         c.glEnableClientState(c.GL_COLOR_ARRAY);
 
         // disable vsync - too many problems with multiple windows on multiple desktops
-        glfw.swapInterval(0) catch |err|
-            u.panic("Setting swap interval failed: {}", .{err});
+        glfw.swapInterval(0);
 
         const self = Window{
             .app = app,
@@ -108,7 +112,7 @@ pub const Window = struct {
             .texture_buffer = u.ArrayList(u.Quad(u.Vec2f)).init(app.allocator),
             .vertex_buffer = u.ArrayList(u.Quad(u.Vec2f)).init(app.allocator),
             .color_buffer = u.ArrayList(u.Quad(u.Color)).init(app.allocator),
-            .index_buffer = u.ArrayList([2]u.Tri(u32)).init(app.allocator),
+            .index_buffer = u.ArrayList(u32).init(app.allocator),
         };
 
         self.loadAtlasTexture(app.atlas);
@@ -117,8 +121,7 @@ pub const Window = struct {
     }
 
     pub fn loadAtlasTexture(self: Window, atlas: *Atlas) void {
-        glfw.makeContextCurrent(self.glfw_window) catch |err|
-            u.panic("Error making context current: {}", .{err});
+        glfw.makeContextCurrent(self.glfw_window);
         {
             var id: u32 = undefined;
             c.glGenTextures(1, &id);
@@ -176,8 +179,7 @@ pub const Window = struct {
 
     pub fn frame(self: *Window) void {
         // figure out window size
-        const window_size = self.glfw_window.getSize() catch |err|
-            u.panic("Error getting window size: {}", .{err});
+        const window_size = self.glfw_window.getSize();
         const window_rect = u.Rect{
             .x = 0,
             .y = 0,
@@ -188,7 +190,7 @@ pub const Window = struct {
         // handle events
         var view_events = u.ArrayList(mach_compat.Event).init(self.app.frame_allocator);
         {
-            const events = self.events.toOwnedSlice();
+            const events = self.events.toOwnedSlice() catch u.oom();
             defer self.app.allocator.free(events);
             for (events) |event| {
                 var handled = false;
@@ -201,7 +203,7 @@ pub const Window = struct {
                                     const init_path = if (self.getTopViewFilename()) |filename|
                                         std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch u.oom()
                                     else
-                                        "/home/jamie/";
+                                        focus.config.home_path;
                                     const file_opener = FileOpener.init(self.app, init_path);
                                     self.pushView(file_opener);
                                     handled = true;
@@ -245,7 +247,7 @@ pub const Window = struct {
                                         null;
                                     const project_searcher = ProjectSearcher.init(
                                         self.app,
-                                        project_dir orelse "/home/jamie",
+                                        project_dir orelse focus.config.home_path,
                                         .FixedStrings,
                                         null,
                                     );
@@ -317,12 +319,10 @@ pub const Window = struct {
         if (self.getTopViewFilename()) |filename| {
             window_title = self.app.frame_allocator.dupeZ(u8, filename) catch u.oom();
         }
-        self.glfw_window.setTitle(window_title) catch |err|
-            u.panic("Error setting title: {}", .{err});
+        self.glfw_window.setTitle(window_title);
 
         // render
-        glfw.makeContextCurrent(self.glfw_window) catch |err|
-            u.panic("Error making context current: {}", .{err});
+        glfw.makeContextCurrent(self.glfw_window);
         c.glClearColor(0, 0, 0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
         c.glViewport(
@@ -341,13 +341,12 @@ pub const Window = struct {
         c.glTexCoordPointer(2, c.GL_FLOAT, 0, self.texture_buffer.items.ptr);
         c.glVertexPointer(2, c.GL_FLOAT, 0, self.vertex_buffer.items.ptr);
         c.glColorPointer(4, c.GL_UNSIGNED_BYTE, 0, self.color_buffer.items.ptr);
-        c.glDrawElements(c.GL_TRIANGLES, @intCast(c_int, self.index_buffer.items.len) * 6, c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
+        c.glDrawElements(c.GL_TRIANGLES, @intCast(c_int, self.index_buffer.items.len), c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPopMatrix();
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPopMatrix();
-        self.glfw_window.swapBuffers() catch |err|
-            u.panic("Error swapping buffers: {}", .{err});
+        self.glfw_window.swapBuffers();
 
         // reset
         self.texture_buffer.resize(0) catch u.oom();
@@ -382,6 +381,7 @@ pub const Window = struct {
         const vy = @intToFloat(f32, dst.y);
         const vw = @intToFloat(f32, dst.w);
         const vh = @intToFloat(f32, dst.h);
+        const vertex_ix = @intCast(u32, self.vertex_buffer.items.len * 4);
         self.vertex_buffer.append(.{
             .tl = .{ .x = vx, .y = vy },
             .tr = .{ .x = vx + vw, .y = vy },
@@ -396,18 +396,14 @@ pub const Window = struct {
             .br = color,
         }) catch u.oom();
 
-        const vertex_ix = @intCast(u32, self.index_buffer.items.len * 4);
-        self.index_buffer.append(.{
-            .{
-                .a = vertex_ix + 0,
-                .b = vertex_ix + 1,
-                .c = vertex_ix + 2,
-            },
-            .{
-                .a = vertex_ix + 2,
-                .b = vertex_ix + 3,
-                .c = vertex_ix + 1,
-            },
+        self.index_buffer.appendSlice(&.{
+            vertex_ix + 0,
+            vertex_ix + 1,
+            vertex_ix + 2,
+
+            vertex_ix + 2,
+            vertex_ix + 3,
+            vertex_ix + 1,
         }) catch u.oom();
     }
 

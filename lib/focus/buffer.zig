@@ -185,7 +185,7 @@ pub const Buffer = struct {
             }
             self.source.File.mtime = result.mtime;
         } else |err| {
-            const message = u.format(self.app.frame_allocator, "{} while loading {s}", .{ err, self.getFilename() });
+            const message = u.format(self.app.frame_allocator, "{} while loading {s}", .{ err, self.getFilename() orelse "<buffer>" });
             std.debug.print("{s}\n", .{message});
             self.replace(message);
         }
@@ -431,7 +431,7 @@ pub const Buffer = struct {
 
     pub fn newUndoGroup(self: *Buffer) void {
         if (self.doing.items.len > 0) {
-            const edits = self.doing.toOwnedSlice();
+            const edits = self.doing.toOwnedSlice() catch u.oom();
             std.mem.reverse(Edit, edits);
             self.undos.append(edits) catch u.oom();
         }
@@ -574,7 +574,8 @@ pub const Buffer = struct {
     pub fn getCompletionRange(self: *Buffer, pos: usize) [2]usize {
         return if (self.language.getTokenIxBefore(pos)) |token_ix|
             self.language.getTokenRanges()[token_ix]
-        else .{ pos, pos };
+        else
+            .{ pos, pos };
     }
 
     pub fn getCompletionPrefix(self: *Buffer, pos: usize) []const u8 {

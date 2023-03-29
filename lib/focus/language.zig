@@ -144,7 +144,7 @@ pub const Language = union(enum) {
     pub fn getTokenIxBefore(self: Language, pos: usize) ?usize {
         const token_ranges = self.getTokenRanges();
         var return_ix: ?usize = null;
-        for (token_ranges) |token_range, ix| {
+        for (token_ranges, 0..) |token_range, ix| {
             if (token_range[0] >= pos) break;
             return_ix = ix;
         }
@@ -153,7 +153,7 @@ pub const Language = union(enum) {
 
     pub fn getTokenIxAfter(self: Language, pos: usize) ?usize {
         const token_ranges = self.getTokenRanges();
-        for (token_ranges) |token_range, ix| {
+        for (token_ranges, 0..) |token_range, ix| {
             if (token_range[0] >= pos)
                 return ix;
         }
@@ -199,7 +199,7 @@ pub const Language = union(enum) {
                 i += 1;
             }
         }
-        return new_source.toOwnedSlice();
+        return new_source.toOwnedSlice() catch u.oom();
     }
 
     pub fn matchParen(self: Language, pos: usize) ?usize {

@@ -57,13 +57,13 @@ pub const Maker = struct {
             .show_status_bar = false,
             .show_completer = false,
         });
-        const input = SingleLineEditor.init(app, "/home/jamie/");
+        const input = SingleLineEditor.init(app, focus.config.home_path);
         const selector = Selector.init(app);
 
         const result = std.ChildProcess.exec(.{
             .allocator = app.frame_allocator,
             .argv = &[_][]const u8{ "fish", "--command", "history" },
-            .cwd = "/home/jamie",
+            .cwd = focus.config.home_path,
             .max_output_bytes = 128 * 1024 * 1024,
         }) catch |err| u.panic("{} while calling fish history", .{err});
         u.assert(result.term == .Exited and result.term.Exited == 0);
@@ -81,7 +81,7 @@ pub const Maker = struct {
             .selector = selector,
             .result_editor = result_editor,
             .history_string = history_string,
-            .history = history.toOwnedSlice(),
+            .history = history.toOwnedSlice() catch u.oom(),
             .state = .ChoosingDir,
         };
         return self;
@@ -175,7 +175,12 @@ pub const Maker = struct {
 
                 if (command_o) |command| {
                     // add command to history
-                    const history_file = std.fs.cwd().openFile("/home/jamie/.local/share/fish/fish_history", .{ .mode = .write_only }) catch |err|
+                    const history_path = std.fmt.allocPrint(
+                        self.app.frame_allocator,
+                        "{s}/.local/share/fish/fish_history",
+                        .{focus.config.home_path},
+                    ) catch u.oom();
+                    const history_file = std.fs.cwd().openFile(history_path, .{ .mode = .write_only }) catch |err|
                         u.panic("Failed to open fish history: {}", .{err});
                     history_file.seekFromEnd(0) catch |err|
                         u.panic("Failed to seek to end of fish history: {}", .{err});

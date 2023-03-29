@@ -37,11 +37,11 @@ pub const ProjectFileOpener = struct {
 
         var projects = u.ArrayList(u8).init(app.frame_allocator);
         {
-            const file = std.fs.cwd().openFile("/home/jamie/secret/projects", .{}) catch |err|
-                u.panic("{} while opening /home/jamie/secret/projects", .{err});
+            const file = std.fs.cwd().openFile(focus.config.projects_file_path, .{}) catch |err|
+                u.panic("{} while opening {s}", .{ err, focus.config.projects_file_path });
             defer file.close();
             file.reader().readAllArrayList(&projects, std.math.maxInt(usize)) catch |err|
-                u.panic("{} while reading /home/jamie/secret/projects", .{err});
+                u.panic("{} while reading {s}", .{ err, focus.config.projects_file_path });
         }
 
         var paths = u.ArrayList([]const u8).init(app.allocator);
@@ -76,7 +76,7 @@ pub const ProjectFileOpener = struct {
             .preview_editor = preview_editor,
             .input = input,
             .selector = selector,
-            .paths = paths.toOwnedSlice(),
+            .paths = paths.toOwnedSlice() catch u.oom(),
         };
         return self;
     }

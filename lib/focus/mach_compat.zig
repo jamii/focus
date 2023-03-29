@@ -67,8 +67,7 @@ fn mouseMotionCallback(window: glfw.Window, xpos: f64, ypos: f64) void {
 
 fn mouseButtonCallback(window: glfw.Window, button: glfw.mouse_button.MouseButton, action: glfw.Action, mods: glfw.Mods) void {
     const events = window.getUserPointer(u.ArrayList(Event)) orelse unreachable;
-    const cursor_pos = window.getCursorPos() catch |err|
-        u.panic("Error getting cursor pos: {}", .{err});
+    const cursor_pos = window.getCursorPos();
     const mouse_button_event = MouseButtonEvent{
         .button = button,
         .pos = cursor_pos,

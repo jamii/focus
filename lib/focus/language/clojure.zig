@@ -37,7 +37,7 @@ pub const State = struct {
         const paren_matches = allocator.alloc(?usize, tokens.items.len) catch u.oom();
         std.mem.set(?usize, paren_matches, null);
         var paren_match_stack = u.ArrayList(usize).init(allocator);
-        for (tokens.items) |token, ix| {
+        for (tokens.items, 0..) |token, ix| {
             switch (token) {
                 .close_list, .close_vec, .close_map => {
                     if (paren_match_stack.popOrNull()) |matching_ix| {
@@ -60,8 +60,8 @@ pub const State = struct {
 
         return .{
             .allocator = allocator,
-            .tokens = tokens.toOwnedSlice(),
-            .token_ranges = token_ranges.toOwnedSlice(),
+            .tokens = tokens.toOwnedSlice() catch u.oom(),
+            .token_ranges = token_ranges.toOwnedSlice() catch u.oom(),
             .paren_levels = paren_levels,
             .paren_parents = paren_parents,
             .paren_matches = paren_matches,
@@ -102,7 +102,7 @@ pub const State = struct {
 
     pub fn highlight(self: State, source: []const u8, range: [2]usize, colors: []u.Color) void {
         std.mem.set(u.Color, colors, style.comment_color);
-        for (self.token_ranges) |token_range, i| {
+        for (self.token_ranges, 0..) |token_range, i| {
             const source_start = token_range[0];
             const source_end = token_range[1];
             if (source_end < range[0] or source_start > range[1]) continue;

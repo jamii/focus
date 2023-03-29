@@ -51,7 +51,7 @@ pub fn main() void {
         .Request => |request| {
             // if we successfully bound the socket then we need to create the daemon
             if (server_socket.state == .Bound) {
-                const log_filename = focus.util.format(arena.allocator(), "/home/jamie/.log/{s}.log", .{std.fs.path.basename(args[0])});
+                const log_filename = focus.util.format(arena.allocator(), "/tmp/{s}.log", .{std.fs.path.basename(args[0])});
                 if (focus.daemonize(log_filename) == .Child) {
                     focus.run(allocator, server_socket);
                     // run doesn't return

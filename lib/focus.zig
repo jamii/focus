@@ -1,4 +1,5 @@
 pub const util = @import("./focus/util.zig");
+pub const config = @import("focus_config");
 pub const Atlas = @import("./focus/atlas.zig").Atlas;
 pub const Buffer = @import("./focus/buffer.zig").Buffer;
 pub const LineWrappedBuffer = @import("./focus/line_wrapped_buffer.zig").LineWrappedBuffer;
@@ -71,7 +72,7 @@ pub fn daemonize(log_filename: []const u8) enum { Parent, Child } {
     } else |err| {
         u.panic("Failed to fork: {}", .{err});
     }
-    if (std.os.linux.chdir("/home/jamie/") < 0)
+    if (std.os.linux.chdir(@ptrCast([*:0]const u8, config.home_path)) < 0)
         u.panic("Failed to chdir", .{});
 
     // redirect stdout/err to log
@@ -207,14 +208,14 @@ pub const App = struct {
     last_buffer_opener_selected: usize,
     last_error_lister_selected: usize,
 
-    fn glfw_error_callback(error_code: glfw.Error, description: [:0]const u8) void {
+    fn glfw_error_callback(error_code: glfw.ErrorCode, description: [:0]const u8) void {
         std.debug.print("{}: {s}\n", .{ error_code, description });
     }
 
     pub fn init(allocator: u.Allocator, server_socket: ServerSocket) *App {
         glfw.setErrorCallback(glfw_error_callback);
-        glfw.init(.{}) catch |err|
-            u.panic("Error starting glfw: {}", .{err});
+        if (!glfw.init(.{}))
+            u.panic("Error starting glfw", .{});
 
         var atlas = allocator.create(Atlas) catch u.oom();
         atlas.* = Atlas.init(allocator, 16);
@@ -349,8 +350,7 @@ pub const App = struct {
 
         // poll events
         // TODO use waitEventsTimeout to handle fps
-        glfw.pollEvents() catch |err|
-            u.panic("Error polling events: {}", .{err});
+        glfw.pollEvents();
 
         // run window frames
         // copy window list because it might change during frame
@@ -389,12 +389,12 @@ pub const App = struct {
         }.lessThan);
 
         var unique_results = u.ArrayList([]const u8).init(self.frame_allocator);
-        for (results.items) |result, i| {
+        for (results.items, 0..) |result, i| {
             if (i == 0 or !std.mem.eql(u8, result, results.items[i - 1]))
                 unique_results.append(result) catch u.oom();
         }
 
-        return unique_results.toOwnedSlice();
+        return unique_results.toOwnedSlice() catch u.oom();
     }
 
     pub fn handleAfterSave(self: *App) void {

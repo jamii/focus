@@ -23,7 +23,7 @@ pub const Atlas = struct {
         defer lib.deinit();
 
         // load font
-        const face = lib.newFaceMemory(fira_code, 0) catch |err|
+        const face = lib.createFaceMemory(fira_code, 0) catch |err|
             u.panic("Error loading font: {}", .{err});
         defer face.deinit();
 
@@ -95,7 +95,7 @@ pub const Atlas = struct {
         const texture = allocator.alloc(u.Color, num_chars * @intCast(usize, char_width * char_height)) catch u.oom();
         for (texture) |*pixel| pixel.* = .{ .r = 0, .g = 0, .b = 0, .a = 0 };
         const char_to_rect = allocator.alloc(u.Rect, num_chars) catch u.oom();
-        for (char_to_bitmap) |bitmap, char| {
+        for (char_to_bitmap, 0..) |bitmap, char| {
             const cbox = char_to_cbox[char];
 
             const bitmap_width = cbox.xMax - cbox.xMin;

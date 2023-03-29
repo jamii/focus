@@ -2,49 +2,39 @@ const builtin = @import("builtin");
 const std = @import("std");
 const Builder = std.build.Builder;
 const allocator = std.testing.allocator;
-const freetype = @import("mach/freetype/build.zig");
-const glfw = @import("mach/glfw/build.zig");
+const freetype = @import("mach/libs/freetype/build.zig");
+const glfw = @import("mach/libs/glfw/build.zig");
 
 pub fn build(b: *Builder) !void {
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
 
-    const local = b.addExecutable("focus-local", "./bin/focus.zig");
-    try includeCommon(b, local);
-    local.setBuildMode(mode);
-    local.setTarget(target);
-    local.install();
+    const config = b.addOptions();
+    config.addOption(
+        []const u8,
+        "home_path",
+        b.option([]const u8, "home-path", "") orelse "/home/jamie",
+    );
+    config.addOption(
+        []const u8,
+        "projects_file_path",
+        b.option([]const u8, "projects-file-path", "") orelse "/home/jamie/secret/projects",
+    );
 
-    const cross = b.addExecutable("focus-cross", "./bin/focus.zig");
-    try includeCommon(b, cross);
-    cross.setBuildMode(mode);
-    cross.setTarget(std.zig.CrossTarget{
-        .cpu_arch = .aarch64,
-        .os_tag = .linux,
-        .abi = .gnu,
+    const exe = b.addExecutable(.{
+        .name = "focus-dev",
+        .root_source_file = .{ .path = "./bin/focus.zig" },
+        .target = target,
+        .optimize = optimize,
     });
-    cross.install();
-
-    const local_step = b.step("local", "Build for local");
-    local_step.dependOn(&local.step);
-
-    const cross_step = b.step("cross", "Build for focus");
-    cross_step.dependOn(&cross.step);
-
-    const run = local.run();
-    const run_step = b.step("run", "Run locally");
-    run_step.dependOn(&run.step);
-}
-
-fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
     exe.setMainPkgPath("./");
-    exe.linkSystemLibrary("c");
+    exe.linkLibC();
     exe.linkSystemLibrary("GL");
     exe.setOutputDir("./zig-cache");
-    exe.addPackage(freetype.pkg);
+    exe.addModule("freetype", freetype.module(b));
     freetype.link(b, exe, .{});
-    exe.addPackage(glfw.pkg);
-    glfw.link(b, exe, .{
+    exe.addModule("glfw", glfw.module(b));
+    try glfw.link(b, exe, .{
         .vulkan = false,
         .metal = false,
         .opengl = true,
@@ -56,4 +46,13 @@ fn includeCommon(b: *Builder, exe: *std.build.LibExeObjStep) !void {
         .system_sdk = .{},
     });
     exe.omit_frame_pointer = false;
+    exe.addOptions("focus_config", config);
+    exe.install();
+
+    const exe_step = b.step("build", "Build");
+    exe_step.dependOn(&exe.step);
+
+    const run = exe.run();
+    const run_step = b.step("run", "Run");
+    run_step.dependOn(&run.step);
 }
