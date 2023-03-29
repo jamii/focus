@@ -1,4 +1,5 @@
 pub const util = @import("./focus/util.zig");
+pub const config = @import("focus_config");
 pub const Atlas = @import("./focus/atlas.zig").Atlas;
 pub const Buffer = @import("./focus/buffer.zig").Buffer;
 pub const LineWrappedBuffer = @import("./focus/line_wrapped_buffer.zig").LineWrappedBuffer;
@@ -23,7 +24,6 @@ const std = @import("std");
 const glfw = @import("glfw");
 const u = util;
 const c = util.c;
-const focus_paths = @import("focus_paths");
 
 pub const Request = union(enum) {
     CreateEmptyWindow,
@@ -72,7 +72,7 @@ pub fn daemonize(log_filename: []const u8) enum { Parent, Child } {
     } else |err| {
         u.panic("Failed to fork: {}", .{err});
     }
-    if (std.os.linux.chdir(@ptrCast([*:0]const u8, focus_paths.home_path)) < 0)
+    if (std.os.linux.chdir(@ptrCast([*:0]const u8, config.home_path)) < 0)
         u.panic("Failed to chdir", .{});
 
     // redirect stdout/err to log

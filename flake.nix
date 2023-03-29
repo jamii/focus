@@ -44,7 +44,7 @@
           ];
           shellHook = ''
             # Create symlinks in project root
-            # HACK: Symlink doesn't get deleted when `nix develop` shell is exitted
+            # HACK: Symlink doesn't get deleted when `nix develop` shell is exited
             # Zig stdlib - useful for browsing
             if [ ! -L ./zig-stdlib ]; then
               ln -s ${pkgs.zigpkg} ./zig-stdlib

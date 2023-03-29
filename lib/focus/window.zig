@@ -64,18 +64,18 @@ pub const Window = struct {
         const glfw_window = glfw_window: {
             const optional_glfw_window =
                 glfw.Window.create(
-                    init_width,
-                    init_height,
-                    "focus",
-                    null,
-                    null,
-                    .{
-                        .client_api = .opengl_api,
-                        .decorated = false,
-                        .floating = (floating == .Floating),
-                        // sway does not respect .floating but it will float non-resizable windows
-                        .resizable = (floating == .NotFloating),
-                    },
+                init_width,
+                init_height,
+                "focus",
+                null,
+                null,
+                .{
+                    .client_api = .opengl_api,
+                    .decorated = false,
+                    .floating = (floating == .Floating),
+                    // sway does not respect .floating but it will float non-resizable windows
+                    .resizable = (floating == .NotFloating),
+                },
             );
             if (optional_glfw_window) |window|
                 break :glfw_window window

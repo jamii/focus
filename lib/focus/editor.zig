@@ -3,7 +3,6 @@ const glfw = @import("glfw");
 const focus = @import("../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
-const focus_paths = @import("focus_paths");
 const App = focus.App;
 const Buffer = focus.Buffer;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
@@ -188,7 +187,7 @@ pub const Editor = struct {
                                 window.pushView(buffer_searcher);
                             },
                             .g => {
-                                const project_dir = self.buffer.getProjectDir() orelse focus_paths.projects_file_path;
+                                const project_dir = self.buffer.getProjectDir() orelse focus.config.projects_file_path;
                                 if (self.buffer.language.getIdentifierRangeAt(self.getMainCursor().head.pos)) |identifier_range| {
                                     const identifier = self.buffer.bytes.items[identifier_range[0]..identifier_range[1]];
                                     var filter = u.ArrayList(u8).init(self.app.frame_allocator);
@@ -233,7 +232,7 @@ pub const Editor = struct {
                             },
                             .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
                             .g => {
-                                const project_dir = self.buffer.getProjectDir() orelse focus_paths.projects_file_path;
+                                const project_dir = self.buffer.getProjectDir() orelse focus.config.projects_file_path;
                                 if (self.buffer.language.getIdentifierRangeAt(self.getMainCursor().head.pos)) |identifier_range| {
                                     const identifier = self.buffer.bytes.items[identifier_range[0]..identifier_range[1]];
                                     var filter = u.ArrayList(u8).init(self.app.frame_allocator);
