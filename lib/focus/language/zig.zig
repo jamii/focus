@@ -168,6 +168,8 @@ pub const State = struct {
     }
 
     pub fn format(self: State, source: []const u8) ?[]const u8 {
+        // TODO Once zig syntax is stable, use Ast.render instead of shelling out
+
         var child_process = std.ChildProcess.init(
             &[_][]const u8{ "setsid", "zig", "fmt", "--stdin" },
             self.allocator,
