@@ -308,6 +308,9 @@ pub const Editor = struct {
                                 self.clearMark();
                             }
                         }
+                    
+                        // start new undo group
+                        self.buffer.newUndoGroup();
                     }
                 },
                 .mouse_release => |mouse_release_event| {
