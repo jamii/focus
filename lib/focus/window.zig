@@ -203,7 +203,7 @@ pub const Window = struct {
                                     const init_path = if (self.getTopViewFilename()) |filename|
                                         std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch u.oom()
                                     else
-                                        "/home/jamie/";
+                                        focus.config.home_path;
                                     const file_opener = FileOpener.init(self.app, init_path);
                                     self.pushView(file_opener);
                                     handled = true;
@@ -247,7 +247,7 @@ pub const Window = struct {
                                         null;
                                     const project_searcher = ProjectSearcher.init(
                                         self.app,
-                                        project_dir orelse "/home/jamie",
+                                        project_dir orelse focus.config.home_path,
                                         .FixedStrings,
                                         null,
                                     );
