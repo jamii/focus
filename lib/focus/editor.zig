@@ -291,7 +291,7 @@ pub const Editor = struct {
                             const pos = self.line_wrapped_buffer.getPosForLineCol(u.min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, line)), @intCast(usize, col));
                             if (mouse_press_event.mods.control) {
                                 self.dragging = .CtrlDragging;
-                                var cursor = self.newCursor();
+                                var cursor = self.addCursor();
                                 self.updatePos(&cursor.head, pos);
                                 self.updatePos(&cursor.tail, pos);
                             } else if (mouse_press_event.mods.shift) {
@@ -774,8 +774,6 @@ pub const Editor = struct {
             self.line_wrapped_buffer.update();
         for (self.cursors.items) |*cursor| {
             for (&[2]*Point{ &cursor.head, &cursor.tail }) |point| {
-                // TODO ptr compare is because we want paste to leave each cursor after its own insert
-                // if (point.pos > insert_at or (point.pos == insert_at and @ptrToInt(other_cursor) >= @ptrToInt(cursor))) {
                 if (point.pos >= start) {
                     point.pos += bytes.len;
                     self.updateCol(point);
@@ -909,8 +907,7 @@ pub const Editor = struct {
             self.insert(cursor, txt);
     }
 
-    // TODO rename to addCursor
-    pub fn newCursor(self: *Editor) *Cursor {
+    pub fn addCursor(self: *Editor) *Cursor {
         self.cursors.append(.{
             .head = .{ .pos = 0, .col = 0 },
             .tail = .{ .pos = 0, .col = 0 },
@@ -962,7 +959,7 @@ pub const Editor = struct {
         }
 
         // make a new cursor to peform the indents
-        var edit_cursor = self.newCursor();
+        var edit_cursor = self.addCursor();
         std.mem.swap(Cursor, edit_cursor, &self.cursors.items[0]);
         edit_cursor = &self.cursors.items[0];
         defer {

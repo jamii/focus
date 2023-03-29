@@ -63,7 +63,6 @@ pub const BufferSearcher = struct {
         if (input_changed == .Changed) self.selection_pos = self.init_selection_pos;
 
         // search buffer
-        // TODO default to first result after target
         const filter = self.input.getText();
         var results = u.ArrayList([]const u8).init(self.app.frame_allocator);
         var result_poss = u.ArrayList(usize).init(self.app.frame_allocator);
@@ -146,7 +145,7 @@ pub const BufferSearcher = struct {
             },
             .SelectAll => {
                 for (result_poss, 0..) |pos, i| {
-                    var cursor = if (i == 0) editor.getMainCursor() else editor.newCursor();
+                    var cursor = if (i == 0) editor.getMainCursor() else editor.addCursor();
                     editor.goPos(cursor, pos + filter.len);
                     editor.updatePos(&cursor.tail, pos);
                     editor.setCenterAtPos(pos);

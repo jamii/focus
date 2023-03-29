@@ -265,7 +265,6 @@ pub const Buffer = struct {
         return self.line_ranges.items[line][0];
     }
 
-    // TODO should handle line out of range too?
     /// Panics on line out of range. Handles col out of range by truncating to end of line.
     pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
         const line_range = self.line_ranges.items[line];

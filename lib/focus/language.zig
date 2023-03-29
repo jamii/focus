@@ -25,28 +25,27 @@ pub const Language = union(enum) {
     };
 
     pub fn init(allocator: u.Allocator, filename: []const u8, source: []const u8) Language {
-        // TODO writing this as `return if ...` causes a confusing compiler error
-        if (std.mem.endsWith(u8, filename, ".zig"))
-            return .{ .Zig = zig.State.init(allocator, source) }
+        return if (std.mem.endsWith(u8, filename, ".zig"))
+            .{ .Zig = zig.State.init(allocator, source) }
         else if (std.mem.endsWith(u8, filename, ".clj") or
             std.mem.endsWith(u8, filename, ".cljs") or
             std.mem.endsWith(u8, filename, ".cljc") or
             std.mem.endsWith(u8, filename, ".edn"))
-            return .{ .Clojure = clojure.State.init(allocator, source) }
+            .{ .Clojure = clojure.State.init(allocator, source) }
         else if (std.mem.endsWith(u8, filename, ".java"))
-            return .{ .Java = generic.State.init(allocator, "//", source) }
+            .{ .Java = generic.State.init(allocator, "//", source) }
         else if (std.mem.endsWith(u8, filename, ".sh"))
-            return .{ .Shell = generic.State.init(allocator, "#", source) }
+            .{ .Shell = generic.State.init(allocator, "#", source) }
         else if (std.mem.endsWith(u8, filename, ".jl"))
-            return .{ .Julia = generic.State.init(allocator, "#", source) }
+            .{ .Julia = generic.State.init(allocator, "#", source) }
         else if (std.mem.endsWith(u8, filename, ".js"))
-            return .{ .Javascript = generic.State.init(allocator, "//", source) }
+            .{ .Javascript = generic.State.init(allocator, "//", source) }
         else if (std.mem.endsWith(u8, filename, ".nix"))
-            return .{ .Nix = generic.State.init(allocator, "#", source) }
+            .{ .Nix = generic.State.init(allocator, "#", source) }
         else if (std.mem.endsWith(u8, filename, ".c") or std.mem.endsWith(u8, filename, ".h"))
-            return .{ .C = generic.State.init(allocator, "//", source) }
+            .{ .C = generic.State.init(allocator, "//", source) }
         else
-            return .Unknown;
+            .Unknown;
     }
 
     pub fn deinit(self: *Language) void {

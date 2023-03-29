@@ -25,7 +25,7 @@ pub const ErrorLister = struct {
             .show_status_bar = false,
             .show_completer = false,
         });
-        // TODO error_report_buffer will get leaked
+
         const error_report_buffer = Buffer.initEmpty(app, .{
             .enable_completions = false,
             .enable_undo = false,
@@ -34,6 +34,7 @@ pub const ErrorLister = struct {
             .show_status_bar = false,
             .show_completer = false,
         });
+
         var selector = Selector.init(app);
         selector.selected = app.last_error_lister_selected;
         const self = app.allocator.create(ErrorLister) catch u.oom();
@@ -47,10 +48,16 @@ pub const ErrorLister = struct {
     }
 
     pub fn deinit(self: *ErrorLister) void {
-        self.error_report_editor.deinit();
-        const buffer = self.error_source_editor.buffer;
-        self.error_source_editor.deinit();
-        buffer.deinit();
+        {
+            const buffer = self.error_report_editor.buffer;
+            self.error_report_editor.deinit();
+            buffer.deinit();
+        }
+        {
+            const buffer = self.error_source_editor.buffer;
+            self.error_source_editor.deinit();
+            buffer.deinit();
+        }
         self.selector.deinit();
         self.app.allocator.destroy(self);
     }
