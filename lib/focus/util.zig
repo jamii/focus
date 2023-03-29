@@ -189,14 +189,6 @@ pub fn FixedSizeArrayList(comptime size: usize, comptime T: type) type {
     };
 }
 
-pub fn subSaturating(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
-    if (b > a) {
-        return 0;
-    } else {
-        return a - b;
-    }
-}
-
 // --------------------------------------------------------------------------------
 // drawing stuff
 
