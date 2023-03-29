@@ -168,12 +168,41 @@ pub const State = struct {
     }
 
     pub fn format(self: State, source: []const u8) ?[]const u8 {
-        const source_z = self.allocator.dupeZ(u8, source) catch u.oom();
-        defer self.allocator.free(source_z);
-        var tree = std.zig.Ast.parse(self.allocator, source_z, .zig) catch u.oom();
-        if (tree.errors.len > 0) return null;
-        defer tree.deinit(self.allocator);
-        return tree.render(self.allocator) catch u.oom();
+        var child_process = std.ChildProcess.init(
+            &[_][]const u8{ "setsid", "zig", "fmt", "--stdin" },
+            self.allocator,
+        );
+
+        child_process.stdin_behavior = .Pipe;
+        child_process.stdout_behavior = .Pipe;
+        child_process.stderr_behavior = .Pipe;
+
+        child_process.spawn() catch |err|
+            u.panic("Error spawning `zig fmt`: {}", .{err});
+
+        child_process.stdin.?.writeAll(source) catch |err|
+            u.panic("Error writing to `zig fmt` stdin: {}", .{err});
+        child_process.stdin.?.close();
+        child_process.stdin = null;
+
+        var stdout = u.ArrayList(u8).init(self.allocator);
+        defer stdout.deinit();
+
+        var stderr = u.ArrayList(u8).init(self.allocator);
+        defer stderr.deinit();
+
+        child_process.collectOutput(&stdout, &stderr, std.math.maxInt(usize)) catch |err|
+            u.panic("Error collecting output from `zig fmt`: {}", .{err});
+
+        const result = child_process.wait() catch |err|
+            u.panic("Error waiting for `zig fmt`: {}", .{err});
+
+        if (u.deepEqual(result, .{ .Exited = 0 })) {
+            return stdout.toOwnedSlice() catch u.oom();
+        } else {
+            u.warn("`zig fmt` failed: {s}", .{stderr.items});
+            return null;
+        }
     }
 
     pub fn getAddedIndent(self: State, token_ix: usize) usize {
