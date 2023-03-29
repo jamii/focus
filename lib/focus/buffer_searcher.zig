@@ -85,9 +85,7 @@ pub const BufferSearcher = struct {
                     result.appendNTimes(' ', max_line_string.len - line_string.len + 1) catch u.oom();
                     result.appendSlice(selection) catch u.oom();
 
-                    results.append(
-                            result.toOwnedSlice() catch u.oom()
-                        ) catch u.oom();
+                    results.append(result.toOwnedSlice() catch u.oom()) catch u.oom();
                     result_poss.append(found_pos) catch u.oom();
 
                     pos = found_pos + filter.len;
