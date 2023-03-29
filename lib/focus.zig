@@ -143,10 +143,11 @@ pub fn receiveRequest(buffer: []u8, server_socket: ServerSocket) ?RequestAndClie
         }
     };
     const message = buffer[0..len];
+    // TODO Relying on anon->Request coercion here breaks - in ReleaseSafe we get .{.CreateEditorWindow = "CreateEmptyWindow"}
     const request = if (std.mem.eql(u8, message, "CreateEmptyWindow"))
-        .CreateEmptyWindow
+        Request{ .CreateEmptyWindow = {} }
     else if (std.mem.eql(u8, message, "CreateLauncherWindow"))
-        .CreateLauncherWindow
+        Request{ .CreateLauncherWindow = {} }
     else
         Request{ .CreateEditorWindow = message };
     return RequestAndClientAddress{
