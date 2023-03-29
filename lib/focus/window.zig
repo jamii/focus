@@ -12,7 +12,6 @@ const BufferOpener = focus.BufferOpener;
 const BufferSearcher = focus.BufferSearcher;
 const ProjectSearcher = focus.ProjectSearcher;
 const Launcher = focus.Launcher;
-//const ImpRepl = focus.ImpRepl;
 const Maker = focus.Maker;
 const ErrorLister = focus.ErrorLister;
 const style = focus.style;
@@ -26,7 +25,6 @@ pub const View = union(enum) {
     BufferSearcher: *BufferSearcher,
     ProjectSearcher: *ProjectSearcher,
     Launcher: *Launcher,
-    //ImpRepl: *ImpRepl,
     Maker: *Maker,
     ErrorLister: *ErrorLister,
 };

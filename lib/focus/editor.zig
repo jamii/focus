@@ -8,7 +8,6 @@ const Buffer = focus.Buffer;
 const LineWrappedBuffer = focus.LineWrappedBuffer;
 const BufferSearcher = focus.BufferSearcher;
 const ProjectSearcher = focus.ProjectSearcher;
-//const ImpRepl = focus.ImpRepl;
 const Window = focus.Window;
 const style = focus.style;
 const mach_compat = focus.mach_compat;
@@ -308,7 +307,7 @@ pub const Editor = struct {
                                 self.clearMark();
                             }
                         }
-                    
+
                         // start new undo group
                         self.buffer.newUndoGroup();
                     }
