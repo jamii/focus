@@ -15,6 +15,7 @@ pub const Language = union(enum) {
     Shell: generic.State,
     Julia: generic.State,
     Javascript: generic.State,
+    Typescript: generic.State,
     Nix: generic.State,
     C: generic.State,
     Unknown,
@@ -40,6 +41,8 @@ pub const Language = union(enum) {
             .{ .Julia = generic.State.init(allocator, "#", source) }
         else if (std.mem.endsWith(u8, filename, ".js"))
             .{ .Javascript = generic.State.init(allocator, "//", source) }
+        else if (std.mem.endsWith(u8, filename, ".ts"))
+            .{ .Typescript = generic.State.init(allocator, "//", source) }
         else if (std.mem.endsWith(u8, filename, ".nix"))
             .{ .Nix = generic.State.init(allocator, "#", source) }
         else if (std.mem.endsWith(u8, filename, ".c") or std.mem.endsWith(u8, filename, ".h"))
@@ -60,7 +63,7 @@ pub const Language = union(enum) {
         switch (self.*) {
             .Zig => |*state| state.updateBeforeChange(source, delete_range),
             .Clojure => |*state| state.updateBeforeChange(source, delete_range),
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |*state| state.updateBeforeChange(source, delete_range),
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |*state| state.updateBeforeChange(source, delete_range),
             .Unknown => {},
         }
     }
@@ -69,7 +72,7 @@ pub const Language = union(enum) {
         switch (self.*) {
             .Zig => |*state| state.updateAfterChange(source, insert_range),
             .Clojure => |*state| state.updateAfterChange(source, insert_range),
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |*state| state.updateAfterChange(source, insert_range),
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |*state| state.updateAfterChange(source, insert_range),
             .Unknown => {},
         }
     }
@@ -78,7 +81,7 @@ pub const Language = union(enum) {
         switch (self.*) {
             .Zig => |*state| state.toggleMode(),
             .Clojure => |*state| state.toggleMode(),
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |*state| state.toggleMode(),
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |*state| state.toggleMode(),
             .Unknown => {},
         }
     }
@@ -87,7 +90,7 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => "//",
             .Clojure => ";",
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |*state| state.comment_string,
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |*state| state.comment_string,
             .Unknown => null,
         };
     }
@@ -98,7 +101,7 @@ pub const Language = union(enum) {
         switch (self) {
             .Zig => |state| state.highlight(source, range, colors),
             .Clojure => |state| state.highlight(source, range, colors),
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |state| state.highlight(source, range, colors),
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |state| state.highlight(source, range, colors),
             .Unknown => {},
         }
         return colors;
@@ -108,7 +111,7 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => |state| state.token_ranges,
             .Clojure => |state| state.token_ranges,
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |state| state.token_ranges,
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |state| state.token_ranges,
             .Unknown => &[0][2]usize{},
         };
     }
@@ -117,7 +120,7 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => |state| state.paren_levels,
             .Clojure => |state| state.paren_levels,
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |state| state.paren_levels,
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |state| state.paren_levels,
             .Unknown => &[0]?usize{},
         };
     }
@@ -126,7 +129,7 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => |state| state.paren_parents,
             .Clojure => |state| state.paren_parents,
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |state| state.paren_parents,
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |state| state.paren_parents,
             .Unknown => &[0]?usize{},
         };
     }
@@ -135,7 +138,7 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => |state| state.paren_matches,
             .Clojure => |state| state.paren_matches,
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |state| state.paren_matches,
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |state| state.paren_matches,
             .Unknown => &[0]?usize{},
         };
     }
@@ -171,7 +174,7 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => |state| state.format(source),
             .Clojure => |state| stripTrailingWhitespace(state.allocator, source),
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |state| stripTrailingWhitespace(state.allocator, source),
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |state| stripTrailingWhitespace(state.allocator, source),
             .Unknown => null,
         };
     }
@@ -215,7 +218,7 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => |state| state.getAddedIndent(token_ix),
             .Clojure => |state| state.getAddedIndent(token_ix),
-            .Java, .Shell, .Julia, .Javascript, .Nix, .C => |state| state.getAddedIndent(token_ix),
+            .Java, .Shell, .Julia, .Javascript, .Typescript, .Nix, .C => |state| state.getAddedIndent(token_ix),
             .Unknown => 0,
         };
     }
