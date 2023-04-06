@@ -13,6 +13,7 @@ const mach_compat = focus.mach_compat;
 pub const ErrorLister = struct {
     app: *App,
     error_source_editor: *Editor,
+    error_report_buffer_init: *Buffer,
     error_report_editor: *Editor,
     selector: Selector,
 
@@ -41,19 +42,21 @@ pub const ErrorLister = struct {
         self.* = ErrorLister{
             .app = app,
             .selector = selector,
-            .error_report_editor = error_report_editor,
             .error_source_editor = error_source_editor,
+            .error_report_buffer_init = error_report_buffer,
+            .error_report_editor = error_report_editor,
         };
         return self;
     }
 
     pub fn deinit(self: *ErrorLister) void {
         {
-            const buffer = self.error_report_editor.buffer;
+            // error_report might point to an buffer allocated elsewhere
             self.error_report_editor.deinit();
-            buffer.deinit();
+            self.error_report_buffer_init.deinit();
         }
         {
+            // error_source always deinits it's old buffer when changing.
             const buffer = self.error_source_editor.buffer;
             self.error_source_editor.deinit();
             buffer.deinit();
@@ -113,6 +116,8 @@ pub const ErrorLister = struct {
             }
 
             // show report
+            // (error_report_buffer_init will get cleaned up on self.deinit())
+            // (other buffers are the responsibility of error sources)
             self.error_report_editor.deinit();
             self.error_report_editor = Editor.init(self.app, error_location.report_buffer, .{
                 .show_status_bar = false,
