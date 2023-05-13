@@ -193,6 +193,7 @@ pub const Tokenizer = struct {
 
     pub fn next(self: *Tokenizer) Token {
         var state = TokenizerState.start;
+        var quote_char: ?u8 = null;
         const source_len = self.source.len;
         while (true) {
             if (state == .start and
@@ -215,7 +216,10 @@ pub const Tokenizer = struct {
                     },
                     'a'...'z', 'A'...'Z' => state = .identifier,
                     '-', '0'...'9' => state = .number,
-                    '"' => state = .string,
+                    '\'', '"' => {
+                        quote_char = char;
+                        state = .string;
+                    },
                     ' ', '\r', '\n', '\t' => state = .whitespace,
                     '(' => return .open_paren,
                     ')' => return .close_paren,
@@ -245,8 +249,9 @@ pub const Tokenizer = struct {
                         return .unknown;
                     },
                     '\\' => state = .string_escape,
-                    '"' => return .string,
-                    else => {},
+                    else => {
+                        if (char == quote_char) return .string;
+                    },
                 },
                 .string_escape => switch (char) {
                     0 => {
