@@ -61,19 +61,21 @@ pub const State = struct {
         }
 
         var squigglies = u.ArrayList(Language.Squiggly).init(allocator);
-        {
-            var line_start: usize = 0;
-            while (line_start < source.len) {
-                var line_end = line_start;
-                while (line_end < source.len and source[line_end] != '\n') : (line_end += 1) {}
-                if (line_end - line_start >= 100)
-                    squigglies.append(.{
-                        .color = style.emphasisOrange,
-                        .range = .{ line_start + 99, line_end },
-                    }) catch u.oom();
-                line_start = line_end + 1;
-            }
-        }
+        // Disabled long line warning.
+        //
+        //{
+        //    var line_start: usize = 0;
+        //    while (line_start < source.len) {
+        //        var line_end = line_start;
+        //        while (line_end < source.len and source[line_end] != '\n') : (line_end += 1) {}
+        //        if (line_end - line_start >= 100)
+        //            squigglies.append(.{
+        //                .color = style.emphasisOrange,
+        //                .range = .{ line_start + 99, line_end },
+        //            }) catch u.oom();
+        //        line_start = line_end + 1;
+        //    }
+        //}
 
         return .{
             .allocator = allocator,
