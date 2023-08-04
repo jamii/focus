@@ -1,3 +1,0 @@
-[submodule "mach"]
-	path = mach
-	url = git@github.com:hexops/mach.git
