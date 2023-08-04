@@ -1,11 +1,10 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const Builder = std.build.Builder;
 const allocator = std.testing.allocator;
-const freetype = @import("mach/libs/freetype/build.zig");
-const glfw = @import("mach/libs/glfw/build.zig");
+const freetype = @import("mach_freetype");
+const glfw = @import("mach_glfw");
 
-pub fn build(b: *Builder) !void {
+pub fn build(b: *std.build.Builder) !void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
 
@@ -26,33 +25,51 @@ pub fn build(b: *Builder) !void {
         .root_source_file = .{ .path = "./bin/focus.zig" },
         .target = target,
         .optimize = optimize,
+        .main_pkg_path = .{ .path = "./" },
     });
-    exe.setMainPkgPath("./");
     exe.linkLibC();
     exe.linkSystemLibrary("GL");
-    exe.setOutputDir("./zig-cache");
-    exe.addModule("freetype", freetype.module(b));
-    freetype.link(b, exe, .{});
-    exe.addModule("glfw", glfw.module(b));
-    try glfw.link(b, exe, .{
-        .vulkan = false,
-        .metal = false,
-        .opengl = true,
-        .gles = false,
-        .x11 = true,
-        // TODO try wayland
-        // https://github.com/hexops/mach/issues/347
-        .wayland = false,
-        .system_sdk = .{},
-    });
+    freetypeLink(b, exe);
+    glfwLink(b, exe);
     exe.omit_frame_pointer = false;
     exe.addOptions("focus_config", config);
-    exe.install();
+    b.installArtifact(exe);
 
     const exe_step = b.step("build", "Build");
     exe_step.dependOn(&exe.step);
 
-    const run = exe.run();
+    const run = b.addRunArtifact(exe);
     const run_step = b.step("run", "Run");
     run_step.dependOn(&run.step);
+}
+
+fn freetypeLink(b: *std.Build, step: *std.build.CompileStep) void {
+    const mach_freetype_dep = b.dependency("mach_freetype", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    step.addModule("freetype", mach_freetype_dep.module("mach-freetype"));
+}
+
+fn glfwLink(b: *std.Build, step: *std.build.CompileStep) void {
+    const mach_glfw_dep = b.dependency("mach_glfw", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    step.linkLibrary(mach_glfw_dep.artifact("mach-glfw"));
+    step.addModule("glfw", mach_glfw_dep.module("mach-glfw"));
+
+    @import("glfw").addPaths(step);
+    step.linkLibrary(b.dependency("vulkan_headers", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("vulkan-headers"));
+    step.linkLibrary(b.dependency("x11_headers", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("x11-headers"));
+    step.linkLibrary(b.dependency("wayland_headers", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("wayland-headers"));
 }
