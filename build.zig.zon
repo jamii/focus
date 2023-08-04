@@ -1,34 +1,26 @@
 .{
     .name = "focus",
     .version = "0.0.0",
-    .dependencies = .{
-        .mach_glfw = .{
-            .url = "https://pkg.machengine.org/mach-glfw/b250f2c068e91d8a5bf10975d53a8ca2cb8e2066.tar.gz",
-            .hash = "12206a15305a16421a986cbaf98d3c839c86a77c78a3bb2b570cea49aee7bb37ce2d",
-        },
-        .glfw = .{
-            .url = "https://pkg.machengine.org/glfw/77086fe2c1bbbf55fa5f2572eb6a604bc3be639f.tar.gz",
-            .hash = "1220667f4ae9cab35b27fa129e265457be42a2f11f2ca57d9ea5d7f56213cbc3ffde",
-        },
-        .mach_freetype = .{
-            .url = "https://pkg.machengine.org/mach-freetype/594ce4a7f09dced26101d9fb14068f1eb757b00a.tar.gz",
-            .hash = "122061c6e87e535e82d4d262c59a522875f865418bd5a50ada6e61a28ec1cc7f69a8",
-        },
-        .freetype = .{
-            .url = "https://pkg.machengine.org/freetype/c3194021bd007809d8297e4a177b7e7ecd587bbe.tar.gz",
-            .hash = "12206055f33e9fcdf57dc0014f15b84d740b9610b783346a32b78c0e178aa3b3ba07",
-        },
-        .vulkan_headers = .{
-            .url = "https://pkg.machengine.org/vulkan-headers/b10fb77f54d2d24b04267e1a84e4f63bad9d6d33.tar.gz",
-            .hash = "12209df6486512fccc34a78cc55f2d761f58f36ddb651d6d0fa8c2d1b1f59c6117ad",
-        },
-        .wayland_headers = .{
-            .url = "https://pkg.machengine.org/wayland-headers/3255fb47a6ae42259df17558c6c0db4f59036e68.tar.gz",
-            .hash = "122047bda37ce846be8f120fe920d909a28b257d1ec989b0f753202c8d0e95674527",
-        },
-           .x11_headers = .{
-            .url = "https://pkg.machengine.org/x11-headers/d61bdcece6ad9e9b6327247ff59ef270f7d08ad3.tar.gz",
-            .hash = "1220bfcac525c1e3939903700c75d9925ad8b7abf0f95401e4dced870f1f22de5026",
-        },
-    },
+    .dependencies = .{ .mach_glfw = .{
+        .url = "https://pkg.machengine.org/mach-glfw/b250f2c068e91d8a5bf10975d53a8ca2cb8e2066.tar.gz",
+        .hash = "12206a15305a16421a986cbaf98d3c839c86a77c78a3bb2b570cea49aee7bb37ce2d",
+    }, .glfw = .{
+        .url = "https://pkg.machengine.org/glfw/77086fe2c1bbbf55fa5f2572eb6a604bc3be639f.tar.gz",
+        .hash = "1220667f4ae9cab35b27fa129e265457be42a2f11f2ca57d9ea5d7f56213cbc3ffde",
+    }, .mach_freetype = .{
+        .url = "https://pkg.machengine.org/mach-freetype/594ce4a7f09dced26101d9fb14068f1eb757b00a.tar.gz",
+        .hash = "122061c6e87e535e82d4d262c59a522875f865418bd5a50ada6e61a28ec1cc7f69a8",
+    }, .freetype = .{
+        .url = "https://pkg.machengine.org/freetype/c3194021bd007809d8297e4a177b7e7ecd587bbe.tar.gz",
+        .hash = "12206055f33e9fcdf57dc0014f15b84d740b9610b783346a32b78c0e178aa3b3ba07",
+    }, .vulkan_headers = .{
+        .url = "https://pkg.machengine.org/vulkan-headers/b10fb77f54d2d24b04267e1a84e4f63bad9d6d33.tar.gz",
+        .hash = "12209df6486512fccc34a78cc55f2d761f58f36ddb651d6d0fa8c2d1b1f59c6117ad",
+    }, .wayland_headers = .{
+        .url = "https://pkg.machengine.org/wayland-headers/3255fb47a6ae42259df17558c6c0db4f59036e68.tar.gz",
+        .hash = "122047bda37ce846be8f120fe920d909a28b257d1ec989b0f753202c8d0e95674527",
+    }, .x11_headers = .{
+        .url = "https://pkg.machengine.org/x11-headers/d61bdcece6ad9e9b6327247ff59ef270f7d08ad3.tar.gz",
+        .hash = "1220bfcac525c1e3939903700c75d9925ad8b7abf0f95401e4dced870f1f22de5026",
+    } },
 }
