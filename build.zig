@@ -49,6 +49,12 @@ fn freetypeLink(b: *std.Build, step: *std.build.CompileStep) void {
         .optimize = step.optimize,
     });
     step.addModule("freetype", mach_freetype_dep.module("mach-freetype"));
+
+    const freetype_dep = b.dependency("freetype", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    step.linkLibrary(freetype_dep.artifact("freetype"));
 }
 
 fn glfwLink(b: *std.Build, step: *std.build.CompileStep) void {
