@@ -82,8 +82,8 @@ fn scrollCallback(window: glfw.Window, xoffset: f64, yoffset: f64) void {
     const events = (window.getUserPointer(u.ArrayList(Event)) orelse unreachable);
     events.append(.{
         .mouse_scroll = .{
-            .xoffset = @floatCast(f32, xoffset),
-            .yoffset = @floatCast(f32, yoffset),
+            .xoffset = @as(f32, @floatCast(xoffset)),
+            .yoffset = @as(f32, @floatCast(yoffset)),
         },
     }) catch u.oom();
 }

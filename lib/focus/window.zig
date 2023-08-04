@@ -181,8 +181,8 @@ pub const Window = struct {
         const window_rect = u.Rect{
             .x = 0,
             .y = 0,
-            .w = @intCast(u.Coord, window_size.width),
-            .h = @intCast(u.Coord, window_size.height),
+            .w = @as(u.Coord, @intCast(window_size.width)),
+            .h = @as(u.Coord, @intCast(window_size.height)),
         };
 
         // handle events
@@ -304,9 +304,9 @@ pub const Window = struct {
         } else {
             const message = "focus";
             const rect = u.Rect{
-                .x = window_rect.x + u.max(0, @divTrunc(window_rect.w - (@intCast(u.Coord, message.len) * self.app.atlas.char_width), 2)),
+                .x = window_rect.x + u.max(0, @divTrunc(window_rect.w - (@as(u.Coord, @intCast(message.len)) * self.app.atlas.char_width), 2)),
                 .y = window_rect.y + u.max(0, @divTrunc(window_rect.h - self.app.atlas.char_height, 2)),
-                .w = u.min(window_rect.w, @intCast(u.Coord, message.len) * self.app.atlas.char_width),
+                .w = u.min(window_rect.w, @as(u.Coord, @intCast(message.len)) * self.app.atlas.char_width),
                 .h = u.min(window_rect.h, self.app.atlas.char_height),
             };
             self.queueText(rect, style.text_color, message);
@@ -326,20 +326,20 @@ pub const Window = struct {
         c.glViewport(
             0,
             0,
-            @intCast(c_int, window_size.width),
-            @intCast(c_int, window_size.height),
+            @as(c_int, @intCast(window_size.width)),
+            @as(c_int, @intCast(window_size.height)),
         );
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPushMatrix();
         c.glLoadIdentity();
-        c.glOrtho(0.0, @intToFloat(f32, window_size.width), @intToFloat(f32, window_size.height), 0.0, -1.0, 1.0);
+        c.glOrtho(0.0, @as(f32, @floatFromInt(window_size.width)), @as(f32, @floatFromInt(window_size.height)), 0.0, -1.0, 1.0);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPushMatrix();
         c.glLoadIdentity();
         c.glTexCoordPointer(2, c.GL_FLOAT, 0, self.texture_buffer.items.ptr);
         c.glVertexPointer(2, c.GL_FLOAT, 0, self.vertex_buffer.items.ptr);
         c.glColorPointer(4, c.GL_UNSIGNED_BYTE, 0, self.color_buffer.items.ptr);
-        c.glDrawElements(c.GL_TRIANGLES, @intCast(c_int, self.index_buffer.items.len), c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
+        c.glDrawElements(c.GL_TRIANGLES, @as(c_int, @intCast(self.index_buffer.items.len)), c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPopMatrix();
         c.glMatrixMode(c.GL_PROJECTION);
@@ -364,10 +364,10 @@ pub const Window = struct {
     }
 
     pub fn queueQuad(self: *Window, dst: u.Rect, src: u.Rect, color: u.Color) void {
-        const tx = @intToFloat(f32, src.x) / @intToFloat(f32, self.app.atlas.texture_dims.x);
-        const ty = @intToFloat(f32, src.y) / @intToFloat(f32, self.app.atlas.texture_dims.y);
-        const tw = @intToFloat(f32, src.w) / @intToFloat(f32, self.app.atlas.texture_dims.x);
-        const th = @intToFloat(f32, src.h) / @intToFloat(f32, self.app.atlas.texture_dims.y);
+        const tx = @as(f32, @floatFromInt(src.x)) / @as(f32, @floatFromInt(self.app.atlas.texture_dims.x));
+        const ty = @as(f32, @floatFromInt(src.y)) / @as(f32, @floatFromInt(self.app.atlas.texture_dims.y));
+        const tw = @as(f32, @floatFromInt(src.w)) / @as(f32, @floatFromInt(self.app.atlas.texture_dims.x));
+        const th = @as(f32, @floatFromInt(src.h)) / @as(f32, @floatFromInt(self.app.atlas.texture_dims.y));
         self.texture_buffer.append(.{
             .tl = .{ .x = tx, .y = ty },
             .tr = .{ .x = tx + tw, .y = ty },
@@ -375,11 +375,11 @@ pub const Window = struct {
             .br = .{ .x = tx + tw, .y = ty + th },
         }) catch u.oom();
 
-        const vx = @intToFloat(f32, dst.x);
-        const vy = @intToFloat(f32, dst.y);
-        const vw = @intToFloat(f32, dst.w);
-        const vh = @intToFloat(f32, dst.h);
-        const vertex_ix = @intCast(u32, self.vertex_buffer.items.len * 4);
+        const vx = @as(f32, @floatFromInt(dst.x));
+        const vy = @as(f32, @floatFromInt(dst.y));
+        const vw = @as(f32, @floatFromInt(dst.w));
+        const vh = @as(f32, @floatFromInt(dst.h));
+        const vertex_ix = @as(u32, @intCast(self.vertex_buffer.items.len * 4));
         self.vertex_buffer.append(.{
             .tl = .{ .x = vx, .y = vy },
             .tr = .{ .x = vx + vw, .y = vy },
@@ -450,7 +450,7 @@ pub const Window = struct {
                 else => {},
             }
             inline for (@typeInfo(@typeInfo(View).Union.tag_type.?).Enum.fields) |field| {
-                if (@enumToInt(std.meta.activeTag(view)) == field.value) {
+                if (@intFromEnum(std.meta.activeTag(view)) == field.value) {
                     var view_ptr = @field(view, field.name);
                     view_ptr.deinit();
                 }
@@ -476,10 +476,10 @@ pub const Window = struct {
                 self.app.atlas.char_to_rect[0];
             const max_w = u.max(0, max_x - dst.x);
             const max_h = u.max(0, max_y - dst.y);
-            const ratio_w = @intToFloat(f64, u.min(max_w, self.app.atlas.char_width)) / @intToFloat(f64, self.app.atlas.char_width);
-            const ratio_h = @intToFloat(f64, u.min(max_h, self.app.atlas.char_height)) / @intToFloat(f64, self.app.atlas.char_height);
-            src.w = @floatToInt(u.Coord, @floor(@intToFloat(f64, src.w) * ratio_w));
-            src.h = @floatToInt(u.Coord, @floor(@intToFloat(f64, src.h) * ratio_h));
+            const ratio_w = @as(f64, @floatFromInt(u.min(max_w, self.app.atlas.char_width))) / @as(f64, @floatFromInt(self.app.atlas.char_width));
+            const ratio_h = @as(f64, @floatFromInt(u.min(max_h, self.app.atlas.char_height))) / @as(f64, @floatFromInt(self.app.atlas.char_height));
+            src.w = @as(u.Coord, @intFromFloat(@floor(@as(f64, @floatFromInt(src.w)) * ratio_w)));
+            src.h = @as(u.Coord, @intFromFloat(@floor(@as(f64, @floatFromInt(src.h)) * ratio_h)));
             dst.w = src.w;
             dst.h = src.h;
             self.queueQuad(dst, src, color);

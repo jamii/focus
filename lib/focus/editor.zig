@@ -126,7 +126,7 @@ pub const Editor = struct {
         const right_gutter_rect = text_rect.splitRight(self.app.atlas.char_width, 0);
 
         // if window width has changed, need to update line wrapping and keep viewport at same pos
-        const max_chars_per_line = @intCast(usize, @divTrunc(text_rect.w, self.app.atlas.char_width));
+        const max_chars_per_line = @as(usize, @intCast(@divTrunc(text_rect.w, self.app.atlas.char_width)));
         if (self.line_wrapped_buffer.max_chars_per_line != max_chars_per_line) {
             const prev_center_pos = self.getCenterPos(self.last_text_rect_h);
             self.line_wrapped_buffer.max_chars_per_line = max_chars_per_line;
@@ -222,7 +222,7 @@ pub const Editor = struct {
                                 for (self.cursors.items) |*cursor| self.goBufferEnd(cursor);
                                 // hardcode because we want to scroll even if cursor didn't move
                                 const num_lines = self.line_wrapped_buffer.countLines();
-                                self.top_pixel = @intCast(u.Coord, if (num_lines == 0) 0 else num_lines - 1) * self.app.atlas.char_height;
+                                self.top_pixel = @as(u.Coord, @intCast(if (num_lines == 0) 0 else num_lines - 1)) * self.app.atlas.char_height;
                             },
                             .i => {
                                 for (self.cursors.items) |*cursor| self.goBufferStart(cursor);
@@ -282,12 +282,12 @@ pub const Editor = struct {
                 },
                 .mouse_press => |mouse_press_event| {
                     if (mouse_press_event.button == .left) {
-                        const mouse_x = @floatToInt(u.Coord, mouse_press_event.pos.xpos);
-                        const mouse_y = @floatToInt(u.Coord, mouse_press_event.pos.ypos);
+                        const mouse_x = @as(u.Coord, @intFromFloat(mouse_press_event.pos.xpos));
+                        const mouse_y = @as(u.Coord, @intFromFloat(mouse_press_event.pos.ypos));
                         if (text_rect.contains(mouse_x, mouse_y)) {
                             const line = @divTrunc(self.top_pixel + (mouse_y - text_rect.y), self.app.atlas.char_height);
                             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
-                            const pos = self.line_wrapped_buffer.getPosForLineCol(u.min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, line)), @intCast(usize, col));
+                            const pos = self.line_wrapped_buffer.getPosForLineCol(u.min(self.line_wrapped_buffer.countLines() - 1, @as(usize, @intCast(line))), @as(usize, @intCast(col)));
                             if (mouse_press_event.mods.control) {
                                 self.dragging = .CtrlDragging;
                                 var cursor = self.addCursor();
@@ -318,7 +318,7 @@ pub const Editor = struct {
                     }
                 },
                 .mouse_scroll => |mouse_scroll_event| {
-                    self.top_pixel -= scroll_amount * @floatToInt(i16, mouse_scroll_event.yoffset);
+                    self.top_pixel -= scroll_amount * @as(i16, @intFromFloat(mouse_scroll_event.yoffset));
                 },
                 else => {},
             }
@@ -329,13 +329,13 @@ pub const Editor = struct {
         if (self.dragging != .NotDragging) {
             // get mouse state
             const mouse_pos = window.glfw_window.getCursorPos();
-            const mouse_x = @floatToInt(u.Coord, mouse_pos.xpos);
-            const mouse_y = @floatToInt(u.Coord, mouse_pos.ypos);
+            const mouse_x = @as(u.Coord, @intFromFloat(mouse_pos.xpos));
+            const mouse_y = @as(u.Coord, @intFromFloat(mouse_pos.ypos));
 
             // update selection of dragged cursor
             const line = @divTrunc(self.top_pixel + mouse_y - text_rect.y, self.app.atlas.char_height);
             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
-            const pos = self.line_wrapped_buffer.getPosForLineCol(u.min(self.line_wrapped_buffer.countLines() - 1, @intCast(usize, u.max(line, 0))), @intCast(usize, u.max(col, 0)));
+            const pos = self.line_wrapped_buffer.getPosForLineCol(u.min(self.line_wrapped_buffer.countLines() - 1, @as(usize, @intCast(u.max(line, 0)))), @as(usize, @intCast(u.max(col, 0))));
             var cursor = &self.cursors.items[self.cursors.items.len - 1];
             if (cursor.tail.pos != pos and !self.marked) {
                 self.setMark();
@@ -362,7 +362,7 @@ pub const Editor = struct {
         // ensure we don't scroll off the top or bottom of the buffer
         const max_pixels = u.max(0,
         // height of text
-        @intCast(isize, self.line_wrapped_buffer.countLines()) * @intCast(isize, self.app.atlas.char_height)
+        @as(isize, @intCast(self.line_wrapped_buffer.countLines())) * @as(isize, @intCast(self.app.atlas.char_height))
         // - half a screen
         - @divTrunc(text_rect.h, 2)
         // - 1 pixel to ensure that center_pos is always within text if possible
@@ -387,13 +387,13 @@ pub const Editor = struct {
                     for ([2]usize{ pos - 1, matching_pos - 1 }) |highlight_pos| {
                         const line_col = self.line_wrapped_buffer.getLineColForPos(highlight_pos);
                         if (visible_start_line <= line_col[0] and line_col[0] <= visible_end_line) {
-                            const line_top_pixel = @intCast(u.Coord, line_col[0]) * self.app.atlas.char_height;
-                            const y = text_rect.y + @intCast(u.Coord, line_top_pixel - self.top_pixel);
-                            const x = text_rect.x + @intCast(u.Coord, line_col[1]) * self.app.atlas.char_width;
+                            const line_top_pixel = @as(u.Coord, @intCast(line_col[0])) * self.app.atlas.char_height;
+                            const y = text_rect.y + @as(u.Coord, @intCast(line_top_pixel - self.top_pixel));
+                            const x = text_rect.x + @as(u.Coord, @intCast(line_col[1])) * self.app.atlas.char_width;
                             window.queueRect(
                                 .{
                                     .x = x,
-                                    .y = @intCast(u.Coord, y),
+                                    .y = @as(u.Coord, @intCast(y)),
                                     .w = self.app.atlas.char_width,
                                     .h = self.app.atlas.char_height,
                                 },
@@ -406,8 +406,8 @@ pub const Editor = struct {
         }
 
         // draw cursors, selections, text
-        var line_ix = @intCast(usize, u.max(visible_start_line, 0));
-        const max_line_ix = u.min(@intCast(usize, u.max(visible_end_line + 1, 0)), self.line_wrapped_buffer.wrapped_line_ranges.items.len);
+        var line_ix = @as(usize, @intCast(u.max(visible_start_line, 0)));
+        const max_line_ix = u.min(@as(usize, @intCast(u.max(visible_end_line + 1, 0))), self.line_wrapped_buffer.wrapped_line_ranges.items.len);
         const min_pos = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix][0];
         const max_pos = self.line_wrapped_buffer.wrapped_line_ranges.items[max_line_ix - 1][1];
         const highlighter_colors = self.buffer.language.highlight(self.app.frame_allocator, self.buffer.bytes.items, .{ min_pos, max_pos });
@@ -415,24 +415,24 @@ pub const Editor = struct {
             const line_range = self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix];
             const line = self.buffer.bytes.items[line_range[0]..line_range[1]];
 
-            const line_top_pixel = @intCast(u.Coord, line_ix) * self.app.atlas.char_height;
-            const y = text_rect.y + @intCast(u.Coord, line_top_pixel - self.top_pixel);
+            const line_top_pixel = @as(u.Coord, @intCast(line_ix)) * self.app.atlas.char_height;
+            const y = text_rect.y + @as(u.Coord, @intCast(line_top_pixel - self.top_pixel));
 
             for (self.buffer.language.getSquigglies()) |squiggly| {
                 if (squiggly.range[0] != 0) {
                     const highlight_start_pos = u.min(u.max(squiggly.range[0], line_range[0]), line_range[1]);
                     const highlight_end_pos = u.min(u.max(squiggly.range[1], line_range[0]), line_range[1]);
                     if ((highlight_start_pos < highlight_end_pos) or (squiggly.range[0] <= line_range[1] and squiggly.range[1] > line_range[1])) {
-                        const x = text_rect.x + (@intCast(u.Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
+                        const x = text_rect.x + (@as(u.Coord, @intCast((highlight_start_pos - line_range[0]))) * self.app.atlas.char_width);
                         const w = if (squiggly.range[1] > line_range[1])
                             text_rect.x + text_rect.w - x
                         else
-                            @intCast(u.Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
+                            @as(u.Coord, @intCast((highlight_end_pos - highlight_start_pos))) * self.app.atlas.char_width;
                         var dx: i32 = 0;
                         while (dx < w) : (dx += self.app.atlas.char_width) {
                             window.queueText(.{
-                                .x = @intCast(u.Coord, x + dx),
-                                .y = @intCast(u.Coord, y) + @divTrunc(self.app.atlas.char_height, 2),
+                                .x = @as(u.Coord, @intCast(x + dx)),
+                                .y = @as(u.Coord, @intCast(y)) + @divTrunc(self.app.atlas.char_height, 2),
                                 .w = self.app.atlas.char_width,
                                 .h = self.app.atlas.char_height,
                             }, squiggly.color, "~");
@@ -446,12 +446,12 @@ pub const Editor = struct {
                 if (cursor.head.pos >= line_range[0] and cursor.head.pos <= line_range[1]) {
                     // blink
                     if (@mod(@divTrunc(self.app.frame_time_ms - self.last_event_ms, 500), 2) == 0) {
-                        const x = text_rect.x + (@intCast(u.Coord, (cursor.head.pos - line_range[0])) * self.app.atlas.char_width);
+                        const x = text_rect.x + (@as(u.Coord, @intCast((cursor.head.pos - line_range[0]))) * self.app.atlas.char_width);
                         const w = @divTrunc(self.app.atlas.char_width, 8);
                         window.queueRect(
                             .{
-                                .x = @intCast(u.Coord, x) - @divTrunc(w, 2),
-                                .y = @intCast(u.Coord, y),
+                                .x = @as(u.Coord, @intCast(x)) - @divTrunc(w, 2),
+                                .y = @as(u.Coord, @intCast(y)),
                                 .w = w,
                                 .h = self.app.atlas.char_height,
                             },
@@ -467,15 +467,15 @@ pub const Editor = struct {
                     const highlight_start_pos = u.min(u.max(selection_start_pos, line_range[0]), line_range[1]);
                     const highlight_end_pos = u.min(u.max(selection_end_pos, line_range[0]), line_range[1]);
                     if ((highlight_start_pos < highlight_end_pos) or (selection_start_pos <= line_range[1] and selection_end_pos > line_range[1])) {
-                        const x = text_rect.x + (@intCast(u.Coord, (highlight_start_pos - line_range[0])) * self.app.atlas.char_width);
+                        const x = text_rect.x + (@as(u.Coord, @intCast((highlight_start_pos - line_range[0]))) * self.app.atlas.char_width);
                         const w = if (selection_end_pos > line_range[1])
                             text_rect.x + text_rect.w - x
                         else
-                            @intCast(u.Coord, (highlight_end_pos - highlight_start_pos)) * self.app.atlas.char_width;
+                            @as(u.Coord, @intCast((highlight_end_pos - highlight_start_pos))) * self.app.atlas.char_width;
                         window.queueRect(.{
-                            .x = @intCast(u.Coord, x),
-                            .y = @intCast(u.Coord, y),
-                            .w = @intCast(u.Coord, w),
+                            .x = @as(u.Coord, @intCast(x)),
+                            .y = @as(u.Coord, @intCast(y)),
+                            .w = @as(u.Coord, @intCast(w)),
                             .h = self.app.atlas.char_height,
                         }, style.highlight_color);
                     }
@@ -488,10 +488,10 @@ pub const Editor = struct {
                 const highlighter_color = highlighter_colors[line_range[0] + i - min_pos];
                 window.queueText(
                     .{
-                        .x = text_rect.x + (@intCast(u.Coord, i) * self.app.atlas.char_width),
-                        .y = @intCast(u.Coord, y),
+                        .x = text_rect.x + (@as(u.Coord, @intCast(i)) * self.app.atlas.char_width),
+                        .y = @as(u.Coord, @intCast(y)),
                         .w = text_rect.w,
-                        .h = text_rect.y + text_rect.h - @intCast(u.Coord, y),
+                        .h = text_rect.y + text_rect.h - @as(u.Coord, @intCast(y)),
                     },
                     highlighter_color,
                     &[1]u8{char},
@@ -501,7 +501,7 @@ pub const Editor = struct {
             // if wrapped, draw arrows
             if (line_ix > 0 and line_range[0] == self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix - 1][1]) {
                 window.queueText(
-                    .{ .x = left_gutter_rect.x, .y = @intCast(u.Coord, y), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
+                    .{ .x = left_gutter_rect.x, .y = @as(u.Coord, @intCast(y)), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
                     style.highlight_color,
                     "\\",
                 );
@@ -514,7 +514,7 @@ pub const Editor = struct {
             }
             if (line_ix < self.line_wrapped_buffer.countLines() - 1 and line_range[1] == self.line_wrapped_buffer.wrapped_line_ranges.items[line_ix + 1][0]) {
                 window.queueText(
-                    .{ .x = right_gutter_rect.x, .y = @intCast(u.Coord, y), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
+                    .{ .x = right_gutter_rect.x, .y = @as(u.Coord, @intCast(y)), .h = self.app.atlas.char_height, .w = self.app.atlas.char_width },
                     style.highlight_color,
                     "\\",
                 );
@@ -551,23 +551,23 @@ pub const Editor = struct {
 
             // figure out cursor position
             const cursor_linecol = self.line_wrapped_buffer.getLineColForPos(self.getMainCursor().head.pos);
-            const cursor_x = text_rect.x + @intCast(u.Coord, cursor_linecol[1]) * self.app.atlas.char_width;
-            const cursor_y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@intCast(u.Coord, cursor_linecol[0]) - visible_start_line) * self.app.atlas.char_height);
+            const cursor_x = text_rect.x + @as(u.Coord, @intCast(cursor_linecol[1])) * self.app.atlas.char_width;
+            const cursor_y = text_rect.y - @rem(self.top_pixel + 1, self.app.atlas.char_height) + ((@as(u.Coord, @intCast(cursor_linecol[0])) - visible_start_line) * self.app.atlas.char_height);
 
             // figure out x placement
             var max_completion_chars: usize = 0;
             for (completions) |completion| {
                 max_completion_chars = u.max(max_completion_chars, completion.len);
             }
-            const prefix_x = cursor_x - (@intCast(u.Coord, (self.getMainCursor().head.pos - completer.prefix_pos)) * self.app.atlas.char_width);
-            const completer_x = u.max(text_rect.x, u.min(text_rect.x + u.max(0, text_rect.w - (@intCast(u.Coord, max_completion_chars) * self.app.atlas.char_width)), prefix_x));
-            const completer_w = u.min(text_rect.x + text_rect.w - completer_x, @intCast(u.Coord, max_completion_chars) * self.app.atlas.char_width);
+            const prefix_x = cursor_x - (@as(u.Coord, @intCast((self.getMainCursor().head.pos - completer.prefix_pos))) * self.app.atlas.char_width);
+            const completer_x = u.max(text_rect.x, u.min(text_rect.x + u.max(0, text_rect.w - (@as(u.Coord, @intCast(max_completion_chars)) * self.app.atlas.char_width)), prefix_x));
+            const completer_w = u.min(text_rect.x + text_rect.w - completer_x, @as(u.Coord, @intCast(max_completion_chars)) * self.app.atlas.char_width);
 
             // figure out y placement
-            const completer_y = @intCast(u.Coord, cursor_y) + @intCast(u.Coord, self.app.atlas.char_height);
+            const completer_y = @as(u.Coord, @intCast(cursor_y)) + @as(u.Coord, @intCast(self.app.atlas.char_height));
             const available_h = text_rect.y + text_rect.h - completer_y;
             const completions_shown = u.min(max_completions_shown, completions.len);
-            const fractional_completer_h = u.min(@intCast(u.Coord, available_h), @intCast(u.Coord, completions_shown) * self.app.atlas.char_height);
+            const fractional_completer_h = u.min(@as(u.Coord, @intCast(available_h)), @as(u.Coord, @intCast(completions_shown)) * self.app.atlas.char_height);
             const completer_h = fractional_completer_h - @rem(fractional_completer_h, self.app.atlas.char_height);
 
             const completer_rect = u.Rect{
@@ -582,7 +582,7 @@ pub const Editor = struct {
             for (completions, 0..) |completion, i| {
                 if (i > completions_shown) break;
                 var rect = completer_rect;
-                rect.y += @intCast(u.Coord, i) * self.app.atlas.char_height;
+                rect.y += @as(u.Coord, @intCast(i)) * self.app.atlas.char_height;
                 window.queueText(rect, style.text_color, completion);
             }
 
@@ -597,15 +597,15 @@ pub const Editor = struct {
             // handle movement
             switch (completer_event) {
                 .None => {},
-                .Up => completer.next_completion_ix = @intCast(usize, @mod(@intCast(isize, completer.next_completion_ix) - 1, @intCast(isize, completions.len))),
+                .Up => completer.next_completion_ix = @as(usize, @intCast(@mod(@as(isize, @intCast(completer.next_completion_ix)) - 1, @as(isize, @intCast(completions.len))))),
                 .Down => completer.next_completion_ix = (completer.next_completion_ix + 1) % completions.len,
             }
         }
 
         // draw scrollbar
         {
-            const ratio = if (max_pixels == 0) 0 else @intToFloat(f64, self.top_pixel) / @intToFloat(f64, max_pixels);
-            const y = text_rect.y + u.min(@floatToInt(u.Coord, @intToFloat(f64, text_rect.h) * ratio), text_rect.h - self.app.atlas.char_height);
+            const ratio = if (max_pixels == 0) 0 else @as(f64, @floatFromInt(self.top_pixel)) / @as(f64, @floatFromInt(max_pixels));
+            const y = text_rect.y + u.min(@as(u.Coord, @intFromFloat(@as(f64, @floatFromInt(text_rect.h)) * ratio)), text_rect.h - self.app.atlas.char_height);
             var left_scroll_rect = left_gutter_rect;
             left_scroll_rect.y = y;
             left_scroll_rect.h -= y;
@@ -1104,7 +1104,7 @@ pub const Editor = struct {
     }
 
     pub fn getCenterPos(self: *Editor, text_rect_h: u.Coord) usize {
-        const prev_center_wrapped_line = @intCast(usize, @divTrunc(self.top_pixel + @divTrunc(text_rect_h, 2), self.app.atlas.char_height));
+        const prev_center_wrapped_line = @as(usize, @intCast(@divTrunc(self.top_pixel + @divTrunc(text_rect_h, 2), self.app.atlas.char_height)));
         return self.line_wrapped_buffer.getPosForLine(u.min(self.line_wrapped_buffer.countLines() - 1, prev_center_wrapped_line));
     }
 
@@ -1114,7 +1114,7 @@ pub const Editor = struct {
     }
 
     fn scrollWrappedLineToCenter(self: *Editor, text_rect: u.Rect, wrapped_line: usize) void {
-        const center_pixel = @intCast(isize, wrapped_line) * @intCast(isize, self.app.atlas.char_height);
+        const center_pixel = @as(isize, @intCast(wrapped_line)) * @as(isize, @intCast(self.app.atlas.char_height));
         self.top_pixel = u.max(0, center_pixel - @divTrunc(text_rect.h, 2));
     }
 
@@ -1125,11 +1125,11 @@ pub const Editor = struct {
 
     fn scrollPosIntoView(self: *Editor, text_rect: u.Rect, pos: usize) void {
         const bottom_pixel = self.top_pixel + text_rect.h;
-        const cursor_top_pixel = @intCast(isize, self.line_wrapped_buffer.getLineColForPos(pos)[0]) * @intCast(isize, self.app.atlas.char_height);
-        const cursor_bottom_pixel = cursor_top_pixel + @intCast(isize, self.app.atlas.char_height);
-        if (cursor_top_pixel > bottom_pixel - @intCast(isize, self.app.atlas.char_height))
-            self.top_pixel = cursor_top_pixel - @intCast(isize, text_rect.h) + @intCast(isize, self.app.atlas.char_height);
-        if (cursor_bottom_pixel <= self.top_pixel + @intCast(isize, self.app.atlas.char_height))
+        const cursor_top_pixel = @as(isize, @intCast(self.line_wrapped_buffer.getLineColForPos(pos)[0])) * @as(isize, @intCast(self.app.atlas.char_height));
+        const cursor_bottom_pixel = cursor_top_pixel + @as(isize, @intCast(self.app.atlas.char_height));
+        if (cursor_top_pixel > bottom_pixel - @as(isize, @intCast(self.app.atlas.char_height)))
+            self.top_pixel = cursor_top_pixel - @as(isize, @intCast(text_rect.h)) + @as(isize, @intCast(self.app.atlas.char_height));
+        if (cursor_bottom_pixel <= self.top_pixel + @as(isize, @intCast(self.app.atlas.char_height)))
             self.top_pixel = cursor_top_pixel;
     }
 

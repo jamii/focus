@@ -28,7 +28,7 @@ pub const Atlas = struct {
         defer face.deinit();
 
         // set font size
-        face.setPixelSizes(@intCast(u32, char_size_pixels), @intCast(u32, char_size_pixels)) catch |err|
+        face.setPixelSizes(@as(u32, @intCast(char_size_pixels)), @as(u32, @intCast(char_size_pixels))) catch |err|
             u.panic("Error setting font size: {}", .{err});
 
         // render every ascii char
@@ -38,7 +38,7 @@ pub const Atlas = struct {
         {
             var char: usize = 0;
             while (char < num_ascii_chars) : (char += 1) {
-                face.loadChar(@intCast(u32, char), .{ .render = true }) catch |err|
+                face.loadChar(@as(u32, @intCast(char)), .{ .render = true }) catch |err|
                     u.panic("Error loading '{}': {}", .{ char, err });
 
                 const bitmap = face.glyph().bitmap();
@@ -55,7 +55,7 @@ pub const Atlas = struct {
                                 .r = 255,
                                 .g = 255,
                                 .b = 255,
-                                .a = buffer[(y * @intCast(usize, bitmap_pitch)) + x],
+                                .a = buffer[(y * @as(usize, @intCast(bitmap_pitch))) + x],
                             };
                         }
                     }
@@ -65,9 +65,9 @@ pub const Atlas = struct {
                     u.panic("Error getting glyph for '{}': {}", .{ char, err });
                 const cbox = glyph.getCBox(.pixels);
                 u.assert(cbox.yMax == face.glyph().bitmapTop());
-                u.assert(cbox.yMin == face.glyph().bitmapTop() - @intCast(i32, bitmap.rows()));
+                u.assert(cbox.yMin == face.glyph().bitmapTop() - @as(i32, @intCast(bitmap.rows())));
                 u.assert(cbox.xMin == face.glyph().bitmapLeft());
-                u.assert(cbox.xMax == face.glyph().bitmapLeft() + @intCast(i32, bitmap.width()));
+                u.assert(cbox.xMax == face.glyph().bitmapLeft() + @as(i32, @intCast(bitmap.width())));
 
                 char_to_bitmap[char] = bitmap_copy;
                 char_to_cbox[char] = cbox;
@@ -87,12 +87,12 @@ pub const Atlas = struct {
             max_cbox.xMax = u.max(max_cbox.xMax, cbox.xMax);
             max_cbox.yMax = u.max(max_cbox.yMax, cbox.yMax);
         }
-        const char_width = @intCast(u.Coord, max_cbox.xMax - max_cbox.xMin);
-        const char_height = @intCast(u.Coord, max_cbox.yMax - max_cbox.yMin);
+        const char_width = @as(u.Coord, @intCast(max_cbox.xMax - max_cbox.xMin));
+        const char_height = @as(u.Coord, @intCast(max_cbox.yMax - max_cbox.yMin));
 
         // copy every char into a single texture
         const num_chars = num_ascii_chars + 1; // ascii + one white box
-        const texture = allocator.alloc(u.Color, num_chars * @intCast(usize, char_width * char_height)) catch u.oom();
+        const texture = allocator.alloc(u.Color, num_chars * @as(usize, @intCast(char_width * char_height))) catch u.oom();
         for (texture) |*pixel| pixel.* = .{ .r = 0, .g = 0, .b = 0, .a = 0 };
         const char_to_rect = allocator.alloc(u.Rect, num_chars) catch u.oom();
         for (char_to_bitmap, 0..) |bitmap, char| {
@@ -105,16 +105,16 @@ pub const Atlas = struct {
             while (by < bitmap_height) : (by += 1) {
                 var bx: i32 = 0;
                 while (bx < bitmap_width) : (bx += 1) {
-                    const tx = (@intCast(u.Coord, char) * char_width) + bx + (cbox.xMin - max_cbox.xMin);
+                    const tx = (@as(u.Coord, @intCast(char)) * char_width) + bx + (cbox.xMin - max_cbox.xMin);
                     const ty = by + (max_cbox.yMax - cbox.yMax);
-                    const ti = @intCast(usize, (ty * @intCast(u.Coord, num_chars) * char_width) + tx);
-                    const bi = @intCast(usize, (by * bitmap_width) + bx);
+                    const ti = @as(usize, @intCast((ty * @as(u.Coord, @intCast(num_chars)) * char_width) + tx));
+                    const bi = @as(usize, @intCast((by * bitmap_width) + bx));
                     texture[ti] = bitmap[bi];
                 }
             }
 
             char_to_rect[char] = .{
-                .x = @intCast(u.Coord, char) * char_width,
+                .x = @as(u.Coord, @intCast(char)) * char_width,
                 .y = 0,
                 .w = char_width,
                 .h = char_height,
@@ -122,19 +122,19 @@ pub const Atlas = struct {
         }
 
         // make a white pixel
-        const white_rect = u.Rect{ .x = @intCast(u.Coord, num_ascii_chars) * char_width, .y = 0, .w = 1, .h = 1 };
-        texture[@intCast(usize, white_rect.x)] = u.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+        const white_rect = u.Rect{ .x = @as(u.Coord, @intCast(num_ascii_chars)) * char_width, .y = 0, .w = 1, .h = 1 };
+        texture[@as(usize, @intCast(white_rect.x))] = u.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
 
         return Atlas{
             .allocator = allocator,
             .char_size_pixels = char_size_pixels,
             .texture = texture,
             .texture_dims = .{
-                .x = @intCast(u.Coord, num_chars) * char_width,
+                .x = @as(u.Coord, @intCast(num_chars)) * char_width,
                 .y = char_height,
             },
-            .char_width = @intCast(u.Coord, char_width),
-            .char_height = @intCast(u.Coord, char_height),
+            .char_width = @as(u.Coord, @intCast(char_width)),
+            .char_height = @as(u.Coord, @intCast(char_height)),
             .char_to_rect = char_to_rect,
             .white_rect = white_rect,
         };

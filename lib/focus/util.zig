@@ -121,7 +121,7 @@ pub fn dumpInto(writer: anytype, indent: u32, thing: anytype) anyerror!void {
                 try writer.writeAll(@typeName(@TypeOf(thing)));
                 try writer.writeAll("{\n");
                 inline for (@typeInfo(tag_type).Enum.fields) |fti| {
-                    if (@enumToInt(std.meta.activeTag(thing)) == fti.value) {
+                    if (@intFromEnum(std.meta.activeTag(thing)) == fti.value) {
                         try writer.writeByteNTimes(' ', indent + 4);
                         try std.fmt.format(writer, ".{s} = ", .{fti.name});
                         try dumpInto(writer, indent + 4, @field(thing, fti.name));
@@ -260,7 +260,7 @@ pub const Color = packed struct {
         const ch = (1 - @fabs((2 * l) - 1)) * s;
         const x = ch * (1 - @fabs(@mod(h / 60, 2) - 1));
         const m = l - (ch / 2);
-        const rgb: [3]f64 = switch (@floatToInt(u8, @floor(h / 60))) {
+        const rgb: [3]f64 = switch (@as(u8, @intFromFloat(@floor(h / 60)))) {
             0 => .{ ch, x, 0 },
             1 => .{ x, ch, 0 },
             2 => .{ 0, ch, x },
@@ -270,10 +270,10 @@ pub const Color = packed struct {
             else => unreachable,
         };
         return .{
-            .r = @floatToInt(u8, @round(255 * (rgb[0] + m))),
-            .g = @floatToInt(u8, @round(255 * (rgb[1] + m))),
-            .b = @floatToInt(u8, @round(255 * (rgb[2] + m))),
-            .a = @floatToInt(u8, @round(255 * a)),
+            .r = @as(u8, @intFromFloat(@round(255 * (rgb[0] + m)))),
+            .g = @as(u8, @intFromFloat(@round(255 * (rgb[1] + m)))),
+            .b = @as(u8, @intFromFloat(@round(255 * (rgb[2] + m)))),
+            .a = @as(u8, @intFromFloat(@round(255 * a))),
         };
     }
 };
@@ -443,7 +443,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
             return .Equal;
         },
         .Enum => {
-            return deepCompare(@enumToInt(a), @enumToInt(b));
+            return deepCompare(@intFromEnum(a), @intFromEnum(b));
         },
         .Pointer => |pti| {
             switch (pti.size) {
@@ -504,8 +504,8 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
         .Union => |uti| {
             if (uti.tag_type) |tag_type| {
                 const enum_info = @typeInfo(tag_type).Enum;
-                const a_tag = @enumToInt(@as(tag_type, a));
-                const b_tag = @enumToInt(@as(tag_type, b));
+                const a_tag = @intFromEnum(@as(tag_type, a));
+                const b_tag = @intFromEnum(@as(tag_type, b));
                 if (a_tag < b_tag) {
                     return .LessThan;
                 }
@@ -541,7 +541,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
                 }
             }
         },
-        .ErrorSet => return deepCompare(@errorToInt(a), @errorToInt(b)),
+        .ErrorSet => return deepCompare(@intFromError(a), @intFromError(b)),
         else => @compileError("cannot deepCompare " ++ @typeName(T)),
     }
 }
@@ -565,9 +565,9 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
     }
     switch (ti) {
         .Int => @call(.always_inline, hasher.update, .{std.mem.asBytes(&key)}),
-        .Float => |info| deepHashInto(hasher, @bitCast(std.Int(.unsigned, info.bits), key)),
-        .Bool => deepHashInto(hasher, @boolToInt(key)),
-        .Enum => deepHashInto(hasher, @enumToInt(key)),
+        .Float => |info| deepHashInto(hasher, @as(std.Int(.unsigned, info.bits), @bitCast(key))),
+        .Bool => deepHashInto(hasher, @intFromBool(key)),
+        .Enum => deepHashInto(hasher, @intFromEnum(key)),
         .Pointer => |pti| {
             switch (pti.size) {
                 .One => deepHashInto(hasher, key.*),
@@ -596,7 +596,7 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
                 const tag = std.meta.activeTag(key);
                 deepHashInto(hasher, tag);
                 inline for (enum_info.fields) |enum_field| {
-                    if (enum_field.value == @enumToInt(tag)) {
+                    if (enum_field.value == @intFromEnum(tag)) {
                         deepHashInto(hasher, @field(key, enum_field.name));
                         return;
                     }
