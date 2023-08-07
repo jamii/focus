@@ -10,8 +10,6 @@ pub const c = @cImport({
 pub const warn = std.log.warn;
 pub const assert = std.debug.assert;
 pub const expect = std.testing.expect;
-pub const max = std.math.max;
-pub const min = std.math.min;
 pub const Allocator = std.mem.Allocator;
 pub const ArenaAllocator = std.heap.ArenaAllocator;
 pub const ArrayList = std.ArrayList;
@@ -341,7 +339,7 @@ pub fn fuzzy_search(allocator: Allocator, items: []const []const u8, filter: []c
                         }
                     }
                     if (is_match) {
-                        score = min(score, end - start);
+                        score = @min(score, end - start);
                         any_match = true;
                     }
                 }

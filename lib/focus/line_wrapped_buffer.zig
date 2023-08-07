@@ -125,7 +125,7 @@ pub const LineWrappedBuffer = struct {
 
     pub fn getPosForLineCol(self: *LineWrappedBuffer, line: usize, col: usize) usize {
         const range = self.wrapped_line_ranges.items[line];
-        return range[0] + u.min(col, range[1] - range[0]);
+        return range[0] + @min(col, range[1] - range[0]);
     }
 
     pub fn getLineStart(self: *LineWrappedBuffer, pos: usize) usize {

@@ -82,10 +82,10 @@ pub const Atlas = struct {
         // figure out how much space we need per character
         var max_cbox = freetype.BBox{ .xMin = 0, .yMin = 0, .xMax = 0, .yMax = 0 };
         for (char_to_cbox) |cbox| {
-            max_cbox.xMin = u.min(max_cbox.xMin, cbox.xMin);
-            max_cbox.yMin = u.min(max_cbox.yMin, cbox.yMin);
-            max_cbox.xMax = u.max(max_cbox.xMax, cbox.xMax);
-            max_cbox.yMax = u.max(max_cbox.yMax, cbox.yMax);
+            max_cbox.xMin = @min(max_cbox.xMin, cbox.xMin);
+            max_cbox.yMin = @min(max_cbox.yMin, cbox.yMin);
+            max_cbox.xMax = @max(max_cbox.xMax, cbox.xMax);
+            max_cbox.yMax = @max(max_cbox.yMax, cbox.yMax);
         }
         const char_width = @as(u.Coord, @intCast(max_cbox.xMax - max_cbox.xMin));
         const char_height = @as(u.Coord, @intCast(max_cbox.yMax - max_cbox.yMin));

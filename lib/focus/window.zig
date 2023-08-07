@@ -304,10 +304,10 @@ pub const Window = struct {
         } else {
             const message = "focus";
             const rect = u.Rect{
-                .x = window_rect.x + u.max(0, @divTrunc(window_rect.w - (@as(u.Coord, @intCast(message.len)) * self.app.atlas.char_width), 2)),
-                .y = window_rect.y + u.max(0, @divTrunc(window_rect.h - self.app.atlas.char_height, 2)),
-                .w = u.min(window_rect.w, @as(u.Coord, @intCast(message.len)) * self.app.atlas.char_width),
-                .h = u.min(window_rect.h, self.app.atlas.char_height),
+                .x = window_rect.x + @max(0, @divTrunc(window_rect.w - (@as(u.Coord, @intCast(message.len)) * self.app.atlas.char_width), 2)),
+                .y = window_rect.y + @max(0, @divTrunc(window_rect.h - self.app.atlas.char_height, 2)),
+                .w = @min(window_rect.w, @as(u.Coord, @intCast(message.len)) * self.app.atlas.char_width),
+                .h = @min(window_rect.h, self.app.atlas.char_height),
             };
             self.queueText(rect, style.text_color, message);
         }
@@ -474,10 +474,10 @@ pub const Window = struct {
             else
                 // tofu
                 self.app.atlas.char_to_rect[0];
-            const max_w = u.max(0, max_x - dst.x);
-            const max_h = u.max(0, max_y - dst.y);
-            const ratio_w = @as(f64, @floatFromInt(u.min(max_w, self.app.atlas.char_width))) / @as(f64, @floatFromInt(self.app.atlas.char_width));
-            const ratio_h = @as(f64, @floatFromInt(u.min(max_h, self.app.atlas.char_height))) / @as(f64, @floatFromInt(self.app.atlas.char_height));
+            const max_w = @max(0, max_x - dst.x);
+            const max_h = @max(0, max_y - dst.y);
+            const ratio_w = @as(f64, @floatFromInt(@min(max_w, self.app.atlas.char_width))) / @as(f64, @floatFromInt(self.app.atlas.char_width));
+            const ratio_h = @as(f64, @floatFromInt(@min(max_h, self.app.atlas.char_height))) / @as(f64, @floatFromInt(self.app.atlas.char_height));
             src.w = @as(u.Coord, @intFromFloat(@floor(@as(f64, @floatFromInt(src.w)) * ratio_w)));
             src.h = @as(u.Coord, @intFromFloat(@floor(@as(f64, @floatFromInt(src.h)) * ratio_h)));
             dst.w = src.w;
@@ -513,7 +513,7 @@ pub const Window = struct {
     pub fn layoutSearcherWithPreview(self: *Window, rect: u.Rect) SearcherWithPreviewLayout {
         const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
         var all_rect = rect;
-        const h = @divTrunc(u.max(0, rect.h - self.app.atlas.char_height - 2 * border_thickness), 2);
+        const h = @divTrunc(@max(0, rect.h - self.app.atlas.char_height - 2 * border_thickness), 2);
         const preview_rect = all_rect.splitTop(h, 0);
         const border_rect = all_rect.splitTop(border_thickness, 0);
         const searcher_layout = self.layoutSearcher(all_rect);
@@ -529,7 +529,7 @@ pub const Window = struct {
     pub fn layoutLister(self: *Window, rect: u.Rect) ListerLayout {
         const border_thickness = @divTrunc(self.app.atlas.char_height, 8);
         var all_rect = rect;
-        const h = @divTrunc(u.max(0, rect.h - 2 * border_thickness), 2);
+        const h = @divTrunc(@max(0, rect.h - 2 * border_thickness), 2);
         const preview_rect = all_rect.splitTop(h, 0);
         const border_rect = all_rect.splitTop(border_thickness, 0);
         const report_rect = all_rect;

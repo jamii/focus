@@ -94,7 +94,7 @@ pub const BufferSearcher = struct {
         }
 
         // update selection
-        self.selector.selected = u.max(result_poss.items.len, 1) - 1;
+        self.selector.selected = @max(result_poss.items.len, 1) - 1;
         for (result_poss.items, 0..) |result_pos, i| {
             if (self.selection_pos < result_pos + filter.len) {
                 self.selector.selected = i;

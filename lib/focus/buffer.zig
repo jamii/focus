@@ -163,7 +163,7 @@ pub const Buffer = struct {
 
         const stat = try file.stat();
         var num_bytes = stat.size;
-        if (self.options.limit_load_bytes) num_bytes = u.min(num_bytes, limited_load_bytes);
+        if (self.options.limit_load_bytes) num_bytes = @min(num_bytes, limited_load_bytes);
 
         var bytes = self.app.frame_allocator.alloc(u8, num_bytes) catch u.oom();
         const len = try file.readAll(bytes);
@@ -267,7 +267,7 @@ pub const Buffer = struct {
     /// Panics on line out of range. Handles col out of range by truncating to end of line.
     pub fn getPosForLineCol(self: *Buffer, line: usize, col: usize) usize {
         const line_range = self.line_ranges.items[line];
-        return line_range[0] + u.min(col, line_range[1] - line_range[0]);
+        return line_range[0] + @min(col, line_range[1] - line_range[0]);
     }
 
     pub fn getLineColForPos(self: *Buffer, pos: usize) [2]usize {
@@ -572,8 +572,7 @@ pub const Buffer = struct {
     pub fn getCompletionRange(self: *Buffer, pos: usize) [2]usize {
         return if (self.language.getTokenIxBefore(pos)) |token_ix|
             self.language.getTokenRanges()[token_ix]
-        else
-            .{ pos, pos };
+        else .{ pos, pos };
     }
 
     pub fn getCompletionPrefix(self: *Buffer, pos: usize) []const u8 {
