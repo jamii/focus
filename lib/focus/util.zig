@@ -268,10 +268,10 @@ pub const Color = packed struct {
             else => unreachable,
         };
         return .{
-            .r = @as(u8, @intFromFloat(@round(255 * (rgb[0] + m)))),
-            .g = @as(u8, @intFromFloat(@round(255 * (rgb[1] + m)))),
-            .b = @as(u8, @intFromFloat(@round(255 * (rgb[2] + m)))),
-            .a = @as(u8, @intFromFloat(@round(255 * a))),
+            .r = @intFromFloat(@round(255 * (rgb[0] + m))),
+            .g = @intFromFloat(@round(255 * (rgb[1] + m))),
+            .b = @intFromFloat(@round(255 * (rgb[2] + m))),
+            .a = @intFromFloat(@round(255 * a)),
         };
     }
 };
@@ -562,7 +562,7 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
         else => {},
     }
     switch (ti) {
-        .Int => @call(.always_inline, std.hash.Wyhash.update, .{hasher, std.mem.asBytes(&key)}),
+        .Int => @call(.always_inline, std.hash.Wyhash.update, .{ hasher, std.mem.asBytes(&key) }),
         .Float => |info| deepHashInto(hasher, @as(std.Int(.unsigned, info.bits), @bitCast(key))),
         .Bool => deepHashInto(hasher, @intFromBool(key)),
         .Enum => deepHashInto(hasher, @intFromEnum(key)),

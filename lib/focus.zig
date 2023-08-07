@@ -72,7 +72,7 @@ pub fn daemonize(log_filename: []const u8) enum { Parent, Child } {
     } else |err| {
         u.panic("Failed to fork: {}", .{err});
     }
-    if (std.os.linux.chdir(@as([*:0]const u8, @ptrCast(config.home_path))) < 0)
+    if (std.os.linux.chdir(@ptrCast(config.home_path)) < 0)
         u.panic("Failed to chdir", .{});
 
     // redirect stdout/err to log
@@ -363,7 +363,7 @@ pub const App = struct {
         self.atlas.deinit();
         const new_char_size_pixels = @as(isize, @intCast(self.atlas.char_size_pixels)) + increment;
         if (new_char_size_pixels >= 0) {
-            self.atlas.* = Atlas.init(self.allocator, @as(usize, @intCast(new_char_size_pixels)));
+            self.atlas.* = Atlas.init(self.allocator, @intCast(new_char_size_pixels));
             for (self.windows.items) |window| {
                 window.loadAtlasTexture(self.atlas);
             }

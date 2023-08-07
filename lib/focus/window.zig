@@ -181,8 +181,8 @@ pub const Window = struct {
         const window_rect = u.Rect{
             .x = 0,
             .y = 0,
-            .w = @as(u.Coord, @intCast(window_size.width)),
-            .h = @as(u.Coord, @intCast(window_size.height)),
+            .w = @intCast(window_size.width),
+            .h = @intCast(window_size.height),
         };
 
         // handle events
@@ -326,20 +326,20 @@ pub const Window = struct {
         c.glViewport(
             0,
             0,
-            @as(c_int, @intCast(window_size.width)),
-            @as(c_int, @intCast(window_size.height)),
+            @intCast(window_size.width),
+            @intCast(window_size.height),
         );
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPushMatrix();
         c.glLoadIdentity();
-        c.glOrtho(0.0, @as(f32, @floatFromInt(window_size.width)), @as(f32, @floatFromInt(window_size.height)), 0.0, -1.0, 1.0);
+        c.glOrtho(0.0, @floatFromInt(window_size.width), @floatFromInt(window_size.height), 0.0, -1.0, 1.0);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPushMatrix();
         c.glLoadIdentity();
         c.glTexCoordPointer(2, c.GL_FLOAT, 0, self.texture_buffer.items.ptr);
         c.glVertexPointer(2, c.GL_FLOAT, 0, self.vertex_buffer.items.ptr);
         c.glColorPointer(4, c.GL_UNSIGNED_BYTE, 0, self.color_buffer.items.ptr);
-        c.glDrawElements(c.GL_TRIANGLES, @as(c_int, @intCast(self.index_buffer.items.len)), c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
+        c.glDrawElements(c.GL_TRIANGLES, @intCast(self.index_buffer.items.len), c.GL_UNSIGNED_INT, self.index_buffer.items.ptr);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPopMatrix();
         c.glMatrixMode(c.GL_PROJECTION);
@@ -478,8 +478,8 @@ pub const Window = struct {
             const max_h = @max(0, max_y - dst.y);
             const ratio_w = @as(f64, @floatFromInt(@min(max_w, self.app.atlas.char_width))) / @as(f64, @floatFromInt(self.app.atlas.char_width));
             const ratio_h = @as(f64, @floatFromInt(@min(max_h, self.app.atlas.char_height))) / @as(f64, @floatFromInt(self.app.atlas.char_height));
-            src.w = @as(u.Coord, @intFromFloat(@floor(@as(f64, @floatFromInt(src.w)) * ratio_w)));
-            src.h = @as(u.Coord, @intFromFloat(@floor(@as(f64, @floatFromInt(src.h)) * ratio_h)));
+            src.w = @intFromFloat(@floor(@as(f64, @floatFromInt(src.w)) * ratio_w));
+            src.h = @intFromFloat(@floor(@as(f64, @floatFromInt(src.h)) * ratio_h));
             dst.w = src.w;
             dst.h = src.h;
             self.queueQuad(dst, src, color);

@@ -8,7 +8,7 @@ pub const ChildProcess = struct {
 
     pub fn init(allocator: u.Allocator, dirname: []const u8, args: []const []const u8) ChildProcess {
         const full_args = std.mem.concat(allocator, []const u8, &.{
-            &.{@as([]const u8, "setsid")},
+            &.{"setsid"},
             args,
         }) catch u.oom();
         var child_process = std.ChildProcess.init(full_args, allocator);

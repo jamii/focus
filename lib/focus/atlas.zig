@@ -28,7 +28,7 @@ pub const Atlas = struct {
         defer face.deinit();
 
         // set font size
-        face.setPixelSizes(@as(u32, @intCast(char_size_pixels)), @as(u32, @intCast(char_size_pixels))) catch |err|
+        face.setPixelSizes(@intCast(char_size_pixels), @intCast(char_size_pixels)) catch |err|
             u.panic("Error setting font size: {}", .{err});
 
         // render every ascii char
@@ -38,7 +38,7 @@ pub const Atlas = struct {
         {
             var char: usize = 0;
             while (char < num_ascii_chars) : (char += 1) {
-                face.loadChar(@as(u32, @intCast(char)), .{ .render = true }) catch |err|
+                face.loadChar(@intCast(char), .{ .render = true }) catch |err|
                     u.panic("Error loading '{}': {}", .{ char, err });
 
                 const bitmap = face.glyph().bitmap();
@@ -123,7 +123,7 @@ pub const Atlas = struct {
 
         // make a white pixel
         const white_rect = u.Rect{ .x = @as(u.Coord, @intCast(num_ascii_chars)) * char_width, .y = 0, .w = 1, .h = 1 };
-        texture[@as(usize, @intCast(white_rect.x))] = u.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
+        texture[@intCast(white_rect.x)] = u.Color{ .r = 255, .g = 255, .b = 255, .a = 255 };
 
         return Atlas{
             .allocator = allocator,
@@ -133,8 +133,8 @@ pub const Atlas = struct {
                 .x = @as(u.Coord, @intCast(num_chars)) * char_width,
                 .y = char_height,
             },
-            .char_width = @as(u.Coord, @intCast(char_width)),
-            .char_height = @as(u.Coord, @intCast(char_height)),
+            .char_width = @intCast(char_width),
+            .char_height = @intCast(char_height),
             .char_to_rect = char_to_rect,
             .white_rect = white_rect,
         };

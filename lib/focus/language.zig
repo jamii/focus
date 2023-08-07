@@ -74,9 +74,7 @@ pub const Language = union(enum) {
         switch (self.*) {
             .Zig => |*state| state.updateAfterChange(source, insert_range),
             .Clojure => |*state| state.updateAfterChange(source, insert_range),
-            .Javascript,
-            .Typescript,
-            => |*state| state.updateAfterChange(source, insert_range),
+            .Javascript, .Typescript => |*state| state.updateAfterChange(source, insert_range),
             .Java, .Shell, .Julia, .Nix, .C => |*state| state.updateAfterChange(source, insert_range),
             .Unknown => {},
         }
@@ -129,9 +127,8 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => |state| state.paren_levels,
             .Clojure => |state| state.paren_levels,
-            .Javascript, .Typescript => |state| state.generic.paren_levels
-                .Java,
-            .Shell, .Julia, .Nix, .C => |state| state.paren_levels,
+            .Javascript, .Typescript => |state| state.generic.paren_levels,
+            .Java, .Shell, .Julia, .Nix, .C => |state| state.paren_levels,
             .Unknown => &[0]?usize{},
         };
     }

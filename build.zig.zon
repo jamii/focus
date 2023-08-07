@@ -27,9 +27,9 @@
         // freetype
         .mach_freetype = .{
             .url = "https://pkg.machengine.org/mach-freetype/0ef1d26cbf099283097688b25b4ec0f514d70713.tar.gz",
-.hash = "1220102f6273c0ba18265dad8e1f63771573a50dec4289ec91d60828d7610bb8f6e9",
+            .hash = "1220102f6273c0ba18265dad8e1f63771573a50dec4289ec91d60828d7610bb8f6e9",
         },
-                .freetype = .{
+        .freetype = .{
             .url = "https://pkg.machengine.org/freetype/0d07a5d4669d69ab555ff5c7f4b497e2a5e8f5f7.tar.gz",
             .hash = "1220c0389507231e24aafa3a02033be0b6a1a2bf7dd058727d3e15bbbadb05f02300",
         },
