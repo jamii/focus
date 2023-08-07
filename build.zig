@@ -48,13 +48,24 @@ fn freetypeLink(b: *std.Build, step: *std.build.CompileStep) void {
         .target = step.target,
         .optimize = step.optimize,
     });
-    step.addModule("freetype", mach_freetype_dep.module("mach-freetype"));
-
-    const freetype_dep = b.dependency("freetype", .{
+    const freetype_dep = b.dependency("mach_freetype.freetype", .{
         .target = step.target,
         .optimize = step.optimize,
     });
+    const harfbuzz_dep = b.dependency("mach_freetype.harfbuzz", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    const brotli_dep = b.dependency("mach_freetype.freetype.brotli", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+
+    step.addModule("mach-freetype", mach_freetype_dep.module("mach-freetype"));
+    step.addModule("mach-harfbuzz", mach_freetype_dep.module("mach-harfbuzz"));
     step.linkLibrary(freetype_dep.artifact("freetype"));
+    step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
+    step.linkLibrary(brotli_dep.artifact("brotli"));
 }
 
 fn glfwLink(b: *std.Build, step: *std.build.CompileStep) void {

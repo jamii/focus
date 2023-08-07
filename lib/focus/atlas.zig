@@ -1,6 +1,6 @@
 const std = @import("std");
 const focus = @import("../focus.zig");
-const freetype = @import("freetype");
+const freetype = @import("mach-freetype");
 const u = focus.util;
 const c = focus.util.c;
 
