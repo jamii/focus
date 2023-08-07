@@ -350,7 +350,7 @@ pub fn fuzzy_search(allocator: Allocator, items: []const []const u8, filter: []c
             scored_items.append(.{ .score = score, .item = item }) catch oom();
         }
     }
-    std.sort.sort(ScoredItem, scored_items.items, {}, struct {
+    std.mem.sort(ScoredItem, scored_items.items, {}, struct {
         fn lessThan(_: void, a: ScoredItem, b: ScoredItem) bool {
             return a.score < b.score;
         }
@@ -385,13 +385,13 @@ pub fn fuzzy_search_paths(allocator: Allocator, path: []const u8) ![]const []con
                 if (std.mem.startsWith(u8, entry.name, basename)) {
                     var result = ArrayList(u8).init(allocator);
                     result.appendSlice(entry.name) catch oom();
-                    if (entry.kind == .Directory) result.append('/') catch oom();
+                    if (entry.kind == .directory) result.append('/') catch oom();
                     results.append(result.toOwnedSlice() catch oom()) catch oom();
                 }
             }
         }
     }
-    std.sort.sort([]const u8, results.items, {}, struct {
+    std.mem.sort([]const u8, results.items, {}, struct {
         fn lessThan(_: void, a: []const u8, b: []const u8) bool {
             return std.mem.lessThan(u8, a, b);
         }
@@ -562,7 +562,7 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
         else => {},
     }
     switch (ti) {
-        .Int => @call(.always_inline, hasher.update, .{std.mem.asBytes(&key)}),
+        .Int => @call(.always_inline, std.hash.Wyhash.update, .{hasher, std.mem.asBytes(&key)}),
         .Float => |info| deepHashInto(hasher, @as(std.Int(.unsigned, info.bits), @bitCast(key))),
         .Bool => deepHashInto(hasher, @intFromBool(key)),
         .Enum => deepHashInto(hasher, @intFromEnum(key)),

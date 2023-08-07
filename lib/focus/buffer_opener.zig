@@ -72,7 +72,7 @@ pub const BufferOpener = struct {
                     entries.append(entry) catch u.oom();
             }
             // sort by most recently focused
-            std.sort.sort(Entry, entries.items, {}, (struct {
+            std.mem.sort(Entry, entries.items, {}, (struct {
                 fn lessThan(_: void, a: Entry, b: Entry) bool {
                     return b.value_ptr.*.last_lost_focus_ms < a.value_ptr.*.last_lost_focus_ms;
                 }

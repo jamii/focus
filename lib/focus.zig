@@ -379,7 +379,7 @@ pub const App = struct {
                 entry.value_ptr.*.getCompletionsInto(prefix, &results);
         }
 
-        std.sort.sort([]const u8, results.items, {}, struct {
+        std.mem.sort([]const u8, results.items, {}, struct {
             fn lessThan(_: void, a: []const u8, b: []const u8) bool {
                 return std.mem.lessThan(u8, a, b);
             }

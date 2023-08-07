@@ -541,7 +541,7 @@ pub const Buffer = struct {
             if (std.mem.indexOfScalar(u8, self.bytes.items[token_range[0]..token_range[1]], '\n') != null) continue;
             self.completions.append(token_range) catch u.oom();
         }
-        std.sort.sort([2]usize, self.completions.items, self.bytes.items, struct {
+        std.mem.sort([2]usize, self.completions.items, self.bytes.items, struct {
             fn lessThan(source: []const u8, a: [2]usize, b: [2]usize) bool {
                 return std.mem.lessThan(u8, source[a[0]..a[1]], source[b[0]..b[1]]);
             }

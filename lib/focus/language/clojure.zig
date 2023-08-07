@@ -31,11 +31,11 @@ pub const State = struct {
         }
 
         const paren_levels = allocator.alloc(usize, tokens.items.len) catch u.oom();
-        std.mem.set(usize, paren_levels, 0);
+        @memset(paren_levels, 0);
         const paren_parents = allocator.alloc(?usize, tokens.items.len) catch u.oom();
-        std.mem.set(?usize, paren_parents, null);
+        @memset(paren_parents, null);
         const paren_matches = allocator.alloc(?usize, tokens.items.len) catch u.oom();
-        std.mem.set(?usize, paren_matches, null);
+        @memset(paren_matches, null);
         var paren_match_stack = u.ArrayList(usize).init(allocator);
         for (tokens.items, 0..) |token, ix| {
             switch (token) {
@@ -101,7 +101,7 @@ pub const State = struct {
     }
 
     pub fn highlight(self: State, source: []const u8, range: [2]usize, colors: []u.Color) void {
-        std.mem.set(u.Color, colors, style.comment_color);
+        @memset(colors, style.comment_color);
         for (self.token_ranges, 0..) |token_range, i| {
             const source_start = token_range[0];
             const source_end = token_range[1];
@@ -137,7 +137,7 @@ pub const State = struct {
                 },
                 else => if (self.mode == .Parens) style.comment_color else style.keyword_color,
             };
-            std.mem.set(u.Color, colors[colors_start..colors_end], color);
+            @memset(colors[colors_start..colors_end], color);
         }
     }
 

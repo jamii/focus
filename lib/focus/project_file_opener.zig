@@ -64,7 +64,7 @@ pub const ProjectFileOpener = struct {
             }
         }
 
-        std.sort.sort([]const u8, paths.items, {}, struct {
+        std.mem.sort([]const u8, paths.items, {}, struct {
             fn lessThan(_: void, a: []const u8, b: []const u8) bool {
                 return std.mem.lessThan(u8, a, b);
             }

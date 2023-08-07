@@ -987,7 +987,7 @@ pub const Editor = struct {
             }
             if (this_indent < ideal_indent) {
                 var spaces = self.app.frame_allocator.alloc(u8, ideal_indent - this_indent) catch u.oom();
-                std.mem.set(u8, spaces, ' ');
+                @memset(spaces, ' ');
                 // TODO this might delete the selection :S
                 const old_marked = self.marked;
                 self.marked = false;

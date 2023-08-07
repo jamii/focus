@@ -104,7 +104,7 @@ pub const Language = union(enum) {
 
     pub fn highlight(self: Language, allocator: u.Allocator, source: []const u8, range: [2]usize) []const u.Color {
         const colors = allocator.alloc(u.Color, range[1] - range[0]) catch u.oom();
-        std.mem.set(u.Color, colors, style.text_color);
+        @memset(colors, style.text_color);
         switch (self) {
             .Zig => |state| state.highlight(source, range, colors),
             .Clojure => |state| state.highlight(source, range, colors),
