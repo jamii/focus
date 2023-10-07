@@ -34,7 +34,9 @@ pub const State = struct {
         self.generic.highlight(source, range, colors);
     }
 
-    pub fn format(self: State, frame_allocator: u.Allocator, source: []const u8) ?[]const u8 {
+    fn formatWithTabs(self: State, frame_allocator: u.Allocator, source: []const u8) ?[]const u8 {
+        _ = self;
+
         var child_process = std.ChildProcess.init(
             &[_][]const u8{ "setsid", "gofmt" },
             frame_allocator,
@@ -62,11 +64,18 @@ pub const State = struct {
             u.panic("Error waiting for `gofmt`: {}", .{err});
 
         if (u.deepEqual(result, .{ .Exited = 0 })) {
-            return self.afterLoad(frame_allocator, stdout.items);
+            return stdout.items;
         } else {
             u.warn("`gofmt` failed: {s}", .{stderr.items});
             return null;
         }
+    }
+
+    pub fn format(self: State, frame_allocator: u.Allocator, source: []const u8) ?[]const u8 {
+        return if (self.formatWithTabs(frame_allocator, source)) |new_source|
+            self.afterLoad(frame_allocator, new_source)
+        else
+            null;
     }
 
     pub fn getAddedIndent(self: State, token_ix: usize) usize {
@@ -85,5 +94,9 @@ pub const State = struct {
             }
         }
         return replaced.items;
+    }
+
+    pub fn beforeSave(self: State, frame_allocator: u.Allocator, source: []const u8) []const u8 {
+        return self.formatWithTabs(frame_allocator, source) orelse source;
     }
 };

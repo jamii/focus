@@ -274,4 +274,11 @@ pub const Language = union(enum) {
             else => return source,
         }
     }
+
+    pub fn beforeSave(self: Language, frame_allocator: u.Allocator, source: []const u8) []const u8 {
+        return switch (self) {
+            .Go => |state| return state.beforeSave(frame_allocator, source),
+            else => source,
+        };
+    }
 };

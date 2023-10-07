@@ -246,7 +246,8 @@ pub const Buffer = struct {
                 };
                 defer file.close();
 
-                file.writeAll(self.bytes.items) catch |err| u.panic("{} while saving {s}", .{ err, file_source.absolute_filename });
+                const bytes = self.language.beforeSave(self.app.frame_allocator, self.bytes.items);
+                file.writeAll(bytes) catch |err| u.panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 const stat = file.stat() catch |err| u.panic("{} while saving {s}", .{ err, file_source.absolute_filename });
                 file_source.mtime = stat.mtime;
                 self.modified_since_last_save = false;
