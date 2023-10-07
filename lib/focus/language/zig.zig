@@ -169,7 +169,7 @@ pub const State = struct {
         }
     }
 
-    pub fn format(self: State, source: []const u8) ?[]const u8 {
+    pub fn format(self: State, frame_allocator: u.Allocator, source: []const u8) ?[]const u8 {
         // TODO Once zig syntax is stable, use Ast.render instead of shelling out
 
         var child_process = std.ChildProcess.init(
@@ -189,11 +189,8 @@ pub const State = struct {
         child_process.stdin.?.close();
         child_process.stdin = null;
 
-        var stdout = u.ArrayList(u8).init(self.allocator);
-        defer stdout.deinit();
-
-        var stderr = u.ArrayList(u8).init(self.allocator);
-        defer stderr.deinit();
+        var stdout = u.ArrayList(u8).init(frame_allocator);
+        var stderr = u.ArrayList(u8).init(frame_allocator);
 
         child_process.collectOutput(&stdout, &stderr, std.math.maxInt(usize)) catch |err|
             u.panic("Error collecting output from `zig fmt`: {}", .{err});

@@ -7,6 +7,7 @@ const style = focus.style;
 pub const zig = @import("./language/zig.zig");
 pub const clojure = @import("./language/clojure.zig");
 pub const deno = @import("./language/deno.zig");
+pub const go = @import("./language/go.zig");
 pub const generic = @import("./language/generic.zig");
 
 pub const Language = union(enum) {
@@ -19,6 +20,7 @@ pub const Language = union(enum) {
     Typescript: deno.State,
     Nix: generic.State,
     C: generic.State,
+    Go: go.State,
     Unknown,
 
     pub const Squiggly = struct {
@@ -48,6 +50,8 @@ pub const Language = union(enum) {
             .{ .Nix = generic.State.init(allocator, "#", source) }
         else if (std.mem.endsWith(u8, filename, ".c") or std.mem.endsWith(u8, filename, ".h"))
             .{ .C = generic.State.init(allocator, "//", source) }
+        else if (std.mem.endsWith(u8, filename, ".go"))
+            .{ .Go = go.State.init(allocator, source) }
         else
             .Unknown;
     }
@@ -62,31 +66,22 @@ pub const Language = union(enum) {
 
     pub fn updateBeforeChange(self: *Language, source: []const u8, delete_range: [2]usize) void {
         switch (self.*) {
-            .Zig => |*state| state.updateBeforeChange(source, delete_range),
-            .Clojure => |*state| state.updateBeforeChange(source, delete_range),
-            .Javascript, .Typescript => |*state| state.updateBeforeChange(source, delete_range),
-            .Java, .Shell, .Julia, .Nix, .C => |*state| state.updateBeforeChange(source, delete_range),
             .Unknown => {},
+            inline else => |*state| state.updateBeforeChange(source, delete_range),
         }
     }
 
     pub fn updateAfterChange(self: *Language, source: []const u8, insert_range: [2]usize) void {
         switch (self.*) {
-            .Zig => |*state| state.updateAfterChange(source, insert_range),
-            .Clojure => |*state| state.updateAfterChange(source, insert_range),
-            .Javascript, .Typescript => |*state| state.updateAfterChange(source, insert_range),
-            .Java, .Shell, .Julia, .Nix, .C => |*state| state.updateAfterChange(source, insert_range),
             .Unknown => {},
+            inline else => |*state| state.updateAfterChange(source, insert_range),
         }
     }
 
     pub fn toggleMode(self: *Language) void {
         switch (self.*) {
-            .Zig => |*state| state.toggleMode(),
-            .Clojure => |*state| state.toggleMode(),
-            .Javascript, .Typescript => |*state| state.toggleMode(),
-            .Java, .Shell, .Julia, .Nix, .C => |*state| state.toggleMode(),
             .Unknown => {},
+            inline else => |*state| state.toggleMode(),
         }
     }
 
@@ -94,7 +89,7 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => "//",
             .Clojure => ";",
-            .Javascript, .Typescript => "//",
+            .Javascript, .Typescript, .Go => "//",
             .Java, .Shell, .Julia, .Nix, .C => |*state| state.comment_string,
             .Unknown => null,
         };
@@ -104,52 +99,41 @@ pub const Language = union(enum) {
         const colors = allocator.alloc(u.Color, range[1] - range[0]) catch u.oom();
         @memset(colors, style.text_color);
         switch (self) {
-            .Zig => |state| state.highlight(source, range, colors),
-            .Clojure => |state| state.highlight(source, range, colors),
-            .Javascript, .Typescript => |state| state.highlight(source, range, colors),
-            .Java, .Shell, .Julia, .Nix, .C => |state| state.highlight(source, range, colors),
             .Unknown => {},
+            inline else => |state| state.highlight(source, range, colors),
         }
         return colors;
     }
 
     pub fn getTokenRanges(self: Language) []const [2]usize {
         return switch (self) {
-            .Zig => |state| state.token_ranges,
-            .Clojure => |state| state.token_ranges,
-            .Javascript, .Typescript => |state| state.generic.token_ranges,
-            .Java, .Shell, .Julia, .Nix, .C => |state| state.token_ranges,
+            inline .Javascript, .Typescript, .Go => |state| state.generic.token_ranges,
             .Unknown => &[0][2]usize{},
+            inline else => |state| state.token_ranges,
         };
     }
 
     pub fn getParenLevels(self: Language) []const usize {
         return switch (self) {
-            .Zig => |state| state.paren_levels,
-            .Clojure => |state| state.paren_levels,
-            .Javascript, .Typescript => |state| state.generic.paren_levels,
-            .Java, .Shell, .Julia, .Nix, .C => |state| state.paren_levels,
+            inline .Javascript, .Typescript, .Go => |state| state.generic.paren_levels,
             .Unknown => &[0]?usize{},
+            inline else => |state| state.paren_levels,
         };
     }
 
     pub fn getParenParents(self: Language) []const ?usize {
         return switch (self) {
-            .Zig => |state| state.paren_parents,
-            .Clojure => |state| state.paren_parents,
-            .Javascript, .Typescript => |state| state.generic.paren_parents,
-            .Java, .Shell, .Julia, .Nix, .C => |state| state.paren_parents,
+            inline .Javascript, .Typescript, .Go => |state| state.generic.paren_parents,
             .Unknown => &[0]?usize{},
+            inline else => |state| state.paren_parents,
         };
     }
 
     pub fn getParenMatches(self: Language) []const ?usize {
         return switch (self) {
-            .Zig => |state| state.paren_matches,
-            .Clojure => |state| state.paren_matches,
-            .Javascript, .Typescript => |state| state.generic.paren_matches,
-            .Java, .Shell, .Julia, .Nix, .C => |state| state.paren_matches,
+            inline .Javascript, .Typescript, .Go => |state| state.generic.paren_matches,
             .Unknown => &[0]?usize{},
+            inline else => |state| state.paren_matches,
         };
     }
 
@@ -180,19 +164,17 @@ pub const Language = union(enum) {
         }
     }
 
-    pub fn format(self: Language, source: []const u8) ?[]const u8 {
+    pub fn format(self: Language, frame_allocator: u.Allocator, source: []const u8) ?[]const u8 {
         return switch (self) {
-            .Zig => |state| state.format(source),
-            .Clojure => |state| stripTrailingWhitespace(state.allocator, source),
-            .Javascript, .Typescript => |state| state.format(source),
-            .Java, .Shell, .Julia, .Nix, .C => |state| stripTrailingWhitespace(state.allocator, source),
+            inline .Zig, .Javascript, .Typescript, .Go => |state| state.format(frame_allocator, source),
             .Unknown => null,
+            inline else => stripTrailingWhitespace(frame_allocator, source),
         };
     }
 
-    pub fn stripTrailingWhitespace(allocator: u.Allocator, source: []const u8) []const u8 {
-        var new_source = u.ArrayList(u8).init(allocator);
-        defer new_source.deinit();
+    pub fn stripTrailingWhitespace(frame_allocator: u.Allocator, source: []const u8) []const u8 {
+        var new_source = u.ArrayList(u8).init(frame_allocator);
+
         var line_start: usize = 0;
         var line_end: usize = 0;
         var i: usize = 0;
@@ -227,11 +209,8 @@ pub const Language = union(enum) {
 
     pub fn getAddedIndent(self: Language, token_ix: usize) usize {
         return switch (self) {
-            .Zig => |state| state.getAddedIndent(token_ix),
-            .Clojure => |state| state.getAddedIndent(token_ix),
-            .Javascript, .Typescript => |state| state.getAddedIndent(token_ix),
-            .Java, .Shell, .Julia, .Nix, .C => |state| state.getAddedIndent(token_ix),
             .Unknown => 0,
+            inline else => |state| state.getAddedIndent(token_ix),
         };
     }
 
@@ -286,6 +265,13 @@ pub const Language = union(enum) {
         switch (self) {
             .Zig => |state| return state.squigglies,
             else => return &[0]Language.Squiggly{},
+        }
+    }
+
+    pub fn afterLoad(self: Language, frame_allocator: u.Allocator, source: []const u8) []const u8 {
+        switch (self) {
+            .Go => |state| return state.afterLoad(frame_allocator, source),
+            else => return source,
         }
     }
 };

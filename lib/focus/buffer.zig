@@ -178,9 +178,10 @@ pub const Buffer = struct {
 
     fn load(self: *Buffer, kind: enum { Init, Refresh }) void {
         if (self.tryLoad()) |result| {
+            const bytes = self.language.afterLoad(self.app.frame_allocator, result.bytes);
             switch (kind) {
-                .Init => self.rawReplace(result.bytes),
-                .Refresh => self.replace(result.bytes),
+                .Init => self.rawReplace(bytes),
+                .Refresh => self.replace(bytes),
             }
             self.source.File.mtime = result.mtime;
         } else |err| {
