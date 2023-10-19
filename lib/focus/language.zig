@@ -50,7 +50,7 @@ pub const Language = union(enum) {
             .{ .Nix = generic.State.init(allocator, "#", source) }
         else if (std.mem.endsWith(u8, filename, ".c") or std.mem.endsWith(u8, filename, ".h"))
             .{ .C = generic.State.init(allocator, "//", source) }
-        else if (std.mem.endsWith(u8, filename, ".go"))
+        else if (std.mem.endsWith(u8, filename, ".go") or (std.mem.endsWith(u8, filename, ".go.tmpl")))
             .{ .Go = go.State.init(allocator, source) }
         else
             .Unknown;
