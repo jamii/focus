@@ -190,9 +190,7 @@ pub const Editor = struct {
                                 if (self.buffer.language.getIdentifierRangeAt(self.getMainCursor().head.pos)) |identifier_range| {
                                     const identifier = self.buffer.bytes.items[identifier_range[0]..identifier_range[1]];
                                     var filter = u.ArrayList(u8).init(self.app.frame_allocator);
-                                    std.fmt.format(filter.writer(),
-                                        \\fn {s}\(|const {s} =|var {s} =| {s}:
-                                    , .{ identifier, identifier, identifier, identifier }) catch u.oom();
+                                    self.buffer.language.writeDefinitionSearchString(filter.writer(), identifier) catch u.oom();
                                     self.app.last_project_search_selected = 0;
                                     const project_searcher = ProjectSearcher.init(self.app, project_dir, .Regexp, filter.toOwnedSlice() catch u.oom());
                                     window.pushView(project_searcher);

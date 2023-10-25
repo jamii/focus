@@ -160,6 +160,7 @@ pub const Language = union(enum) {
         const token_ix = self.getTokenIxBefore(pos) orelse self.getTokenIxAfter(pos) orelse return null;
         switch (self) {
             .Zig => |state| return if (state.tokens[token_ix] == .identifier) (state.token_ranges[token_ix]) else null,
+            .Go => |state| return if (state.generic.tokens[token_ix] == .identifier) (state.generic.token_ranges[token_ix]) else null,
             else => return null,
         }
     }
@@ -280,5 +281,23 @@ pub const Language = union(enum) {
             .Go => |state| return state.beforeSave(frame_allocator, source),
             else => source,
         };
+    }
+
+    pub fn writeDefinitionSearchString(self: Language, writer: anytype, identifier: []const u8) !void {
+        switch (self) {
+            .Zig => try std.fmt.format(
+                writer,
+                \\fn {s}\(|const {s} =|var {s} =| {s}:
+            ,
+                .{ identifier, identifier, identifier, identifier },
+            ),
+            .Go => try std.fmt.format(
+                writer,
+                \\func.* {s}\(|type {s}|{s}\s*=
+            ,
+                .{ identifier, identifier, identifier},
+            ),
+            else => {},
+        }
     }
 };
