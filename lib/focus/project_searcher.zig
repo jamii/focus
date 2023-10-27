@@ -71,6 +71,7 @@ pub const ProjectSearcher = struct {
     fn startRipgrep(self: *ProjectSearcher) void {
         const filter = self.input.getText();
         if (filter.len > 0) {
+            if (self.child_process) |*child_process| child_process.deinit();
             self.child_process = ChildProcess.init(
                 self.app.allocator,
                 self.project_dir,
