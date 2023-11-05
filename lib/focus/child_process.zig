@@ -26,8 +26,13 @@ pub const ChildProcess = struct {
     }
 
     pub fn deinit(self: *ChildProcess) void {
-        const pgid = std.os.linux.syscall1(.getpgid, @as(usize, @bitCast(@as(isize, self.child_process.id))));
-        std.os.kill(-@as(i32, @intCast(pgid)), std.os.SIG.KILL) catch {};
+        var my_pgid = std.os.linux.syscall1(.getpgid, @as(usize, @bitCast(@as(isize, std.os.linux.getpid()))));
+        var child_pgid = my_pgid;
+        // Have to wait for child to finish `setsid`
+        while (my_pgid == child_pgid) {
+            child_pgid = std.os.linux.syscall1(.getpgid, @as(usize, @bitCast(@as(isize, self.child_process.id))));
+        }
+        std.os.kill(-@as(i32, @intCast(child_pgid)), std.os.SIG.KILL) catch {};
         self.child_process.stdout.?.close();
         self.child_process.stderr.?.close();
     }
