@@ -572,10 +572,13 @@ pub const Buffer = struct {
     }
 
     pub fn getCompletionRange(self: *Buffer, pos: usize) [2]usize {
-        return if (self.language.getTokenIxBefore(pos)) |token_ix|
-            self.language.getTokenRanges()[token_ix]
-        else
-            .{ pos, pos };
+        if (self.language.getTokenIxBefore(pos)) |token_ix| {
+            var range = self.language.getTokenRanges()[token_ix];
+            range[1] = @min(range[1], self.getLineEnd(pos));
+            return range;
+        } else {
+            return .{ pos, pos };
+        }
     }
 
     pub fn getCompletionPrefix(self: *Buffer, pos: usize) []const u8 {
