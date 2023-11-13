@@ -38,7 +38,7 @@ pub const State = struct {
         _ = self;
 
         var child_process = std.ChildProcess.init(
-            &[_][]const u8{ "setsid", "gofmt" },
+            &[_][]const u8{ "setsid", "gofmt", "-s" },
             frame_allocator,
         );
 
