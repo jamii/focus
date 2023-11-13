@@ -293,7 +293,7 @@ pub const Language = union(enum) {
             ),
             .Go => try std.fmt.format(
                 writer,
-                \\func.* {s}\(|type {s}|\t{s} struct|\t{s} interface|\t{s} enum|\t{s} enum|\t{s}\s*=
+                \\func.* {s}\(|type {s}|\t{s} struct|\t{s} interface|\t{s} enum|\t{s} func|\t{s}\s*=
             ,
                 .{ identifier, identifier, identifier, identifier, identifier, identifier, identifier},
             ),
