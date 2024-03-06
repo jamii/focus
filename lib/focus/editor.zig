@@ -352,10 +352,6 @@ pub const Editor = struct {
             self.scrollPosIntoView(text_rect, self.getMainCursor().head.pos);
         }
 
-        // update buffer last cursor_head/center_pos
-        self.buffer.last_cursor_head = self.getMainCursor().head.pos;
-        self.buffer.last_center_pos = self.getCenterPos(text_rect.h);
-
         // calculate visible range
         // ensure we don't scroll off the top or bottom of the buffer
         const max_pixels = @max(0,
@@ -370,6 +366,10 @@ pub const Editor = struct {
         const num_visible_lines = @divTrunc(text_rect.h, self.app.atlas.char_height) + @rem(@rem(text_rect.h, self.app.atlas.char_height), 1); // round up
         const visible_start_line = @divTrunc(self.top_pixel, self.app.atlas.char_height); // round down
         const visible_end_line = visible_start_line + num_visible_lines;
+
+        // update buffer last cursor_head/center_pos
+        self.buffer.last_cursor_head = self.getMainCursor().head.pos;
+        self.buffer.last_center_pos = self.getCenterPos(text_rect.h);
 
         // draw background
         window.queueRect(frame_rect, style.background_color);
