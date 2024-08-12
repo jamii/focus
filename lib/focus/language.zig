@@ -21,6 +21,7 @@ pub const Language = union(enum) {
     Nix: generic.State,
     C: generic.State,
     Go: go.State,
+    Zest: generic.State,
     Unknown,
 
     pub const Squiggly = struct {
@@ -52,6 +53,8 @@ pub const Language = union(enum) {
             .{ .C = generic.State.init(allocator, "//", source) }
         else if (std.mem.endsWith(u8, filename, ".go") or (std.mem.endsWith(u8, filename, ".go.tmpl")))
             .{ .Go = go.State.init(allocator, source) }
+        else if (std.mem.endsWith(u8, filename, ".zs"))
+            .{ .Zest = generic.State.init(allocator, "//", source) }
         else
             .Unknown;
     }
@@ -90,7 +93,7 @@ pub const Language = union(enum) {
             .Zig => "//",
             .Clojure => ";",
             .Javascript, .Typescript, .Go => "//",
-            .Java, .Shell, .Julia, .Nix, .C => |*state| state.comment_string,
+            .Java, .Shell, .Julia, .Nix, .C, .Zest => |*state| state.comment_string,
             .Unknown => null,
         };
     }
@@ -159,7 +162,7 @@ pub const Language = union(enum) {
     pub fn getIdentifierRangeAt(self: Language, pos: usize) ?[2]usize {
         const token_ix = self.getTokenIxBefore(pos) orelse self.getTokenIxAfter(pos) orelse return null;
         switch (self) {
-            .Zig => |state| return if (state.tokens[token_ix] == .identifier) (state.token_ranges[token_ix]) else null,
+            inline .Zig, .Zest => |state| return if (state.tokens[token_ix] == .identifier) (state.token_ranges[token_ix]) else null,
             .Go => |state| return if (state.generic.tokens[token_ix] == .identifier) (state.generic.token_ranges[token_ix]) else null,
             else => return null,
         }
@@ -295,7 +298,7 @@ pub const Language = union(enum) {
                 writer,
                 \\func.* {s}\(|type {s}|\t{s} struct|\t{s} interface|\t{s} enum|\t{s} func|\t{s}\s*=
             ,
-                .{ identifier, identifier, identifier, identifier, identifier, identifier, identifier},
+                .{ identifier, identifier, identifier, identifier, identifier, identifier, identifier },
             ),
             else => {},
         }
