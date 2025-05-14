@@ -7,8 +7,11 @@
             .url = "https://pkg.machengine.org/mach-freetype/d63efa5534c17f3a12ed3d327e0ad42a64adc20a.tar.gz",
             .hash = "1220adfccce3dbc4e4fa8650fdaec110a676f6b8a1462ed6ef422815207f8288e9d2",
         },
+        .glfw = .{
+            .path = "deps/glfw/",
+        },
     },
     .paths = .{
-        "./lib",
+        "lib",
     },
 }

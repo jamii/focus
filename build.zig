@@ -24,20 +24,17 @@ pub fn build(b: *std.Build) !void {
         .omit_frame_pointer = false,
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
     module.addOptions("focus_config", config);
     module.addImport("mach-freetype", b.dependency("mach_freetype", .{}).module("mach-freetype"));
+    module.linkLibrary(b.dependency("glfw", .{}).artifact("glfw"));
+    module.linkSystemLibrary("GL", .{});
 
     const exe = b.addExecutable(.{
         .name = "focus-dev",
         .root_module = module,
     });
-    exe.linkLibC();
-    exe.linkSystemLibrary("GL");
-
-    // TODO Upgrade to zig 0.14 and then use dependencyFromBuildZig("./deps/glfw/build.zig") directly
-    exe.addIncludePath(b.path("./deps/glfw/zig-out/include/"));
-    exe.addObjectFile(b.path("./deps/glfw/zig-out/lib/libglfw.a"));
 
     b.installArtifact(exe);
 
