@@ -103,7 +103,7 @@ pub const Editor = struct {
         buffer.registerEditor(self);
 
         // restore last cursor head / center pos
-        var cursor = self.getMainCursor();
+        const cursor = self.getMainCursor();
         self.goPos(cursor, @min(self.buffer.getBufferEnd(), self.buffer.last_cursor_head));
         self.wanted_center_pos = self.buffer.last_center_pos;
 
@@ -985,7 +985,7 @@ pub const Editor = struct {
                 self.delete(this_line_start_pos, this_line_start_pos + this_indent - ideal_indent);
             }
             if (this_indent < ideal_indent) {
-                var spaces = self.app.frame_allocator.alloc(u8, ideal_indent - this_indent) catch u.oom();
+                const spaces = self.app.frame_allocator.alloc(u8, ideal_indent - this_indent) catch u.oom();
                 @memset(spaces, ' ');
                 // TODO this might delete the selection :S
                 const old_marked = self.marked;
@@ -1170,7 +1170,7 @@ pub const Editor = struct {
         const project_dir = self.buffer.getProjectDir() orelse return;
 
         const origin = origin: {
-            const result = std.ChildProcess.exec(.{
+            const result = std.process.Child.run(.{
                 .allocator = self.app.frame_allocator,
                 .argv = &[_][]const u8{ "git", "config", "--get", "remote.origin.url" },
                 .cwd = project_dir,
@@ -1188,7 +1188,7 @@ pub const Editor = struct {
         const org_and_repo = origin[org_and_repo_start..org_and_repo_end];
 
         const commit = commit: {
-            const result = std.ChildProcess.exec(.{
+            const result = std.process.Child.run(.{
                 .allocator = self.app.frame_allocator,
                 .argv = &[_][]const u8{ "git", "rev-parse", "HEAD" },
                 .cwd = project_dir,
@@ -1208,7 +1208,7 @@ pub const Editor = struct {
             relative_path,
             line + 1,
         });
-        var process = std.ChildProcess.init(
+        var process = std.process.Child.init(
             &[_][]const u8{ "fish", "-c", command },
             self.app.frame_allocator,
         );

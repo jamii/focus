@@ -165,7 +165,7 @@ pub const Buffer = struct {
         var num_bytes = stat.size;
         if (self.options.limit_load_bytes) num_bytes = @min(num_bytes, limited_load_bytes);
 
-        var bytes = self.app.frame_allocator.alloc(u8, num_bytes) catch u.oom();
+        const bytes = self.app.frame_allocator.alloc(u8, num_bytes) catch u.oom();
         const len = try file.readAll(bytes);
         // TODO can this fail if the file was truncated between stat and read?
         u.assert(len == bytes.len);
@@ -316,7 +316,7 @@ pub const Buffer = struct {
 
         self.bytes.resize(self.bytes.items.len + bytes.len) catch u.oom();
         std.mem.copyBackwards(u8, self.bytes.items[pos + bytes.len ..], self.bytes.items[pos .. self.bytes.items.len - bytes.len]);
-        std.mem.copy(u8, self.bytes.items[pos..], bytes);
+        std.mem.copyForwards(u8, self.bytes.items[pos..], bytes);
 
         self.language.updateAfterChange(self.bytes.items, .{ pos, pos + bytes.len });
         self.updateCompletions();
@@ -337,7 +337,7 @@ pub const Buffer = struct {
 
         self.language.updateBeforeChange(self.bytes.items, .{ start, end });
 
-        std.mem.copy(u8, self.bytes.items[start..], self.bytes.items[end..]);
+        std.mem.copyForwards(u8, self.bytes.items[start..], self.bytes.items[end..]);
         self.bytes.shrinkAndFree(self.bytes.items.len - (end - start));
 
         self.language.updateAfterChange(self.bytes.items, .{ start, start });
@@ -368,7 +368,7 @@ pub const Buffer = struct {
         self.updateLineRanges();
         self.modified_since_last_save = true;
         for (self.editors.items) |editor| {
-            editor.updateAfterReplace(line_colss.pop());
+            editor.updateAfterReplace(line_colss.pop().?);
         }
     }
 
@@ -440,7 +440,7 @@ pub const Buffer = struct {
     pub fn undo(self: *Buffer) ?usize {
         self.newUndoGroup();
         var pos: ?usize = null;
-        if (self.undos.popOrNull()) |edits| {
+        if (self.undos.pop()) |edits| {
             for (edits) |edit| {
                 switch (edit) {
                     .Insert => |data| {
@@ -465,7 +465,7 @@ pub const Buffer = struct {
 
     pub fn redo(self: *Buffer) ?usize {
         var pos: ?usize = null;
-        if (self.redos.popOrNull()) |edits| {
+        if (self.redos.pop()) |edits| {
             for (edits) |edit| {
                 switch (edit) {
                     .Insert => |data| {
@@ -524,7 +524,7 @@ pub const Buffer = struct {
         const bytes = self.bytes.items;
         const len = bytes.len;
 
-        var start = if (self.line_ranges.popOrNull()) |range| range[0] else 0;
+        var start = if (self.line_ranges.pop()) |range| range[0] else 0;
 
         while (start <= len) {
             var end = start;

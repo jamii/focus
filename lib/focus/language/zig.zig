@@ -42,7 +42,7 @@ pub const State = struct {
         for (tokens.items, 0..) |token, ix| {
             switch (token) {
                 .r_paren, .r_brace, .r_bracket => {
-                    if (paren_match_stack.popOrNull()) |matching_ix| {
+                    if (paren_match_stack.pop()) |matching_ix| {
                         paren_matches[ix] = matching_ix;
                         paren_matches[matching_ix] = ix;
                     }
@@ -172,7 +172,7 @@ pub const State = struct {
     pub fn format(self: State, frame_allocator: u.Allocator, source: []const u8) ?[]const u8 {
         // TODO Once zig syntax is stable, use Ast.render instead of shelling out
 
-        var child_process = std.ChildProcess.init(
+        var child_process = std.process.Child.init(
             &[_][]const u8{ "setsid", "zig", "fmt", "--stdin" },
             self.allocator,
         );
@@ -189,17 +189,17 @@ pub const State = struct {
         child_process.stdin.?.close();
         child_process.stdin = null;
 
-        var stdout = u.ArrayList(u8).init(frame_allocator);
-        var stderr = u.ArrayList(u8).init(frame_allocator);
+        var stdout = std.ArrayListUnmanaged(u8).empty;
+        var stderr = std.ArrayListUnmanaged(u8).empty;
 
-        child_process.collectOutput(&stdout, &stderr, std.math.maxInt(usize)) catch |err|
+        child_process.collectOutput(frame_allocator, &stdout, &stderr, std.math.maxInt(usize)) catch |err|
             u.panic("Error collecting output from `zig fmt`: {}", .{err});
 
         const result = child_process.wait() catch |err|
             u.panic("Error waiting for `zig fmt`: {}", .{err});
 
         if (u.deepEqual(result, .{ .Exited = 0 })) {
-            return stdout.toOwnedSlice() catch u.oom();
+            return stdout.toOwnedSlice(frame_allocator) catch u.oom();
         } else {
             u.warn("`zig fmt` failed: {s}", .{stderr.items});
             return null;

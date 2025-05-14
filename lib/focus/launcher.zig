@@ -19,20 +19,20 @@ pub const Launcher = struct {
 
     pub fn init(app: *App) *Launcher {
         const input = SingleLineEditor.init(app, "");
-        var selector = Selector.init(app);
+        const selector = Selector.init(app);
 
         var exes = u.ArrayList([]const u8).init(app.allocator);
         {
-            const result = std.ChildProcess.exec(.{
+            const result = std.process.Child.run(.{
                 .allocator = app.frame_allocator,
                 .argv = &[_][]const u8{ "fish", "-C", "complete -C ''" },
                 .cwd = focus.config.home_path,
                 .max_output_bytes = 128 * 1024 * 1024,
             }) catch |err| u.panic("{} while calling compgen", .{err});
             u.assert(result.term == .Exited and result.term.Exited == 0);
-            var lines = std.mem.split(u8, result.stdout, "\n");
+            var lines = std.mem.splitScalar(u8, result.stdout, '\n');
             while (lines.next()) |line| {
-                var it = std.mem.split(u8, line, "\t");
+                var it = std.mem.splitScalar(u8, line, '\t');
                 const command = it.first();
                 exes.append(app.dupe(command)) catch u.oom();
             }
@@ -75,7 +75,7 @@ pub const Launcher = struct {
             const exe = filtered_exes[self.selector.selected];
             // TODO this is kinda hacky :D
             const command = u.format(self.app.frame_allocator, "{s} & disown", .{exe});
-            var process = std.ChildProcess.init(
+            var process = std.process.Child.init(
                 &[_][]const u8{ "fish", "-c", command },
                 self.app.frame_allocator,
             );

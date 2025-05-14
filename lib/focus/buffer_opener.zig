@@ -33,7 +33,7 @@ pub const BufferOpener = struct {
         input.editor.goRealLineStart(input.editor.getMainCursor());
         input.editor.setMark();
         input.editor.goRealLineEnd(input.editor.getMainCursor());
-        var selector = Selector.init(app);
+        const selector = Selector.init(app);
         // selector.selected = app.last_buffer_opener_selected;
 
         const self = app.allocator.create(BufferOpener) catch u.oom();

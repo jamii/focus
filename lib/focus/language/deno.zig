@@ -35,7 +35,7 @@ pub const State = struct {
     }
 
     pub fn format(self: State, frame_allocator: u.Allocator, source: []const u8) ?[]const u8 {
-        var child_process = std.ChildProcess.init(
+        var child_process = std.process.Child.init(
             &[_][]const u8{ "setsid", "deno", "fmt", "-" },
             self.allocator,
         );
@@ -52,17 +52,17 @@ pub const State = struct {
         child_process.stdin.?.close();
         child_process.stdin = null;
 
-        var stdout = u.ArrayList(u8).init(frame_allocator);
-        var stderr = u.ArrayList(u8).init(frame_allocator);
+        var stdout = std.ArrayListUnmanaged(u8).empty;
+        var stderr = std.ArrayListUnmanaged(u8).empty;
 
-        child_process.collectOutput(&stdout, &stderr, std.math.maxInt(usize)) catch |err|
+        child_process.collectOutput(frame_allocator, &stdout, &stderr, std.math.maxInt(usize)) catch |err|
             u.panic("Error collecting output from `deno fmt`: {}", .{err});
 
         const result = child_process.wait() catch |err|
             u.panic("Error waiting for `deno fmt`: {}", .{err});
 
         if (u.deepEqual(result, .{ .Exited = 0 })) {
-            return stdout.toOwnedSlice() catch u.oom();
+            return stdout.toOwnedSlice(frame_allocator) catch u.oom();
         } else {
             u.warn("`deno fmt` failed: {s}", .{stderr.items});
             return null;

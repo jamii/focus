@@ -45,19 +45,19 @@ pub const ProjectFileOpener = struct {
         }
 
         var paths = u.ArrayList([]const u8).init(app.allocator);
-        var projects_iter = std.mem.split(u8, projects.items, "\n");
+        var projects_iter = std.mem.splitScalar(u8, projects.items, '\n');
         while (projects_iter.next()) |project_untrimmed| {
             const project = std.mem.trim(u8, project_untrimmed, " ");
             if (project.len == 0) continue;
             if (std.mem.startsWith(u8, project, "#")) continue;
-            const result = std.ChildProcess.exec(.{
+            const result = std.process.Child.run(.{
                 .allocator = app.frame_allocator,
                 .argv = &[_][]const u8{ "rg", "--files", "-0" },
                 .cwd = project,
                 .max_output_bytes = 128 * 1024 * 1024,
             }) catch |err| u.panic("{} while calling rg", .{err});
             u.assert(result.term == .Exited and result.term.Exited == 0);
-            var lines = std.mem.split(u8, result.stdout, &[1]u8{0});
+            var lines = std.mem.splitScalar(u8, result.stdout, 0);
             while (lines.next()) |line| {
                 const path = std.fs.path.join(app.allocator, &[2][]const u8{ project, line }) catch u.oom();
                 paths.append(path) catch u.oom();

@@ -41,7 +41,7 @@ pub const State = struct {
         for (tokens.items, 0..) |token, ix| {
             switch (token) {
                 .close_paren, .close_bracket, .close_brace => {
-                    if (paren_match_stack.popOrNull()) |matching_ix| {
+                    if (paren_match_stack.pop()) |matching_ix| {
                         paren_matches[ix] = matching_ix;
                         paren_matches[matching_ix] = ix;
                     }

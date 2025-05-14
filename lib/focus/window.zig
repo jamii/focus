@@ -133,7 +133,7 @@ pub const Window = struct {
         self.app.allocator.destroy(self.events);
 
         while (self.views.items.len > 0) {
-            const view = self.views.pop();
+            const view = self.views.pop().?;
             self.popped_views.append(view) catch u.oom();
         }
         self.deinitPoppedViews();
@@ -411,8 +411,8 @@ pub const Window = struct {
         }
         const tag_name = comptime tag_name: {
             // TODO this is gross
-            const view_type_name = @typeName(@typeInfo(@TypeOf(view_ptr)).Pointer.child);
-            var iter = std.mem.split(u8, view_type_name, ".");
+            const view_type_name = @typeName(@typeInfo(@TypeOf(view_ptr)).pointer.child);
+            var iter = std.mem.splitScalar(u8, view_type_name, '.');
             var last_part: ?[]const u8 = null;
             while (iter.next()) |part| last_part = part;
             break :tag_name last_part.?;
@@ -427,7 +427,7 @@ pub const Window = struct {
             editor.buffer.last_lost_focus_ms = self.app.frame_time_ms;
         }
         if (self.views.items.len > 0) {
-            const view = self.views.pop();
+            const view = self.views.pop().?;
             // can't clean up view right away because we might still be inside it's frame function
             self.popped_views.append(view) catch u.oom();
         }
@@ -435,12 +435,12 @@ pub const Window = struct {
 
     fn deinitPoppedViews(self: *Window) void {
         while (self.popped_views.items.len > 0) {
-            const view = self.popped_views.pop();
+            const view = self.popped_views.pop().?;
             switch (view) {
                 .Editor => |editor| editor.save(.Auto),
                 else => {},
             }
-            inline for (@typeInfo(@typeInfo(View).Union.tag_type.?).Enum.fields) |field| {
+            inline for (@typeInfo(@typeInfo(View).@"union".tag_type.?).@"enum".fields) |field| {
                 if (@intFromEnum(std.meta.activeTag(view)) == field.value) {
                     var view_ptr = @field(view, field.name);
                     view_ptr.deinit();

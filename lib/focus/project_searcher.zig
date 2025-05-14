@@ -45,14 +45,14 @@ pub const ProjectSearcher = struct {
         const self = app.allocator.create(ProjectSearcher) catch u.oom();
         self.* =
             ProjectSearcher{
-            .app = app,
-            .project_dir = project_dir,
-            .preview_editor = preview_editor,
-            .filter_mode = init_filter_mode,
-            .input = input,
-            .selector = selector,
-            .child_process = null,
-        };
+                .app = app,
+                .project_dir = project_dir,
+                .preview_editor = preview_editor,
+                .filter_mode = init_filter_mode,
+                .input = input,
+                .selector = selector,
+                .child_process = null,
+            };
         self.startRipgrep();
         return self;
     }
@@ -145,7 +145,7 @@ pub const ProjectSearcher = struct {
             // see if we can parse selection
             const range = self.selector.ranges[self.selector.selected];
             const line = self.selector.buffer.bytes.items[range[0]..range[1]];
-            var parts = std.mem.split(u8, line, ":");
+            var parts = std.mem.splitScalar(u8, line, ':');
             if (parts.next()) |path_suffix|
                 path = std.fs.path.join(self.app.frame_allocator, &[2][]const u8{ self.project_dir, path_suffix }) catch u.oom();
             if (parts.next()) |line_number_string|
@@ -179,7 +179,7 @@ pub const ProjectSearcher = struct {
                 const new_buffer = self.app.getBufferFromAbsoluteFilename(path.?);
                 const new_editor = Editor.init(self.app, new_buffer, .{});
                 new_editor.top_pixel = self.preview_editor.top_pixel;
-                var cursor = new_editor.getMainCursor();
+                const cursor = new_editor.getMainCursor();
                 new_editor.tryGoRealLine(cursor, line_number.? - 1);
                 new_editor.setMark();
                 new_editor.goRealLineEnd(cursor);

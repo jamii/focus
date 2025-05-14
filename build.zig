@@ -3,7 +3,7 @@ const std = @import("std");
 const allocator = std.testing.allocator;
 const freetype = @import("mach_freetype");
 
-pub fn build(b: *std.build.Builder) !void {
+pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
 
@@ -19,19 +19,26 @@ pub fn build(b: *std.build.Builder) !void {
         b.option([]const u8, "projects-file-path", "") orelse "/home/jamie/secret/projects",
     );
 
-    const exe = b.addExecutable(.{
-        .name = "focus-dev",
-        .root_source_file = .{ .path = "./bin/focus.zig" },
+    const module = b.createModule(.{
+        .root_source_file = b.path("./focus.zig"),
+        .omit_frame_pointer = false,
         .target = target,
         .optimize = optimize,
-        .main_pkg_path = .{ .path = "./" },
+    });
+    module.addOptions("focus_config", config);
+    module.addImport("mach-freetype", b.dependency("mach_freetype", .{}).module("mach-freetype"));
+
+    const exe = b.addExecutable(.{
+        .name = "focus-dev",
+        .root_module = module,
     });
     exe.linkLibC();
     exe.linkSystemLibrary("GL");
-    freetypeLink(b, exe);
-    glfwLink(b, exe);
-    exe.omit_frame_pointer = false;
-    exe.addOptions("focus_config", config);
+
+    // TODO Upgrade to zig 0.14 and then use dependencyFromBuildZig("./deps/glfw/build.zig") directly
+    exe.addIncludePath(b.path("./deps/glfw/zig-out/include/"));
+    exe.addObjectFile(b.path("./deps/glfw/zig-out/lib/libglfw.a"));
+
     b.installArtifact(exe);
 
     const exe_step = b.step("build", "Build");
@@ -40,36 +47,4 @@ pub fn build(b: *std.build.Builder) !void {
     const run = b.addRunArtifact(exe);
     const run_step = b.step("run", "Run");
     run_step.dependOn(&run.step);
-}
-
-fn freetypeLink(b: *std.Build, step: *std.build.CompileStep) void {
-    const mach_freetype_dep = b.dependency("mach_freetype", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    });
-    const freetype_dep = b.dependency("mach_freetype.freetype", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    });
-    const harfbuzz_dep = b.dependency("mach_freetype.harfbuzz", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    });
-    const brotli_dep = b.dependency("mach_freetype.freetype.brotli", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    });
-
-    step.addModule("mach-freetype", mach_freetype_dep.module("mach-freetype"));
-    step.addModule("mach-harfbuzz", mach_freetype_dep.module("mach-harfbuzz"));
-    step.linkLibrary(freetype_dep.artifact("freetype"));
-    step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
-    step.linkLibrary(brotli_dep.artifact("brotli"));
-}
-
-fn glfwLink(b: *std.Build, step: *std.build.CompileStep) void {
-    _ = b;
-    // TODO Upgrade to zig 0.14 and then use deps/glfw/build.zig directly
-    step.addIncludePath(.{ .path = "./deps/glfw/zig-out/include/" });
-    step.addObjectFile(.{ .path = "./deps/glfw/zig-out/lib/libglfw.a" });
 }

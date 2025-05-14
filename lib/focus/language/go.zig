@@ -37,7 +37,7 @@ pub const State = struct {
     fn formatWithTabs(self: State, frame_allocator: u.Allocator, source: []const u8) ?[]const u8 {
         _ = self;
 
-        var child_process = std.ChildProcess.init(
+        var child_process = std.process.Child.init(
             &[_][]const u8{ "setsid", "gofmt", "-s" },
             frame_allocator,
         );
@@ -54,17 +54,17 @@ pub const State = struct {
         child_process.stdin.?.close();
         child_process.stdin = null;
 
-        var stdout = u.ArrayList(u8).init(frame_allocator);
-        var stderr = u.ArrayList(u8).init(frame_allocator);
+        var stdout = std.ArrayListUnmanaged(u8).empty;
+        var stderr = std.ArrayListUnmanaged(u8).empty;
 
-        child_process.collectOutput(&stdout, &stderr, std.math.maxInt(usize)) catch |err|
+        child_process.collectOutput(frame_allocator, &stdout, &stderr, std.math.maxInt(usize)) catch |err|
             u.panic("Error collecting output from `gofmt`: {}", .{err});
 
         const result = child_process.wait() catch |err|
             u.panic("Error waiting for `gofmt`: {}", .{err});
 
         if (u.deepEqual(result, .{ .Exited = 0 })) {
-            return stdout.items;
+            return stdout.toOwnedSlice(frame_allocator) catch u.oom();
         } else {
             u.warn("`gofmt` failed: {s}", .{stderr.items});
             return null;

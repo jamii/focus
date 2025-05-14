@@ -60,7 +60,7 @@ pub const Maker = struct {
         const input = SingleLineEditor.init(app, focus.config.home_path);
         const selector = Selector.init(app);
 
-        const result = std.ChildProcess.exec(.{
+        const result = std.process.Child.run(.{
             .allocator = app.frame_allocator,
             .argv = &[_][]const u8{ "fish", "--command", "history" },
             .cwd = focus.config.home_path,
@@ -69,7 +69,7 @@ pub const Maker = struct {
         u.assert(result.term == .Exited and result.term.Exited == 0);
         const history_string = app.dupe(result.stdout);
         var history = u.ArrayList([]const u8).init(app.allocator);
-        var lines = std.mem.split(u8, history_string, "\n");
+        var lines = std.mem.splitScalar(u8, history_string, '\n');
         while (lines.next()) |line| {
             history.append(app.dupe(line)) catch u.oom();
         }

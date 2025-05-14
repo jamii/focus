@@ -34,7 +34,7 @@ pub const BufferSearcher = struct {
         input.editor.goRealLineEnd(input.editor.getMainCursor());
         const selector = Selector.init(app);
         const selection_pos = target_editor.getMainCursor().head.pos;
-        var self = app.allocator.create(BufferSearcher) catch u.oom();
+        const self = app.allocator.create(BufferSearcher) catch u.oom();
         self.* = BufferSearcher{
             .app = app,
             .target_editor = target_editor,

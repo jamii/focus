@@ -20,7 +20,7 @@ pub const AutoHashMap = std.AutoHashMap;
 // TODO should probably preallocate memory for panic message
 pub fn panic(comptime fmt: []const u8, args: anytype) noreturn {
     var buf = ArrayList(u8).init(std.heap.c_allocator);
-    var writer = buf.writer();
+    const writer = buf.writer();
     const message: []const u8 = message: {
         std.fmt.format(writer, fmt, args) catch |err| {
             switch (err) {
@@ -153,7 +153,7 @@ pub fn dumpInto(writer: anytype, indent: u32, thing: anytype) anyerror!void {
 
 pub fn format(allocator: Allocator, comptime fmt: []const u8, args: anytype) []const u8 {
     var buf = ArrayList(u8).init(allocator);
-    var writer = buf.writer();
+    const writer = buf.writer();
     std.fmt.format(writer, fmt, args) catch oom();
     return buf.items;
 }
@@ -256,8 +256,8 @@ pub const Color = packed struct {
         assert(s >= 0 and s <= 1);
         assert(l >= 0 and l <= 1);
         assert(a >= 0 and a <= 1);
-        const ch = (1 - @fabs((2 * l) - 1)) * s;
-        const x = ch * (1 - @fabs(@mod(h / 60, 2) - 1));
+        const ch = (1 - @abs((2 * l) - 1)) * s;
+        const x = ch * (1 - @abs(@mod(h / 60, 2) - 1));
         const m = l - (ch / 2);
         const rgb: [3]f64 = switch (@as(u8, @intFromFloat(@floor(h / 60)))) {
             0 => .{ ch, x, 0 },
@@ -379,7 +379,7 @@ pub fn fuzzy_search_paths(allocator: Allocator, path: []const u8) ![]const []con
             }
         }
         if (dirname_o) |dirname| {
-            var dir = try std.fs.cwd().openIterableDir(dirname, .{});
+            var dir = try std.fs.cwd().openDir(dirname, .{});
             defer dir.close();
             var dir_iter = dir.iterate();
             while (dir_iter.next() catch |err| panic("{} while iterating dir {s}", .{ err, dirname })) |entry| {
@@ -419,7 +419,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
     const T = @TypeOf(a);
     const ti = @typeInfo(T);
     switch (ti) {
-        .Struct, .Enum, .Union => {
+        .@"struct", .@"enum", .@"union" => {
             if (@hasDecl(T, "deepCompare")) {
                 return T.deepCompare(a, b);
             }
@@ -427,12 +427,12 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
         else => {},
     }
     switch (ti) {
-        .Bool => {
+        .bool => {
             if (a == b) return .Equal;
             if (a) return .GreaterThan;
             return .LessThan;
         },
-        .Int, .Float => {
+        .int, .float => {
             if (a < b) {
                 return .LessThan;
             }
@@ -441,15 +441,15 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
             }
             return .Equal;
         },
-        .Enum => {
+        .@"enum" => {
             return deepCompare(@intFromEnum(a), @intFromEnum(b));
         },
-        .Pointer => |pti| {
+        .pointer => |pti| {
             switch (pti.size) {
-                .One => {
+                .one => {
                     return deepCompare(a.*, b.*);
                 },
-                .Slice => {
+                .slice => {
                     if (a.len < b.len) {
                         return .LessThan;
                     }
@@ -464,10 +464,10 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
                     }
                     return .Equal;
                 },
-                .Many, .C => @compileError("cannot deepCompare " ++ @typeName(T)),
+                .many, .c => @compileError("cannot deepCompare " ++ @typeName(T)),
             }
         },
-        .Optional => {
+        .optional => {
             if (a) |a_val| {
                 if (b) |b_val| {
                     return deepCompare(a_val, b_val);
@@ -482,7 +482,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
                 }
             }
         },
-        .Array => {
+        .array => {
             for (a, 0..) |a_elem, a_ix| {
                 const ordering = deepCompare(a_elem, b[a_ix]);
                 if (ordering != .Equal) {
@@ -491,7 +491,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
             }
             return .Equal;
         },
-        .Struct => |sti| {
+        .@"struct" => |sti| {
             inline for (sti.fields) |fti| {
                 const ordering = deepCompare(@field(a, fti.name), @field(b, fti.name));
                 if (ordering != .Equal) {
@@ -500,9 +500,9 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
             }
             return .Equal;
         },
-        .Union => |uti| {
+        .@"union" => |uti| {
             if (uti.tag_type) |tag_type| {
-                const enum_info = @typeInfo(tag_type).Enum;
+                const enum_info = @typeInfo(tag_type).@"enum";
                 const a_tag = @intFromEnum(@as(tag_type, a));
                 const b_tag = @intFromEnum(@as(tag_type, b));
                 if (a_tag < b_tag) {
@@ -524,8 +524,8 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
                 @compileError("cannot deepCompare " ++ @typeName(T));
             }
         },
-        .Void => return .Equal,
-        .ErrorUnion => {
+        .void => return .Equal,
+        .error_union => {
             if (a) |a_ok| {
                 if (b) |b_ok| {
                     return deepCompare(a_ok, b_ok);
@@ -540,7 +540,7 @@ pub fn deepCompare(a: anytype, b: @TypeOf(a)) Ordering {
                 }
             }
         },
-        .ErrorSet => return deepCompare(@intFromError(a), @intFromError(b)),
+        .error_set => return deepCompare(@intFromError(a), @intFromError(b)),
         else => @compileError("cannot deepCompare " ++ @typeName(T)),
     }
 }
@@ -555,7 +555,7 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
     const T = @TypeOf(key);
     const ti = @typeInfo(T);
     switch (ti) {
-        .Struct, .Enum, .Union => {
+        .@"struct", .@"enum", .@"union" => {
             if (@hasDecl(T, "deepHashInto")) {
                 return T.deepHashInto(hasher, key);
             }
@@ -563,35 +563,35 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
         else => {},
     }
     switch (ti) {
-        .Int => @call(.always_inline, std.hash.Wyhash.update, .{ hasher, std.mem.asBytes(&key) }),
-        .Float => |info| deepHashInto(hasher, @as(std.Int(.unsigned, info.bits), @bitCast(key))),
-        .Bool => deepHashInto(hasher, @intFromBool(key)),
-        .Enum => deepHashInto(hasher, @intFromEnum(key)),
-        .Pointer => |pti| {
+        .int => @call(.always_inline, std.hash.Wyhash.update, .{ hasher, std.mem.asBytes(&key) }),
+        .float => |info| deepHashInto(hasher, @as(std.Int(.unsigned, info.bits), @bitCast(key))),
+        .bool => deepHashInto(hasher, @intFromBool(key)),
+        .@"enum" => deepHashInto(hasher, @intFromEnum(key)),
+        .pointer => |pti| {
             switch (pti.size) {
-                .One => deepHashInto(hasher, key.*),
-                .Slice => {
+                .one => deepHashInto(hasher, key.*),
+                .slice => {
                     for (key) |element| {
                         deepHashInto(hasher, element);
                     }
                 },
-                .Many, .C => @compileError("cannot deepHash " ++ @typeName(T)),
+                .many, .c => @compileError("cannot deepHash " ++ @typeName(T)),
             }
         },
-        .Optional => if (key) |k| deepHashInto(hasher, k),
-        .Array => {
+        .optional => if (key) |k| deepHashInto(hasher, k),
+        .array => {
             for (key) |element| {
                 deepHashInto(hasher, element);
             }
         },
-        .Struct => |info| {
+        .@"struct" => |info| {
             inline for (info.fields) |field| {
                 deepHashInto(hasher, @field(key, field.name));
             }
         },
-        .Union => |info| {
+        .@"union" => |info| {
             if (info.tag_type) |tag_type| {
-                const enum_info = @typeInfo(tag_type).Enum;
+                const enum_info = @typeInfo(tag_type).@"enum";
                 const tag = std.meta.activeTag(key);
                 deepHashInto(hasher, tag);
                 inline for (enum_info.fields) |enum_field| {
@@ -603,7 +603,7 @@ pub fn deepHashInto(hasher: anytype, key: anytype) void {
                 unreachable;
             } else @compileError("cannot deepHash " ++ @typeName(T));
         },
-        .Void => {},
+        .void => {},
         else => @compileError("cannot deepHash " ++ @typeName(T)),
     }
 }

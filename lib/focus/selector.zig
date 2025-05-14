@@ -118,7 +118,7 @@ pub const Selector = struct {
         const action = self.logic(events, self.ranges.len);
 
         // set selection
-        var cursor = self.editor.getMainCursor();
+        const cursor = self.editor.getMainCursor();
         if (self.selected < self.ranges.len) {
             self.editor.goPos(cursor, self.ranges[self.selected][0]);
             self.editor.setMark();

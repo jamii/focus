@@ -2,51 +2,51 @@
 
 let
 
-  hostPkgs = import <nixpkgs> {};
+hostPkgs = import <nixpkgs> {};
 
-  armPkgs = import <nixpkgs> {
+armPkgs = import <nixpkgs> {
     system = "aarch64-linux";
-  };
+};
 
-  crossPkgs = import <nixpkgs> {
+crossPkgs = import <nixpkgs> {
     overlays = [(self: super: {
-      inherit (armPkgs)
+        inherit (armPkgs)
         gcc
         mesa
         libGL
-      ;
+        ;
     })];
     crossSystem = hostPkgs.lib.systems.examples.aarch64-multiplatform;
-  };
+};
 
-  targetPkgs = if cross then crossPkgs else hostPkgs;
+targetPkgs = if cross then crossPkgs else hostPkgs;
 
-  zig = hostPkgs.stdenv.mkDerivation {
-        name = "zig";
-        src = fetchTarball (
-            if (targetPkgs.system == "x86_64-linux") then {
-                url = "https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz";
-                sha256 = "0385m6sfaxcfy91l4iwi3zkr705zbn4basvkkkbba7yh635aqr78";
-            } else
-            throw ("Unknown system " ++ targetPkgs.system)
-        );
-        dontConfigure = true;
-        dontBuild = true;
-        installPhase = ''
-            mkdir -p $out
-            mv ./* $out/
-            mkdir -p $out/bin
-            mv $out/zig $out/bin
-        '';
-    };
+zig = hostPkgs.stdenv.mkDerivation {
+    name = "zig";
+    src = fetchTarball (
+        if (hostPkgs.system == "x86_64-linux") then {
+            url = "https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz";
+            sha256 = "052pfb144qaqvf8vm7ic0p6j4q2krwwx1d6cy38jy2jzkb588gw3";
+        } else
+        throw ("Unknown system " ++ hostPkgs.system)
+    );
+    dontConfigure = true;
+    dontBuild = true;
+    installPhase = ''
+    mkdir -p $out
+    mv ./* $out/
+    mkdir -p $out/bin
+    mv $out/zig $out/bin
+    '';
+};
 
 in
 
 hostPkgs.mkShell rec {
-  buildInputs = [
-    zig
-    hostPkgs.git
-    targetPkgs.libGL.all
-    targetPkgs.xorg.libX11.dev
-  ];
+    buildInputs = [
+        zig
+        hostPkgs.git
+        targetPkgs.libGL.all
+        targetPkgs.xorg.libX11.dev
+    ];
 }

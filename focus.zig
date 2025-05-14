@@ -1,7 +1,7 @@
 const builtin = @import("builtin");
 const std = @import("std");
 
-const focus = @import("../lib/focus.zig");
+const focus = @import("./lib/focus.zig");
 
 pub var gpa = if (builtin.mode == .Debug)
     std.heap.GeneralPurposeAllocator(.{
@@ -66,7 +66,7 @@ pub fn main() void {
             // wait until it's done
             const exit_code = focus.waitReply(client_socket);
             arena.deinit();
-            std.os.exit(exit_code);
+            std.posix.exit(exit_code);
         },
     }
 }

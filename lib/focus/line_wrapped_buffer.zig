@@ -39,7 +39,7 @@ pub const LineWrappedBuffer = struct {
         while (line_start_ix > 0 and line_ranges[line_start_ix][1] > append_pos) : (line_start_ix -= 1) {}
 
         const start_pos = line_ranges[line_start_ix][0];
-        while (wrapped_line_ranges.popOrNull()) |wrapped_line_range| {
+        while (wrapped_line_ranges.pop()) |wrapped_line_range| {
             if (wrapped_line_range[0] < start_pos) {
                 wrapped_line_ranges.append(wrapped_line_range) catch u.oom();
                 break;
@@ -101,11 +101,10 @@ pub const LineWrappedBuffer = struct {
     }
 
     pub fn getLineColForPos(self: *LineWrappedBuffer, pos: usize) [2]usize {
-        // TODO avoid hacky fake key
-        var line = std.sort.binarySearch([2]usize, [2]usize{ pos, pos }, self.wrapped_line_ranges.items, {}, struct {
-            fn compare(_: void, key: [2]usize, item: [2]usize) std.math.Order {
-                if (key[0] < item[0]) return .lt;
-                if (key[0] > item[1]) return .gt;
+        var line = std.sort.binarySearch([2]usize, self.wrapped_line_ranges.items, pos, struct {
+            fn compare(pos2: usize, item: [2]usize) std.math.Order {
+                if (pos2 < item[0]) return .lt;
+                if (pos2 > item[1]) return .gt;
                 return .eq;
             }
         }.compare).?;
