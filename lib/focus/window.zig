@@ -1,5 +1,4 @@
 const std = @import("std");
-const glfw = @import("glfw");
 const focus = @import("../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
@@ -40,7 +39,7 @@ pub const Window = struct {
     client_address_o: ?focus.Address,
 
     events: *u.ArrayList(mach_compat.Event),
-    glfw_window: glfw.Window,
+    glfw_window: *c.GLFWwindow,
 
     texture_buffer: u.ArrayList(u.Quad(u.Vec2f)),
     vertex_buffer: u.ArrayList(u.Quad(u.Vec2f)),
@@ -59,31 +58,21 @@ pub const Window = struct {
         events.* = u.ArrayList(mach_compat.Event).init(app.allocator);
 
         // init window
-        const glfw_window = glfw_window: {
-            const optional_glfw_window =
-                glfw.Window.create(
-                init_width,
-                init_height,
-                "focus",
-                null,
-                null,
-                .{
-                    .client_api = .opengl_api,
-                    .decorated = false,
-                    .floating = (floating == .Floating),
-                    // sway does not respect .floating but it will float non-resizable windows
-                    .resizable = (floating == .NotFloating),
-                },
-            );
-            if (optional_glfw_window) |window|
-                break :glfw_window window
-            else
-                u.panic("Error creating glfw window", .{});
+        const glfw_window_maybe = c.glfwCreateWindow(init_width, init_height, "focus", null, null);
+        const glfw_window = if (glfw_window_maybe) |w| w else {
+            u.panic("Error creating glfw window", .{});
         };
+        c.glfwSetWindowAttrib(glfw_window, c.GLFW_DECORATED, c.GLFW_FALSE);
+        c.glfwSetWindowAttrib(glfw_window, c.GLFW_RESIZABLE, c.GLFW_TRUE);
+        c.glfwSetWindowAttrib(glfw_window, c.GLFW_FOCUS_ON_SHOW, c.GLFW_TRUE);
+        c.glfwSetWindowAttrib(glfw_window, c.GLFW_FLOATING, switch (floating) {
+            .Floating => c.GLFW_TRUE,
+            .NotFloating => c.GLFW_FALSE,
+        });
         mach_compat.setCallbacks(glfw_window, events);
 
         // init gl
-        glfw.makeContextCurrent(glfw_window);
+        c.glfwMakeContextCurrent(glfw_window);
         c.glEnable(c.GL_BLEND);
         c.glBlendFunc(c.GL_SRC_ALPHA, c.GL_ONE_MINUS_SRC_ALPHA);
         c.glDisable(c.GL_CULL_FACE);
@@ -94,7 +83,7 @@ pub const Window = struct {
         c.glEnableClientState(c.GL_COLOR_ARRAY);
 
         // disable vsync - too many problems with multiple windows on multiple desktops
-        glfw.swapInterval(0);
+        c.glfwSwapInterval(0);
 
         const self = Window{
             .app = app,
@@ -119,7 +108,7 @@ pub const Window = struct {
     }
 
     pub fn loadAtlasTexture(self: Window, atlas: *Atlas) void {
-        glfw.makeContextCurrent(self.glfw_window);
+        c.glfwMakeContextCurrent(self.glfw_window);
         {
             var id: u32 = undefined;
             c.glGenTextures(1, &id);
@@ -138,7 +127,7 @@ pub const Window = struct {
         self.texture_buffer.deinit();
 
         // TODO do I need to destroy the gl context?
-        self.glfw_window.destroy();
+        c.glfwDestroyWindow(self.glfw_window);
 
         self.events.deinit();
         self.app.allocator.destroy(self.events);
@@ -177,12 +166,14 @@ pub const Window = struct {
 
     pub fn frame(self: *Window) void {
         // figure out window size
-        const window_size = self.glfw_window.getSize();
+        var window_width: c_int = 0;
+        var window_height: c_int = 0;
+        c.glfwGetWindowSize(self.glfw_window, &window_width, &window_height);
         const window_rect = u.Rect{
             .x = 0,
             .y = 0,
-            .w = @intCast(window_size.width),
-            .h = @intCast(window_size.height),
+            .w = @intCast(window_width),
+            .h = @intCast(window_height),
         };
 
         // handle events
@@ -194,10 +185,10 @@ pub const Window = struct {
                 var handled = false;
                 switch (event) {
                     .key_press, .key_repeat => |key_event| {
-                        if (key_event.mods.control) {
+                        if (key_event.mods & c.GLFW_MOD_CONTROL != 0) {
                             switch (key_event.key) {
-                                .q => if (self.getTopViewIfEditor() == null) self.popView(),
-                                .o => {
+                                'q' => if (self.getTopViewIfEditor() == null) self.popView(),
+                                'o' => {
                                     const init_path = if (self.getTopViewFilename()) |filename|
                                         std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch u.oom()
                                     else
@@ -206,12 +197,12 @@ pub const Window = struct {
                                     self.pushView(file_opener);
                                     handled = true;
                                 },
-                                .p => {
+                                'p' => {
                                     const project_file_opener = ProjectFileOpener.init(self.app);
                                     self.pushView(project_file_opener);
                                     handled = true;
                                 },
-                                .n => {
+                                'n' => {
                                     if (self.getTopViewIfEditor()) |editor| {
                                         const new_window = self.app.registerWindow(Window.init(self.app, .NotFloating));
                                         const new_editor = Editor.init(self.app, editor.buffer, .{});
@@ -220,15 +211,15 @@ pub const Window = struct {
                                     }
                                     handled = true;
                                 },
-                                .minus => {
+                                c.GLFW_KEY_MINUS => {
                                     self.app.changeFontSize(-1);
                                     handled = true;
                                 },
-                                .equal => {
+                                c.GLFW_KEY_EQUAL => {
                                     self.app.changeFontSize(1);
                                     handled = true;
                                 },
-                                .m => {
+                                'm' => {
                                     const maker = Maker.init(self.app);
                                     self.pushView(maker);
                                     handled = true;
@@ -236,9 +227,9 @@ pub const Window = struct {
                                 else => {},
                             }
                         }
-                        if (key_event.mods.alt) {
+                        if (key_event.mods & c.GLFW_MOD_ALT != 0) {
                             switch (key_event.key) {
-                                .f => {
+                                'f' => {
                                     const project_dir = if (self.getTopViewIfEditor()) |editor|
                                         editor.buffer.getProjectDir()
                                     else
@@ -252,7 +243,7 @@ pub const Window = struct {
                                     self.pushView(project_searcher);
                                     handled = true;
                                 },
-                                .p => {
+                                'p' => {
                                     const ignore_buffer = if (self.getTopViewIfEditor()) |editor|
                                         editor.buffer
                                     else
@@ -261,7 +252,7 @@ pub const Window = struct {
                                     self.pushView(buffer_opener);
                                     handled = true;
                                 },
-                                .m => {
+                                'm' => {
                                     const error_lister = ErrorLister.init(self.app);
                                     self.pushView(error_lister);
                                     handled = true;
@@ -317,22 +308,22 @@ pub const Window = struct {
         if (self.getTopViewFilename()) |filename| {
             window_title = self.app.frame_allocator.dupeZ(u8, filename) catch u.oom();
         }
-        self.glfw_window.setTitle(window_title);
+        c.glfwSetWindowTitle(self.glfw_window, window_title);
 
         // render
-        glfw.makeContextCurrent(self.glfw_window);
+        c.glfwMakeContextCurrent(self.glfw_window);
         c.glClearColor(0, 0, 0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT);
         c.glViewport(
             0,
             0,
-            @intCast(window_size.width),
-            @intCast(window_size.height),
+            @intCast(window_width),
+            @intCast(window_height),
         );
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPushMatrix();
         c.glLoadIdentity();
-        c.glOrtho(0.0, @floatFromInt(window_size.width), @floatFromInt(window_size.height), 0.0, -1.0, 1.0);
+        c.glOrtho(0.0, @floatFromInt(window_width), @floatFromInt(window_height), 0.0, -1.0, 1.0);
         c.glMatrixMode(c.GL_MODELVIEW);
         c.glPushMatrix();
         c.glLoadIdentity();
@@ -344,7 +335,7 @@ pub const Window = struct {
         c.glPopMatrix();
         c.glMatrixMode(c.GL_PROJECTION);
         c.glPopMatrix();
-        self.glfw_window.swapBuffers();
+        c.glfwSwapBuffers(self.glfw_window);
 
         // reset
         self.texture_buffer.resize(0) catch u.oom();

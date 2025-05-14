@@ -5,6 +5,7 @@ const focus = @import("../focus.zig");
 pub const c = @cImport({
     @cInclude("GL/gl.h");
     @cInclude("unistd.h");
+    @cInclude("GLFW/glfw3.h");
 });
 
 pub const warn = std.log.warn;

@@ -1,5 +1,4 @@
 const std = @import("std");
-const glfw = @import("glfw");
 const focus = @import("../focus.zig");
 const u = focus.util;
 const c = focus.util.c;
@@ -156,36 +155,42 @@ pub const Editor = struct {
             self.last_event_ms = self.app.frame_time_ms;
             switch (event) {
                 .key_press, .key_repeat => |key_event| {
-                    if (key_event.mods.control and !key_event.mods.shift) {
+                    if ((key_event.mods & c.GLFW_MOD_CONTROL != 0) and (key_event.mods & c.GLFW_MOD_SHIFT != 0)) {
                         switch (key_event.key) {
-                            .space => self.toggleMark(),
-                            .c => {
-                                for (self.cursors.items) |*cursor| self.copy(cursor);
+                            'z' => self.redo(text_rect),
+                            'd' => self.removeLastMatch(),
+                            else => {},
+                        }
+                    } else if (key_event.mods & c.GLFW_MOD_CONTROL != 0) {
+                        switch (key_event.key) {
+                            c.GLFW_KEY_SPACE => self.toggleMark(),
+                            'c' => {
+                                for (self.cursors.items) |*cursor| self.copy(window, cursor);
                                 // don't clear mark - often want to select -> copy -> edit -> move -> paste
                             },
-                            .x => {
-                                for (self.cursors.items) |*cursor| self.cut(cursor);
+                            'x' => {
+                                for (self.cursors.items) |*cursor| self.cut(window, cursor);
                                 self.clearMark();
                             },
-                            .v => {
-                                for (self.cursors.items) |*cursor| self.paste(cursor);
+                            'v' => {
+                                for (self.cursors.items) |*cursor| self.paste(window, cursor);
                                 self.clearMark();
                             },
-                            .j => for (self.cursors.items) |*cursor| self.goLeft(cursor),
-                            .l => for (self.cursors.items) |*cursor| self.goRight(cursor),
-                            .k => for (self.cursors.items) |*cursor| self.goWrappedDown(cursor),
-                            .i => for (self.cursors.items) |*cursor| self.goWrappedUp(cursor),
-                            .q => {
+                            'j' => for (self.cursors.items) |*cursor| self.goLeft(cursor),
+                            'l' => for (self.cursors.items) |*cursor| self.goRight(cursor),
+                            'k' => for (self.cursors.items) |*cursor| self.goWrappedDown(cursor),
+                            'i' => for (self.cursors.items) |*cursor| self.goWrappedUp(cursor),
+                            'q' => {
                                 self.collapseCursors();
                                 self.clearMark();
                             },
-                            .d => self.addNextMatch(),
-                            .s => self.save(.User),
-                            .f => {
+                            'd' => self.addNextMatch(),
+                            's' => self.save(.User),
+                            'f' => {
                                 const buffer_searcher = BufferSearcher.init(self.app, self);
                                 window.pushView(buffer_searcher);
                             },
-                            .g => {
+                            'g' => {
                                 const project_dir = self.buffer.getProjectDir() orelse focus.config.projects_file_path;
                                 if (self.buffer.language.getIdentifierRangeAt(self.getMainCursor().head.pos)) |identifier_range| {
                                     const identifier = self.buffer.bytes.items[identifier_range[0]..identifier_range[1]];
@@ -196,39 +201,33 @@ pub const Editor = struct {
                                     window.pushView(project_searcher);
                                 }
                             },
-                            .z => self.undo(text_rect),
-                            .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
-                            .tab => for (self.cursors.items) |*cursor| self.indent(cursor),
-                            .one => self.buffer.language.toggleMode(),
-                            .zero => self.goMatchingParen(),
-                            .backspace => self.deleteToken(),
-                            .apostrophe => self.selectParent(),
+                            'z' => self.undo(text_rect),
+                            '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Insert),
+                            c.GLFW_KEY_TAB => for (self.cursors.items) |*cursor| self.indent(cursor),
+                            '1' => self.buffer.language.toggleMode(),
+                            '0' => self.goMatchingParen(),
+                            c.GLFW_KEY_BACKSPACE => self.deleteToken(),
+                            '\'' => self.selectParent(),
                             else => {},
                         }
-                    } else if (key_event.mods.control and key_event.mods.shift) {
+                    } else if (key_event.mods & c.GLFW_MOD_ALT != 0) {
                         switch (key_event.key) {
-                            .z => self.redo(text_rect),
-                            .d => self.removeLastMatch(),
-                            else => {},
-                        }
-                    } else if (key_event.mods.alt) {
-                        switch (key_event.key) {
-                            .space => for (self.cursors.items) |*cursor| self.swapHead(cursor),
-                            .j => for (self.cursors.items) |*cursor| self.goRealLineStart(cursor),
-                            .l => for (self.cursors.items) |*cursor| self.goRealLineEnd(cursor),
-                            .k => {
+                            c.GLFW_KEY_SPACE => for (self.cursors.items) |*cursor| self.swapHead(cursor),
+                            'j' => for (self.cursors.items) |*cursor| self.goRealLineStart(cursor),
+                            'l' => for (self.cursors.items) |*cursor| self.goRealLineEnd(cursor),
+                            'k' => {
                                 for (self.cursors.items) |*cursor| self.goBufferEnd(cursor);
                                 // hardcode because we want to scroll even if cursor didn't move
                                 const num_lines = self.line_wrapped_buffer.countLines();
                                 self.top_pixel = @as(u.Coord, @intCast(if (num_lines == 0) 0 else num_lines - 1)) * self.app.atlas.char_height;
                             },
-                            .i => {
+                            'i' => {
                                 for (self.cursors.items) |*cursor| self.goBufferStart(cursor);
                                 // hardcode because we want to scroll even if cursor didn't move
                                 self.top_pixel = 0;
                             },
-                            .slash => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
-                            .g => {
+                            '/' => for (self.cursors.items) |*cursor| self.modifyComment(cursor, .Remove),
+                            'g' => {
                                 const project_dir = self.buffer.getProjectDir() orelse focus.config.projects_file_path;
                                 if (self.buffer.language.getIdentifierRangeAt(self.getMainCursor().head.pos)) |identifier_range| {
                                     const identifier = self.buffer.bytes.items[identifier_range[0]..identifier_range[1]];
@@ -241,32 +240,32 @@ pub const Editor = struct {
                                     window.pushView(project_searcher);
                                 }
                             },
-                            .o => self.openOnWeb(),
+                            'o' => self.openOnWeb(),
                             else => {},
                         }
-                    } else if (key_event.mods.shift) {
+                    } else if (key_event.mods & c.GLFW_MOD_SHIFT != 0) {
                         switch (key_event.key) {
-                            .tab => completer_event = .Up,
+                            c.GLFW_KEY_TAB => completer_event = .Up,
                             else => {},
                         }
                     } else {
                         switch (key_event.key) {
-                            .backspace => {
+                            c.GLFW_KEY_BACKSPACE => {
                                 for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
                                 self.clearMark();
                             },
-                            .delete => {
+                            c.GLFW_KEY_DELETE => {
                                 for (self.cursors.items) |*cursor| self.deleteForwards(cursor);
                                 self.clearMark();
                             },
-                            .enter => {
+                            c.GLFW_KEY_ENTER => {
                                 for (self.cursors.items) |*cursor| {
                                     self.insert(cursor, &[1]u8{'\n'});
                                     self.indent(cursor);
                                 }
                                 self.clearMark();
                             },
-                            .tab => completer_event = .Down,
+                            c.GLFW_KEY_TAB => completer_event = .Down,
                             else => {},
                         }
                     }
@@ -279,19 +278,19 @@ pub const Editor = struct {
                     self.clearMark();
                 },
                 .mouse_press => |mouse_press_event| {
-                    if (mouse_press_event.button == .left) {
-                        const mouse_x = @as(u.Coord, @intFromFloat(mouse_press_event.pos.xpos));
-                        const mouse_y = @as(u.Coord, @intFromFloat(mouse_press_event.pos.ypos));
+                    if (mouse_press_event.button == c.GLFW_MOUSE_BUTTON_LEFT) {
+                        const mouse_x = @as(u.Coord, @intFromFloat(mouse_press_event.pos[0]));
+                        const mouse_y = @as(u.Coord, @intFromFloat(mouse_press_event.pos[1]));
                         if (text_rect.contains(mouse_x, mouse_y)) {
                             const line = @divTrunc(self.top_pixel + (mouse_y - text_rect.y), self.app.atlas.char_height);
                             const col = @divTrunc(mouse_x - text_rect.x + @divTrunc(self.app.atlas.char_width, 2), self.app.atlas.char_width);
                             const pos = self.line_wrapped_buffer.getPosForLineCol(@min(self.line_wrapped_buffer.countLines() - 1, @as(usize, @intCast(line))), @as(usize, @intCast(col)));
-                            if (mouse_press_event.mods.control) {
+                            if (mouse_press_event.mods & c.GLFW_MOD_CONTROL != 0) {
                                 self.dragging = .CtrlDragging;
                                 var cursor = self.addCursor();
                                 self.updatePos(&cursor.head, pos);
                                 self.updatePos(&cursor.tail, pos);
-                            } else if (mouse_press_event.mods.shift) {
+                            } else if (mouse_press_event.mods & c.GLFW_MOD_SHIFT != 0) {
                                 self.dragging = .ShiftDragging;
                                 self.marked = true;
                                 var cursor = self.getMainCursor();
@@ -311,7 +310,7 @@ pub const Editor = struct {
                     }
                 },
                 .mouse_release => |mouse_release_event| {
-                    if (mouse_release_event.button == .left) {
+                    if (mouse_release_event.button == c.GLFW_MOUSE_BUTTON_LEFT) {
                         self.dragging = .NotDragging;
                     }
                 },
@@ -326,9 +325,11 @@ pub const Editor = struct {
         // (might be dragging outside window, so can't rely on mouse_motion events)
         if (self.dragging != .NotDragging) {
             // get mouse state
-            const mouse_pos = window.glfw_window.getCursorPos();
-            const mouse_x = @as(u.Coord, @intFromFloat(mouse_pos.xpos));
-            const mouse_y = @as(u.Coord, @intFromFloat(mouse_pos.ypos));
+            var mouse_pos_x: f64 = 0;
+            var mouse_pos_y: f64 = 0;
+            c.glfwGetCursorPos(window.glfw_window, &mouse_pos_x, &mouse_pos_y);
+            const mouse_x = @as(u.Coord, @intFromFloat(mouse_pos_x));
+            const mouse_y = @as(u.Coord, @intFromFloat(mouse_pos_y));
 
             // update selection of dragged cursor
             const line = @divTrunc(self.top_pixel + mouse_y - text_rect.y, self.app.atlas.char_height);
@@ -355,12 +356,12 @@ pub const Editor = struct {
         // calculate visible range
         // ensure we don't scroll off the top or bottom of the buffer
         const max_pixels = @max(0,
-        // height of text
-        @as(isize, @intCast(self.line_wrapped_buffer.countLines())) * @as(isize, @intCast(self.app.atlas.char_height))
-        // - half a screen
-        - @divTrunc(text_rect.h, 2)
-        // - 1 pixel to ensure that center_pos is always within text if possible
-        - 1);
+            // height of text
+            @as(isize, @intCast(self.line_wrapped_buffer.countLines())) * @as(isize, @intCast(self.app.atlas.char_height))
+            // - half a screen
+            - @divTrunc(text_rect.h, 2)
+            // - 1 pixel to ensure that center_pos is always within text if possible
+            - 1);
         if (self.top_pixel < 0) self.top_pixel = 0;
         if (self.top_pixel > max_pixels) self.top_pixel = max_pixels;
         const num_visible_lines = @divTrunc(text_rect.h, self.app.atlas.char_height) + @rem(@rem(text_rect.h, self.app.atlas.char_height), 1); // round up
@@ -885,23 +886,23 @@ pub const Editor = struct {
     // TODO figure out nicer situation for multiple cursor copy/paste
     // could use wl-paste -w 'focus-copy'
 
-    pub fn copy(self: *Editor, cursor: *Cursor) void {
+    pub fn copy(self: *Editor, window: *Window, cursor: *Cursor) void {
         if (cursor.head.pos == cursor.tail.pos) return;
         const text = self.dupeSelection(self.app.frame_allocator, cursor);
         const textZ = self.app.frame_allocator.dupeZ(u8, text) catch u.oom();
-        glfw.setClipboardString(textZ);
+        c.glfwSetClipboardString(window.glfw_window, textZ);
     }
 
-    pub fn cut(self: *Editor, cursor: *Cursor) void {
-        self.copy(cursor);
+    pub fn cut(self: *Editor, window: *Window, cursor: *Cursor) void {
+        self.copy(window, cursor);
         self.deleteSelection(cursor);
     }
 
-    pub fn paste(self: *Editor, cursor: *Cursor) void {
-        const text = glfw.getClipboardString();
+    pub fn paste(self: *Editor, window: *Window, cursor: *Cursor) void {
+        const text_maybe = c.glfwGetClipboardString(window.glfw_window);
         // text is owned by glfw, don't need to free
-        if (text) |txt|
-            self.insert(cursor, txt);
+        if (text_maybe) |text|
+            self.insert(cursor, std.mem.span(text));
     }
 
     pub fn addCursor(self: *Editor) *Cursor {

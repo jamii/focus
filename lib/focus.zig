@@ -21,7 +21,6 @@ pub const style = @import("./focus/style.zig");
 pub const mach_compat = @import("./focus/mach_compat.zig");
 
 const std = @import("std");
-const glfw = @import("glfw");
 const u = util;
 const c = util.c;
 
@@ -209,13 +208,13 @@ pub const App = struct {
     last_buffer_opener_selected: usize,
     last_error_lister_selected: usize,
 
-    fn glfw_error_callback(error_code: glfw.ErrorCode, description: [:0]const u8) void {
+    fn glfw_error_callback(error_code: c_int, description: [*c]const u8) callconv(.C) void {
         std.debug.print("{}: {s}\n", .{ error_code, description });
     }
 
     pub fn init(allocator: u.Allocator, server_socket: ServerSocket) *App {
-        glfw.setErrorCallback(glfw_error_callback);
-        if (!glfw.init(.{}))
+        _ = c.glfwSetErrorCallback(glfw_error_callback);
+        if (c.glfwInit() != 0)
             u.panic("Error starting glfw", .{});
 
         var atlas = allocator.create(Atlas) catch u.oom();
@@ -270,7 +269,7 @@ pub const App = struct {
             _ = @import("root").gpa.detectLeaks();
         }
 
-        glfw.terminate();
+        c.glfwTerminate();
     }
 
     pub fn quit(self: *App) noreturn {
@@ -347,7 +346,7 @@ pub const App = struct {
 
         // poll events
         // TODO use waitEventsTimeout to handle fps
-        glfw.pollEvents();
+        c.glfwPollEvents();
 
         // run window frames
         // copy window list because it might change during frame

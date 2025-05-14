@@ -1,9 +1,7 @@
 const std = @import("std");
-const glfw = @import("glfw");
 const focus = @import("../focus.zig");
 const u = focus.util;
-
-// TODO switch to mach.platform when stable
+const c = focus.util.c;
 
 pub const Event = union(enum) {
     key_press: KeyEvent,
@@ -28,33 +26,38 @@ pub const Event = union(enum) {
 };
 
 pub const KeyEvent = struct {
-    key: glfw.Key,
-    mods: glfw.Mods,
+    key: c_int,
+    mods: c_int,
 };
 
 pub const MouseButtonEvent = struct {
-    button: glfw.mouse_button.MouseButton,
-    pos: glfw.Window.CursorPos,
-    mods: glfw.Mods,
+    button: c_int,
+    pos: [2]f64,
+    mods: c_int,
 };
 
-fn keyCallback(window: glfw.Window, key: glfw.Key, scancode: i32, action: glfw.Action, mods: glfw.Mods) void {
-    const events = window.getUserPointer(u.ArrayList(Event)) orelse unreachable;
+fn getEventsList(window: ?*c.GLFWwindow) *u.ArrayList(Event) {
+    return @ptrCast(@alignCast(c.glfwGetWindowUserPointer(window)));
+}
+
+fn keyCallback(window: ?*c.GLFWwindow, key: c_int, scancode: c_int, action: c_int, mods: c_int) callconv(.C) void {
+    const events = getEventsList(window);
     const key_event = KeyEvent{
         .key = key,
         .mods = mods,
     };
     const event = switch (action) {
-        .press => Event{ .key_press = key_event },
-        .repeat => Event{ .key_repeat = key_event },
-        .release => Event{ .key_release = key_event },
+        c.GLFW_PRESS => Event{ .key_press = key_event },
+        c.GLFW_REPEAT => Event{ .key_repeat = key_event },
+        c.GLFW_RELEASE => Event{ .key_release = key_event },
+        else => u.panic("Unexpected action: {}", .{action}),
     };
     events.append(event) catch u.oom();
     _ = scancode;
 }
 
-fn mouseMotionCallback(window: glfw.Window, xpos: f64, ypos: f64) void {
-    const events = window.getUserPointer(u.ArrayList(Event)) orelse unreachable;
+fn mouseMotionCallback(window: ?*c.GLFWwindow, xpos: f64, ypos: f64) callconv(.C) void {
+    const events = getEventsList(window);
     events.append(.{
         .mouse_motion = .{
             .x = xpos,
@@ -63,23 +66,25 @@ fn mouseMotionCallback(window: glfw.Window, xpos: f64, ypos: f64) void {
     }) catch u.oom();
 }
 
-fn mouseButtonCallback(window: glfw.Window, button: glfw.mouse_button.MouseButton, action: glfw.Action, mods: glfw.Mods) void {
-    const events = window.getUserPointer(u.ArrayList(Event)) orelse unreachable;
-    const cursor_pos = window.getCursorPos();
+fn mouseButtonCallback(window: ?*c.GLFWwindow, button: c_int, action: c_int, mods: c_int) callconv(.C) void {
+    const events = getEventsList(window);
+    var cursor_pos: [2]f64 = .{ 0, 0 };
+    c.glfwGetCursorPos(window, &cursor_pos[0], &cursor_pos[1]);
     const mouse_button_event = MouseButtonEvent{
         .button = button,
         .pos = cursor_pos,
         .mods = mods,
     };
-    switch (action) {
-        .press => events.append(.{ .mouse_press = mouse_button_event }) catch u.oom(),
-        .release => events.append(.{ .mouse_release = mouse_button_event }) catch u.oom(),
-        else => {},
-    }
+    const event = switch (action) {
+        c.GLFW_PRESS => Event{ .mouse_press = mouse_button_event },
+        c.GLFW_RELEASE => Event{ .mouse_release = mouse_button_event },
+        else => u.panic("Unexpected action: {}", .{action}),
+    };
+    events.append(event) catch u.oom();
 }
 
-fn scrollCallback(window: glfw.Window, xoffset: f64, yoffset: f64) void {
-    const events = (window.getUserPointer(u.ArrayList(Event)) orelse unreachable);
+fn scrollCallback(window: ?*c.GLFWwindow, xoffset: f64, yoffset: f64) callconv(.C) void {
+    const events = getEventsList(window);
     events.append(.{
         .mouse_scroll = .{
             .xoffset = @floatCast(xoffset),
@@ -88,32 +93,32 @@ fn scrollCallback(window: glfw.Window, xoffset: f64, yoffset: f64) void {
     }) catch u.oom();
 }
 
-fn focusCallback(window: glfw.Window, focused: bool) void {
-    const events = (window.getUserPointer(u.ArrayList(Event)) orelse unreachable);
-    events.append(if (focused) .focus_gained else .focus_lost) catch u.oom();
+fn focusCallback(window: ?*c.GLFWwindow, focused: c_int) callconv(.C) void {
+    const events = getEventsList(window);
+    events.append(if (focused == c.GLFW_TRUE) .focus_gained else .focus_lost) catch u.oom();
 }
 
-fn closeCallback(window: glfw.Window) void {
-    const events = (window.getUserPointer(u.ArrayList(Event)) orelse unreachable);
+fn closeCallback(window: ?*c.GLFWwindow) callconv(.C) void {
+    const events = getEventsList(window);
     events.append(.window_closed) catch u.oom();
 }
 
-fn charCallback(window: glfw.Window, codepoint: u21) void {
-    const events = (window.getUserPointer(u.ArrayList(Event)) orelse unreachable);
+fn charCallback(window: ?*c.GLFWwindow, codepoint: c_uint) callconv(.C) void {
+    const events = getEventsList(window);
     events.append(.{
         .char_input = .{
-            .codepoint = codepoint,
+            .codepoint = @intCast(codepoint),
         },
     }) catch u.oom();
 }
 
-pub fn setCallbacks(window: glfw.Window, events: *u.ArrayList(Event)) void {
-    window.setUserPointer(events);
-    window.setKeyCallback(keyCallback);
-    window.setCursorPosCallback(mouseMotionCallback);
-    window.setMouseButtonCallback(mouseButtonCallback);
-    window.setScrollCallback(scrollCallback);
-    window.setFocusCallback(focusCallback);
-    window.setCloseCallback(closeCallback);
-    window.setCharCallback(charCallback);
+pub fn setCallbacks(window: ?*c.GLFWwindow, events: *u.ArrayList(Event)) callconv(.C) void {
+    _ = c.glfwSetWindowUserPointer(window, events);
+    _ = c.glfwSetKeyCallback(window, keyCallback);
+    _ = c.glfwSetCursorPosCallback(window, mouseMotionCallback);
+    _ = c.glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    _ = c.glfwSetScrollCallback(window, scrollCallback);
+    _ = c.glfwSetWindowFocusCallback(window, focusCallback);
+    _ = c.glfwSetWindowCloseCallback(window, closeCallback);
+    _ = c.glfwSetCharCallback(window, charCallback);
 }

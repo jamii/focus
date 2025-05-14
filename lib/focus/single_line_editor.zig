@@ -43,8 +43,9 @@ pub const SingleLineEditor = struct {
         var editor_events = u.ArrayList(mach_compat.Event).init(self.app.frame_allocator);
         for (events) |event| {
             if (event == .key_press) {
-                if (event.key_press.key == .enter) continue;
-                if (event.key_press.mods.alt and (event.key_press.key == .k or event.key_press.key == .i)) continue;
+                if (event.key_press.key == c.GLFW_KEY_ENTER) continue;
+                if ((event.key_press.mods & c.GLFW_MOD_ALT != 0) and
+                    (event.key_press.key == 'k' or event.key_press.key == 'i')) continue;
             }
             editor_events.append(event) catch u.oom();
         }

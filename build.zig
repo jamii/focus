@@ -2,7 +2,6 @@ const builtin = @import("builtin");
 const std = @import("std");
 const allocator = std.testing.allocator;
 const freetype = @import("mach_freetype");
-const glfw = @import("mach_glfw");
 
 pub fn build(b: *std.build.Builder) !void {
     const optimize = b.standardOptimizeOption(.{});
@@ -69,24 +68,8 @@ fn freetypeLink(b: *std.Build, step: *std.build.CompileStep) void {
 }
 
 fn glfwLink(b: *std.Build, step: *std.build.CompileStep) void {
-    const mach_glfw_dep = b.dependency("mach_glfw", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    });
-    step.linkLibrary(mach_glfw_dep.artifact("mach-glfw"));
-    step.addModule("glfw", mach_glfw_dep.module("mach-glfw"));
-
-    @import("glfw").addPaths(step);
-    step.linkLibrary(b.dependency("vulkan_headers", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    }).artifact("vulkan-headers"));
-    step.linkLibrary(b.dependency("x11_headers", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    }).artifact("x11-headers"));
-    step.linkLibrary(b.dependency("wayland_headers", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    }).artifact("wayland-headers"));
+    _ = b;
+    // TODO Upgrade to zig 0.14 and then use deps/glfw/build.zig directly
+    step.addIncludePath(.{ .path = "./deps/glfw/zig-out/include/" });
+    step.addObjectFile(.{ .path = "./deps/glfw/zig-out/lib/libglfw.a" });
 }
