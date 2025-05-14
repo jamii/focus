@@ -187,8 +187,8 @@ pub const Window = struct {
                     .key_press, .key_repeat => |key_event| {
                         if (key_event.mods & c.GLFW_MOD_CONTROL != 0) {
                             switch (key_event.key) {
-                                'q' => if (self.getTopViewIfEditor() == null) self.popView(),
-                                'o' => {
+                                c.GLFW_KEY_Q => if (self.getTopViewIfEditor() == null) self.popView(),
+                                c.GLFW_KEY_O => {
                                     const init_path = if (self.getTopViewFilename()) |filename|
                                         std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch u.oom()
                                     else
@@ -197,12 +197,12 @@ pub const Window = struct {
                                     self.pushView(file_opener);
                                     handled = true;
                                 },
-                                'p' => {
+                                c.GLFW_KEY_P => {
                                     const project_file_opener = ProjectFileOpener.init(self.app);
                                     self.pushView(project_file_opener);
                                     handled = true;
                                 },
-                                'n' => {
+                                c.GLFW_KEY_N => {
                                     if (self.getTopViewIfEditor()) |editor| {
                                         const new_window = self.app.registerWindow(Window.init(self.app, .NotFloating));
                                         const new_editor = Editor.init(self.app, editor.buffer, .{});
@@ -219,7 +219,7 @@ pub const Window = struct {
                                     self.app.changeFontSize(1);
                                     handled = true;
                                 },
-                                'm' => {
+                                c.GLFW_KEY_M => {
                                     const maker = Maker.init(self.app);
                                     self.pushView(maker);
                                     handled = true;
@@ -229,7 +229,7 @@ pub const Window = struct {
                         }
                         if (key_event.mods & c.GLFW_MOD_ALT != 0) {
                             switch (key_event.key) {
-                                'f' => {
+                                c.GLFW_KEY_F => {
                                     const project_dir = if (self.getTopViewIfEditor()) |editor|
                                         editor.buffer.getProjectDir()
                                     else
@@ -243,7 +243,7 @@ pub const Window = struct {
                                     self.pushView(project_searcher);
                                     handled = true;
                                 },
-                                'p' => {
+                                c.GLFW_KEY_P => {
                                     const ignore_buffer = if (self.getTopViewIfEditor()) |editor|
                                         editor.buffer
                                     else
@@ -252,7 +252,7 @@ pub const Window = struct {
                                     self.pushView(buffer_opener);
                                     handled = true;
                                 },
-                                'm' => {
+                                c.GLFW_KEY_M => {
                                     const error_lister = ErrorLister.init(self.app);
                                     self.pushView(error_lister);
                                     handled = true;

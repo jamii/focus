@@ -214,7 +214,7 @@ pub const App = struct {
 
     pub fn init(allocator: u.Allocator, server_socket: ServerSocket) *App {
         _ = c.glfwSetErrorCallback(glfw_error_callback);
-        if (c.glfwInit() != 0)
+        if (c.glfwInit() != c.GLFW_TRUE)
             u.panic("Error starting glfw", .{});
 
         const atlas = allocator.create(Atlas) catch u.oom();

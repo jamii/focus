@@ -46,7 +46,10 @@ hostPkgs.mkShell rec {
     buildInputs = [
         zig
         hostPkgs.git
-        targetPkgs.libGL.all
-        targetPkgs.xorg.libX11.dev
+        hostPkgs.pkg-config
+        targetPkgs.libGL
+        targetPkgs.wayland
+        targetPkgs.libxkbcommon
     ];
+    LD_LIBRARY_PATH = "${targetPkgs.lib.makeLibraryPath buildInputs}";
 }

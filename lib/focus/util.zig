@@ -379,7 +379,7 @@ pub fn fuzzy_search_paths(allocator: Allocator, path: []const u8) ![]const []con
             }
         }
         if (dirname_o) |dirname| {
-            var dir = try std.fs.cwd().openDir(dirname, .{});
+            var dir = try std.fs.cwd().openDir(dirname, .{ .iterate = true });
             defer dir.close();
             var dir_iter = dir.iterate();
             while (dir_iter.next() catch |err| panic("{} while iterating dir {s}", .{ err, dirname })) |entry| {

@@ -77,8 +77,8 @@ pub const Selector = struct {
                 .key_press, .key_repeat => |key_press_event| {
                     if (key_press_event.mods & c.GLFW_MOD_CONTROL != 0) {
                         switch (key_press_event.key) {
-                            'k' => self.selected += 1,
-                            'i' => if (self.selected != 0) {
+                            c.GLFW_KEY_K => self.selected += 1,
+                            c.GLFW_KEY_I => if (self.selected != 0) {
                                 self.selected -= 1;
                             },
                             c.GLFW_KEY_ENTER => {
@@ -88,8 +88,8 @@ pub const Selector = struct {
                         }
                     } else if (key_press_event.mods & c.GLFW_MOD_ALT != 0) {
                         switch (key_press_event.key) {
-                            'k' => self.selected = num_items - 1,
-                            'i' => self.selected = 0,
+                            c.GLFW_KEY_K => self.selected = num_items - 1,
+                            c.GLFW_KEY_I => self.selected = 0,
                             c.GLFW_KEY_ENTER => {
                                 action = .SelectAll;
                             },
