@@ -17,8 +17,8 @@ pub const Event = union(enum) {
     mouse_press: MouseButtonEvent,
     mouse_release: MouseButtonEvent,
     mouse_scroll: struct {
-        xoffset: f32,
-        yoffset: f32,
+        xoffset: f64,
+        yoffset: f64,
     },
     focus_gained,
     focus_lost,
@@ -87,8 +87,8 @@ fn scrollCallback(window: ?*c.GLFWwindow, xoffset: f64, yoffset: f64) callconv(.
     const events = getEventsList(window);
     events.append(.{
         .mouse_scroll = .{
-            .xoffset = @floatCast(xoffset),
-            .yoffset = @floatCast(yoffset),
+            .xoffset = xoffset,
+            .yoffset = yoffset,
         },
     }) catch u.oom();
 }

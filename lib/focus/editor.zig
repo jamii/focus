@@ -315,7 +315,7 @@ pub const Editor = struct {
                     }
                 },
                 .mouse_scroll => |mouse_scroll_event| {
-                    self.top_pixel -= scroll_amount * @as(i16, @intFromFloat(mouse_scroll_event.yoffset));
+                    self.top_pixel -= @as(i16, @intFromFloat(scroll_amount * mouse_scroll_event.yoffset));
                 },
                 else => {},
             }
