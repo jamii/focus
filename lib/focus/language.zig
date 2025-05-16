@@ -372,4 +372,20 @@ pub const Language = union(enum) {
 
         return .{ .insert = char_input, .move = 0 };
     }
+
+    pub fn shouldDeleteMatchingParen(self: Language, source: []const u8, pos: usize) bool {
+        _ = self;
+
+        if (pos == 0 or pos >= source.len)
+            return false;
+
+        return switch (source[pos - 1]) {
+            '(' => source[pos] == ')',
+            '[' => source[pos] == ']',
+            '{' => source[pos] == '}',
+            '"' => source[pos] == '"',
+            '\'' => source[pos] == '\'',
+            else => false,
+        };
+    }
 };

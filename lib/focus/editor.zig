@@ -251,7 +251,11 @@ pub const Editor = struct {
                     } else {
                         switch (key_event.key) {
                             c.GLFW_KEY_BACKSPACE => {
-                                for (self.cursors.items) |*cursor| self.deleteBackwards(cursor);
+                                for (self.cursors.items) |*cursor| {
+                                    const delete_matching_paren = !self.marked and self.buffer.language.shouldDeleteMatchingParen(self.buffer.bytes.items, cursor.head.pos);
+                                    self.deleteBackwards(cursor);
+                                    if (delete_matching_paren) self.deleteForwards(cursor);
+                                }
                                 self.clearMark();
                             },
                             c.GLFW_KEY_DELETE => {
