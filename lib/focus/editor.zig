@@ -260,8 +260,15 @@ pub const Editor = struct {
                             },
                             c.GLFW_KEY_ENTER => {
                                 for (self.cursors.items) |*cursor| {
-                                    self.insert(cursor, &[1]u8{'\n'});
-                                    self.indent(cursor);
+                                    if (self.buffer.language.shouldDoubleNewline(cursor.head.pos)) {
+                                        self.insert(cursor, "\n\n");
+                                        self.indent(cursor);
+                                        self.goRealUp(cursor);
+                                        self.indent(cursor);
+                                    } else {
+                                        self.insert(cursor, "\n");
+                                        self.indent(cursor);
+                                    }
                                 }
                                 self.clearMark();
                             },
@@ -271,10 +278,14 @@ pub const Editor = struct {
                     }
                 },
                 .char_input => |char_input_event| {
-                    var text = [4]u8{ 0, 0, 0, 0 };
-                    const len = std.unicode.utf8Encode(char_input_event.codepoint, &text) catch |err|
+                    var bytes = [4]u8{ 0, 0, 0, 0 };
+                    const len = std.unicode.utf8Encode(char_input_event.codepoint, &bytes) catch |err|
                         u.panic("Error encoding codepoint {}: {}", .{ char_input_event.codepoint, err });
-                    for (self.cursors.items) |*cursor| self.insert(cursor, text[0..len]);
+                    for (self.cursors.items) |*cursor| {
+                        const transform = self.buffer.language.transformCharInput(self.buffer.bytes.items, cursor.head.pos, bytes[0..len]);
+                        self.insert(cursor, transform.insert);
+                        self.updatePos(&cursor.head, @intCast(@as(isize, @intCast(cursor.head.pos)) + transform.move));
+                    }
                     self.clearMark();
                 },
                 .mouse_press => |mouse_press_event| {
@@ -956,47 +967,35 @@ pub const Editor = struct {
             }
         }
 
-        // make a new cursor to peform the indents
-        var edit_cursor = self.addCursor();
-        std.mem.swap(Cursor, edit_cursor, &self.cursors.items[0]);
-        edit_cursor = &self.cursors.items[0];
-        defer {
-            std.mem.swap(Cursor, edit_cursor, &self.cursors.items[self.cursors.items.len - 1]);
-            _ = self.cursors.pop();
-        }
-        self.goPos(edit_cursor, range[0]);
-
         // for each line in selection
+        var line_start_pos = self.buffer.getLineStart(range[0]);
         while (num_lines > 0) : (num_lines -= 1) {
 
             // work out current indent
-            self.goRealLineStart(edit_cursor);
-            const this_line_start_pos = edit_cursor.head.pos;
             var this_indent: usize = 0;
-            while (this_line_start_pos + this_indent < self.buffer.bytes.items.len and self.buffer.bytes.items[this_line_start_pos + this_indent] == ' ') {
+            while (line_start_pos + this_indent < self.buffer.bytes.items.len and self.buffer.bytes.items[line_start_pos + this_indent] == ' ') {
                 this_indent += 1;
             }
 
-            const ideal_indent = self.buffer.language.getIdealIndent(self.buffer.bytes.items, this_line_start_pos);
+            const line_end_pos = self.buffer.getLineEnd(line_start_pos);
+            const ideal_indent = self.buffer.language.getIdealIndent(self.buffer.bytes.items, line_start_pos, line_end_pos);
 
             // adjust indent
-            edit_cursor.head.pos = this_line_start_pos;
             if (this_indent > ideal_indent) {
-                self.delete(this_line_start_pos, this_line_start_pos + this_indent - ideal_indent);
+                self.delete(line_start_pos, line_start_pos + this_indent - ideal_indent);
             }
             if (this_indent < ideal_indent) {
                 const spaces = self.app.frame_allocator.alloc(u8, ideal_indent - this_indent) catch u.oom();
                 @memset(spaces, ' ');
                 // TODO this might delete the selection :S
-                const old_marked = self.marked;
+                const marked_copy = self.marked;
                 self.marked = false;
-                self.insert(edit_cursor, spaces);
-                self.marked = old_marked;
+                self.buffer.insert(line_start_pos, spaces);
+                self.marked = marked_copy;
             }
 
             // go to next line in selection
-            self.goRealLineEnd(edit_cursor);
-            self.goRight(edit_cursor);
+            line_start_pos = self.buffer.getLineEnd(line_start_pos) + 1;
         }
     }
 

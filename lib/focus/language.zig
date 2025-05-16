@@ -218,7 +218,7 @@ pub const Language = union(enum) {
         };
     }
 
-    pub fn getIdealIndent(self: Language, source: []const u8, line_start_pos: usize) usize {
+    pub fn getIdealIndent(self: Language, source: []const u8, line_start_pos: usize, line_end_pos: usize) usize {
         const anchor: struct {
             ix: usize,
             added_indent: usize,
@@ -226,9 +226,10 @@ pub const Language = union(enum) {
             if (self.getTokenIxAfter(line_start_pos)) |after_ix|
                 if (self.getParenMatches()[after_ix]) |matching_ix|
                     if (matching_ix < after_ix)
-                        // line starts with closing paren
-                        // align with the opening paren
-                        break :anchor .{ .ix = matching_ix, .added_indent = 0 };
+                        if (self.getTokenRanges()[after_ix][0] < line_end_pos)
+                            // line starts with closing paren
+                            // align with the opening paren
+                            break :anchor .{ .ix = matching_ix, .added_indent = 0 };
 
             if (self.getTokenIxBefore(line_start_pos)) |before_ix| {
                 const added_indent = self.getAddedIndent(before_ix);
@@ -302,5 +303,73 @@ pub const Language = union(enum) {
             ),
             else => {},
         }
+    }
+
+    pub fn shouldDoubleNewline(self: Language, pos: usize) bool {
+        if (self == .Clojure)
+            return false;
+
+        if (self.getTokenIxAfter(pos)) |after_ix|
+            if (self.getParenMatches()[after_ix]) |before_ix|
+                if (before_ix < after_ix)
+                    if (self.getTokenRanges()[after_ix][0] == pos)
+                        // the next character is a closing paren
+                        return true;
+
+        return false;
+    }
+
+    const TransformCharInput = struct {
+        insert: []const u8,
+        move: isize,
+    };
+
+    pub fn transformCharInput(self: Language, source: []const u8, pos: usize, char_input: []const u8) TransformCharInput {
+        if (std.mem.eql(u8, char_input, "("))
+            return .{ .insert = "()", .move = -1 };
+
+        if (std.mem.eql(u8, char_input, "["))
+            return .{ .insert = "[]", .move = -1 };
+
+        if (std.mem.eql(u8, char_input, "{"))
+            return .{ .insert = "{}", .move = -1 };
+
+        if (std.mem.eql(u8, char_input, ")"))
+            if (pos < source.len and source[pos] == ')')
+                return .{ .insert = "", .move = 1 };
+
+        if (std.mem.eql(u8, char_input, "]"))
+            if (pos < source.len and source[pos] == ']')
+                return .{ .insert = "", .move = 1 };
+
+        if (std.mem.eql(u8, char_input, "}"))
+            if (pos < source.len and source[pos] == '}')
+                return .{ .insert = "", .move = 1 };
+
+        if (std.mem.eql(u8, char_input, "\""))
+            return if (pos > 0 and source[pos - 1] == '\\')
+                .{ .insert = "\"", .move = 0 }
+            else if (pos < source.len and source[pos] == '"')
+                .{ .insert = "", .move = 1 }
+            else
+                .{ .insert = "\"\"", .move = -1 };
+
+        if (std.mem.eql(u8, char_input, "'"))
+            return if (pos > 0 and source[pos - 1] == '\\')
+                .{ .insert = "'", .move = 0 }
+            else if (pos < source.len and source[pos] == '\'')
+                .{ .insert = "", .move = 1 }
+            else
+                .{ .insert = "''", .move = -1 };
+
+        if (self == .Zig) {
+            if (std.mem.eql(u8, char_input, "|"))
+                return if (pos < source.len and source[pos] == '|')
+                    .{ .insert = "", .move = 1 }
+                else
+                    .{ .insert = "||", .move = -1 };
+        }
+
+        return .{ .insert = char_input, .move = 0 };
     }
 };
