@@ -306,7 +306,7 @@ pub const Language = union(enum) {
     }
 
     pub fn shouldDoubleNewline(self: Language, pos: usize) bool {
-        if (self == .Clojure)
+        if (self == .Unknown or self == .Clojure)
             return false;
 
         if (self.getTokenIxAfter(pos)) |after_ix|
@@ -325,6 +325,9 @@ pub const Language = union(enum) {
     };
 
     pub fn transformCharInput(self: Language, source: []const u8, pos: usize, char_input: []const u8) TransformCharInput {
+        if (self == .Unknown)
+            return .{ .insert = char_input, .move = 0 };
+
         if (std.mem.eql(u8, char_input, "("))
             return .{ .insert = "()", .move = -1 };
 
@@ -374,7 +377,8 @@ pub const Language = union(enum) {
     }
 
     pub fn shouldDeleteMatchingParen(self: Language, source: []const u8, pos: usize) bool {
-        _ = self;
+        if (self == .Unknown)
+            return false;
 
         if (pos == 0 or pos >= source.len)
             return false;
