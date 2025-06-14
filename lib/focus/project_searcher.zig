@@ -84,6 +84,7 @@ pub const ProjectSearcher = struct {
                         .FixedStrings => "--fixed-strings",
                         .Regexp => "--regexp",
                     },
+                    "--",
                     filter,
                 },
             );
