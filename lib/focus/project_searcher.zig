@@ -75,17 +75,23 @@ pub const ProjectSearcher = struct {
             self.child_process = ChildProcess.init(
                 self.app.allocator,
                 self.project_dir,
-                &[_][]const u8{
-                    "rg",
-                    "--line-number",
-                    "--sort",
-                    "path",
-                    switch (self.filter_mode) {
-                        .FixedStrings => "--fixed-strings",
-                        .Regexp => "--regexp",
+                switch (self.filter_mode) {
+                    .FixedStrings => &[_][]const u8{
+                        "rg",
+                        "--line-number",
+                        "--sort",
+                        "path",
+                        "--",
+                        filter,
                     },
-                    "--",
-                    filter,
+                    .Regexp => &[_][]const u8{
+                        "rg",
+                        "--line-number",
+                        "--sort",
+                        "path",
+                        "--regexp",
+                        filter,
+                    },
                 },
             );
         }

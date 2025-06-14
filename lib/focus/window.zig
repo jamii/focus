@@ -187,7 +187,7 @@ pub const Window = struct {
                     .key_press, .key_repeat => |key_event| {
                         if (key_event.mods & c.GLFW_MOD_CONTROL != 0) {
                             switch (key_event.key) {
-                                c.GLFW_KEY_Q => if (self.getTopViewIfEditor() == null) self.popView(),
+                                c.GLFW_KEY_Q => self.popView(),
                                 c.GLFW_KEY_O => {
                                     const init_path = if (self.getTopViewFilename()) |filename|
                                         std.mem.concat(self.app.frame_allocator, u8, &[_][]const u8{ std.fs.path.dirname(filename).?, "/" }) catch u.oom()
