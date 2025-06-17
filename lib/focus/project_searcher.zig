@@ -81,6 +81,7 @@ pub const ProjectSearcher = struct {
                         "--line-number",
                         "--sort",
                         "path",
+                        "--fixed-strings",
                         "--",
                         filter,
                     },
