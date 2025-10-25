@@ -157,6 +157,9 @@ pub const Editor = struct {
                 .key_press, .key_repeat => |key_event| {
                     if ((key_event.mods & c.GLFW_MOD_CONTROL != 0) and (key_event.mods & c.GLFW_MOD_SHIFT != 0)) {
                         switch (key_event.key) {
+                            c.GLFW_KEY_Q => if (@import("builtin").mode == .Debug) {
+                                _ = @import("../../focus.zig").gpa.detectLeaks();
+                            },
                             c.GLFW_KEY_Z => self.redo(text_rect),
                             c.GLFW_KEY_D => self.removeLastMatch(),
                             else => {},

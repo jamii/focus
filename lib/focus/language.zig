@@ -8,6 +8,7 @@ pub const zig = @import("./language/zig.zig");
 pub const clojure = @import("./language/clojure.zig");
 pub const deno = @import("./language/deno.zig");
 pub const go = @import("./language/go.zig");
+pub const rust = @import("./language/rust.zig");
 pub const generic = @import("./language/generic.zig");
 
 pub const Language = union(enum) {
@@ -22,6 +23,7 @@ pub const Language = union(enum) {
     C: generic.State,
     Go: go.State,
     Zest: generic.State,
+    Rust: rust.State,
     Unknown,
 
     pub const Squiggly = struct {
@@ -55,6 +57,8 @@ pub const Language = union(enum) {
             .{ .Go = go.State.init(allocator, source) }
         else if (std.mem.endsWith(u8, filename, ".zs"))
             .{ .Zest = generic.State.init(allocator, "//", source) }
+        else if (std.mem.endsWith(u8, filename, ".rs"))
+            .{ .Rust = rust.State.init(allocator, source) }
         else
             .Unknown;
     }
@@ -92,7 +96,7 @@ pub const Language = union(enum) {
         return switch (self) {
             .Zig => "//",
             .Clojure => ";",
-            .Javascript, .Typescript, .Go => "//",
+            .Javascript, .Typescript, .Go, .Rust => "//",
             .Java, .Shell, .Julia, .Nix, .C, .Zest => |*state| state.comment_string,
             .Unknown => null,
         };
@@ -110,7 +114,7 @@ pub const Language = union(enum) {
 
     pub fn getTokenRanges(self: Language) []const [2]usize {
         return switch (self) {
-            inline .Javascript, .Typescript, .Go => |state| state.generic.token_ranges,
+            inline .Javascript, .Typescript, .Go, .Rust => |state| state.generic.token_ranges,
             .Unknown => &[0][2]usize{},
             inline else => |state| state.token_ranges,
         };
@@ -118,7 +122,7 @@ pub const Language = union(enum) {
 
     pub fn getParenLevels(self: Language) []const usize {
         return switch (self) {
-            inline .Javascript, .Typescript, .Go => |state| state.generic.paren_levels,
+            inline .Javascript, .Typescript, .Go, .Rust => |state| state.generic.paren_levels,
             .Unknown => &[0]?usize{},
             inline else => |state| state.paren_levels,
         };
@@ -126,7 +130,7 @@ pub const Language = union(enum) {
 
     pub fn getParenParents(self: Language) []const ?usize {
         return switch (self) {
-            inline .Javascript, .Typescript, .Go => |state| state.generic.paren_parents,
+            inline .Javascript, .Typescript, .Go, .Rust => |state| state.generic.paren_parents,
             .Unknown => &[0]?usize{},
             inline else => |state| state.paren_parents,
         };
@@ -134,7 +138,7 @@ pub const Language = union(enum) {
 
     pub fn getParenMatches(self: Language) []const ?usize {
         return switch (self) {
-            inline .Javascript, .Typescript, .Go => |state| state.generic.paren_matches,
+            inline .Javascript, .Typescript, .Go, .Rust => |state| state.generic.paren_matches,
             .Unknown => &[0]?usize{},
             inline else => |state| state.paren_matches,
         };
@@ -163,14 +167,14 @@ pub const Language = union(enum) {
         const token_ix = self.getTokenIxBefore(pos) orelse self.getTokenIxAfter(pos) orelse return null;
         switch (self) {
             inline .Zig, .Zest => |state| return if (state.tokens[token_ix] == .identifier) (state.token_ranges[token_ix]) else null,
-            .Go => |state| return if (state.generic.tokens[token_ix] == .identifier) (state.generic.token_ranges[token_ix]) else null,
+            inline .Go, .Rust => |state| return if (state.generic.tokens[token_ix] == .identifier) (state.generic.token_ranges[token_ix]) else null,
             else => return null,
         }
     }
 
     pub fn format(self: Language, frame_allocator: u.Allocator, source: []const u8) ?[]const u8 {
         return switch (self) {
-            inline .Zig, .Javascript, .Typescript, .Go => |state| state.format(frame_allocator, source),
+            inline .Zig, .Javascript, .Typescript, .Go, .Rust => |state| state.format(frame_allocator, source),
             .Unknown => null,
             inline else => stripTrailingWhitespace(frame_allocator, source),
         };
@@ -357,7 +361,7 @@ pub const Language = union(enum) {
             else
                 .{ .insert = "\"\"", .move = -1 };
 
-        if (std.mem.eql(u8, char_input, "'"))
+        if (std.mem.eql(u8, char_input, "'") and self != .Rust)
             return if (pos > 0 and source[pos - 1] == '\\')
                 .{ .insert = "'", .move = 0 }
             else if (pos < source.len and source[pos] == '\'')
@@ -365,7 +369,7 @@ pub const Language = union(enum) {
             else
                 .{ .insert = "''", .move = -1 };
 
-        if (self == .Zig) {
+        if (self == .Zig or self == .Rust) {
             if (std.mem.eql(u8, char_input, "|"))
                 return if (pos < source.len and source[pos] == '|')
                     .{ .insert = "", .move = 1 }

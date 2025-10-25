@@ -216,7 +216,7 @@ pub const Tokenizer = struct {
                     },
                     'a'...'z', 'A'...'Z' => state = .identifier,
                     '-', '0'...'9' => state = .number,
-                    '\'', '"' => {
+                    '"' => { //  '\'',
                         quote_char = char;
                         state = .string;
                     },
