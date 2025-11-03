@@ -115,6 +115,7 @@ pub const Language = union(enum) {
     pub fn getTokenRanges(self: Language) []const [2]usize {
         return switch (self) {
             inline .Javascript, .Typescript, .Go, .Rust => |state| state.generic.token_ranges,
+            .Zig => |state| state.token_ranges.items,
             .Unknown => &[0][2]usize{},
             inline else => |state| state.token_ranges,
         };
@@ -123,6 +124,7 @@ pub const Language = union(enum) {
     pub fn getParenLevels(self: Language) []const usize {
         return switch (self) {
             inline .Javascript, .Typescript, .Go, .Rust => |state| state.generic.paren_levels,
+            .Zig => |state| state.paren_levels.items,
             .Unknown => &[0]?usize{},
             inline else => |state| state.paren_levels,
         };
@@ -131,6 +133,7 @@ pub const Language = union(enum) {
     pub fn getParenParents(self: Language) []const ?usize {
         return switch (self) {
             inline .Javascript, .Typescript, .Go, .Rust => |state| state.generic.paren_parents,
+            .Zig => |state| state.paren_parents.items,
             .Unknown => &[0]?usize{},
             inline else => |state| state.paren_parents,
         };
@@ -139,6 +142,7 @@ pub const Language = union(enum) {
     pub fn getParenMatches(self: Language) []const ?usize {
         return switch (self) {
             inline .Javascript, .Typescript, .Go, .Rust => |state| state.generic.paren_matches,
+            .Zig => |state| state.paren_matches.items,
             .Unknown => &[0]?usize{},
             inline else => |state| state.paren_matches,
         };
@@ -166,7 +170,8 @@ pub const Language = union(enum) {
     pub fn getIdentifierRangeAt(self: Language, pos: usize) ?[2]usize {
         const token_ix = self.getTokenIxBefore(pos) orelse self.getTokenIxAfter(pos) orelse return null;
         switch (self) {
-            inline .Zig, .Zest => |state| return if (state.tokens[token_ix] == .identifier) (state.token_ranges[token_ix]) else null,
+            .Zig => |state| return if (state.tokens.items[token_ix] == .identifier) (state.token_ranges.items[token_ix]) else null,
+            .Zest => |state| return if (state.tokens[token_ix] == .identifier) (state.token_ranges[token_ix]) else null,
             inline .Go, .Rust => |state| return if (state.generic.tokens[token_ix] == .identifier) (state.generic.token_ranges[token_ix]) else null,
             else => return null,
         }
@@ -272,7 +277,7 @@ pub const Language = union(enum) {
 
     pub fn getSquigglies(self: Language) []const Language.Squiggly {
         switch (self) {
-            .Zig => |state| return state.squigglies,
+            .Zig => |state| return state.squigglies.items,
             else => return &[0]Language.Squiggly{},
         }
     }
