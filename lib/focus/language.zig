@@ -55,7 +55,7 @@ pub const Language = union(enum) {
             .{ .C = generic.State.init(allocator, "//", source) }
         else if (std.mem.endsWith(u8, filename, ".go") or (std.mem.endsWith(u8, filename, ".go.tmpl")))
             .{ .Go = go.State.init(allocator, source) }
-        else if (std.mem.endsWith(u8, filename, ".zs"))
+        else if (std.mem.endsWith(u8, filename, ".zest"))
             .{ .Zest = generic.State.init(allocator, "//", source) }
         else if (std.mem.endsWith(u8, filename, ".rs"))
             .{ .Rust = rust.State.init(allocator, source) }
