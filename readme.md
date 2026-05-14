@@ -67,3 +67,6 @@ Thinks:
   * search list wants to subscribe to text changes in search field
   * maybe register (from, to, fn) in list of subscriptions? 
   * need to order updates along graph! maybe just order docs/editors and don't allow backwards edges
+  * flymake mode wants to listen to save events
+  * want to batch events - only one update call per frame
+    * exception is ranges, which need to update on every edit batch or the editor will break? probably a separate system
