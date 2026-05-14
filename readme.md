@@ -1,5 +1,7 @@
 Wishlist:
-* more text structure (https://matklad.github.io/2023/03/08/an-engine-for-an-editor.html)
+* more text structure 
+  * https://matklad.github.io/2023/03/08/an-engine-for-an-editor.html
+  * https://github.com/matklad/abont
   * structured forms rather than adhoc ui
   * eg code folding - surprisingly hard to support simply
   * in general want it to be much easier to add ui. not custom per task.
@@ -34,6 +36,7 @@ Wishlist:
 * lsp
 * magit-style menus
 * magit (https://matklad.github.io/2026/03/05/jj-lsp-followup.html)
+* file tree / dired
 * tentative ideas for agent integration
   * point agent at special comments, open magit diff, add review comments, run again
   * conversation tree?
@@ -45,6 +48,9 @@ Short-term roadmap:
 * input + render
 * test harness + recordings
 * ranges + readonly + formatting
+
+Thinks:
+* ranges
   * do ranges have identity, or do they map chars to values? maybe value vs identity are the two types
     * if a range has identity, what happens if we cut part of it out? doesn't follow the text
   * can we do wrapping with ranges? a little overhead, but a nice simplification
@@ -53,3 +59,11 @@ Short-term roadmap:
   * store ranges and value separately so can remap eg for syntax highlighting
   * flymake mode should map errors to rangeset? then errors move as you type, and only reset when re-compiled
   * imagine using range to delimit a form input. don't want it to be possible to accidentally type in the wrong space. maybe should use ranges either side to delimit, and then look at the text between them
+  * might want to prevent a range from having newlines. input filtering in general is useful.
+* various things want to subscribe to changes in docs and/or editors. have to think carefully about sequencing etc.
+  * eg multi-doc view wants to subscribe to edits in underlying doc
+    * does the underlying doc subscribe to multi-doc, or is multi-doc responsible for feeding changes back. don't want cycles in the graph, probably
+  * preview on search wants to subscribe to cursor changes in search list
+  * search list wants to subscribe to text changes in search field
+  * maybe register (from, to, fn) in list of subscriptions? 
+  * need to order updates along graph! maybe just order docs/editors and don't allow backwards edges
