@@ -28,6 +28,8 @@ pub use fontdue::{Font, FontSettings};
 // 126 ('~'). 95 characters total.
 const ASCII_FIRST: u32 = 32;
 const ASCII_LAST: u32 = 126;
+const NUM_GLYPHS: usize = (ASCII_LAST - ASCII_FIRST + 1) as usize;
+const ATLAS_COLS: u32 = 16;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Rect {
@@ -84,14 +86,16 @@ fn classify_clip(rect: Rect, clip: Rect) -> ClipState {
 // `cell_w × cell_h` texels, with the glyph pre-positioned at its
 // baseline-relative offset within that cell — so drawing a character is
 // just "blit the whole cell at (pen_x, y)". No per-glyph bearings.
+#[derive(Clone, Copy)]
 pub struct Glyph {
     pub atlas_x: u32,
     pub atlas_y: u32,
 }
 
 pub struct Atlas {
-    // RGBA8 texture, laid out row-major. Painted glyph texels are
-    // (255, 255, 255, alpha); the white_rect texel is (255, 255, 255, 255).
+    // R8 texture, laid out row-major. Each texel stores coverage alpha
+    // ∈ [0, 255]; the fragment shader supplies the color. The white_rect
+    // texel is just 255 (= "fully opaque").
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
@@ -122,7 +126,7 @@ impl Atlas {
 
         // Rasterize all printable ASCII; collect bitmaps + metrics and
         // find the constant advance width.
-        let mut raster: Vec<(char, fontdue::Metrics, Vec<u8>)> = Vec::new();
+        let mut raster: Vec<(char, fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(NUM_GLYPHS);
         let mut max_advance = 0.0_f32;
         for cp in ASCII_FIRST..=ASCII_LAST {
             let ch = char::from_u32(cp).unwrap();
@@ -137,27 +141,26 @@ impl Atlas {
         // Layout: ASCII glyphs, then tofu, then white texel. Each lives
         // in its own cell. 95 + 1 + 1 = 97 cells = 7 rows × 16 cols with
         // 15 unused cells at the end.
-        let cols = 16u32;
-        let tofu_idx = raster.len() as u32;
+        let tofu_idx = NUM_GLYPHS as u32;
         let white_idx = tofu_idx + 1;
-        let rows = (white_idx + 1).div_ceil(cols);
-        let atlas_w = cols * cell_w;
+        let rows = (white_idx + 1).div_ceil(ATLAS_COLS);
+        let atlas_w = ATLAS_COLS * cell_w;
         let atlas_h = rows * cell_h;
+        let mut pixels = vec![0u8; (atlas_w * atlas_h) as usize];
 
-        let mut pixels = vec![0u8; (atlas_w * atlas_h * 4) as usize];
-        let mut glyphs = HashMap::new();
+        let cell_origin = |idx: u32| {
+            ((idx % ATLAS_COLS) * cell_w, (idx / ATLAS_COLS) * cell_h)
+        };
 
         // For each glyph, paint its bitmap into its cell at the
         // bearing-offset that puts it on the cell's baseline. The cell's
-        // baseline is at y = ascent from the top.
-        //   bitmap_top_in_cell  = ascent - (ymin + height) = ascent - bearing_y_from_baseline
-        //   bitmap_left_in_cell = xmin
+        // baseline is at y = ascent from the top:
+        //   bitmap_top_in_cell  = ascent - (ymin + height)
+        //                       = ascent - distance from baseline to top of bitmap
+        //   bitmap_left_in_cell = xmin (fontdue's left side bearing)
+        let mut glyphs = HashMap::with_capacity(NUM_GLYPHS);
         for (i, (ch, m, bitmap)) in raster.iter().enumerate() {
-            let col = i as u32 % cols;
-            let row = i as u32 / cols;
-            let cell_x = col * cell_w;
-            let cell_y = row * cell_h;
-
+            let (cell_x, cell_y) = cell_origin(i as u32);
             let bitmap_left = m.xmin;
             let bitmap_top = ascent as i32 - (m.ymin + m.height as i32);
             let gw = m.width as i32;
@@ -167,31 +170,22 @@ impl Atlas {
                 for k in 0..gw {
                     let cx = bitmap_left + k;
                     let cy = bitmap_top + j;
-                    // Clamp any glyph that overhangs its cell (none
-                    // expected for printable ASCII in Fira Code, but
-                    // defensive).
+                    // Clamp glyphs that overhang their cell (not
+                    // expected for printable ASCII, but defensive).
                     if cx < 0 || cy < 0 || cx >= cell_w as i32 || cy >= cell_h as i32 {
                         continue;
                     }
-                    let src_idx = (j * gw + k) as usize;
-                    let dst_idx =
-                        (((cell_y + cy as u32) * atlas_w + (cell_x + cx as u32)) * 4) as usize;
-                    pixels[dst_idx] = 255;
-                    pixels[dst_idx + 1] = 255;
-                    pixels[dst_idx + 2] = 255;
-                    pixels[dst_idx + 3] = bitmap[src_idx];
+                    let dst = ((cell_y + cy as u32) * atlas_w + (cell_x + cx as u32)) as usize;
+                    pixels[dst] = bitmap[(j * gw + k) as usize];
                 }
             }
 
             glyphs.insert(*ch, Glyph { atlas_x: cell_x, atlas_y: cell_y });
         }
 
-        // Tofu: hollow rectangle painted into its own cell. Margins so
-        // the box visually sits in the cap-letter region.
-        let tofu_col = tofu_idx % cols;
-        let tofu_row = tofu_idx / cols;
-        let tx = tofu_col * cell_w;
-        let ty = tofu_row * cell_h;
+        // Tofu: hollow rectangle painted into its own cell, with margins
+        // so the box visually sits in the cap-letter region.
+        let (tx, ty) = cell_origin(tofu_idx);
         let margin_x = (cell_w / 8).max(1);
         let margin_y = (cell_h / 5).max(2);
         let tw = cell_w - 2 * margin_x;
@@ -199,26 +193,18 @@ impl Atlas {
         for j in 0..th {
             for k in 0..tw {
                 let on_border = j == 0 || j == th - 1 || k == 0 || k == tw - 1;
-                let dst = (((ty + margin_y + j) * atlas_w + (tx + margin_x + k)) * 4) as usize;
-                pixels[dst] = 255;
-                pixels[dst + 1] = 255;
-                pixels[dst + 2] = 255;
-                pixels[dst + 3] = if on_border { 255 } else { 0 };
+                if on_border {
+                    let dst = ((ty + margin_y + j) * atlas_w + (tx + margin_x + k)) as usize;
+                    pixels[dst] = 255;
+                }
             }
         }
         let missing = Glyph { atlas_x: tx, atlas_y: ty };
 
         // White texel in its own cell — never sampled as part of a glyph
         // quad, so it doesn't pollute the tofu render.
-        let white_col = white_idx % cols;
-        let white_row = white_idx / cols;
-        let white_x = white_col * cell_w;
-        let white_y = white_row * cell_h;
-        let white_pixel = ((white_y * atlas_w + white_x) * 4) as usize;
-        pixels[white_pixel] = 255;
-        pixels[white_pixel + 1] = 255;
-        pixels[white_pixel + 2] = 255;
-        pixels[white_pixel + 3] = 255;
+        let (white_x, white_y) = cell_origin(white_idx);
+        pixels[(white_y * atlas_w + white_x) as usize] = 255;
 
         Atlas {
             width: atlas_w,
@@ -348,10 +334,8 @@ impl Frame {
         }
         let mut pen_x = x;
         for ch in text.chars() {
-            // Unknown chars fall back to the tofu glyph (same role as
-            // TTF's glyph 0). Space is in the atlas with an empty cell —
-            // we still emit the quad; the transparent texels just blend
-            // to nothing.
+            // Unknown chars fall back to the tofu (same role as TTF's
+            // glyph 0).
             let g = atlas.glyphs.get(&ch).unwrap_or(&atlas.missing);
             self.commands.push(DrawCommand::Quad(Quad {
                 dst_x: pen_x,

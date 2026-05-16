@@ -40,9 +40,8 @@ fn flip_rows(pixels: &mut [u8], width: u32, height: u32) {
 }
 
 fn atlas_to_debug_rgba(atlas: &Atlas) -> Vec<u8> {
-    let mut out = vec![0u8; atlas.pixels.len()];
-    for i in 0..(atlas.width * atlas.height) as usize {
-        let a = atlas.pixels[i * 4 + 3];
+    let mut out = vec![0u8; atlas.pixels.len() * 4];
+    for (i, &a) in atlas.pixels.iter().enumerate() {
         let inv = 255 - a;
         out[i * 4] = inv;
         out[i * 4 + 1] = inv;
@@ -169,6 +168,7 @@ fn renders_hello_world() {
     let atlas = Atlas::build(&font, 32.0);
     assert!(atlas.glyphs.contains_key(&'H'));
     assert!(atlas.glyphs.contains_key(&'~'));
+    assert!(!atlas.glyphs.contains_key(&'→'));
 
     let out_dir = Path::new("target/test-output");
     fs::create_dir_all(out_dir).unwrap();
