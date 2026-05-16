@@ -14,9 +14,7 @@
 //     change, and it lets the rect stay in the current batch;
 //   * draw_text emits a SetClip if (and only if) the text bounding box is
 //     partially outside the current clip, then a SetClip back to "no clip"
-//     after the glyph quads. Per-glyph software clipping would mean
-//     trimming each quad's dst rect *and* its UVs proportionally — easy to
-//     get wrong, which is what happened in master.
+//     after the glyph quads.
 //
 // The atlas is RGBA8 with every glyph stored as (255, 255, 255, alpha) plus
 // a single solid-white texel. Combined with the renderer's per-vertex color
@@ -31,22 +29,12 @@ pub use fontdue::{Font, FontSettings};
 const ASCII_FIRST: u32 = 32;
 const ASCII_LAST: u32 = 126;
 
-// =====================================================================
-// Rectangles + clip checks
-// =====================================================================
-
 #[derive(Clone, Copy, Debug)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,
     pub w: f32,
     pub h: f32,
-}
-
-impl Rect {
-    pub fn new(x: f32, y: f32, w: f32, h: f32) -> Self {
-        Self { x, y, w, h }
-    }
 }
 
 // Axis-aligned intersection. Returns a rect with non-positive w/h when the
@@ -92,24 +80,30 @@ fn classify_clip(rect: Rect, clip: Rect) -> ClipState {
     ClipState::Partial
 }
 
-// =====================================================================
-// Atlas
-// =====================================================================
-
 // Per-glyph data. Coordinate conventions throughout this module:
 //   * x increases to the right, y increases downward (screen convention).
 //   * "Baseline" is the imaginary line letters sit on. Descenders ('g',
 //     'y') hang below it.
 //   * "Pen position" is where we'd be if we hadn't drawn this glyph yet,
 //     with y at the baseline.
+//
+// No `advance` field: this codebase assumes monospaced fonts, so the
+// horizontal step per glyph is just Atlas::cell_width. Bearings stay
+// per-glyph because each glyph's bitmap sits at a different offset
+// within its cell.
 pub struct Glyph {
     pub atlas_x: u32,
     pub atlas_y: u32,
     pub width: u32,
     pub height: u32,
+    // Horizontal offset from the cell's left edge to the glyph's left
+    // edge. 'i' has a large bearing (centered in the cell); 'M' has a
+    // small one.
     pub bearing_x: f32,
+    // Vertical offset from the baseline up to the glyph's top edge
+    // (positive = above baseline). 'g' has a small bearing (descender);
+    // 'l' has a large one.
     pub bearing_y: f32,
-    pub advance: f32,
 }
 
 pub struct Atlas {
@@ -127,7 +121,15 @@ pub struct Atlas {
     pub white_x: u32,
     pub white_y: u32,
 
+    // Horizontal advance per character. Constant because we assume the
+    // font is monospaced.
+    pub cell_width: f32,
+    // Pixels from the top of a line down to the baseline. Used to convert
+    // a "top-left-of-line" position into a baseline y for laying out
+    // glyphs, since glyph bearings are measured relative to the baseline.
     pub ascent: f32,
+    // Recommended vertical distance between successive baselines. Sum of
+    // ascent + descent + line gap reported by the font.
     pub line_height: f32,
 }
 
@@ -135,15 +137,18 @@ impl Atlas {
     pub fn build(font: &Font, px_size: f32) -> Self {
         let line = font.horizontal_line_metrics(px_size).unwrap();
 
-        // First pass: rasterize everything, find max cell dimensions.
+        // First pass: rasterize everything, find max cell dimensions
+        // and the (constant) advance width.
         let mut raster: Vec<(char, fontdue::Metrics, Vec<u8>)> = Vec::new();
         let mut max_w = 1u32;
         let mut max_h = 1u32;
+        let mut cell_width = 0.0_f32;
         for cp in ASCII_FIRST..=ASCII_LAST {
             let ch = char::from_u32(cp).unwrap();
             let (m, bitmap) = font.rasterize(ch, px_size);
             max_w = max_w.max(m.width as u32);
             max_h = max_h.max(m.height as u32);
+            cell_width = cell_width.max(m.advance_width);
             raster.push((ch, m, bitmap));
         }
 
@@ -188,7 +193,6 @@ impl Atlas {
                     height: gh,
                     bearing_x: m.xmin as f32,
                     bearing_y: (m.ymin + m.height as i32) as f32,
-                    advance: m.advance_width,
                 },
             );
         }
@@ -209,21 +213,12 @@ impl Atlas {
             glyphs,
             white_x,
             white_y,
+            cell_width,
             ascent: line.ascent,
             line_height: line.new_line_size,
         }
     }
-
-    fn measure_text(&self, text: &str) -> f32 {
-        text.chars()
-            .map(|c| self.glyphs.get(&c).map(|g| g.advance).unwrap_or(0.0))
-            .sum()
-    }
 }
-
-// =====================================================================
-// Quad
-// =====================================================================
 
 // A rectangle to draw: `dst_*` is screen-space (in pixels), `src_*` is
 // atlas-space (in texels), `color` is the per-vertex color modulated
@@ -243,10 +238,6 @@ pub struct Quad {
     pub src_h: u32,
     pub color: [u8; 4],
 }
-
-// =====================================================================
-// Draw-command list (microui-style)
-// =====================================================================
 
 #[derive(Clone, Debug)]
 pub enum DrawCommand {
@@ -270,7 +261,7 @@ impl Frame {
     pub fn new(screen_w: f32, screen_h: f32) -> Self {
         Self {
             commands: Vec::new(),
-            clip_stack: vec![Rect::new(0.0, 0.0, screen_w, screen_h)],
+            clip_stack: vec![Rect { x: 0.0, y: 0.0, w: screen_w, h: screen_h }],
         }
     }
 
@@ -325,7 +316,12 @@ impl Frame {
     /// scissor only kicks in for this draw.
     pub fn draw_text(&mut self, atlas: &Atlas, text: &str, x: f32, y: f32, color: [u8; 4]) {
         let clip = self.current_clip();
-        let bbox = Rect::new(x, y, atlas.measure_text(text), atlas.line_height);
+        let bbox = Rect {
+            x,
+            y,
+            w: atlas.cell_width * text.chars().count() as f32,
+            h: atlas.line_height,
+        };
         let state = classify_clip(bbox, clip);
         if state == ClipState::Outside {
             return;
@@ -337,10 +333,12 @@ impl Frame {
         let baseline = y + atlas.ascent;
         let mut pen_x = x;
         for ch in text.chars() {
-            let Some(g) = atlas.glyphs.get(&ch) else {
-                continue;
-            };
-            if g.width > 0 && g.height > 0 {
+            // Unknown chars (none in our printable-ASCII atlas, but in
+            // principle) still consume a cell — the line stays aligned.
+            if let Some(g) = atlas.glyphs.get(&ch)
+                && g.width > 0
+                && g.height > 0
+            {
                 self.commands.push(DrawCommand::Quad(Quad {
                     dst_x: pen_x + g.bearing_x,
                     dst_y: baseline - g.bearing_y,
@@ -353,11 +351,10 @@ impl Frame {
                     color,
                 }));
             }
-            pen_x += g.advance;
+            pen_x += atlas.cell_width;
         }
         if needs_scissor {
             self.commands.push(DrawCommand::SetClip(self.clip_stack[0]));
         }
     }
 }
-

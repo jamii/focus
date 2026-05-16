@@ -16,7 +16,7 @@
 //                    anything about windowing — works the same against a
 //                    swap-chain back buffer or an offscreen FBO.
 //
-// Per-frame drawing recipe (modelled on the Zig editor on master):
+// Per-frame drawing recipe:
 //
 //   1. one RGBA texture holds every glyph as (255,255,255,alpha) plus a
 //      solid-white texel for flat-colored rectangles;
@@ -90,12 +90,12 @@ impl State {
 
         // A clip rect deliberately narrower than the text — the right side
         // of "hello world" will get scissored off.
-        let clip = Rect::new(
-            TEXT_X - 4.0,
-            TEXT_Y - 4.0,
-            180.0,
-            self.atlas.line_height + 8.0,
-        );
+        let clip = Rect {
+            x: TEXT_X - 4.0,
+            y: TEXT_Y - 4.0,
+            w: 180.0,
+            h: self.atlas.line_height + 8.0,
+        };
         frame.push_clip_rect(clip);
         // The highlight is the clip box itself — software-trimmed inside
         // draw_rect, so it never overflows.
@@ -117,7 +117,6 @@ impl State {
     }
 }
 
-#[derive(Default)]
 struct App {
     state: Option<State>,
 }
@@ -235,6 +234,6 @@ impl ApplicationHandler for App {
 fn main() {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App::default();
+    let mut app = App { state: None };
     event_loop.run_app(&mut app).unwrap();
 }

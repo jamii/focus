@@ -183,7 +183,12 @@ fn renders_hello_world() {
     unsafe { renderer.upload_atlas(&atlas) };
 
     let mut frame = Frame::new(W as f32, H as f32);
-    let clip = Rect::new(16.0, 16.0, 180.0, atlas.line_height + 8.0);
+    let clip = Rect {
+        x: 16.0,
+        y: 16.0,
+        w: 180.0,
+        h: atlas.line_height + 8.0,
+    };
     frame.push_clip_rect(clip);
     frame.draw_rect(&atlas, clip, [255, 240, 170, 255]);
     frame.draw_text(&atlas, "hello world", 20.0, 20.0, [30, 30, 40, 255]);
