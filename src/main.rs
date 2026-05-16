@@ -45,7 +45,16 @@ use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
+use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::{Window, WindowId};
+
+// Use a distinct title + app_id in debug builds so a niri window-rule can
+// match only the dev instance (e.g. `open-focused false`).
+const APP_ID: &str = if cfg!(debug_assertions) {
+    "focus-debug"
+} else {
+    "focus"
+};
 
 // =====================================================================
 // Shaders
@@ -475,7 +484,8 @@ impl ApplicationHandler for App {
         }
 
         let window_attrs = Window::default_attributes()
-            .with_title("focus")
+            .with_title(APP_ID)
+            .with_name(APP_ID, "")
             .with_inner_size(LogicalSize::new(800, 600));
 
         let template = ConfigTemplateBuilder::new().with_alpha_size(8);
