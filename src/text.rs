@@ -4,9 +4,9 @@
 //   * the "editor" side builds a Frame: a sequence of DrawCommands made of
 //     Quads (colored textured rectangles) interleaved with SetClip commands
 //     (axis-aligned scissor rects);
-//   * the renderer (whether GPU or CPU) walks the commands in order, batching
-//     consecutive Quads into a single draw call and switching scissor
-//     whenever it hits a SetClip.
+//   * the renderer (see crate::render) walks the commands in order,
+//     batching consecutive Quads into a single draw call and switching
+//     scissor whenever it hits a SetClip.
 //
 // Clipping itself is hybrid:
 //   * draw_rect intersects in software — trimming a rectangle to its clip
@@ -24,7 +24,7 @@
 
 use std::collections::HashMap;
 
-use fontdue::{Font, FontSettings};
+pub use fontdue::{Font, FontSettings};
 
 // We only handle printable ASCII for now — code points 32 (' ') through
 // 126 ('~'). 95 characters total.
@@ -132,8 +132,7 @@ pub struct Atlas {
 }
 
 impl Atlas {
-    pub fn build(font_bytes: &[u8], px_size: f32) -> Self {
-        let font = Font::from_bytes(font_bytes, FontSettings::default()).unwrap();
+    pub fn build(font: &Font, px_size: f32) -> Self {
         let line = font.horizontal_line_metrics(px_size).unwrap();
 
         // First pass: rasterize everything, find max cell dimensions.
@@ -223,7 +222,7 @@ impl Atlas {
 }
 
 // =====================================================================
-// Quad and primitive emitters
+// Quad
 // =====================================================================
 
 // A rectangle to draw: `dst_*` is screen-space (in pixels), `src_*` is
@@ -245,54 +244,6 @@ pub struct Quad {
     pub color: [u8; 4],
 }
 
-// Walk a string and produce one Quad per visible character, all tinted
-// with `color`. (x, y) is the top-left of the line's bounding box;
-// internally we move the pen along the baseline at y + atlas.ascent.
-// Characters whose bitmap is empty (notably space) emit no quad but do
-// advance the pen.
-pub fn layout_text(atlas: &Atlas, text: &str, x: f32, y: f32, color: [u8; 4]) -> Vec<Quad> {
-    let baseline = y + atlas.ascent;
-    let mut pen_x = x;
-    let mut quads = Vec::new();
-    for ch in text.chars() {
-        let Some(g) = atlas.glyphs.get(&ch) else {
-            continue;
-        };
-        if g.width > 0 && g.height > 0 {
-            quads.push(Quad {
-                dst_x: pen_x + g.bearing_x,
-                dst_y: baseline - g.bearing_y,
-                dst_w: g.width as f32,
-                dst_h: g.height as f32,
-                src_x: g.atlas_x,
-                src_y: g.atlas_y,
-                src_w: g.width,
-                src_h: g.height,
-                color,
-            });
-        }
-        pen_x += g.advance;
-    }
-    quads
-}
-
-// Flat-colored rectangle using the atlas's white_rect. The GPU samples
-// solid white across the whole quad and the per-vertex color comes through
-// unchanged.
-pub fn solid_rect(atlas: &Atlas, x: f32, y: f32, w: f32, h: f32, color: [u8; 4]) -> Quad {
-    Quad {
-        dst_x: x,
-        dst_y: y,
-        dst_w: w,
-        dst_h: h,
-        src_x: atlas.white_x,
-        src_y: atlas.white_y,
-        src_w: 1,
-        src_h: 1,
-        color,
-    }
-}
-
 // =====================================================================
 // Draw-command list (microui-style)
 // =====================================================================
@@ -306,22 +257,20 @@ pub enum DrawCommand {
 // A frame's worth of drawing, built up by the "editor" and consumed by the
 // renderer. Maintains a clip-rect stack; each push intersects with the
 // current top, so pushing only ever shrinks the clip.
+//
+// clip_stack[0] is the full screen rect — also serves as the "no clip"
+// sentinel emitted as SetClip after a partially-clipped text draw to
+// release the scissor.
 pub struct Frame {
     commands: Vec<DrawCommand>,
     clip_stack: Vec<Rect>,
-    // The sentinel "no clip" rect — the renderer's GL_SCISSOR_TEST is
-    // always on, so we set the scissor to this rect to mean "draw
-    // everywhere". Same idea as microui's `unclipped_rect`.
-    unclipped: Rect,
 }
 
 impl Frame {
     pub fn new(screen_w: f32, screen_h: f32) -> Self {
-        let unclipped = Rect::new(0.0, 0.0, screen_w, screen_h);
         Self {
             commands: Vec::new(),
-            clip_stack: vec![unclipped],
-            unclipped,
+            clip_stack: vec![Rect::new(0.0, 0.0, screen_w, screen_h)],
         }
     }
 
@@ -329,7 +278,7 @@ impl Frame {
         &self.commands
     }
 
-    pub fn current_clip(&self) -> Rect {
+    fn current_clip(&self) -> Rect {
         *self.clip_stack.last().unwrap()
     }
 
@@ -353,108 +302,62 @@ impl Frame {
     pub fn draw_rect(&mut self, atlas: &Atlas, rect: Rect, color: [u8; 4]) {
         let trimmed = intersect_rects(rect, self.current_clip());
         if trimmed.w > 0.0 && trimmed.h > 0.0 {
-            self.commands.push(DrawCommand::Quad(solid_rect(
-                atlas, trimmed.x, trimmed.y, trimmed.w, trimmed.h, color,
-            )));
+            self.commands.push(DrawCommand::Quad(Quad {
+                dst_x: trimmed.x,
+                dst_y: trimmed.y,
+                dst_w: trimmed.w,
+                dst_h: trimmed.h,
+                src_x: atlas.white_x,
+                src_y: atlas.white_y,
+                src_w: 1,
+                src_h: 1,
+                color,
+            }));
         }
     }
 
-    /// Text, clipped via GL scissor if necessary.
+    /// Text, clipped via GL scissor if necessary. (x, y) is the top-left
+    /// of the line's bounding box.
     ///
-    /// If the text's bounding box is fully inside the current clip, we
-    /// just emit the glyph quads. If it's fully outside, we emit nothing.
-    /// If it's partial, we bracket the glyph quads with SetClip commands:
-    /// scissor to the clip rect for the duration of the text, then scissor
-    /// back to "unclipped" so following draws don't pay the cost.
+    /// If the bounding box is fully inside the current clip, we just emit
+    /// glyph quads. If fully outside, we emit nothing. If partial, we
+    /// bracket the glyphs with SetClip(clip) / SetClip(screen) so the
+    /// scissor only kicks in for this draw.
     pub fn draw_text(&mut self, atlas: &Atlas, text: &str, x: f32, y: f32, color: [u8; 4]) {
-        let bbox = Rect::new(x, y, atlas.measure_text(text), atlas.line_height);
         let clip = self.current_clip();
-        match classify_clip(bbox, clip) {
-            ClipState::Outside => return,
-            ClipState::Inside => {
-                for q in layout_text(atlas, text, x, y, color) {
-                    self.commands.push(DrawCommand::Quad(q));
-                }
-            }
-            ClipState::Partial => {
-                self.commands.push(DrawCommand::SetClip(clip));
-                for q in layout_text(atlas, text, x, y, color) {
-                    self.commands.push(DrawCommand::Quad(q));
-                }
-                self.commands.push(DrawCommand::SetClip(self.unclipped));
-            }
+        let bbox = Rect::new(x, y, atlas.measure_text(text), atlas.line_height);
+        let state = classify_clip(bbox, clip);
+        if state == ClipState::Outside {
+            return;
         }
-    }
-}
-
-// =====================================================================
-// CPU rasterizer (test harness)
-// =====================================================================
-
-// Walk a command list and produce an RGBA8 buffer. Mirrors what the GPU
-// renderer does: GL_SCISSOR_TEST is conceptually always on; SetClip
-// updates the current scissor; Quads are rasterized, with any pixels
-// outside the scissor discarded.
-pub fn composite(atlas: &Atlas, commands: &[DrawCommand], width: u32, height: u32) -> Vec<u8> {
-    let mut buf = vec![255u8; (width * height * 4) as usize];
-    let mut scissor = Rect::new(0.0, 0.0, width as f32, height as f32);
-
-    for cmd in commands {
-        match cmd {
-            DrawCommand::SetClip(r) => scissor = *r,
-            DrawCommand::Quad(q) => rasterize_quad(atlas, q, scissor, &mut buf, width, height),
+        let needs_scissor = state == ClipState::Partial;
+        if needs_scissor {
+            self.commands.push(DrawCommand::SetClip(clip));
         }
-    }
-    buf
-}
-
-fn rasterize_quad(atlas: &Atlas, q: &Quad, scissor: Rect, buf: &mut [u8], width: u32, height: u32) {
-    let dx0 = q.dst_x.round() as i32;
-    let dy0 = q.dst_y.round() as i32;
-    let dw = q.dst_w.round() as i32;
-    let dh = q.dst_h.round() as i32;
-    if dw <= 0 || dh <= 0 {
-        return;
-    }
-
-    let sx0 = scissor.x.floor() as i32;
-    let sy0 = scissor.y.floor() as i32;
-    let sx1 = (scissor.x + scissor.w).ceil() as i32;
-    let sy1 = (scissor.y + scissor.h).ceil() as i32;
-
-    for j in 0..dh {
-        let dy = dy0 + j;
-        if dy < sy0 || dy >= sy1 || dy < 0 || dy >= height as i32 {
-            continue;
-        }
-        for i in 0..dw {
-            let dx = dx0 + i;
-            if dx < sx0 || dx >= sx1 || dx < 0 || dx >= width as i32 {
+        let baseline = y + atlas.ascent;
+        let mut pen_x = x;
+        for ch in text.chars() {
+            let Some(g) = atlas.glyphs.get(&ch) else {
                 continue;
+            };
+            if g.width > 0 && g.height > 0 {
+                self.commands.push(DrawCommand::Quad(Quad {
+                    dst_x: pen_x + g.bearing_x,
+                    dst_y: baseline - g.bearing_y,
+                    dst_w: g.width as f32,
+                    dst_h: g.height as f32,
+                    src_x: g.atlas_x,
+                    src_y: g.atlas_y,
+                    src_w: g.width,
+                    src_h: g.height,
+                    color,
+                }));
             }
-
-            // Map destination (i, j) → source texel.
-            let si = (i * q.src_w as i32 / dw).min(q.src_w as i32 - 1);
-            let sj = (j * q.src_h as i32 / dh).min(q.src_h as i32 - 1);
-            let src_idx =
-                (((q.src_y as i32 + sj) * atlas.width as i32 + (q.src_x as i32 + si)) * 4) as usize;
-
-            let ta = atlas.pixels[src_idx + 3] as f32 / 255.0;
-            let cr = q.color[0] as f32;
-            let cg = q.color[1] as f32;
-            let cb = q.color[2] as f32;
-            let ca = q.color[3] as f32 / 255.0;
-            let sa = ca * ta;
-
-            let idx = ((dy as u32 * width + dx as u32) * 4) as usize;
-            let dr = buf[idx] as f32;
-            let dg = buf[idx + 1] as f32;
-            let db = buf[idx + 2] as f32;
-
-            buf[idx] = (cr * sa + dr * (1.0 - sa)) as u8;
-            buf[idx + 1] = (cg * sa + dg * (1.0 - sa)) as u8;
-            buf[idx + 2] = (cb * sa + db * (1.0 - sa)) as u8;
-            buf[idx + 3] = 255;
+            pen_x += g.advance;
+        }
+        if needs_scissor {
+            self.commands.push(DrawCommand::SetClip(self.clip_stack[0]));
         }
     }
 }
+

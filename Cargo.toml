@@ -13,3 +13,5 @@ gl = "0.14"
 
 [dev-dependencies]
 png = "0.17"
+gl = "0.14"
+khronos-egl = { version = "6", features = ["dynamic"] }
