@@ -1,0 +1,15 @@
+[package]
+name = "focus"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+winit = "0.30"
+glutin = "0.32"
+glutin-winit = "0.5"
+raw-window-handle = "0.6"
+fontdue = "0.9"
+gl = "0.14"
+
+[dev-dependencies]
+png = "0.17"
