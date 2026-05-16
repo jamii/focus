@@ -192,7 +192,7 @@ fn renders_hello_world() {
     frame.push_clip_rect(clip);
     frame.draw_rect(&atlas, clip, [255, 240, 170, 255]);
     // Non-ASCII '→' is not in the atlas and should render as a tofu box.
-    frame.draw_text(&atlas, "hello → world", 20.0, 20.0, [30, 30, 40, 255]);
+    frame.draw_text(&atlas, "hello → world".into(), 20.0, 20.0, [30, 30, 40, 255]);
     frame.pop_clip_rect();
 
     unsafe { renderer.render(frame.commands(), &atlas, W as i32, H as i32) };

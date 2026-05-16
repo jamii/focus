@@ -102,7 +102,7 @@ impl State {
         frame.draw_rect(&self.atlas, clip, HIGHLIGHT_COLOR);
         // Text overflows the right edge of the clip; the SetClip / scissor
         // pair around it cuts the trailing glyphs at their pixel edges.
-        frame.draw_text(&self.atlas, TEXT, TEXT_X, TEXT_Y, TEXT_COLOR);
+        frame.draw_text(&self.atlas, TEXT.into(), TEXT_X, TEXT_Y, TEXT_COLOR);
         frame.pop_clip_rect();
 
         unsafe {

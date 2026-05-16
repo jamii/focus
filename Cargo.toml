@@ -10,6 +10,7 @@ glutin-winit = "0.5"
 raw-window-handle = "0.6"
 fontdue = "0.9"
 gl = "0.14"
+bstr = "1"
 
 [dev-dependencies]
 png = "0.17"

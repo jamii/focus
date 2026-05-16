@@ -22,6 +22,7 @@
 
 use std::collections::HashMap;
 
+pub use bstr::{BStr, ByteSlice};
 pub use fontdue::{Font, FontSettings};
 
 // We only handle printable ASCII for now — code points 32 (' ') through
@@ -314,7 +315,7 @@ impl Frame {
     /// glyph quads. If fully outside, we emit nothing. If partial, we
     /// bracket the glyphs with SetClip(clip) / SetClip(screen) so the
     /// scissor only kicks in for this draw.
-    pub fn draw_text(&mut self, atlas: &Atlas, text: &str, x: f32, y: f32, color: [u8; 4]) {
+    pub fn draw_text(&mut self, atlas: &Atlas, text: &BStr, x: f32, y: f32, color: [u8; 4]) {
         let clip = self.current_clip();
         let cell_w = atlas.cell_w as f32;
         let cell_h = atlas.cell_h as f32;
