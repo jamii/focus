@@ -80,100 +80,102 @@ fn classify_clip(rect: Rect, clip: Rect) -> ClipState {
     ClipState::Partial
 }
 
-// Per-glyph data. Coordinate conventions throughout this module:
-//   * x increases to the right, y increases downward (screen convention).
-//   * "Baseline" is the imaginary line letters sit on. Descenders ('g',
-//     'y') hang below it.
-//   * "Pen position" is where we'd be if we hadn't drawn this glyph yet,
-//     with y at the baseline.
-//
-// No `advance` field: this codebase assumes monospaced fonts, so the
-// horizontal step per glyph is just Atlas::cell_width. Bearings stay
-// per-glyph because each glyph's bitmap sits at a different offset
-// within its cell.
+// A glyph is just the top-left of its cell in the atlas. Each cell is
+// `cell_w × cell_h` texels, with the glyph pre-positioned at its
+// baseline-relative offset within that cell — so drawing a character is
+// just "blit the whole cell at (pen_x, y)". No per-glyph bearings.
 pub struct Glyph {
     pub atlas_x: u32,
     pub atlas_y: u32,
-    pub width: u32,
-    pub height: u32,
-    // Horizontal offset from the cell's left edge to the glyph's left
-    // edge. 'i' has a large bearing (centered in the cell); 'M' has a
-    // small one.
-    pub bearing_x: f32,
-    // Vertical offset from the baseline up to the glyph's top edge
-    // (positive = above baseline). 'g' has a small bearing (descender);
-    // 'l' has a large one.
-    pub bearing_y: f32,
 }
 
 pub struct Atlas {
-    // RGBA8 texture, laid out row-major. Glyph texels are (255, 255, 255,
-    // alpha); the white_rect texel is (255, 255, 255, 255).
+    // RGBA8 texture, laid out row-major. Painted glyph texels are
+    // (255, 255, 255, alpha); the white_rect texel is (255, 255, 255, 255).
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
 
     pub glyphs: HashMap<char, Glyph>,
 
-    // Coordinates of a single solid-white texel. Sampling here gives
-    // (1, 1, 1, 1), which after the renderer's color modulation yields a
-    // flat fill of the quad's per-vertex color.
+    // Synthetic hollow-rectangle glyph used as a "tofu" for any
+    // character not in `glyphs`. Same role as TTF's glyph index 0.
+    pub missing: Glyph,
+
+    // Coordinates of a single solid-white texel. Lives in its own
+    // dedicated cell that no glyph quad ever samples; draw_rect points
+    // at it for flat-colored fills.
     pub white_x: u32,
     pub white_y: u32,
 
-    // Horizontal advance per character. Constant because we assume the
-    // font is monospaced.
-    pub cell_width: f32,
-    // Pixels from the top of a line down to the baseline. Used to convert
-    // a "top-left-of-line" position into a baseline y for laying out
-    // glyphs, since glyph bearings are measured relative to the baseline.
-    pub ascent: f32,
-    // Recommended vertical distance between successive baselines. Sum of
-    // ascent + descent + line gap reported by the font.
-    pub line_height: f32,
+    // Cell dimensions, in texels = screen pixels (we draw 1:1). cell_w
+    // is the rounded-up advance width; cell_h is the rounded-up
+    // line_height so a single cell fits any glyph from ascent to descent.
+    pub cell_w: u32,
+    pub cell_h: u32,
 }
 
 impl Atlas {
     pub fn build(font: &Font, px_size: f32) -> Self {
         let line = font.horizontal_line_metrics(px_size).unwrap();
+        let ascent = line.ascent;
 
-        // First pass: rasterize everything, find max cell dimensions
-        // and the (constant) advance width.
+        // Rasterize all printable ASCII; collect bitmaps + metrics and
+        // find the constant advance width.
         let mut raster: Vec<(char, fontdue::Metrics, Vec<u8>)> = Vec::new();
-        let mut max_w = 1u32;
-        let mut max_h = 1u32;
-        let mut cell_width = 0.0_f32;
+        let mut max_advance = 0.0_f32;
         for cp in ASCII_FIRST..=ASCII_LAST {
             let ch = char::from_u32(cp).unwrap();
             let (m, bitmap) = font.rasterize(ch, px_size);
-            max_w = max_w.max(m.width as u32);
-            max_h = max_h.max(m.height as u32);
-            cell_width = cell_width.max(m.advance_width);
+            max_advance = max_advance.max(m.advance_width);
             raster.push((ch, m, bitmap));
         }
 
-        // 16 × 6 cells holds 95 glyphs plus a spare for the white texel.
+        let cell_w = max_advance.ceil() as u32;
+        let cell_h = line.new_line_size.ceil() as u32;
+
+        // Layout: ASCII glyphs, then tofu, then white texel. Each lives
+        // in its own cell. 95 + 1 + 1 = 97 cells = 7 rows × 16 cols with
+        // 15 unused cells at the end.
         let cols = 16u32;
-        let rows = raster.len().div_ceil(cols as usize) as u32;
-        let cell_w = max_w;
-        let cell_h = max_h;
+        let tofu_idx = raster.len() as u32;
+        let white_idx = tofu_idx + 1;
+        let rows = (white_idx + 1).div_ceil(cols);
         let atlas_w = cols * cell_w;
         let atlas_h = rows * cell_h;
 
         let mut pixels = vec![0u8; (atlas_w * atlas_h * 4) as usize];
         let mut glyphs = HashMap::new();
+
+        // For each glyph, paint its bitmap into its cell at the
+        // bearing-offset that puts it on the cell's baseline. The cell's
+        // baseline is at y = ascent from the top.
+        //   bitmap_top_in_cell  = ascent - (ymin + height) = ascent - bearing_y_from_baseline
+        //   bitmap_left_in_cell = xmin
         for (i, (ch, m, bitmap)) in raster.iter().enumerate() {
             let col = i as u32 % cols;
             let row = i as u32 / cols;
-            let ax = col * cell_w;
-            let ay = row * cell_h;
-            let gw = m.width as u32;
-            let gh = m.height as u32;
+            let cell_x = col * cell_w;
+            let cell_y = row * cell_h;
+
+            let bitmap_left = m.xmin;
+            let bitmap_top = ascent as i32 - (m.ymin + m.height as i32);
+            let gw = m.width as i32;
+            let gh = m.height as i32;
 
             for j in 0..gh {
                 for k in 0..gw {
+                    let cx = bitmap_left + k;
+                    let cy = bitmap_top + j;
+                    // Clamp any glyph that overhangs its cell (none
+                    // expected for printable ASCII in Fira Code, but
+                    // defensive).
+                    if cx < 0 || cy < 0 || cx >= cell_w as i32 || cy >= cell_h as i32 {
+                        continue;
+                    }
                     let src_idx = (j * gw + k) as usize;
-                    let dst_idx = (((ay + j) * atlas_w + (ax + k)) * 4) as usize;
+                    let dst_idx =
+                        (((cell_y + cy as u32) * atlas_w + (cell_x + cx as u32)) * 4) as usize;
                     pixels[dst_idx] = 255;
                     pixels[dst_idx + 1] = 255;
                     pixels[dst_idx + 2] = 255;
@@ -181,41 +183,53 @@ impl Atlas {
                 }
             }
 
-            // fontdue uses font-coordinate y-up: ymin is the y of the
-            // bottom-most pixel relative to the baseline (negative for
-            // descenders). bearing_y = top of bitmap above baseline.
-            glyphs.insert(
-                *ch,
-                Glyph {
-                    atlas_x: ax,
-                    atlas_y: ay,
-                    width: gw,
-                    height: gh,
-                    bearing_x: m.xmin as f32,
-                    bearing_y: (m.ymin + m.height as i32) as f32,
-                },
-            );
+            glyphs.insert(*ch, Glyph { atlas_x: cell_x, atlas_y: cell_y });
         }
 
-        // White texel in the spare bottom-right cell.
-        let white_x = atlas_w - 1;
-        let white_y = atlas_h - 1;
-        let white_idx = ((white_y * atlas_w + white_x) * 4) as usize;
-        pixels[white_idx] = 255;
-        pixels[white_idx + 1] = 255;
-        pixels[white_idx + 2] = 255;
-        pixels[white_idx + 3] = 255;
+        // Tofu: hollow rectangle painted into its own cell. Margins so
+        // the box visually sits in the cap-letter region.
+        let tofu_col = tofu_idx % cols;
+        let tofu_row = tofu_idx / cols;
+        let tx = tofu_col * cell_w;
+        let ty = tofu_row * cell_h;
+        let margin_x = (cell_w / 8).max(1);
+        let margin_y = (cell_h / 5).max(2);
+        let tw = cell_w - 2 * margin_x;
+        let th = cell_h - 2 * margin_y;
+        for j in 0..th {
+            for k in 0..tw {
+                let on_border = j == 0 || j == th - 1 || k == 0 || k == tw - 1;
+                let dst = (((ty + margin_y + j) * atlas_w + (tx + margin_x + k)) * 4) as usize;
+                pixels[dst] = 255;
+                pixels[dst + 1] = 255;
+                pixels[dst + 2] = 255;
+                pixels[dst + 3] = if on_border { 255 } else { 0 };
+            }
+        }
+        let missing = Glyph { atlas_x: tx, atlas_y: ty };
+
+        // White texel in its own cell — never sampled as part of a glyph
+        // quad, so it doesn't pollute the tofu render.
+        let white_col = white_idx % cols;
+        let white_row = white_idx / cols;
+        let white_x = white_col * cell_w;
+        let white_y = white_row * cell_h;
+        let white_pixel = ((white_y * atlas_w + white_x) * 4) as usize;
+        pixels[white_pixel] = 255;
+        pixels[white_pixel + 1] = 255;
+        pixels[white_pixel + 2] = 255;
+        pixels[white_pixel + 3] = 255;
 
         Atlas {
             width: atlas_w,
             height: atlas_h,
             pixels,
             glyphs,
+            missing,
             white_x,
             white_y,
-            cell_width,
-            ascent: line.ascent,
-            line_height: line.new_line_size,
+            cell_w,
+            cell_h,
         }
     }
 }
@@ -316,11 +330,13 @@ impl Frame {
     /// scissor only kicks in for this draw.
     pub fn draw_text(&mut self, atlas: &Atlas, text: &str, x: f32, y: f32, color: [u8; 4]) {
         let clip = self.current_clip();
+        let cell_w = atlas.cell_w as f32;
+        let cell_h = atlas.cell_h as f32;
         let bbox = Rect {
             x,
             y,
-            w: atlas.cell_width * text.chars().count() as f32,
-            h: atlas.line_height,
+            w: cell_w * text.chars().count() as f32,
+            h: cell_h,
         };
         let state = classify_clip(bbox, clip);
         if state == ClipState::Outside {
@@ -330,28 +346,25 @@ impl Frame {
         if needs_scissor {
             self.commands.push(DrawCommand::SetClip(clip));
         }
-        let baseline = y + atlas.ascent;
         let mut pen_x = x;
         for ch in text.chars() {
-            // Unknown chars (none in our printable-ASCII atlas, but in
-            // principle) still consume a cell — the line stays aligned.
-            if let Some(g) = atlas.glyphs.get(&ch)
-                && g.width > 0
-                && g.height > 0
-            {
-                self.commands.push(DrawCommand::Quad(Quad {
-                    dst_x: pen_x + g.bearing_x,
-                    dst_y: baseline - g.bearing_y,
-                    dst_w: g.width as f32,
-                    dst_h: g.height as f32,
-                    src_x: g.atlas_x,
-                    src_y: g.atlas_y,
-                    src_w: g.width,
-                    src_h: g.height,
-                    color,
-                }));
-            }
-            pen_x += atlas.cell_width;
+            // Unknown chars fall back to the tofu glyph (same role as
+            // TTF's glyph 0). Space is in the atlas with an empty cell —
+            // we still emit the quad; the transparent texels just blend
+            // to nothing.
+            let g = atlas.glyphs.get(&ch).unwrap_or(&atlas.missing);
+            self.commands.push(DrawCommand::Quad(Quad {
+                dst_x: pen_x,
+                dst_y: y,
+                dst_w: cell_w,
+                dst_h: cell_h,
+                src_x: g.atlas_x,
+                src_y: g.atlas_y,
+                src_w: atlas.cell_w,
+                src_h: atlas.cell_h,
+                color,
+            }));
+            pen_x += cell_w;
         }
         if needs_scissor {
             self.commands.push(DrawCommand::SetClip(self.clip_stack[0]));

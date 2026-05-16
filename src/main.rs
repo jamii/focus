@@ -53,7 +53,7 @@ const APP_ID: &str = if cfg!(debug_assertions) {
     "focus"
 };
 
-const TEXT: &str = "hello world";
+const TEXT: &str = "hello → world";
 const TEXT_X: f32 = 20.0;
 const TEXT_Y: f32 = 20.0;
 const INITIAL_PX: f32 = 32.0;
@@ -94,7 +94,7 @@ impl State {
             x: TEXT_X - 4.0,
             y: TEXT_Y - 4.0,
             w: 180.0,
-            h: self.atlas.line_height + 8.0,
+            h: self.atlas.cell_h as f32 + 8.0,
         };
         frame.push_clip_rect(clip);
         // The highlight is the clip box itself — software-trimmed inside
