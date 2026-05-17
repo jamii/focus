@@ -129,6 +129,10 @@ pub struct Renderer {
     // Atlas texture. Also rebound (with new pixels) in `upload_atlas`
     // when the font size changes.
     tex: u32,
+    // Atlas dimensions cached from the most recent upload, so `render`
+    // can normalize uvs without being handed the atlas every frame.
+    atlas_w: u32,
+    atlas_h: u32,
     // Uniform location for the `u_screen` (framebuffer size in pixels).
     // The vertex shader divides vertex positions by this to get NDC.
     u_screen: i32,
@@ -221,6 +225,8 @@ impl Renderer {
                 vao,
                 vbo,
                 tex,
+                atlas_w: 0,
+                atlas_h: 0,
                 u_screen,
                 vertex_buf: Vec::new(),
                 batches: Vec::new(),
@@ -229,7 +235,7 @@ impl Renderer {
     }
 
     /// Replace the atlas pixels on the GPU. Texture handle is unchanged.
-    pub unsafe fn upload_atlas(&self, atlas: &Atlas) {
+    pub unsafe fn upload_atlas(&mut self, atlas: &Atlas) {
         unsafe {
             gl::BindTexture(gl::TEXTURE_2D, self.tex);
             // R8 rows are 1 byte per pixel — set unpack alignment to 1
@@ -247,6 +253,8 @@ impl Renderer {
                 atlas.pixels.as_ptr() as *const _,
             );
         }
+        self.atlas_w = atlas.width;
+        self.atlas_h = atlas.height;
     }
 
     /// Render a command list into whatever framebuffer is currently bound.
@@ -255,12 +263,12 @@ impl Renderer {
     /// per scissor region), uploads it, then issues one DrawArrays per
     /// batch with the appropriate glScissor. The framebuffer is cleared
     /// to white first.
-    pub unsafe fn render(&mut self, commands: &[DrawCommand], atlas: &Atlas, fb_w: i32, fb_h: i32) {
+    pub unsafe fn render(&mut self, commands: &[DrawCommand], fb_w: i32, fb_h: i32) {
         self.vertex_buf.clear();
         self.batches.clear();
 
-        let inv_atlas_w = 1.0 / atlas.width as f32;
-        let inv_atlas_h = 1.0 / atlas.height as f32;
+        let inv_atlas_w = 1.0 / self.atlas_w as f32;
+        let inv_atlas_h = 1.0 / self.atlas_h as f32;
         let mut current_clip = Rect {
             x: 0.0,
             y: 0.0,

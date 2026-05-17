@@ -1,40 +1,39 @@
 use std::collections::HashSet;
-use std::time::Instant;
+use std::time::Duration;
 
 use winit::dpi::LogicalSize;
 use winit::event::ElementState;
 use winit::keyboard::{Key, NamedKey};
+use winit::window::WindowId;
 
 pub use crate::text::{Atlas, Drawing, Rect};
 use crate::text::{Font, FontSettings};
 
 pub struct App {
-    next_window_id: u32,
     windows: HashSet<WindowId>,
     font: Font,
     px_size: f32,
     atlas: Atlas,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct WindowId(u32);
-
 pub type InputEvent = winit::event::WindowEvent;
 
-// External effects app may need.
+// External effects app may need. Mocked for testing/fuzzing etc.
 pub trait IO {
-    fn elapsed(&self) -> Instant;
-    fn open_window(&mut self, window: WindowId, title: String, size: LogicalSize<u32>);
+    fn elapsed(&self) -> Duration;
+    fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId;
     fn close_window(&mut self, window: WindowId);
     fn set_window_title(&mut self, window: WindowId, title: String);
-    fn atlas_changed(&mut self, atlas: &Atlas);
+    fn request_redraw(&mut self, window: WindowId);
+    fn reload_atlas(&mut self, atlas: &Atlas);
     fn exit(&mut self);
 }
 
+const FONT: &[u8] = include_bytes!("../deps/FiraCode-Regular.ttf");
 const INITIAL_PX: f32 = 32.0;
 const MIN_PX: f32 = 4.0;
-const INITIAL_TITLE: &str = "focus";
-const INITIAL_SIZE: LogicalSize<u32> = LogicalSize {
+pub const INITIAL_TITLE: &str = "focus";
+pub const INITIAL_SIZE: LogicalSize<u32> = LogicalSize {
     width: 800,
     height: 600,
 };
@@ -47,21 +46,18 @@ const TEXT_COLOR: [u8; 4] = [30, 30, 40, 255];
 const HIGHLIGHT_COLOR: [u8; 4] = [255, 240, 170, 255];
 
 impl App {
-    pub fn new(font_bytes: Vec<u8>, io: &mut dyn IO) -> App {
-        let font = Font::from_bytes(font_bytes, FontSettings::default()).unwrap();
+    pub fn new(initial_window: WindowId, io: &mut dyn IO) -> App {
+        let font = Font::from_bytes(FONT, FontSettings::default()).unwrap();
         let atlas = Atlas::build(&font, INITIAL_PX);
-        let mut app = App {
-            next_window_id: 0,
-            windows: HashSet::new(),
+        let mut windows = HashSet::new();
+        windows.insert(initial_window);
+        io.reload_atlas(&atlas);
+        App {
+            windows,
             font,
             px_size: INITIAL_PX,
             atlas,
-        };
-        let window = app.new_window_id();
-        app.windows.insert(window);
-        io.open_window(window, INITIAL_TITLE.to_string(), INITIAL_SIZE);
-        io.atlas_changed(&app.atlas);
-        app
+        }
     }
 
     pub fn input(&mut self, window: WindowId, event: InputEvent, io: &mut dyn IO) {
@@ -86,9 +82,8 @@ impl App {
                     self.rebuild_atlas(io);
                 }
                 Key::Character("n") => {
-                    let new = self.new_window_id();
+                    let new = io.open_window(INITIAL_TITLE.to_string(), INITIAL_SIZE);
                     self.windows.insert(new);
-                    io.open_window(new, format!("focus - window {}", new.0), INITIAL_SIZE);
                 }
                 _ => {}
             },
@@ -102,9 +97,7 @@ impl App {
     }
 
     pub fn draw(&self, window: WindowId, drawing: &mut Drawing) {
-        if !self.windows.contains(&window) {
-            return;
-        }
+        assert!(self.windows.contains(&window));
 
         let clip = Rect {
             x: TEXT_X - 4.0,
@@ -114,7 +107,7 @@ impl App {
         };
         drawing.push_clip_rect(clip);
         drawing.draw_rect(&self.atlas, clip, HIGHLIGHT_COLOR);
-        let label = format!("window {}", window.0);
+        let label = format!("window {:?}", window);
         drawing.draw_text(
             &self.atlas,
             label.as_str().into(),
@@ -125,14 +118,8 @@ impl App {
         drawing.pop_clip_rect();
     }
 
-    fn new_window_id(&mut self) -> WindowId {
-        let id = WindowId(self.next_window_id);
-        self.next_window_id += 1;
-        id
-    }
-
     fn rebuild_atlas(&mut self, io: &mut dyn IO) {
         self.atlas = Atlas::build(&self.font, self.px_size);
-        io.atlas_changed(&self.atlas);
+        io.reload_atlas(&self.atlas);
     }
 }
