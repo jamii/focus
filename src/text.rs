@@ -149,9 +149,7 @@ impl Atlas {
         let atlas_h = rows * cell_h;
         let mut pixels = vec![0u8; (atlas_w * atlas_h) as usize];
 
-        let cell_origin = |idx: u32| {
-            ((idx % ATLAS_COLS) * cell_w, (idx / ATLAS_COLS) * cell_h)
-        };
+        let cell_origin = |idx: u32| ((idx % ATLAS_COLS) * cell_w, (idx / ATLAS_COLS) * cell_h);
 
         // For each glyph, paint its bitmap into its cell at the
         // bearing-offset that puts it on the cell's baseline. The cell's
@@ -181,7 +179,13 @@ impl Atlas {
                 }
             }
 
-            glyphs.insert(*ch, Glyph { atlas_x: cell_x, atlas_y: cell_y });
+            glyphs.insert(
+                *ch,
+                Glyph {
+                    atlas_x: cell_x,
+                    atlas_y: cell_y,
+                },
+            );
         }
 
         // Tofu: hollow rectangle painted into its own cell, with margins
@@ -200,7 +204,10 @@ impl Atlas {
                 }
             }
         }
-        let missing = Glyph { atlas_x: tx, atlas_y: ty };
+        let missing = Glyph {
+            atlas_x: tx,
+            atlas_y: ty,
+        };
 
         // White texel in its own cell — never sampled as part of a glyph
         // quad, so it doesn't pollute the tofu render.
@@ -246,23 +253,28 @@ pub enum DrawCommand {
     SetClip(Rect),
 }
 
-// A frame's worth of drawing, built up by the "editor" and consumed by the
-// renderer. Maintains a clip-rect stack; each push intersects with the
-// current top, so pushing only ever shrinks the clip.
+// A window's worth of drawing, built up by the "editor" and consumed by
+// the renderer. Maintains a clip-rect stack; each push intersects with
+// the current top, so pushing only ever shrinks the clip.
 //
 // clip_stack[0] is the full screen rect — also serves as the "no clip"
 // sentinel emitted as SetClip after a partially-clipped text draw to
 // release the scissor.
-pub struct Frame {
+pub struct Drawing {
     commands: Vec<DrawCommand>,
     clip_stack: Vec<Rect>,
 }
 
-impl Frame {
+impl Drawing {
     pub fn new(screen_w: f32, screen_h: f32) -> Self {
         Self {
             commands: Vec::new(),
-            clip_stack: vec![Rect { x: 0.0, y: 0.0, w: screen_w, h: screen_h }],
+            clip_stack: vec![Rect {
+                x: 0.0,
+                y: 0.0,
+                w: screen_w,
+                h: screen_h,
+            }],
         }
     }
 

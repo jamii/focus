@@ -261,7 +261,12 @@ impl Renderer {
 
         let inv_atlas_w = 1.0 / atlas.width as f32;
         let inv_atlas_h = 1.0 / atlas.height as f32;
-        let mut current_clip = Rect { x: 0.0, y: 0.0, w: fb_w as f32, h: fb_h as f32 };
+        let mut current_clip = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: fb_w as f32,
+            h: fb_h as f32,
+        };
         let mut batch_start = 0usize;
 
         for cmd in commands {
@@ -278,12 +283,36 @@ impl Renderer {
                     let c = q.color;
                     // Two triangles per quad: (tl, tr, br) and (tl, br, bl).
                     self.vertex_buf.extend_from_slice(&[
-                        Vertex { pos: [x0, y0], uv: [u0, v0], color: c },
-                        Vertex { pos: [x1, y0], uv: [u1, v0], color: c },
-                        Vertex { pos: [x1, y1], uv: [u1, v1], color: c },
-                        Vertex { pos: [x0, y0], uv: [u0, v0], color: c },
-                        Vertex { pos: [x1, y1], uv: [u1, v1], color: c },
-                        Vertex { pos: [x0, y1], uv: [u0, v1], color: c },
+                        Vertex {
+                            pos: [x0, y0],
+                            uv: [u0, v0],
+                            color: c,
+                        },
+                        Vertex {
+                            pos: [x1, y0],
+                            uv: [u1, v0],
+                            color: c,
+                        },
+                        Vertex {
+                            pos: [x1, y1],
+                            uv: [u1, v1],
+                            color: c,
+                        },
+                        Vertex {
+                            pos: [x0, y0],
+                            uv: [u0, v0],
+                            color: c,
+                        },
+                        Vertex {
+                            pos: [x1, y1],
+                            uv: [u1, v1],
+                            color: c,
+                        },
+                        Vertex {
+                            pos: [x0, y1],
+                            uv: [u0, v1],
+                            color: c,
+                        },
                     ]);
                 }
                 DrawCommand::SetClip(r) => {

@@ -1,36 +1,28 @@
-// Big picture:
+// Plumbing layer between the OS / OpenGL and `focus::app`.
 //
-//   winit          — gives us an OS window and an event loop (no graphics API).
-//   glutin         — creates an OpenGL *context* attached to that window. A
-//                    GL context is the per-thread state machine that holds all
-//                    GL objects (textures, buffers, programs, …) and is the
-//                    target of every gl::* call.
-//   gl crate       — raw GL function-pointer bindings. They're loaded at runtime
-//                    via `gl::load_with` once the context exists.
-//   focus::text    — builds a glyph atlas (RGBA texture containing all ASCII
-//                    glyphs + a single solid-white texel) and lays out drawing
-//                    primitives — text glyphs and solid-color rectangles —
-//                    into a Frame's command list.
-//   focus::render  — GPU renderer for a Frame's commands. Owns the shader
-//                    program, VAO/VBO and atlas texture. Doesn't know
-//                    anything about windowing — works the same against a
-//                    swap-chain back buffer or an offscreen FBO.
+//   winit    — OS windows + event loop.
+//   glutin   — OpenGL contexts attached to those windows.
+//   gl crate — raw GL function pointers.
+//   app::App
+//            — the editor. Receives `Input`s (which wrap winit
+//              `WindowEvent`s) and emits `Output`s; draws into a
+//              `Drawing` (a command list of quads + clip rects).
 //
-// Per-frame drawing recipe:
-//
-//   1. one RGBA texture holds every glyph as (255,255,255,alpha) plus a
-//      solid-white texel for flat-colored rectangles;
-//   2. every frame, the CPU builds a fresh Frame of DrawCommands (Quads
-//      interleaved with SetClip commands);
-//   3. the renderer flattens that into one vertex buffer + one draw per
-//      scissor region.
+// The loop:
+//   1. winit hands us events; we wrap each into an `Input`.
+//   2. We `pump`: call `App::update` once, walk the emitted `Output`s
+//      (open/close windows, redraw, atlas re-upload, exit).
+//   3. On `RedrawRequested`, build a `Drawing`, hand it to
+//      `App::draw`, then hand the command list to `Renderer`.
 
+use std::collections::HashMap;
 use std::ffi::CString;
 use std::num::NonZeroU32;
+use std::time::Instant;
 
+use focus::app::{App, Drawing, IO, InputEvent, OutputEvent, WindowId};
 use focus::render::Renderer;
-use focus::text::{Atlas, Font, FontSettings, Frame, Rect};
-use glutin::config::ConfigTemplateBuilder;
+use glutin::config::{Config, ConfigTemplateBuilder};
 use glutin::context::{ContextApi, ContextAttributesBuilder, PossiblyCurrentContext, Version};
 use glutin::display::GetGlDisplay;
 use glutin::prelude::*;
@@ -39,11 +31,10 @@ use glutin_winit::{DisplayBuilder, GlWindow};
 use raw_window_handle::HasWindowHandle;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, KeyEvent, WindowEvent};
+use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key, NamedKey};
 use winit::platform::wayland::WindowAttributesExtWayland;
-use winit::window::{Window, WindowId};
+use winit::window::{Window, WindowId as WinitWindowId};
 
 // Use a distinct title + app_id in debug builds so a niri window-rule can
 // match only the dev instance (e.g. `open-focused false`).
@@ -53,87 +44,130 @@ const APP_ID: &str = if cfg!(debug_assertions) {
     "focus"
 };
 
-const TEXT: &str = "hello → world";
-const TEXT_X: f32 = 20.0;
-const TEXT_Y: f32 = 20.0;
-const INITIAL_PX: f32 = 32.0;
-const MIN_PX: f32 = 4.0;
-
-const TEXT_COLOR: [u8; 4] = [30, 30, 40, 255];
-const HIGHLIGHT_COLOR: [u8; 4] = [255, 240, 170, 255];
-
-struct State {
+struct WindowEntry {
     window: Window,
     surface: Surface<WindowSurface>,
-    context: PossiblyCurrentContext,
-    renderer: Renderer,
-    font: Font,
-    px_size: f32,
-    atlas: Atlas,
+    id: WindowId,
 }
 
-impl State {
-    // ControlFlow::Wait means no automatic redraw — request one.
-    fn rebuild_atlas(&mut self) {
-        self.atlas = Atlas::build(&self.font, self.px_size);
-        unsafe { self.renderer.upload_atlas(&self.atlas) };
-        self.window.request_redraw();
-    }
+struct AppIo {
+    now: Instant,
+}
 
-    // Build this frame's commands, hand them to the renderer, present.
-    fn draw(&mut self) {
-        let size = self.window.inner_size();
-        let fb_w = size.width as f32;
-        let fb_h = size.height as f32;
-
-        let mut frame = Frame::new(fb_w, fb_h);
-
-        // A clip rect deliberately narrower than the text — the right side
-        // of "hello world" will get scissored off.
-        let clip = Rect {
-            x: TEXT_X - 4.0,
-            y: TEXT_Y - 4.0,
-            w: 180.0,
-            h: self.atlas.cell_h as f32 + 8.0,
-        };
-        frame.push_clip_rect(clip);
-        // The highlight is the clip box itself — software-trimmed inside
-        // draw_rect, so it never overflows.
-        frame.draw_rect(&self.atlas, clip, HIGHLIGHT_COLOR);
-        // Text overflows the right edge of the clip; the SetClip / scissor
-        // pair around it cuts the trailing glyphs at their pixel edges.
-        frame.draw_text(&self.atlas, TEXT.into(), TEXT_X, TEXT_Y, TEXT_COLOR);
-        frame.pop_clip_rect();
-
-        unsafe {
-            self.renderer.render(
-                frame.commands(),
-                &self.atlas,
-                size.width as i32,
-                size.height as i32,
-            );
-        }
-        self.surface.swap_buffers(&self.context).unwrap();
+impl IO for AppIo {
+    fn now(&self) -> Instant {
+        self.now
     }
 }
 
-struct App {
-    state: Option<State>,
+struct FocusApp {
+    app: App,
+    // Renderer + context + gl_config come up alongside the first window
+    // — all of these need a GL display, which we don't have until glutin
+    // gives us one. Hence `Option`. Subsequent windows reuse them.
+    renderer: Option<Renderer>,
+    context: Option<PossiblyCurrentContext>,
+    gl_config: Option<Config>,
+    windows: HashMap<WinitWindowId, WindowEntry>,
+    by_id: HashMap<WindowId, WinitWindowId>,
+    inputs: Vec<(WindowId, InputEvent)>,
+    last_frame: Option<Instant>,
 }
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.state.is_some() {
-            return;
+impl FocusApp {
+    fn new() -> Self {
+        let font_bytes = std::fs::read("deps/FiraCode-Regular.ttf").unwrap();
+        FocusApp {
+            app: App::new(font_bytes),
+            renderer: None,
+            context: None,
+            gl_config: None,
+            windows: HashMap::new(),
+            by_id: HashMap::new(),
+            inputs: Vec::new(),
+            last_frame: None,
         }
+    }
 
-        let window_attrs = Window::default_attributes()
-            .with_title(APP_ID)
+    fn pump(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        let dt = self.last_frame.map_or(0.0, |t| (now - t).as_secs_f64());
+        self.last_frame = Some(now);
+        let io = AppIo { now };
+        let mut outputs = Vec::new();
+        for (window, event) in std::mem::take(&mut self.inputs) {
+            self.app.input(window, event, &io, &mut outputs);
+        }
+        self.app.tick(dt, &io, &mut outputs);
+        for output in outputs {
+            self.handle_output(event_loop, output);
+        }
+    }
+
+    fn handle_output(&mut self, event_loop: &ActiveEventLoop, output: OutputEvent) {
+        match output {
+            OutputEvent::OpenWindow {
+                window,
+                title,
+                size,
+            } => {
+                self.open_window(event_loop, window, &title, size);
+            }
+            OutputEvent::CloseWindow { window } => {
+                if let Some(winit_id) = self.by_id.remove(&window) {
+                    self.windows.remove(&winit_id);
+                }
+            }
+            OutputEvent::SetWindowTitle { window, title } => {
+                if let Some(entry) = self
+                    .by_id
+                    .get(&window)
+                    .and_then(|wid| self.windows.get(wid))
+                {
+                    entry.window.set_title(&title);
+                }
+            }
+            OutputEvent::AtlasChanged => {
+                if let Some(renderer) = self.renderer.as_ref() {
+                    unsafe { renderer.upload_atlas(self.app.atlas()) };
+                }
+            }
+            OutputEvent::Exit => event_loop.exit(),
+        }
+    }
+
+    fn open_window(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: WindowId,
+        title: &str,
+        size: LogicalSize<u32>,
+    ) {
+        if self.context.is_none() {
+            self.bootstrap_first_window(event_loop, id, title, size);
+        } else {
+            self.open_additional_window(event_loop, id, title, size);
+        }
+    }
+
+    // First window also brings up the GL display + context + renderer.
+    // Vsync is requested here (Wait(1)) — this surface's swap throttles
+    // the whole event loop. Additional windows present immediately
+    // (DontWait) so they don't serialize with this one.
+    fn bootstrap_first_window(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: WindowId,
+        title: &str,
+        size: LogicalSize<u32>,
+    ) {
+        let attrs = Window::default_attributes()
+            .with_title(title)
             .with_name(APP_ID, "")
-            .with_inner_size(LogicalSize::new(800, 600));
+            .with_inner_size(size);
 
         let template = ConfigTemplateBuilder::new().with_alpha_size(8);
-        let display_builder = DisplayBuilder::new().with_window_attributes(Some(window_attrs));
+        let display_builder = DisplayBuilder::new().with_window_attributes(Some(attrs));
 
         let (window, gl_config) = display_builder
             .build(event_loop, template, |mut configs| configs.next().unwrap())
@@ -173,67 +207,149 @@ impl ApplicationHandler for App {
         });
 
         let renderer = unsafe { Renderer::new() };
+        unsafe { renderer.upload_atlas(self.app.atlas()) };
 
-        let font_bytes = std::fs::read("deps/FiraCode-Regular.ttf").unwrap();
-        let font = Font::from_bytes(font_bytes, FontSettings::default()).unwrap();
-        let atlas = Atlas::build(&font, INITIAL_PX);
-        unsafe { renderer.upload_atlas(&atlas) };
-
-        let state = State {
-            window,
-            surface,
-            context,
-            renderer,
-            font,
-            px_size: INITIAL_PX,
-            atlas,
-        };
-        state.window.request_redraw();
-        self.state = Some(state);
+        let winit_id = window.id();
+        self.context = Some(context);
+        self.renderer = Some(renderer);
+        self.gl_config = Some(gl_config);
+        self.windows.insert(
+            winit_id,
+            WindowEntry {
+                window,
+                surface,
+                id,
+            },
+        );
+        self.by_id.insert(id, winit_id);
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let Some(state) = self.state.as_mut() else {
+    fn open_additional_window(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: WindowId,
+        title: &str,
+        size: LogicalSize<u32>,
+    ) {
+        let attrs = Window::default_attributes()
+            .with_title(title)
+            .with_name(APP_ID, "")
+            .with_inner_size(size);
+
+        let window = event_loop.create_window(attrs).expect("create_window");
+        let gl_config = self.gl_config.as_ref().unwrap();
+        let gl_display = gl_config.display();
+
+        let surface_attrs = window.build_surface_attributes(Default::default()).unwrap();
+        let surface = unsafe {
+            gl_display
+                .create_window_surface(gl_config, &surface_attrs)
+                .expect("failed to create surface")
+        };
+
+        let context = self.context.as_ref().unwrap();
+        context
+            .make_current(&surface)
+            .expect("failed to make context current");
+        // DontWait so this swap doesn't block on its own vsync — the
+        // primary window's Wait(1) already throttles the loop.
+        let _ = surface.set_swap_interval(context, SwapInterval::DontWait);
+
+        let winit_id = window.id();
+        self.windows.insert(
+            winit_id,
+            WindowEntry {
+                window,
+                surface,
+                id,
+            },
+        );
+        self.by_id.insert(id, winit_id);
+    }
+
+    fn draw(&mut self, winit_id: WinitWindowId) {
+        let Some(entry) = self.windows.get(&winit_id) else {
             return;
         };
-        match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        logical_key,
-                        state: ElementState::Pressed,
-                        ..
-                    },
-                ..
-            } => match logical_key.as_ref() {
-                Key::Named(NamedKey::Escape) => event_loop.exit(),
-                Key::Character("+") => {
-                    state.px_size += 1.0;
-                    state.rebuild_atlas();
-                }
-                Key::Character("-") => {
-                    state.px_size = (state.px_size - 1.0).max(MIN_PX);
-                    state.rebuild_atlas();
-                }
-                _ => {}
-            },
+        let context = self.context.as_ref().unwrap();
+        // Bind the shared GL context to this window's surface before we
+        // render or swap. All GL state (textures, programs) is per-context
+        // and shared across windows; only the default framebuffer is
+        // per-surface.
+        context
+            .make_current(&entry.surface)
+            .expect("make_current");
+
+        let size = entry.window.inner_size();
+        let fb_w = size.width as f32;
+        let fb_h = size.height as f32;
+
+        let mut drawing = Drawing::new(fb_w, fb_h);
+        self.app.draw(entry.id, &mut drawing);
+
+        unsafe {
+            self.renderer.as_mut().unwrap().render(
+                drawing.commands(),
+                self.app.atlas(),
+                size.width as i32,
+                size.height as i32,
+            );
+        }
+        entry.surface.swap_buffers(context).unwrap();
+    }
+}
+
+impl ApplicationHandler for FocusApp {
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
+        // First-frame bootstrap (the initial `OpenWindow`) happens in
+        // about_to_wait — same as every subsequent frame.
+    }
+
+    fn window_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        winit_id: WinitWindowId,
+        event: WindowEvent,
+    ) {
+        let Some(window) = self.windows.get(&winit_id).map(|e| e.id) else {
+            return;
+        };
+
+        match &event {
+            // We draw every window every frame in about_to_wait, so
+            // OS-initiated repaints don't need extra handling.
+            WindowEvent::RedrawRequested => return,
             WindowEvent::Resized(size) => {
                 if let (Some(w), Some(h)) =
                     (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
                 {
-                    state.surface.resize(&state.context, w, h);
+                    let entry = self.windows.get(&winit_id).unwrap();
+                    entry.surface.resize(self.context.as_ref().unwrap(), w, h);
                 }
             }
-            WindowEvent::RedrawRequested => state.draw(),
             _ => {}
+        }
+
+        self.inputs.push((window, event));
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // One frame: drain accumulated events into a single update, then
+        // draw every window. `swap_buffers` blocks on vsync (set up in
+        // `open_window` with `SwapInterval::Wait(1)`), which throttles
+        // the loop to the display refresh rate — that's why we run
+        // ControlFlow::Poll without burning CPU.
+        self.pump(event_loop);
+        let winit_ids: Vec<_> = self.windows.keys().copied().collect();
+        for winit_id in winit_ids {
+            self.draw(winit_id);
         }
     }
 }
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = App { state: None };
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = FocusApp::new();
     event_loop.run_app(&mut app).unwrap();
 }

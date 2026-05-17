@@ -13,7 +13,7 @@ use std::path::Path;
 use std::ptr;
 
 use focus::render::Renderer;
-use focus::text::{Atlas, Font, FontSettings, Frame, Rect};
+use focus::text::{Atlas, Drawing, Font, FontSettings, Rect};
 use khronos_egl::{self as egl, DynamicInstance};
 
 const W: u32 = 400;
@@ -182,20 +182,26 @@ fn renders_hello_world() {
     let mut renderer = unsafe { Renderer::new() };
     unsafe { renderer.upload_atlas(&atlas) };
 
-    let mut frame = Frame::new(W as f32, H as f32);
+    let mut drawing = Drawing::new(W as f32, H as f32);
     let clip = Rect {
         x: 16.0,
         y: 16.0,
         w: 180.0,
         h: atlas.cell_h as f32 + 8.0,
     };
-    frame.push_clip_rect(clip);
-    frame.draw_rect(&atlas, clip, [255, 240, 170, 255]);
+    drawing.push_clip_rect(clip);
+    drawing.draw_rect(&atlas, clip, [255, 240, 170, 255]);
     // Non-ASCII '→' is not in the atlas and should render as a tofu box.
-    frame.draw_text(&atlas, "hello → world".into(), 20.0, 20.0, [30, 30, 40, 255]);
-    frame.pop_clip_rect();
+    drawing.draw_text(
+        &atlas,
+        "hello → world".into(),
+        20.0,
+        20.0,
+        [30, 30, 40, 255],
+    );
+    drawing.pop_clip_rect();
 
-    unsafe { renderer.render(frame.commands(), &atlas, W as i32, H as i32) };
+    unsafe { renderer.render(drawing.commands(), &atlas, W as i32, H as i32) };
 
     let mut pixels = vec![0u8; (W * H * 4) as usize];
     unsafe {
