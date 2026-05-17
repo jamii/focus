@@ -13,7 +13,8 @@ use std::path::Path;
 use std::ptr;
 
 use focus::render::Renderer;
-use focus::text::{Atlas, Drawing, Font, FontSettings, Rect};
+use focus::text::{Atlas, Drawing, Rect};
+use fontdue::{Font, FontSettings};
 use khronos_egl::{self as egl, DynamicInstance};
 
 const W: u32 = 400;

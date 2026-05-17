@@ -22,8 +22,8 @@
 
 use std::collections::HashMap;
 
-pub use bstr::{BStr, ByteSlice};
-pub use fontdue::{Font, FontSettings};
+use bstr::{BStr, ByteSlice};
+use fontdue::Font;
 
 // We only handle printable ASCII for now — code points 32 (' ') through
 // 126 ('~'). 95 characters total.

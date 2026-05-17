@@ -37,8 +37,9 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::{Window, WindowId};
 
-use crate::app::{App, Atlas, Drawing, INITIAL_SIZE, INITIAL_TITLE, IO};
+use crate::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO};
 use crate::render::Renderer;
+use crate::text::{Atlas, Drawing};
 
 // Distinct title + app_id in debug builds so a niri window-rule can
 // match only the dev instance (e.g. `open-focused false`).

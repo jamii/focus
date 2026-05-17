@@ -6,8 +6,8 @@ use winit::event::ElementState;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
-pub use crate::text::{Atlas, Drawing, Rect};
-use crate::text::{Font, FontSettings};
+use crate::text::{Atlas, Drawing, Rect};
+use fontdue::{Font, FontSettings};
 
 pub struct App {
     windows: HashSet<WindowId>,
