@@ -35,6 +35,7 @@ impl Default for Config {
     }
 }
 
+#[derive(Debug)]
 pub struct Frng<'a> {
     buf: &'a [u8],
     pos: usize,
@@ -62,12 +63,12 @@ impl<'a> Frng<'a> {
     }
 
     pub fn bytes(&mut self, n: usize) -> Option<&[u8]> {
-        if self.pos < self.buf.len() {
+        if self.pos + n >= self.buf.len() {
             return None;
         }
-        let s = &self.buf[self.pos..self.pos + n];
+        let bytes = &self.buf[self.pos..self.pos + n];
         self.pos += n;
-        Some(s)
+        Some(bytes)
     }
 
     pub fn array<const N: usize>(&mut self) -> Option<[u8; N]> {
