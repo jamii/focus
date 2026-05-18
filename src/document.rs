@@ -125,13 +125,20 @@ impl Document {
         }
     }
 
+    pub fn char_next(&self, pos: usize) -> Option<usize> {
+        if pos == self.text.len() {
+            return None;
+        }
+        let (_, char_end, _) = self.text[pos..].char_indices().next().unwrap();
+        return Some(pos + char_end);
+    }
+
     pub fn char_prev(&self, pos: usize) -> Option<usize> {
         if pos == 0 {
             return None;
         }
         // We can't directly iter backwards through potentially invalid utf8, but we can go forwards from the start of the line.
         let line_start = self.line_range_from_pos(pos).start;
-        dbg!(line_start);
         if line_start == pos {
             // Previous character is a \n
             return Some(line_start - 1);

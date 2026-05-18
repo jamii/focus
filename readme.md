@@ -42,9 +42,6 @@ Wishlist:
   * conversation tree?
 
 Short-term roadmap:
-* line wrapping
-* cursor movement
-* delete forward/backward
 * scroll
 * load / reload / save
   * diff on reload
