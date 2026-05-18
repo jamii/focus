@@ -10,6 +10,7 @@ use crate::{
 pub struct Editor {
     pub document_id: DocumentId,
     cursors: Vec<Cursor>,
+    show_cursor: bool,
 }
 
 struct Cursor {
@@ -21,6 +22,7 @@ impl Editor {
         Editor {
             document_id: document_id,
             cursors: vec![Cursor { pos: 0 }],
+            show_cursor: true,
         }
     }
 
@@ -48,15 +50,25 @@ impl Editor {
         }
     }
 
+    pub fn tick(&mut self, _app: &App, io: &mut dyn IO, redraw: &mut bool) {
+        let show_cursor = ((io.frame_start().as_millis() / 500) % 2) == 0;
+        if self.show_cursor != show_cursor {
+            self.show_cursor = show_cursor;
+            *redraw = true;
+        }
+    }
+
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
         app.get_document(self.document_id).draw(app, drawing);
 
-        for cursor in &self.cursors {
-            let mut pos = app.atlas.grid_to_screen([cursor.pos, 0]);
-            let mut size = [app.atlas.cell_size[0] as f32, app.atlas.cell_size[1] as f32];
-            size[0] /= 8.0;
-            pos[0] -= size[0] / 2.0;
-            drawing.draw_rect(&app.atlas, Rect { pos, size }, style::TEXT_COLOR);
+        if self.show_cursor {
+            for cursor in &self.cursors {
+                let mut pos = app.atlas.grid_to_screen([cursor.pos, 0]);
+                let mut size = [app.atlas.cell_size[0] as f32, app.atlas.cell_size[1] as f32];
+                size[0] /= 8.0;
+                pos[0] -= size[0] / 2.0;
+                drawing.draw_rect(&app.atlas, Rect { pos, size }, style::TEXT_COLOR);
+            }
         }
     }
 

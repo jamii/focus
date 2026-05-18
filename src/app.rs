@@ -38,7 +38,7 @@ pub type InputEvent = winit::event::WindowEvent;
 
 // External effects. Mocked for testing/fuzzing.
 pub trait IO {
-    fn elapsed(&self) -> Duration;
+    fn frame_start(&self) -> Duration;
     fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId;
     fn close_window(&mut self, window_id: WindowId);
     fn set_window_title(&mut self, window_id: WindowId, title: String);
@@ -78,7 +78,7 @@ impl App {
         app
     }
 
-    pub fn input(&mut self, window_id: WindowId, event: InputEvent, io: &mut dyn IO) {
+    pub fn input(&mut self, io: &mut dyn IO, window_id: WindowId, event: InputEvent) {
         match &event {
             InputEvent::CloseRequested => {
                 self.windows.remove(&window_id);
@@ -152,9 +152,14 @@ impl App {
         io.request_redraw(window_id);
     }
 
-    pub fn tick(&mut self, _dt: f64, _io: &mut dyn IO) {
-        // Future: cursor blink, scroll inertia, anything else that
-        // depends on elapsed time goes here.
+    pub fn tick(&mut self, io: &mut dyn IO) {
+        for (window_id, window) in &self.windows {
+            let mut redraw = false;
+            window.borrow_mut().tick(self, io, &mut redraw);
+            if redraw {
+                io.request_redraw(*window_id);
+            }
+        }
     }
 
     pub fn draw(&self, window_id: WindowId, drawing: &mut Drawing) {

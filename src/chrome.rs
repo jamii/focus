@@ -68,6 +68,7 @@ enum Chrome {
 struct Running {
     app: App,
     backend: Backend,
+    first_frame: Instant,
     last_frame: Instant,
 }
 
@@ -81,19 +82,19 @@ struct Backend {
     gl_config: Config,
     context: PossiblyCurrentContext,
     renderer: Renderer,
-    start: Instant,
 }
 
 // Held only across an app callback; carries the live `ActiveEventLoop`
 // (needed for `create_window`) plus the backend it mutates.
 struct IoReal<'a> {
+    frame_start: Duration,
     backend: &'a mut Backend,
     event_loop: &'a ActiveEventLoop,
 }
 
 impl IO for IoReal<'_> {
-    fn elapsed(&self) -> Duration {
-        self.backend.start.elapsed()
+    fn frame_start(&self) -> Duration {
+        self.frame_start
     }
 
     fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId {
@@ -134,15 +135,18 @@ impl ApplicationHandler for Chrome {
             Backend::bootstrap(event_loop, INITIAL_TITLE, INITIAL_SIZE);
         let app = {
             let mut io = IoReal {
+                frame_start: Duration::ZERO,
                 backend: &mut backend,
                 event_loop,
             };
             App::new(initial_window_id, &mut io)
         };
+        let now = Instant::now();
         *self = Chrome::Running(Running {
             app,
             backend,
-            last_frame: Instant::now(),
+            first_frame: now,
+            last_frame: now,
         });
     }
 
@@ -185,22 +189,23 @@ impl Running {
             return;
         }
         let mut io = IoReal {
+            frame_start: self.last_frame - self.first_frame,
             backend: &mut self.backend,
             event_loop,
         };
-        self.app.input(window_id, event, &mut io);
+        self.app.input(&mut io, window_id, event);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let frame_start = Instant::now();
-        let dt = (frame_start - self.last_frame).as_secs_f64();
         self.last_frame = frame_start;
 
         let mut io = IoReal {
+            frame_start: self.last_frame - self.first_frame,
             backend: &mut self.backend,
             event_loop,
         };
-        self.app.tick(dt, &mut io);
+        self.app.tick(&mut io);
 
         // Sleep the remainder of the frame budget. winit's `Poll` mode
         // would otherwise spin; the sleep is our throttle.
@@ -284,7 +289,6 @@ impl Backend {
             gl_config,
             context,
             renderer,
-            start: Instant::now(),
         };
         (backend, id)
     }
