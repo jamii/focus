@@ -39,14 +39,7 @@ impl Document {
         self.queued_edits = Some(edits);
     }
 
-    pub fn apply_queued_edits(&mut self) {
-        match self.queued_edits.take() {
-            Some(edits) => self.apply_edits(&edits),
-            None => {}
-        }
-    }
-
-    fn apply_edits(&mut self, edits: &[Edit]) {
+    pub fn apply_edits(&mut self, edits: &[Edit]) {
         for edit in edits {
             assert!(edit.pos <= self.text.len(), "Edit out of bounds");
             match edit.kind {

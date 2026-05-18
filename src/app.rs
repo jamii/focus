@@ -88,31 +88,67 @@ impl App {
                 }
             }
             InputEvent::ModifiersChanged(modifiers) => {
+                println!("{modifiers:?}");
                 self.modifiers = *modifiers;
             }
             InputEvent::KeyboardInput {
                 event: key_event, ..
-            } if key_event.state == ElementState::Pressed => match key_event.logical_key.as_ref() {
-                Key::Character("+") => {
-                    self.px_size += 1.0;
-                    self.rebuild_atlas(io);
+            } if key_event.state == ElementState::Pressed
+                && self.modifiers.state().control_key() =>
+            {
+                match key_event.logical_key.as_ref() {
+                    Key::Character("+") => {
+                        self.px_size += 1.0;
+                        self.rebuild_atlas(io);
+                    }
+                    Key::Character("-") => {
+                        self.px_size = (self.px_size - 1.0).max(MIN_PX);
+                        self.rebuild_atlas(io);
+                    }
+                    Key::Character("n") => {
+                        self.insert_window_empty(io);
+                    }
+                    Key::Character("m") => {
+                        let editor_id = self.get_window(window_id).editor_id;
+                        let document_id = self.get_editor(editor_id).document_id;
+                        let editor_id_new = self.insert_editor(Editor::new(document_id));
+                        self.insert_window(io, Window::new(editor_id_new));
+                    }
+                    _ => {
+                        self.get_window_mut(window_id).input(self, io, event);
+                    }
                 }
-                Key::Character("-") => {
-                    self.px_size = (self.px_size - 1.0).max(MIN_PX);
-                    self.rebuild_atlas(io);
-                }
-                Key::Character("n") => {
-                    self.insert_window_empty(io);
-                }
-                _ => {
-                    self.get_window_mut(window_id).input(self, io, event);
-                }
-            },
-            _ => {}
+            }
+            _ => {
+                self.get_window_mut(window_id).input(self, io, event);
+            }
         }
-        for document in self.documents.values() {
-            document.borrow_mut().apply_queued_edits();
+
+        let mut document_edits = HashMap::new();
+        for (document_id, document) in &self.documents {
+            let mut document = document.borrow_mut();
+            if let Some(edits) = document.queued_edits.take() {
+                document.apply_edits(&edits);
+                document_edits.insert(*document_id, edits);
+            }
         }
+
+        let mut editor_edits = HashMap::new();
+        for (editor_id, editor) in &self.editors {
+            let mut editor = editor.borrow_mut();
+            if let Some(edits) = document_edits.get(&editor.document_id) {
+                editor.handle_edits(edits);
+                editor_edits.insert(*editor_id, edits);
+            }
+        }
+
+        for (window_id, window) in &self.windows {
+            let window = window.borrow();
+            if editor_edits.contains_key(&window.editor_id) {
+                io.request_redraw(*window_id);
+            }
+        }
+
         io.request_redraw(window_id);
     }
 
