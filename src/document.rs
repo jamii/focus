@@ -5,6 +5,7 @@ use crate::{app::App, text::Drawing};
 
 pub struct Document {
     pub text: BString,
+    pub newlines: Vec<usize>,
     pub queued_edits: Option<Vec<Edit>>,
 }
 
@@ -24,11 +25,27 @@ impl Document {
         Document {
             text: "".into(),
             queued_edits: None,
+            newlines: vec![],
         }
     }
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
-        drawing.draw_text(&app.atlas, self.text.as_bstr(), [0.0, 0.0], TEXT_COLOR);
+        let mut start = 0;
+        for end in &self.newlines {
+            drawing.draw_text(
+                &app.atlas,
+                &self.text.as_bstr()[start..*end],
+                app.atlas.screen_from_grid(self.grid_from_pos(start)),
+                TEXT_COLOR,
+            );
+            start = end + 1;
+        }
+        drawing.draw_text(
+            &app.atlas,
+            &self.text.as_bstr()[start..],
+            app.atlas.screen_from_grid(self.grid_from_pos(start)),
+            TEXT_COLOR,
+        );
     }
 
     pub fn queue_edits(&mut self, edits: Vec<Edit>) {
@@ -71,7 +88,6 @@ impl Document {
         }
 
         // TODO This can be made way more efficient, so that common cases don't have to allocate a whole new text.
-
         let mut text_new = BString::new(Vec::with_capacity(self.text.len()));
         let mut pos = 0;
         for edit in edits {
@@ -88,6 +104,28 @@ impl Document {
         }
         text_new.extend_from_slice(&self.text[pos..]);
         self.text = text_new;
+
+        // TODO This can be made way more efficient, so that common cases don't have to iterate over the whole text.
+        self.newlines.clear();
+        let mut pos = 0;
+        for char in self.text.chars() {
+            if char == '\n' {
+                self.newlines.push(pos);
+            }
+            pos += char.len_utf8();
+        }
+    }
+
+    pub fn grid_from_pos(&self, pos: usize) -> [usize; 2] {
+        // TODO binary search
+        for (line, newline_pos) in self.newlines.iter().enumerate().rev() {
+            if *newline_pos < pos {
+                let col = self.text[*newline_pos + 1..pos].chars().count();
+                return [col, line + 1];
+            }
+        }
+        let col = self.text[0..pos].chars().count();
+        [col, 0]
     }
 }
 

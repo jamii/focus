@@ -140,8 +140,7 @@ impl App {
                         self.insert_window_empty(io);
                     }
                     Key::Character("m") => {
-                        let editor_id = window_id.get(self).editor_id;
-                        let document_id = editor_id.get(self).document_id;
+                        let document_id = window_id.get(self).editor_id.get(self).document_id;
                         let editor_id_new = self.insert_editor(Editor::new(document_id));
                         self.insert_window(io, Window::new(editor_id_new));
                     }

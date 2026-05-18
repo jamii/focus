@@ -1,4 +1,7 @@
-use winit::{event::ElementState, keyboard::Key};
+use winit::{
+    event::ElementState,
+    keyboard::{Key, NamedKey},
+};
 
 use crate::{
     app::{App, DocumentId, IO, InputEvent},
@@ -31,21 +34,50 @@ impl Editor {
         match event {
             InputEvent::KeyboardInput {
                 event: key_event, ..
-            } if key_event.state == ElementState::Pressed => match key_event.logical_key.as_ref() {
-                Key::Character(char) => {
-                    document.queue_edits(
-                        self.cursors
-                            .iter()
-                            .map(|c| Edit {
-                                kind: EditKind::Insert,
-                                pos: c.pos,
-                                text: char.into(),
-                            })
-                            .collect(),
-                    );
+            } if key_event.state == ElementState::Pressed
+                && !app.modifiers.state().control_key()
+                && !app.modifiers.state().alt_key() =>
+            {
+                match key_event.logical_key.as_ref() {
+                    Key::Character(char) => {
+                        document.queue_edits(
+                            self.cursors
+                                .iter()
+                                .map(|c| Edit {
+                                    kind: EditKind::Insert,
+                                    pos: c.pos,
+                                    text: char.into(),
+                                })
+                                .collect(),
+                        );
+                    }
+                    Key::Named(NamedKey::Enter) => {
+                        document.queue_edits(
+                            self.cursors
+                                .iter()
+                                .map(|c| Edit {
+                                    kind: EditKind::Insert,
+                                    pos: c.pos,
+                                    text: '\n'.to_string().into(),
+                                })
+                                .collect(),
+                        );
+                    }
+                    Key::Named(NamedKey::Space) => {
+                        document.queue_edits(
+                            self.cursors
+                                .iter()
+                                .map(|c| Edit {
+                                    kind: EditKind::Insert,
+                                    pos: c.pos,
+                                    text: ' '.to_string().into(),
+                                })
+                                .collect(),
+                        );
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
             _ => {}
         }
     }
@@ -59,11 +91,14 @@ impl Editor {
     }
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
-        self.document_id.get(app).draw(app, drawing);
+        let document = self.document_id.get(app);
+        document.draw(app, drawing);
 
         if self.show_cursor {
             for cursor in &self.cursors {
-                let mut pos = app.atlas.grid_to_screen([cursor.pos, 0]);
+                let mut pos = app
+                    .atlas
+                    .screen_from_grid(document.grid_from_pos(cursor.pos));
                 let mut size = [app.atlas.cell_size[0] as f32, app.atlas.cell_size[1] as f32];
                 size[0] /= 8.0;
                 pos[0] -= size[0] / 2.0;

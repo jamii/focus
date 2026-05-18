@@ -42,38 +42,10 @@ Wishlist:
   * conversation tree?
 
 Short-term roadmap:
-* basic editing
-  * have to think about utf8
-  * multiple cursors, buffer vs editor
-* input + render
-* test harness + recordings
-* ranges + readonly + formatting
-
-Thinks:
-* ranges
-  * do ranges have identity, or do they map chars to values? maybe value vs identity are the two types
-    * if a range has identity, what happens if we cut part of it out? doesn't follow the text
-  * can we do wrapping with ranges? a little overhead, but a nice simplification
-  * gonna want batch edits for updating range sets
-  * can we use rangesets for character offsets? probably too expensive
-  * store ranges and value separately so can remap eg for syntax highlighting
-  * flymake mode should map errors to rangeset? then errors move as you type, and only reset when re-compiled
-  * imagine using range to delimit a form input. don't want it to be possible to accidentally type in the wrong space. maybe should use ranges either side to delimit, and then look at the text between them
-  * might want to prevent a range from having newlines. input filtering in general is useful.
-* various things want to subscribe to changes in docs and/or editors. have to think carefully about sequencing etc.
-  * eg multi-doc view wants to subscribe to edits in underlying doc
-    * does the underlying doc subscribe to multi-doc, or is multi-doc responsible for feeding changes back. don't want cycles in the graph, probably
-  * preview on search wants to subscribe to cursor changes in search list
-  * search list wants to subscribe to text changes in search field
-  * maybe register (from, to, fn) in list of subscriptions? 
-  * need to order updates along graph! maybe just order docs/editors and don't allow backwards edges
-  * flymake mode wants to listen to save events
-  * want to batch events - only one update call per frame
-    * exception is ranges, which need to update on every edit batch or the editor will break? probably a separate system
-* solution to the edit sequencing problem
-  * buffer/editor are in refcells
-  * update takes &mut editor. updates all *other* subscribed editors through refcell, and then calls update directly on the passed editor
-* alt
-  * buffer stores points - cursors get updated indirectly
-  * line wrap is different anyway, not tied to text
-  * even line ends are a bit funny, because they can get deleted
+* line wrapping
+* cursor movement
+* delete forward/backward
+* scroll
+* load / reload / save
+  * diff on reload
+  * maintain scroll position
