@@ -13,14 +13,14 @@ impl Window {
     }
 
     pub fn input(&mut self, app: &App, io: &mut dyn IO, event: InputEvent) {
-        app.get_editor_mut(self.editor_id).input(app, io, event);
+        self.editor_id.get_mut(app).input(app, io, event);
     }
 
     pub fn tick(&mut self, app: &App, io: &mut dyn IO, redraw: &mut bool) {
-        app.get_editor_mut(self.editor_id).tick(app, io, redraw);
+        self.editor_id.get_mut(app).tick(app, io, redraw);
     }
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
-        app.get_editor(self.editor_id).draw(app, drawing);
+        self.editor_id.get(app).draw(app, drawing);
     }
 }
