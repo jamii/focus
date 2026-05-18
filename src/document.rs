@@ -5,7 +5,7 @@ use crate::{app::App, text::Drawing};
 
 pub struct Document {
     pub text: BString,
-    queued_edits: Option<Vec<Edit>>,
+    pub queued_edits: Option<Vec<Edit>>,
 }
 
 pub struct Edit {
@@ -29,10 +29,6 @@ impl Document {
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
         drawing.draw_text(&app.atlas, self.text.as_bstr(), 0.0, 0.0, TEXT_COLOR);
-    }
-
-    pub fn replace(&mut self, text: BString) {
-        self.text = text;
     }
 
     pub fn queue_edits(&mut self, edits: Vec<Edit>) {
@@ -81,7 +77,7 @@ impl Document {
             }
         }
 
-        //  TODO This can be made way more efficient, so that common cases don't have to allocate a whole new text.
+        // TODO This can be made way more efficient, so that common cases don't have to allocate a whole new text.
 
         let mut text_new = BString::new(Vec::with_capacity(self.text.len()));
         let mut pos = 0;
