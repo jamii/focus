@@ -35,9 +35,9 @@ use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::platform::wayland::WindowAttributesExtWayland;
-use winit::window::{Window, WindowId};
+use winit::window::Window;
 
-use crate::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO};
+use crate::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, WindowId};
 use crate::render::Renderer;
 use crate::text::{Atlas, Drawing};
 
@@ -153,13 +153,13 @@ impl ApplicationHandler for Chrome {
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        window_id: WindowId,
+        window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
         let Chrome::Running(running) = self else {
             return;
         };
-        running.window_event(event_loop, window_id, event);
+        running.window_event(event_loop, WindowId(window_id), event);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -278,7 +278,7 @@ impl Backend {
         });
         let renderer = unsafe { Renderer::new() };
 
-        let id = window.id();
+        let id = WindowId(window.id());
         // Initial paint — drives the first `RedrawRequested` so the
         // window doesn't stay blank until something dirties it.
         window.request_redraw();
@@ -305,7 +305,7 @@ impl Backend {
         let surface = create_surface(&self.gl_config, &window);
         self.context.make_current(&surface).expect("make_current");
         let _ = surface.set_swap_interval(&self.context, SwapInterval::DontWait);
-        let id = window.id();
+        let id = WindowId(window.id());
         window.request_redraw();
         self.windows.insert(id, WindowState { window, surface });
         id

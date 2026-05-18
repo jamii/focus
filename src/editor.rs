@@ -27,7 +27,7 @@ impl Editor {
     }
 
     pub fn input(&mut self, app: &App, _io: &mut dyn IO, event: InputEvent) {
-        let mut document = app.get_document_mut(self.document_id);
+        let mut document = self.document_id.get_mut(app);
         match event {
             InputEvent::KeyboardInput {
                 event: key_event, ..
@@ -59,7 +59,7 @@ impl Editor {
     }
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
-        app.get_document(self.document_id).draw(app, drawing);
+        self.document_id.get(app).draw(app, drawing);
 
         if self.show_cursor {
             for cursor in &self.cursors {

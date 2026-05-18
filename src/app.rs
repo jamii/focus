@@ -6,7 +6,6 @@ use fontdue::{Font, FontSettings};
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, Modifiers};
 use winit::keyboard::Key;
-use winit::window::WindowId;
 
 use crate::document::Document;
 use crate::editor::Editor;
@@ -28,11 +27,44 @@ pub struct App {
     pub documents: HashMap<DocumentId, RefCell<Document>>,
 }
 
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+pub struct WindowId(pub winit::window::WindowId);
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct DocumentId(usize);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct EditorId(usize);
+
+impl WindowId {
+    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Window> {
+        app.windows.get(&self).unwrap().borrow()
+    }
+
+    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Window> {
+        app.windows.get(&self).unwrap().borrow_mut()
+    }
+}
+
+impl EditorId {
+    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Editor> {
+        app.editors.get(&self).unwrap().borrow()
+    }
+
+    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Editor> {
+        app.editors.get(&self).unwrap().borrow_mut()
+    }
+}
+
+impl DocumentId {
+    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Document> {
+        app.documents.get(&self).unwrap().borrow()
+    }
+
+    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Document> {
+        app.documents.get(&self).unwrap().borrow_mut()
+    }
+}
 
 pub type InputEvent = winit::event::WindowEvent;
 
@@ -108,18 +140,18 @@ impl App {
                         self.insert_window_empty(io);
                     }
                     Key::Character("m") => {
-                        let editor_id = self.get_window(window_id).editor_id;
-                        let document_id = self.get_editor(editor_id).document_id;
+                        let editor_id = window_id.get(self).editor_id;
+                        let document_id = editor_id.get(self).document_id;
                         let editor_id_new = self.insert_editor(Editor::new(document_id));
                         self.insert_window(io, Window::new(editor_id_new));
                     }
                     _ => {
-                        self.get_window_mut(window_id).input(self, io, event);
+                        window_id.get_mut(self).input(self, io, event);
                     }
                 }
             }
             _ => {
-                self.get_window_mut(window_id).input(self, io, event);
+                window_id.get_mut(self).input(self, io, event);
             }
         }
 
@@ -162,7 +194,7 @@ impl App {
     }
 
     pub fn draw(&self, window_id: WindowId, drawing: &mut Drawing) {
-        self.get_window(window_id).draw(self, drawing);
+        window_id.get(self).draw(self, drawing);
     }
 
     fn rebuild_atlas(&mut self, io: &mut dyn IO) {
@@ -171,30 +203,6 @@ impl App {
         for (window_id, _) in self.windows.iter() {
             io.request_redraw(*window_id);
         }
-    }
-
-    pub fn get_window<'a>(&'a self, window_id: WindowId) -> Ref<'a, Window> {
-        self.windows.get(&window_id).unwrap().borrow()
-    }
-
-    pub fn get_editor<'a>(&'a self, editor_id: EditorId) -> Ref<'a, Editor> {
-        self.editors.get(&editor_id).unwrap().borrow()
-    }
-
-    pub fn get_document<'a>(&'a self, document_id: DocumentId) -> Ref<'a, Document> {
-        self.documents.get(&document_id).unwrap().borrow()
-    }
-
-    pub fn get_window_mut<'a>(&'a self, window_id: WindowId) -> RefMut<'a, Window> {
-        self.windows.get(&window_id).unwrap().borrow_mut()
-    }
-
-    pub fn get_editor_mut<'a>(&'a self, editor_id: EditorId) -> RefMut<'a, Editor> {
-        self.editors.get(&editor_id).unwrap().borrow_mut()
-    }
-
-    pub fn get_document_mut<'a>(&'a self, document_id: DocumentId) -> RefMut<'a, Document> {
-        self.documents.get(&document_id).unwrap().borrow_mut()
     }
 
     fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
