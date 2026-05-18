@@ -175,20 +175,18 @@ fn renders_hello_world() {
     fs::create_dir_all(out_dir).unwrap();
     write_png(
         &out_dir.join("atlas.png"),
-        atlas.width,
-        atlas.height,
+        atlas.size[0],
+        atlas.size[1],
         &atlas_to_debug_rgba(&atlas),
     );
 
     let mut renderer = unsafe { Renderer::new() };
     unsafe { renderer.upload_atlas(&atlas) };
 
-    let mut drawing = Drawing::new(W as f32, H as f32);
+    let mut drawing = Drawing::new([W as f32, H as f32]);
     let clip = Rect {
-        x: 16.0,
-        y: 16.0,
-        w: 180.0,
-        h: atlas.cell_h as f32 + 8.0,
+        pos: [16.0, 16.0],
+        size: [180.0, atlas.cell_size[1] as f32 + 8.0],
     };
     drawing.push_clip_rect(clip);
     drawing.draw_rect(&atlas, clip, [255, 240, 170, 255]);
@@ -196,8 +194,7 @@ fn renders_hello_world() {
     drawing.draw_text(
         &atlas,
         "hello → world".into(),
-        20.0,
-        20.0,
+        [20.0, 20.0],
         [30, 30, 40, 255],
     );
     drawing.pop_clip_rect();

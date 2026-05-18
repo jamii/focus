@@ -28,7 +28,7 @@ impl Document {
     }
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
-        drawing.draw_text(&app.atlas, self.text.as_bstr(), 0.0, 0.0, TEXT_COLOR);
+        drawing.draw_text(&app.atlas, self.text.as_bstr(), [0.0, 0.0], TEXT_COLOR);
     }
 
     pub fn queue_edits(&mut self, edits: Vec<Edit>) {

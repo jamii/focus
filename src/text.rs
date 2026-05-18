@@ -34,24 +34,20 @@ const ATLAS_COLS: u32 = 16;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Rect {
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
+    pub pos: [f32; 2],
+    pub size: [f32; 2],
 }
 
-// Axis-aligned intersection. Returns a rect with non-positive w/h when the
-// inputs don't overlap; callers check w > 0 && h > 0 before drawing.
+// Axis-aligned intersection. Returns a rect with non-positive size when the
+// inputs don't overlap; callers check size[0] > 0 && size[1] > 0 before drawing.
 pub fn intersect_rects(a: Rect, b: Rect) -> Rect {
-    let x0 = a.x.max(b.x);
-    let y0 = a.y.max(b.y);
-    let x1 = (a.x + a.w).min(b.x + b.w);
-    let y1 = (a.y + a.h).min(b.y + b.h);
+    let x0 = a.pos[0].max(b.pos[0]);
+    let y0 = a.pos[1].max(b.pos[1]);
+    let x1 = (a.pos[0] + a.size[0]).min(b.pos[0] + b.size[0]);
+    let y1 = (a.pos[1] + a.size[1]).min(b.pos[1] + b.size[1]);
     Rect {
-        x: x0,
-        y: y0,
-        w: (x1 - x0).max(0.0),
-        h: (y1 - y0).max(0.0),
+        pos: [x0, y0],
+        size: [(x1 - x0).max(0.0), (y1 - y0).max(0.0)],
     }
 }
 
@@ -66,17 +62,17 @@ enum ClipState {
 }
 
 fn classify_clip(rect: Rect, clip: Rect) -> ClipState {
-    if rect.x >= clip.x + clip.w
-        || rect.x + rect.w <= clip.x
-        || rect.y >= clip.y + clip.h
-        || rect.y + rect.h <= clip.y
+    if rect.pos[0] >= clip.pos[0] + clip.size[0]
+        || rect.pos[0] + rect.size[0] <= clip.pos[0]
+        || rect.pos[1] >= clip.pos[1] + clip.size[1]
+        || rect.pos[1] + rect.size[1] <= clip.pos[1]
     {
         return ClipState::Outside;
     }
-    if rect.x >= clip.x
-        && rect.x + rect.w <= clip.x + clip.w
-        && rect.y >= clip.y
-        && rect.y + rect.h <= clip.y + clip.h
+    if rect.pos[0] >= clip.pos[0]
+        && rect.pos[0] + rect.size[0] <= clip.pos[0] + clip.size[0]
+        && rect.pos[1] >= clip.pos[1]
+        && rect.pos[1] + rect.size[1] <= clip.pos[1] + clip.size[1]
     {
         return ClipState::Inside;
     }
@@ -84,21 +80,19 @@ fn classify_clip(rect: Rect, clip: Rect) -> ClipState {
 }
 
 // A glyph is just the top-left of its cell in the atlas. Each cell is
-// `cell_w × cell_h` texels, with the glyph pre-positioned at its
-// baseline-relative offset within that cell — so drawing a character is
-// just "blit the whole cell at (pen_x, y)". No per-glyph bearings.
+// `cell_size[0] × cell_size[1]` texels, with the glyph pre-positioned at
+// its baseline-relative offset within that cell — so drawing a character
+// is just "blit the whole cell at (pen_x, y)". No per-glyph bearings.
 #[derive(Clone, Copy)]
 pub struct Glyph {
-    pub atlas_x: u32,
-    pub atlas_y: u32,
+    pub atlas_pos: [u32; 2],
 }
 
 pub struct Atlas {
     // R8 texture, laid out row-major. Each texel stores coverage alpha
-    // ∈ [0, 255]; the fragment shader supplies the color. The white_rect
+    // ∈ [0, 255]; the fragment shader supplies the color. The white_pos
     // texel is just 255 (= "fully opaque").
-    pub width: u32,
-    pub height: u32,
+    pub size: [u32; 2],
     pub pixels: Vec<u8>,
 
     pub glyphs: HashMap<char, Glyph>,
@@ -110,14 +104,13 @@ pub struct Atlas {
     // Coordinates of a single solid-white texel. Lives in its own
     // dedicated cell that no glyph quad ever samples; draw_rect points
     // at it for flat-colored fills.
-    pub white_x: u32,
-    pub white_y: u32,
+    pub white_pos: [u32; 2],
 
-    // Cell dimensions, in texels = screen pixels (we draw 1:1). cell_w
-    // is the rounded-up advance width; cell_h is the rounded-up
-    // line_height so a single cell fits any glyph from ascent to descent.
-    pub cell_w: u32,
-    pub cell_h: u32,
+    // Cell dimensions, in texels = screen pixels (we draw 1:1).
+    // cell_size[0] is the rounded-up advance width; cell_size[1] is the
+    // rounded-up line_height so a single cell fits any glyph from ascent
+    // to descent.
+    pub cell_size: [u32; 2],
 }
 
 impl Atlas {
@@ -149,7 +142,7 @@ impl Atlas {
         let atlas_h = rows * cell_h;
         let mut pixels = vec![0u8; (atlas_w * atlas_h) as usize];
 
-        let cell_origin = |idx: u32| ((idx % ATLAS_COLS) * cell_w, (idx / ATLAS_COLS) * cell_h);
+        let cell_origin = |idx: u32| [(idx % ATLAS_COLS) * cell_w, (idx / ATLAS_COLS) * cell_h];
 
         // For each glyph, paint its bitmap into its cell at the
         // bearing-offset that puts it on the cell's baseline. The cell's
@@ -159,7 +152,7 @@ impl Atlas {
         //   bitmap_left_in_cell = xmin (fontdue's left side bearing)
         let mut glyphs = HashMap::with_capacity(NUM_GLYPHS);
         for (i, (ch, m, bitmap)) in raster.iter().enumerate() {
-            let (cell_x, cell_y) = cell_origin(i as u32);
+            let [cell_x, cell_y] = cell_origin(i as u32);
             let bitmap_left = m.xmin;
             let bitmap_top = ascent as i32 - (m.ymin + m.height as i32);
             let gw = m.width as i32;
@@ -182,15 +175,14 @@ impl Atlas {
             glyphs.insert(
                 *ch,
                 Glyph {
-                    atlas_x: cell_x,
-                    atlas_y: cell_y,
+                    atlas_pos: [cell_x, cell_y],
                 },
             );
         }
 
         // Tofu: hollow rectangle painted into its own cell, with margins
         // so the box visually sits in the cap-letter region.
-        let (tx, ty) = cell_origin(tofu_idx);
+        let [tx, ty] = cell_origin(tofu_idx);
         let margin_x = (cell_w / 8).max(1);
         let margin_y = (cell_h / 5).max(2);
         let tw = cell_w - 2 * margin_x;
@@ -205,26 +197,40 @@ impl Atlas {
             }
         }
         let missing = Glyph {
-            atlas_x: tx,
-            atlas_y: ty,
+            atlas_pos: [tx, ty],
         };
 
         // White texel in its own cell — never sampled as part of a glyph
         // quad, so it doesn't pollute the tofu render.
-        let (white_x, white_y) = cell_origin(white_idx);
-        pixels[(white_y * atlas_w + white_x) as usize] = 255;
+        let white_pos = cell_origin(white_idx);
+        pixels[(white_pos[1] * atlas_w + white_pos[0]) as usize] = 255;
 
         Atlas {
-            width: atlas_w,
-            height: atlas_h,
+            size: [atlas_w, atlas_h],
             pixels,
             glyphs,
             missing,
-            white_x,
-            white_y,
-            cell_w,
-            cell_h,
+            white_pos,
+            cell_size: [cell_w, cell_h],
         }
+    }
+
+    /// Top-left screen position of the cell at the given grid coords.
+    pub fn grid_to_screen(&self, grid: [i32; 2]) -> [f32; 2] {
+        [
+            (grid[0] * self.cell_size[0] as i32) as f32,
+            (grid[1] * self.cell_size[1] as i32) as f32,
+        ]
+    }
+
+    /// Grid cell containing the given screen position. Floor-divides, so
+    /// a screen position on a cell boundary lands in the cell to its
+    /// right / below.
+    pub fn screen_to_grid(&self, screen: [f32; 2]) -> [i32; 2] {
+        [
+            (screen[0] / self.cell_size[0] as f32).floor() as i32,
+            (screen[1] / self.cell_size[1] as f32).floor() as i32,
+        ]
     }
 }
 
@@ -236,14 +242,10 @@ impl Atlas {
 //   solid fill  → src is the 1×1 white,   color is fill color
 #[derive(Clone, Copy, Debug)]
 pub struct Quad {
-    pub dst_x: f32,
-    pub dst_y: f32,
-    pub dst_w: f32,
-    pub dst_h: f32,
-    pub src_x: u32,
-    pub src_y: u32,
-    pub src_w: u32,
-    pub src_h: u32,
+    pub dst_pos: [f32; 2],
+    pub dst_size: [f32; 2],
+    pub src_pos: [u32; 2],
+    pub src_size: [u32; 2],
     pub color: [u8; 4],
 }
 
@@ -266,14 +268,12 @@ pub struct Drawing {
 }
 
 impl Drawing {
-    pub fn new(screen_w: f32, screen_h: f32) -> Self {
+    pub fn new(screen_size: [f32; 2]) -> Self {
         Self {
             commands: Vec::new(),
             clip_stack: vec![Rect {
-                x: 0.0,
-                y: 0.0,
-                w: screen_w,
-                h: screen_h,
+                pos: [0.0, 0.0],
+                size: screen_size,
             }],
         }
     }
@@ -305,37 +305,31 @@ impl Drawing {
     /// it doesn't need to break the batch.
     pub fn draw_rect(&mut self, atlas: &Atlas, rect: Rect, color: [u8; 4]) {
         let trimmed = intersect_rects(rect, self.current_clip());
-        if trimmed.w > 0.0 && trimmed.h > 0.0 {
+        if trimmed.size[0] > 0.0 && trimmed.size[1] > 0.0 {
             self.commands.push(DrawCommand::Quad(Quad {
-                dst_x: trimmed.x,
-                dst_y: trimmed.y,
-                dst_w: trimmed.w,
-                dst_h: trimmed.h,
-                src_x: atlas.white_x,
-                src_y: atlas.white_y,
-                src_w: 1,
-                src_h: 1,
+                dst_pos: trimmed.pos,
+                dst_size: trimmed.size,
+                src_pos: atlas.white_pos,
+                src_size: [1, 1],
                 color,
             }));
         }
     }
 
-    /// Text, clipped via GL scissor if necessary. (x, y) is the top-left
+    /// Text, clipped via GL scissor if necessary. `pos` is the top-left
     /// of the line's bounding box.
     ///
     /// If the bounding box is fully inside the current clip, we just emit
     /// glyph quads. If fully outside, we emit nothing. If partial, we
     /// bracket the glyphs with SetClip(clip) / SetClip(screen) so the
     /// scissor only kicks in for this draw.
-    pub fn draw_text(&mut self, atlas: &Atlas, text: &BStr, x: f32, y: f32, color: [u8; 4]) {
+    pub fn draw_text(&mut self, atlas: &Atlas, text: &BStr, pos: [f32; 2], color: [u8; 4]) {
         let clip = self.current_clip();
-        let cell_w = atlas.cell_w as f32;
-        let cell_h = atlas.cell_h as f32;
+        let cell_w = atlas.cell_size[0] as f32;
+        let cell_h = atlas.cell_size[1] as f32;
         let bbox = Rect {
-            x,
-            y,
-            w: cell_w * text.chars().count() as f32,
-            h: cell_h,
+            pos,
+            size: [cell_w * text.chars().count() as f32, cell_h],
         };
         let state = classify_clip(bbox, clip);
         if state == ClipState::Outside {
@@ -345,20 +339,16 @@ impl Drawing {
         if needs_scissor {
             self.commands.push(DrawCommand::SetClip(clip));
         }
-        let mut pen_x = x;
+        let mut pen_x = pos[0];
         for ch in text.chars() {
             // Unknown chars fall back to the tofu (same role as TTF's
             // glyph 0).
             let g = atlas.glyphs.get(&ch).unwrap_or(&atlas.missing);
             self.commands.push(DrawCommand::Quad(Quad {
-                dst_x: pen_x,
-                dst_y: y,
-                dst_w: cell_w,
-                dst_h: cell_h,
-                src_x: g.atlas_x,
-                src_y: g.atlas_y,
-                src_w: atlas.cell_w,
-                src_h: atlas.cell_h,
+                dst_pos: [pen_x, pos[1]],
+                dst_size: [cell_w, cell_h],
+                src_pos: g.atlas_pos,
+                src_size: atlas.cell_size,
                 color,
             }));
             pen_x += cell_w;

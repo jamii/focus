@@ -8,12 +8,18 @@ use crate::{
 
 pub struct Editor {
     pub document_id: DocumentId,
+    cursors: Vec<Cursor>,
+}
+
+struct Cursor {
+    pos: usize,
 }
 
 impl Editor {
     pub fn new(document_id: DocumentId) -> Self {
         Editor {
             document_id: document_id,
+            cursors: vec![Cursor { pos: 0 }],
         }
     }
 

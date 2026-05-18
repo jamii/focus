@@ -110,10 +110,10 @@ struct Batch {
 // glScissor uses pixel coords with bottom-left origin; flip y from our
 // top-left convention.
 unsafe fn set_scissor(rect: Rect, fb_height: i32) {
-    let x = rect.x.floor() as i32;
-    let y = rect.y.floor() as i32;
-    let w = rect.w.ceil() as i32;
-    let h = rect.h.ceil() as i32;
+    let x = rect.pos[0].floor() as i32;
+    let y = rect.pos[1].floor() as i32;
+    let w = rect.size[0].ceil() as i32;
+    let h = rect.size[1].ceil() as i32;
     unsafe {
         gl::Scissor(x, fb_height - (y + h), w.max(0), h.max(0));
     }
@@ -245,16 +245,16 @@ impl Renderer {
                 gl::TEXTURE_2D,
                 0,
                 gl::R8 as i32,
-                atlas.width as i32,
-                atlas.height as i32,
+                atlas.size[0] as i32,
+                atlas.size[1] as i32,
                 0,
                 gl::RED,
                 gl::UNSIGNED_BYTE,
                 atlas.pixels.as_ptr() as *const _,
             );
         }
-        self.atlas_w = atlas.width;
-        self.atlas_h = atlas.height;
+        self.atlas_w = atlas.size[0];
+        self.atlas_h = atlas.size[1];
     }
 
     /// Render a command list into whatever framebuffer is currently bound.
@@ -270,24 +270,22 @@ impl Renderer {
         let inv_atlas_w = 1.0 / self.atlas_w as f32;
         let inv_atlas_h = 1.0 / self.atlas_h as f32;
         let mut current_clip = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: fb_w as f32,
-            h: fb_h as f32,
+            pos: [0.0, 0.0],
+            size: [fb_w as f32, fb_h as f32],
         };
         let mut batch_start = 0usize;
 
         for cmd in commands {
             match cmd {
                 DrawCommand::Quad(q) => {
-                    let x0 = q.dst_x;
-                    let y0 = q.dst_y;
-                    let x1 = x0 + q.dst_w;
-                    let y1 = y0 + q.dst_h;
-                    let u0 = q.src_x as f32 * inv_atlas_w;
-                    let v0 = q.src_y as f32 * inv_atlas_h;
-                    let u1 = (q.src_x + q.src_w) as f32 * inv_atlas_w;
-                    let v1 = (q.src_y + q.src_h) as f32 * inv_atlas_h;
+                    let x0 = q.dst_pos[0];
+                    let y0 = q.dst_pos[1];
+                    let x1 = x0 + q.dst_size[0];
+                    let y1 = y0 + q.dst_size[1];
+                    let u0 = q.src_pos[0] as f32 * inv_atlas_w;
+                    let v0 = q.src_pos[1] as f32 * inv_atlas_h;
+                    let u1 = (q.src_pos[0] + q.src_size[0]) as f32 * inv_atlas_w;
+                    let v1 = (q.src_pos[1] + q.src_size[1]) as f32 * inv_atlas_h;
                     let c = q.color;
                     // Two triangles per quad: (tl, tr, br) and (tl, br, bl).
                     self.vertex_buf.extend_from_slice(&[
