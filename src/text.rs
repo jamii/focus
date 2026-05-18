@@ -216,10 +216,10 @@ impl Atlas {
     }
 
     /// Top-left screen position of the cell at the given grid coords.
-    pub fn grid_to_screen(&self, grid: [i32; 2]) -> [f32; 2] {
+    pub fn grid_to_screen(&self, grid: [usize; 2]) -> [f32; 2] {
         [
-            (grid[0] * self.cell_size[0] as i32) as f32,
-            (grid[1] * self.cell_size[1] as i32) as f32,
+            (grid[0] as f32) * (self.cell_size[0] as f32),
+            (grid[1] as f32) * (self.cell_size[1] as f32),
         ]
     }
 

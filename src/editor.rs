@@ -3,7 +3,8 @@ use winit::event::ElementState;
 use crate::{
     app::{App, DocumentId, IO, InputEvent},
     document::{Edit, EditKind},
-    text::Drawing,
+    style,
+    text::{Drawing, Rect},
 };
 
 pub struct Editor {
@@ -30,12 +31,19 @@ impl Editor {
                 event: key_event, ..
             } if key_event.state == ElementState::Pressed => match key_event.text.as_ref() {
                 Some(char) => {
-                    let end = document.text.len();
-                    document.queue_edits(vec![Edit {
-                        kind: EditKind::Insert,
-                        pos: end,
-                        text: char.as_ref().into(),
-                    }]);
+                    document.queue_edits(
+                        self.cursors
+                            .iter()
+                            .map(|c| Edit {
+                                kind: EditKind::Insert,
+                                pos: c.pos,
+                                text: char.as_ref().into(),
+                            })
+                            .collect(),
+                    );
+                    for cursor in &mut self.cursors {
+                        cursor.pos += char.len();
+                    }
                 }
                 _ => {}
             },
@@ -44,6 +52,15 @@ impl Editor {
     }
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
+        for cursor in &self.cursors {
+            let mut pos = app.atlas.grid_to_screen([cursor.pos, 0]);
+            let mut size = [app.atlas.cell_size[0] as f32, app.atlas.cell_size[1] as f32];
+            size[0] /= 8.0;
+            pos[0] -= size[0] / 2.0;
+            drawing.draw_rect(&app.atlas, Rect { pos, size }, style::TEXT_COLOR);
+            // const w = @divTrunc(self.app.atlas.char_width, 8);
+        }
+
         app.get_document(self.document_id).draw(app, drawing);
     }
 
