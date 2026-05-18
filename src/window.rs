@@ -1,4 +1,4 @@
-use crate::app::{App, EditorId, IO, InputEvent};
+use crate::app::{App, EditorId, InputEvent, IO};
 use crate::text::Drawing;
 
 pub struct Window {
