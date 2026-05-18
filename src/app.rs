@@ -5,7 +5,7 @@ use std::time::Duration;
 use fontdue::{Font, FontSettings};
 use winit::dpi::LogicalSize;
 use winit::event::ElementState;
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::Key;
 use winit::window::WindowId;
 
 use crate::document::Document;
@@ -77,7 +77,7 @@ impl App {
     }
 
     pub fn input(&mut self, window_id: WindowId, event: InputEvent, io: &mut dyn IO) {
-        match event {
+        match &event {
             InputEvent::CloseRequested => {
                 self.windows.remove(&window_id);
                 io.close_window(window_id);
@@ -88,7 +88,6 @@ impl App {
             InputEvent::KeyboardInput {
                 event: key_event, ..
             } if key_event.state == ElementState::Pressed => match key_event.logical_key.as_ref() {
-                Key::Named(NamedKey::Escape) => io.exit(),
                 Key::Character("+") => {
                     self.px_size += 1.0;
                     self.rebuild_atlas(io);
@@ -100,13 +99,9 @@ impl App {
                 Key::Character("n") => {
                     self.insert_window_empty(io);
                 }
-                Key::Character("a") => {
-                    let editor_id = self.get_window(window_id).editor_id;
-                    let document_id = self.get_editor(editor_id).document_id;
-                    self.get_document_mut(document_id)
-                        .replace("hello world".into());
+                _ => {
+                    self.get_window_mut(window_id).input(self, io, event);
                 }
-                _ => {}
             },
             _ => {}
         }

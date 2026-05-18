@@ -1,4 +1,4 @@
-use crate::app::{App, EditorId};
+use crate::app::{App, EditorId, IO, InputEvent};
 use crate::text::Drawing;
 
 pub struct Window {
@@ -10,6 +10,10 @@ impl Window {
         Window {
             editor_id: editor_id,
         }
+    }
+
+    pub fn input(&mut self, app: &App, io: &mut dyn IO, event: InputEvent) {
+        app.get_editor_mut(self.editor_id).input(app, io, event);
     }
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
