@@ -1,20 +1,37 @@
-use std::collections::HashSet;
+use std::cell::{Ref, RefCell, RefMut};
+use std::collections::HashMap;
 use std::time::Duration;
 
+use fontdue::{Font, FontSettings};
 use winit::dpi::LogicalSize;
 use winit::event::ElementState;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
-use crate::text::{Atlas, Drawing, Rect};
-use fontdue::{Font, FontSettings};
+use crate::document::Document;
+use crate::editor::Editor;
+use crate::text::{Atlas, Drawing};
+use crate::window::Window;
 
 pub struct App {
-    windows: HashSet<WindowId>,
     font: Font,
     px_size: f32,
-    atlas: Atlas,
+    pub atlas: Atlas,
+
+    windows: HashMap<WindowId, RefCell<Window>>,
+
+    next_editor_id: EditorId,
+    editors: HashMap<EditorId, RefCell<Editor>>,
+
+    next_document_id: DocumentId,
+    documents: HashMap<DocumentId, RefCell<Document>>,
 }
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct DocumentId(usize);
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct EditorId(usize);
 
 pub type InputEvent = winit::event::WindowEvent;
 
@@ -22,9 +39,9 @@ pub type InputEvent = winit::event::WindowEvent;
 pub trait IO {
     fn elapsed(&self) -> Duration;
     fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId;
-    fn close_window(&mut self, window: WindowId);
-    fn set_window_title(&mut self, window: WindowId, title: String);
-    fn request_redraw(&mut self, window: WindowId);
+    fn close_window(&mut self, window_id: WindowId);
+    fn set_window_title(&mut self, window_id: WindowId, title: String);
+    fn request_redraw(&mut self, window_id: WindowId);
     fn reload_atlas(&mut self, atlas: &Atlas);
     fn exit(&mut self);
 }
@@ -38,33 +55,32 @@ pub const INITIAL_SIZE: LogicalSize<u32> = LogicalSize {
     height: 600,
 };
 
-// Placeholder scene — each window draws its own id so the multi-window
-// path is visibly distinct per window.
-const TEXT_X: f32 = 20.0;
-const TEXT_Y: f32 = 20.0;
-const TEXT_COLOR: [u8; 4] = [30, 30, 40, 255];
-const HIGHLIGHT_COLOR: [u8; 4] = [255, 240, 170, 255];
-
 impl App {
-    pub fn new(initial_window: WindowId, io: &mut dyn IO) -> App {
+    pub fn new(initial_window_id: WindowId, io: &mut dyn IO) -> App {
         let font = Font::from_bytes(FONT, FontSettings::default()).unwrap();
         let atlas = Atlas::build(&font, INITIAL_PX);
-        let mut windows = HashSet::new();
-        windows.insert(initial_window);
         io.reload_atlas(&atlas);
-        App {
-            windows,
+        let mut app = App {
             font,
             px_size: INITIAL_PX,
             atlas,
-        }
+            windows: HashMap::new(),
+            next_editor_id: EditorId(0),
+            editors: HashMap::new(),
+            next_document_id: DocumentId(0),
+            documents: HashMap::new(),
+        };
+        let editor_id = app.insert_editor_empty();
+        app.windows
+            .insert(initial_window_id, RefCell::new(Window::new(editor_id)));
+        app
     }
 
-    pub fn input(&mut self, window: WindowId, event: InputEvent, io: &mut dyn IO) {
+    pub fn input(&mut self, window_id: WindowId, event: InputEvent, io: &mut dyn IO) {
         match event {
             InputEvent::CloseRequested => {
-                self.windows.remove(&window);
-                io.close_window(window);
+                self.windows.remove(&window_id);
+                io.close_window(window_id);
                 if self.windows.is_empty() {
                     io.exit();
                 }
@@ -82,13 +98,19 @@ impl App {
                     self.rebuild_atlas(io);
                 }
                 Key::Character("n") => {
-                    let new = io.open_window(INITIAL_TITLE.to_string(), INITIAL_SIZE);
-                    self.windows.insert(new);
+                    self.insert_window_empty(io);
+                }
+                Key::Character("a") => {
+                    let editor_id = self.get_window(window_id).editor_id;
+                    let document_id = self.get_editor(editor_id).document_id;
+                    self.get_document_mut(document_id)
+                        .replace("hello world".into());
                 }
                 _ => {}
             },
             _ => {}
         }
+        io.request_redraw(window_id);
     }
 
     pub fn tick(&mut self, _dt: f64, _io: &mut dyn IO) {
@@ -96,30 +118,73 @@ impl App {
         // depends on elapsed time goes here.
     }
 
-    pub fn draw(&self, window: WindowId, drawing: &mut Drawing) {
-        assert!(self.windows.contains(&window));
-
-        let clip = Rect {
-            x: TEXT_X - 4.0,
-            y: TEXT_Y - 4.0,
-            w: 180.0,
-            h: self.atlas.cell_h as f32 + 8.0,
-        };
-        drawing.push_clip_rect(clip);
-        drawing.draw_rect(&self.atlas, clip, HIGHLIGHT_COLOR);
-        let label = format!("window {:?}", window);
-        drawing.draw_text(
-            &self.atlas,
-            label.as_str().into(),
-            TEXT_X,
-            TEXT_Y,
-            TEXT_COLOR,
-        );
-        drawing.pop_clip_rect();
+    pub fn draw(&self, window_id: WindowId, drawing: &mut Drawing) {
+        self.get_window(window_id).draw(self, drawing);
     }
 
     fn rebuild_atlas(&mut self, io: &mut dyn IO) {
         self.atlas = Atlas::build(&self.font, self.px_size);
         io.reload_atlas(&self.atlas);
+        for (window_id, _) in self.windows.iter() {
+            io.request_redraw(*window_id);
+        }
+    }
+
+    pub fn get_window<'a>(&'a self, window_id: WindowId) -> Ref<'a, Window> {
+        self.windows.get(&window_id).unwrap().borrow()
+    }
+
+    pub fn get_editor<'a>(&'a self, editor_id: EditorId) -> Ref<'a, Editor> {
+        self.editors.get(&editor_id).unwrap().borrow()
+    }
+
+    pub fn get_document<'a>(&'a self, document_id: DocumentId) -> Ref<'a, Document> {
+        self.documents.get(&document_id).unwrap().borrow()
+    }
+
+    pub fn get_window_mut<'a>(&'a self, window_id: WindowId) -> RefMut<'a, Window> {
+        self.windows.get(&window_id).unwrap().borrow_mut()
+    }
+
+    pub fn get_editor_mut<'a>(&'a self, editor_id: EditorId) -> RefMut<'a, Editor> {
+        self.editors.get(&editor_id).unwrap().borrow_mut()
+    }
+
+    pub fn get_document_mut<'a>(&'a self, document_id: DocumentId) -> RefMut<'a, Document> {
+        self.documents.get(&document_id).unwrap().borrow_mut()
+    }
+
+    fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
+        let editor_id = self.insert_editor_empty();
+        self.insert_window(io, Window::new(editor_id))
+    }
+
+    fn insert_window(&mut self, io: &mut dyn IO, window: Window) -> WindowId {
+        let window_id = io.open_window(INITIAL_TITLE.to_string(), INITIAL_SIZE);
+        self.windows.insert(window_id, RefCell::new(window));
+        window_id
+    }
+
+    pub fn insert_editor_empty(&mut self) -> EditorId {
+        let document_id = self.insert_document_empty();
+        self.insert_editor(Editor::new(document_id))
+    }
+
+    pub fn insert_editor(&mut self, editor: Editor) -> EditorId {
+        let editor_id = self.next_editor_id;
+        self.next_editor_id.0 += 1;
+        self.editors.insert(editor_id, RefCell::new(editor));
+        editor_id
+    }
+
+    pub fn insert_document_empty(&mut self) -> DocumentId {
+        self.insert_document(Document::new())
+    }
+
+    pub fn insert_document(&mut self, document: Document) -> DocumentId {
+        let document_id = self.next_document_id;
+        self.next_document_id.0 += 1;
+        self.documents.insert(document_id, RefCell::new(document));
+        document_id
     }
 }

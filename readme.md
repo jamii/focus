@@ -34,7 +34,7 @@ Wishlist:
     * this is one more thing that needs to be able to subscribe to edits on a buffer
 * undo tree
 * lsp
-* magit-style menus
+* magit-style menus (https://github.com/magit/transient / https://github.com/positron-solutions/transient-showcase)
 * magit (https://matklad.github.io/2026/03/05/jj-lsp-followup.html)
 * file tree / dired
 * tentative ideas for agent integration
@@ -70,3 +70,10 @@ Thinks:
   * flymake mode wants to listen to save events
   * want to batch events - only one update call per frame
     * exception is ranges, which need to update on every edit batch or the editor will break? probably a separate system
+* solution to the edit sequencing problem
+  * buffer/editor are in refcells
+  * update takes &mut editor. updates all *other* subscribed editors through refcell, and then calls update directly on the passed editor
+* alt
+  * buffer stores points - cursors get updated indirectly
+  * line wrap is different anyway, not tied to text
+  * even line ends are a bit funny, because they can get deleted

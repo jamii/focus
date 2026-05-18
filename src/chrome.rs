@@ -100,18 +100,18 @@ impl IO for IoReal<'_> {
         self.backend.open_window(self.event_loop, &title, size)
     }
 
-    fn close_window(&mut self, window: WindowId) {
-        self.backend.windows.remove(&window);
+    fn close_window(&mut self, window_id: WindowId) {
+        self.backend.windows.remove(&window_id);
     }
 
-    fn set_window_title(&mut self, window: WindowId, title: String) {
-        if let Some(w) = self.backend.windows.get(&window) {
+    fn set_window_title(&mut self, window_id: WindowId, title: String) {
+        if let Some(w) = self.backend.windows.get(&window_id) {
             w.window.set_title(&title);
         }
     }
 
-    fn request_redraw(&mut self, window: WindowId) {
-        if let Some(w) = self.backend.windows.get(&window) {
+    fn request_redraw(&mut self, window_id: WindowId) {
+        if let Some(w) = self.backend.windows.get(&window_id) {
             w.window.request_redraw();
         }
     }
@@ -130,14 +130,14 @@ impl ApplicationHandler for Chrome {
         if matches!(self, Chrome::Running(_)) {
             return;
         }
-        let (mut backend, initial_window) =
+        let (mut backend, initial_window_id) =
             Backend::bootstrap(event_loop, INITIAL_TITLE, INITIAL_SIZE);
         let app = {
             let mut io = IoReal {
                 backend: &mut backend,
                 event_loop,
             };
-            App::new(initial_window, &mut io)
+            App::new(initial_window_id, &mut io)
         };
         *self = Chrome::Running(Running {
             app,

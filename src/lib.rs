@@ -1,5 +1,9 @@
 pub mod app;
 pub mod chrome;
+pub mod document;
+pub mod editor;
 pub mod fuzz_gen;
 pub mod render;
+pub mod style;
 pub mod text;
+pub mod window;
