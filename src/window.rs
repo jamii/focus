@@ -1,5 +1,6 @@
-use crate::app::{App, EditorId, InputEvent, IO};
-use crate::text::Drawing;
+use crate::app::{App, EditorId, IO, InputEvent};
+use crate::style;
+use crate::text::{Drawing, Rect};
 
 pub struct Window {
     pub editor_id: EditorId,
@@ -21,6 +22,14 @@ impl Window {
     }
 
     pub fn draw(&mut self, app: &App, drawing: &mut Drawing) {
+        drawing.draw_rect(
+            &app.atlas,
+            Rect {
+                pos: [0.0, 0.0],
+                size: [1e9, 1e9],
+            },
+            style::BACKGROUND_COLOR,
+        );
         self.editor_id.get_mut(app).draw(app, drawing);
     }
 }

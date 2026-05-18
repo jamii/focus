@@ -1,8 +1,5 @@
 use bstr::{BString, ByteSlice};
 
-use crate::style::TEXT_COLOR;
-use crate::{app::App, text::Drawing};
-
 pub struct Document {
     pub text: BString,
     pub newlines: Vec<usize>,

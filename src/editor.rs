@@ -1,4 +1,4 @@
-use bstr::{BStr, BString, ByteSlice};
+use bstr::{BStr, ByteSlice};
 use winit::{
     event::ElementState,
     keyboard::{Key, NamedKey},
@@ -7,7 +7,7 @@ use winit::{
 use crate::{
     app::{App, DocumentId, IO, InputEvent},
     document::{Edit, EditKind},
-    style::{FADE_COLOR, TEXT_COLOR},
+    style::{HIGHLIGHT_COLOR, TEXT_COLOR},
     text::{Drawing, Rect},
 };
 
@@ -124,7 +124,7 @@ impl Editor {
                         &app.atlas,
                         BStr::new(b"\\"),
                         app.atlas.screen_from_grid([0, grid[1]]),
-                        FADE_COLOR,
+                        HIGHLIGHT_COLOR,
                     );
                 }
             }
