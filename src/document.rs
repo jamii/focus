@@ -85,12 +85,10 @@ impl Document {
 
         // TODO This can be made way more efficient, so that common cases don't have to iterate over the whole text.
         self.newlines.clear();
-        let mut pos = 0;
-        for char in self.text.chars() {
+        for (char_start, _, char) in self.text.char_indices() {
             if char == '\n' {
-                self.newlines.push(pos);
+                self.newlines.push(char_start);
             }
-            pos += char.len_utf8();
         }
     }
 

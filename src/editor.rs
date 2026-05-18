@@ -96,8 +96,7 @@ impl Editor {
     }
 
     pub fn draw(&mut self, app: &App, drawing: &mut Drawing) {
-        let wrap_chars =
-            (drawing.current_clip_size()[0] / app.atlas.cell_size[0] as f32).floor() as isize 
+        let wrap_chars = (drawing.current_clip_size()[0] / app.atlas.cell_size[0] as f32).floor() as isize
             // leave space for gutters
             - 2;
         if wrap_chars <= 0 {
@@ -134,9 +133,7 @@ impl Editor {
             for cursor in &self.cursors {
                 let mut grid = self.grid_from_pos(app, cursor.pos);
                 grid[0] += 1; // gutter
-                let mut pos = app
-                    .atlas
-                    .screen_from_grid(grid);
+                let mut pos = app.atlas.screen_from_grid(grid);
                 let mut size = [app.atlas.cell_size[0] as f32, app.atlas.cell_size[1] as f32];
                 size[0] /= 8.0;
                 pos[0] -= size[0] / 2.0;
@@ -173,7 +170,7 @@ impl Editor {
         let mut end = 0;
         let mut last_soft_wrap = None;
         let mut col = 0;
-        while let Some(char) = text[end..].chars().next() {
+        while let Some((_, char_end, char)) = text[end..].char_indices().next() {
             if col >= self.wrap_chars {
                 if let Some(pos) = last_soft_wrap {
                     end = pos;
@@ -185,19 +182,18 @@ impl Editor {
             }
             if char == '\n' {
                 self.wraps.push([start, end]);
-                start = end + char.len_utf8();
+                start = end + char_end;
                 col = 0;
                 last_soft_wrap = None;
             } else {
                 col += 1
             }
-            end += char.len_utf8();
+            end += char_end;
             if char == ' ' {
                 last_soft_wrap = Some(end);
             }
         }
-        self.wraps.push([start, end]);
-        assert!(end == text.len());
+        self.wraps.push([start, text.len()]);
     }
 
     fn grid_from_pos(&self, app: &App, pos: usize) -> [usize; 2] {
