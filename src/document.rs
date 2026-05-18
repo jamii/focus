@@ -5,6 +5,7 @@ use crate::{app::App, text::Drawing};
 
 pub struct Document {
     pub text: BString,
+    queued_edits: Option<Vec<Edit>>,
 }
 
 pub struct Edit {
@@ -20,7 +21,10 @@ pub enum EditKind {
 
 impl Document {
     pub fn new() -> Document {
-        Document { text: "".into() }
+        Document {
+            text: "".into(),
+            queued_edits: None,
+        }
     }
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
@@ -31,7 +35,22 @@ impl Document {
         self.text = text;
     }
 
-    pub fn apply_edits(&mut self, edits: &[Edit]) {
+    pub fn queue_edits(&mut self, edits: Vec<Edit>) {
+        assert!(
+            self.queued_edits.is_none(),
+            "A set of edits is already queued"
+        );
+        self.queued_edits = Some(edits);
+    }
+
+    pub fn apply_queued_edits(&mut self) {
+        match self.queued_edits.take() {
+            Some(edits) => self.apply_edits(&edits),
+            None => {}
+        }
+    }
+
+    fn apply_edits(&mut self, edits: &[Edit]) {
         for edit in edits {
             assert!(edit.pos <= self.text.len(), "Edit out of bounds");
             match edit.kind {
@@ -88,7 +107,9 @@ mod tests {
     use super::*;
 
     fn doc(s: &str) -> Document {
-        Document { text: s.into() }
+        let mut doc = Document::new();
+        doc.text = s.into();
+        doc
     }
 
     fn ins(pos: usize, text: &str) -> Edit {

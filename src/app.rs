@@ -110,6 +110,9 @@ impl App {
             },
             _ => {}
         }
+        for document in self.documents.values() {
+            document.borrow_mut().apply_queued_edits();
+        }
         io.request_redraw(window_id);
     }
 

@@ -25,7 +25,7 @@ impl Editor {
             } if key_event.state == ElementState::Pressed => match key_event.text.as_ref() {
                 Some(char) => {
                     let end = document.text.len();
-                    document.apply_edits(&[Edit {
+                    document.queue_edits(vec![Edit {
                         kind: EditKind::Insert,
                         pos: end,
                         text: char.as_ref().into(),
