@@ -13,7 +13,7 @@ impl Window {
     }
 
     pub fn input(&mut self, app: &App, io: &mut dyn IO, event: InputEvent) {
-        crate::editor::input(self.editor_id, app, io, event);
+        app.get_editor_mut(self.editor_id).input(app, io, event);
     }
 
     pub fn draw(&self, app: &App, drawing: &mut Drawing) {
