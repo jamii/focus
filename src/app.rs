@@ -18,13 +18,13 @@ pub struct App {
     px_size: f32,
     pub atlas: Atlas,
 
-    windows: HashMap<WindowId, RefCell<Window>>,
+    pub windows: HashMap<WindowId, RefCell<Window>>,
 
     next_editor_id: EditorId,
-    editors: HashMap<EditorId, RefCell<Editor>>,
+    pub editors: HashMap<EditorId, RefCell<Editor>>,
 
     next_document_id: DocumentId,
-    documents: HashMap<DocumentId, RefCell<Document>>,
+    pub documents: HashMap<DocumentId, RefCell<Document>>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
@@ -35,7 +35,7 @@ pub struct EditorId(usize);
 
 pub type InputEvent = winit::event::WindowEvent;
 
-// External effects app may need. Mocked for testing/fuzzing etc.
+// External effects. Mocked for testing/fuzzing.
 pub trait IO {
     fn elapsed(&self) -> Duration;
     fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId;

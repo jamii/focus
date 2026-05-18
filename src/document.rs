@@ -14,7 +14,12 @@ pub struct Insert {
 
 pub struct Delete {
     pub pos: usize,
-    pub len: usize,
+    pub text: BString,
+}
+
+pub enum Edit {
+    Insert(Vec<Insert>),
+    Delete(Vec<Delete>),
 }
 
 impl Document {
@@ -30,7 +35,8 @@ impl Document {
         self.text = text;
     }
 
-    pub fn insert(&mut self, inserts: Vec<Insert>) {
+    #[must_use]
+    pub fn insert(&mut self, inserts: Vec<Insert>) -> Edit {
         for insert in inserts.iter() {
             assert!(insert.pos <= self.text.len(), "Insert out of bounds");
         }
@@ -51,36 +57,43 @@ impl Document {
             gap.end -= insert.text.len();
         }
         assert!(gap.start == gap.end);
+        Edit::Insert(inserts)
     }
 
-    pub fn delete(&mut self, deletes: Vec<Delete>) {
+    #[must_use]
+    pub fn delete(&mut self, deletes: Vec<Delete>) -> Edit {
         for delete in deletes.iter() {
             assert!(
-                delete.pos + delete.len <= self.text.len(),
+                delete.pos + delete.text.len() <= self.text.len(),
                 "Delete out of bounds"
+            );
+            assert!(
+                self.text[delete.pos..delete.pos + delete.text.len()] == delete.text,
+                "Delete text doesn't match document"
             );
         }
         for pair in deletes.windows(2) {
             assert!(
-                pair[0].pos + pair[0].len <= pair[1].pos,
+                pair[0].pos + pair[0].text.len() <= pair[1].pos,
                 "Deletes should be sorted and non-overlapping"
             );
         }
         let len_old = self.text.len();
-        let len_removed = deletes.iter().map(|d| d.len).sum::<usize>();
+        let len_removed = deletes.iter().map(|d| d.text.len()).sum::<usize>();
         let len_new = len_old - len_removed;
         let mut gap = 0..0;
         for delete in deletes.iter() {
             let len = delete.pos - gap.end;
             self.text.copy_within(gap.end..delete.pos, gap.start);
             gap.start += len;
-            gap.end = delete.pos + delete.len;
+            gap.end = delete.pos + delete.text.len();
         }
         let len = len_old - gap.end;
         self.text.copy_within(gap.end..len_old, gap.start);
         gap.start += len;
         assert!(gap.start == len_new);
         self.text.truncate(len_new);
+        Edit::Delete(deletes)
     }
 }
 
@@ -99,19 +112,22 @@ mod tests {
         }
     }
 
-    fn del(pos: usize, len: usize) -> Delete {
-        Delete { pos, len }
+    fn del(pos: usize, text: &str) -> Delete {
+        Delete {
+            pos,
+            text: text.into(),
+        }
     }
 
     fn check(initial: &str, inserts: Vec<Insert>, expected: &str) {
         let mut d = doc(initial);
-        d.insert(inserts);
+        _ = d.insert(inserts);
         assert_eq!(d.text, expected);
     }
 
     fn check_del(initial: &str, deletes: Vec<Delete>, expected: &str) {
         let mut d = doc(initial);
-        d.delete(deletes);
+        _ = d.delete(deletes);
         assert_eq!(d.text, expected);
     }
 
@@ -173,13 +189,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "Insert out of bounds")]
     fn panics_on_out_of_bounds() {
-        doc("ab").insert(vec![ins(3, "X")]);
+        _ = doc("ab").insert(vec![ins(3, "X")]);
     }
 
     #[test]
     #[should_panic(expected = "Inserts should be sorted")]
     fn panics_on_unsorted() {
-        doc("abc").insert(vec![ins(2, "X"), ins(1, "Y")]);
+        _ = doc("abc").insert(vec![ins(2, "X"), ins(1, "Y")]);
     }
 
     #[test]
@@ -189,60 +205,66 @@ mod tests {
 
     #[test]
     fn delete_entire_document() {
-        check_del("abc", vec![del(0, 3)], "");
+        check_del("abc", vec![del(0, "abc")], "");
     }
 
     #[test]
     fn delete_single_at_start() {
-        check_del("abcd", vec![del(0, 1)], "bcd");
+        check_del("abcd", vec![del(0, "a")], "bcd");
     }
 
     #[test]
     fn delete_single_at_end() {
-        check_del("abcd", vec![del(3, 1)], "abc");
+        check_del("abcd", vec![del(3, "d")], "abc");
     }
 
     #[test]
     fn delete_single_in_middle() {
-        check_del("abcdef", vec![del(2, 2)], "abef");
+        check_del("abcdef", vec![del(2, "cd")], "abef");
     }
 
     #[test]
     fn delete_multiple_sorted() {
-        check_del("abcdef", vec![del(1, 1), del(3, 2)], "acf");
+        check_del("abcdef", vec![del(1, "b"), del(3, "de")], "acf");
     }
 
     #[test]
     fn delete_adjacent_ranges() {
-        // pair[0].pos + pair[0].len == pair[1].pos — touching but not overlapping.
-        check_del("abcdef", vec![del(1, 2), del(3, 2)], "af");
+        // pair[0].pos + pair[0].text.len() == pair[1].pos — touching but not overlapping.
+        check_del("abcdef", vec![del(1, "bc"), del(3, "de")], "af");
     }
 
     #[test]
     fn delete_zero_length_is_noop() {
-        check_del("abc", vec![del(1, 0)], "abc");
+        check_del("abc", vec![del(1, "")], "abc");
     }
 
     #[test]
     fn delete_mixed_zero_and_nonzero() {
-        check_del("abcde", vec![del(0, 0), del(1, 2), del(5, 0)], "ade");
+        check_del("abcde", vec![del(0, ""), del(1, "bc"), del(5, "")], "ade");
     }
 
     #[test]
     #[should_panic(expected = "Delete out of bounds")]
     fn delete_panics_on_out_of_bounds() {
-        doc("ab").delete(vec![del(1, 2)]);
+        _ = doc("ab").delete(vec![del(1, "xx")]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Delete text doesn't match document")]
+    fn delete_panics_on_mismatched_text() {
+        _ = doc("abcd").delete(vec![del(1, "xx")]);
     }
 
     #[test]
     #[should_panic(expected = "Deletes should be sorted and non-overlapping")]
     fn delete_panics_on_unsorted() {
-        doc("abcd").delete(vec![del(2, 1), del(0, 1)]);
+        _ = doc("abcd").delete(vec![del(2, "c"), del(0, "a")]);
     }
 
     #[test]
     #[should_panic(expected = "Deletes should be sorted and non-overlapping")]
     fn delete_panics_on_overlapping() {
-        doc("abcd").delete(vec![del(0, 2), del(1, 1)]);
+        _ = doc("abcd").delete(vec![del(0, "ab"), del(1, "b")]);
     }
 }
