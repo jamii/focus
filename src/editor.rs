@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bstr::{BStr, ByteSlice};
 use winit::{
     event::ElementState,
@@ -17,6 +19,7 @@ pub struct Editor {
     show_cursor: bool,
     wrap_chars: usize,
     wraps: Vec<[usize; 2]>,
+    last_input: Duration,
 }
 
 struct Cursor {
@@ -31,10 +34,11 @@ impl Editor {
             show_cursor: true,
             wrap_chars: 0,
             wraps: vec![[0, 0]],
+            last_input: Duration::ZERO,
         }
     }
 
-    pub fn input(&mut self, app: &App, _io: &mut dyn IO, event: InputEvent) {
+    pub fn input(&mut self, app: &App, io: &mut dyn IO, event: InputEvent) {
         let mut document = self.document_id.get_mut(app);
         match event {
             InputEvent::KeyboardInput {
@@ -80,15 +84,30 @@ impl Editor {
                                 .collect(),
                         );
                     }
+                    Key::Named(NamedKey::Backspace) => {
+                        let mut edits = Vec::with_capacity(self.cursors.len());
+                        for cursor in &self.cursors {
+                            if let Some(start) = document.char_prev(cursor.pos) {
+                                edits.push(Edit {
+                                    kind: EditKind::Delete,
+                                    pos: start,
+                                    text: document.text[start..cursor.pos].into(),
+                                })
+                            }
+                        }
+                        document.queue_edits(edits);
+                    }
                     _ => {}
                 }
             }
             _ => {}
         }
+        self.last_input = io.frame_start();
     }
 
     pub fn tick(&mut self, _app: &App, io: &mut dyn IO, redraw: &mut bool) {
-        let show_cursor = ((io.frame_start().as_millis() / 500) % 2) == 0;
+        let show_cursor = ((io.frame_start().as_millis() / 500) % 2) == 0
+            || (io.frame_start() - self.last_input < Duration::from_millis(500));
         if self.show_cursor != show_cursor {
             self.show_cursor = show_cursor;
             *redraw = true;
@@ -144,21 +163,19 @@ impl Editor {
 
     pub fn handle_edits(&mut self, app: &App, edits: &[Edit]) {
         for cursor in &mut self.cursors {
-            let mut pos_diff = 0;
+            let mut insert_len = 0;
+            let mut delete_len = 0;
             for edit in edits.iter() {
                 if cursor.pos < edit.pos {
                     break;
                 }
                 match edit.kind {
-                    EditKind::Insert => {
-                        pos_diff += edit.text.len();
-                    }
-                    EditKind::Delete => {
-                        pos_diff -= edit.text.len();
-                    }
+                    EditKind::Insert => insert_len += edit.text.len(),
+                    EditKind::Delete => delete_len += edit.text.len(),
                 }
             }
-            cursor.pos += pos_diff;
+            cursor.pos += insert_len;
+            cursor.pos -= delete_len;
         }
         self.refresh_wraps(app);
     }

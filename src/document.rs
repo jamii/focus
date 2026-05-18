@@ -103,6 +103,46 @@ impl Document {
         let col = self.text[0..pos].chars().count();
         [col, 0]
     }
+
+    pub fn line_range_from_pos(&self, pos: usize) -> std::ops::Range<usize> {
+        let line = self.grid_from_pos(pos)[1];
+        if line == 0 {
+            0..{
+                if self.newlines.len() == 0 {
+                    0
+                } else {
+                    self.newlines[0]
+                }
+            }
+        } else {
+            (self.newlines[line - 1] + 1)..{
+                if line < self.newlines.len() {
+                    self.newlines[line]
+                } else {
+                    self.text.len()
+                }
+            }
+        }
+    }
+
+    pub fn char_prev(&self, pos: usize) -> Option<usize> {
+        if pos == 0 {
+            return None;
+        }
+        // We can't directly iter backwards through potentially invalid utf8, but we can go forwards from the start of the line.
+        let line_start = self.line_range_from_pos(pos).start;
+        dbg!(line_start);
+        if line_start == pos {
+            // Previous character is a \n
+            return Some(line_start - 1);
+        }
+        for (char_start, char_end, _) in self.text[line_start..].char_indices() {
+            if line_start + char_end == pos {
+                return Some(line_start + char_start);
+            }
+        }
+        unreachable!()
+    }
 }
 
 #[cfg(test)]
