@@ -46,3 +46,5 @@ Short-term roadmap:
 * load / reload / save
   * diff on reload
   * maintain scroll position
+* mark
+* mouse interaction

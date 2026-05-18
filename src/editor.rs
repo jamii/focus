@@ -3,7 +3,7 @@ use std::time::Duration;
 use bstr::{BStr, ByteSlice};
 use winit::{
     event::ElementState,
-    keyboard::{Key, KeyCode, NamedKey, PhysicalKey},
+    keyboard::{Key, NamedKey},
 };
 
 use crate::{
@@ -230,7 +230,8 @@ impl Editor {
 
     fn refresh_wraps(&mut self, app: &App) {
         let text = &self.document_id.get(app).text;
-        self.wraps = compute_wraps(text.as_bstr(), self.wrap_chars);
+        self.wraps.clear();
+        compute_wraps(text.as_bstr(), self.wrap_chars, &mut self.wraps);
     }
 
     fn cursor_move(&mut self, app: &App, direction: Direction) {
@@ -296,8 +297,7 @@ impl Editor {
     }
 }
 
-fn compute_wraps(text: &BStr, wrap_chars: usize) -> Vec<[usize; 2]> {
-    let mut wraps = Vec::new();
+fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
     let mut start = 0;
     let mut end = 0;
     let mut last_soft_wrap = None;
@@ -326,7 +326,6 @@ fn compute_wraps(text: &BStr, wrap_chars: usize) -> Vec<[usize; 2]> {
         }
     }
     wraps.push([start, text.len()]);
-    wraps
 }
 
 fn grid_from_wraps(wraps: &[[usize; 2]], text: &BStr, pos: usize) -> [usize; 2] {
@@ -346,7 +345,9 @@ mod tests {
     use bstr::BString;
 
     fn wraps_of(s: &str, wrap_chars: usize) -> Vec<[usize; 2]> {
-        compute_wraps(s.as_bytes().as_bstr(), wrap_chars)
+        let mut wraps = vec![];
+        compute_wraps(s.as_bytes().as_bstr(), wrap_chars, &mut wraps);
+        wraps
     }
 
     #[test]
