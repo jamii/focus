@@ -167,7 +167,7 @@ impl App {
         for (editor_id, editor) in &self.editors {
             let mut editor = editor.borrow_mut();
             if let Some(edits) = document_edits.get(&editor.document_id) {
-                editor.handle_edits(edits);
+                editor.handle_edits(self, edits);
                 editor_edits.insert(*editor_id, edits);
             }
         }
@@ -192,8 +192,8 @@ impl App {
         }
     }
 
-    pub fn draw(&self, window_id: WindowId, drawing: &mut Drawing) {
-        window_id.get(self).draw(self, drawing);
+    pub fn draw(&mut self, window_id: WindowId, drawing: &mut Drawing) {
+        window_id.get_mut(self).draw(self, drawing);
     }
 
     fn rebuild_atlas(&mut self, io: &mut dyn IO) {

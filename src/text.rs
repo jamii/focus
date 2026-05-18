@@ -286,6 +286,10 @@ impl Drawing {
         *self.clip_stack.last().unwrap()
     }
 
+    pub fn current_clip_size(&self) -> [f32; 2] {
+        self.current_clip().size
+    }
+
     /// Push a new clip, intersected with the current top of the stack.
     /// Subsequent draws will be clipped to this rectangle.
     pub fn push_clip_rect(&mut self, rect: Rect) {
@@ -340,10 +344,14 @@ impl Drawing {
             self.commands.push(DrawCommand::SetClip(clip));
         }
         let mut pen_x = pos[0];
-        for ch in text.chars() {
+        for char in text.chars() {
             // Unknown chars fall back to the tofu (same role as TTF's
             // glyph 0).
-            let g = atlas.glyphs.get(&ch).unwrap_or(&atlas.missing);
+            let char = match char {
+                '\n' => ' ',
+                _ => char,
+            };
+            let g = atlas.glyphs.get(&char).unwrap_or(&atlas.missing);
             self.commands.push(DrawCommand::Quad(Quad {
                 dst_pos: [pen_x, pos[1]],
                 dst_size: [cell_w, cell_h],

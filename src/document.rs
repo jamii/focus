@@ -29,25 +29,6 @@ impl Document {
         }
     }
 
-    pub fn draw(&self, app: &App, drawing: &mut Drawing) {
-        let mut start = 0;
-        for end in &self.newlines {
-            drawing.draw_text(
-                &app.atlas,
-                &self.text.as_bstr()[start..*end],
-                app.atlas.screen_from_grid(self.grid_from_pos(start)),
-                TEXT_COLOR,
-            );
-            start = end + 1;
-        }
-        drawing.draw_text(
-            &app.atlas,
-            &self.text.as_bstr()[start..],
-            app.atlas.screen_from_grid(self.grid_from_pos(start)),
-            TEXT_COLOR,
-        );
-    }
-
     pub fn queue_edits(&mut self, edits: Vec<Edit>) {
         assert!(
             self.queued_edits.is_none(),

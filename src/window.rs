@@ -20,7 +20,7 @@ impl Window {
         self.editor_id.get_mut(app).tick(app, io, redraw);
     }
 
-    pub fn draw(&self, app: &App, drawing: &mut Drawing) {
-        self.editor_id.get(app).draw(app, drawing);
+    pub fn draw(&mut self, app: &App, drawing: &mut Drawing) {
+        self.editor_id.get_mut(app).draw(app, drawing);
     }
 }
