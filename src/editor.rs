@@ -229,36 +229,8 @@ impl Editor {
     }
 
     fn refresh_wraps(&mut self, app: &App) {
-        self.wraps.clear();
         let text = &self.document_id.get(app).text;
-        let mut start = 0;
-        let mut end = 0;
-        let mut last_soft_wrap = None;
-        let mut col = 0;
-        while let Some((_, char_end, char)) = text[end..].char_indices().next() {
-            if col >= self.wrap_chars {
-                if let Some(pos) = last_soft_wrap {
-                    end = pos;
-                }
-                self.wraps.push([start, end]);
-                start = end;
-                col = 0;
-                last_soft_wrap = None;
-            }
-            if char == '\n' {
-                self.wraps.push([start, end]);
-                start = end + char_end;
-                col = 0;
-                last_soft_wrap = None;
-            } else {
-                col += 1
-            }
-            end += char_end;
-            if char == ' ' {
-                last_soft_wrap = Some(end);
-            }
-        }
-        self.wraps.push([start, text.len()]);
+        self.wraps = compute_wraps(text.as_bstr(), self.wrap_chars);
     }
 
     fn cursor_move(&mut self, app: &App, direction: Direction) {
@@ -281,15 +253,8 @@ impl Editor {
     }
 
     fn grid_from_pos(&self, app: &App, pos: usize) -> [usize; 2] {
-        // TODO binary search
         let text = &self.document_id.get(app).text;
-        for (line, [start, end]) in self.wraps.iter().enumerate().rev() {
-            if *start <= pos && pos <= *end {
-                let col = text[*start..pos].chars().count();
-                return [col, line];
-            }
-        }
-        unreachable!();
+        grid_from_wraps(&self.wraps, text.as_bstr(), pos)
     }
 
     fn line_up(&self, app: &App, pos: usize) -> Option<usize> {
@@ -328,5 +293,154 @@ impl Editor {
             result_pos += char_end;
         }
         Some(result_pos)
+    }
+}
+
+fn compute_wraps(text: &BStr, wrap_chars: usize) -> Vec<[usize; 2]> {
+    let mut wraps = Vec::new();
+    let mut start = 0;
+    let mut end = 0;
+    let mut last_soft_wrap = None;
+    let mut col = 0;
+    while let Some((_, char_end, char)) = text[end..].char_indices().next() {
+        if col >= wrap_chars {
+            if let Some(pos) = last_soft_wrap {
+                end = pos;
+            }
+            wraps.push([start, end]);
+            start = end;
+            col = 0;
+            last_soft_wrap = None;
+        }
+        if char == '\n' {
+            wraps.push([start, end]);
+            start = end + char_end;
+            col = 0;
+            last_soft_wrap = None;
+        } else {
+            col += 1
+        }
+        end += char_end;
+        if char == ' ' {
+            last_soft_wrap = Some(end);
+        }
+    }
+    wraps.push([start, text.len()]);
+    wraps
+}
+
+fn grid_from_wraps(wraps: &[[usize; 2]], text: &BStr, pos: usize) -> [usize; 2] {
+    // TODO binary search
+    for (line, [start, end]) in wraps.iter().enumerate().rev() {
+        if *start <= pos && pos <= *end {
+            let col = text[*start..pos].chars().count();
+            return [col, line];
+        }
+    }
+    unreachable!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bstr::BString;
+
+    fn wraps_of(s: &str, wrap_chars: usize) -> Vec<[usize; 2]> {
+        compute_wraps(s.as_bytes().as_bstr(), wrap_chars)
+    }
+
+    #[test]
+    fn empty_text_produces_one_empty_wrap() {
+        assert_eq!(wraps_of("", 10), vec![[0, 0]]);
+    }
+
+    #[test]
+    fn short_line_is_one_wrap() {
+        assert_eq!(wraps_of("abc", 10), vec![[0, 3]]);
+    }
+
+    #[test]
+    fn newline_splits_into_two_wraps() {
+        assert_eq!(wraps_of("ab\ncd", 10), vec![[0, 2], [3, 5]]);
+    }
+
+    #[test]
+    fn lone_newline_produces_two_empty_wraps() {
+        assert_eq!(wraps_of("\n", 10), vec![[0, 0], [1, 1]]);
+    }
+
+    #[test]
+    fn trailing_newline_leaves_empty_final_wrap() {
+        assert_eq!(wraps_of("ab\n", 10), vec![[0, 2], [3, 3]]);
+    }
+
+    #[test]
+    fn hard_wrap_when_no_space_available() {
+        assert_eq!(wraps_of("abcde", 3), vec![[0, 3], [3, 5]]);
+    }
+
+    #[test]
+    fn soft_wrap_breaks_after_last_space() {
+        // "ab cdef" with width 4: 'd' would overflow, but we have a space at
+        // byte 3, so the first wrap ends right after it.
+        assert_eq!(wraps_of("ab cdef", 4), vec![[0, 3], [3, 7]]);
+    }
+
+    #[test]
+    fn soft_wrap_does_not_reuse_earlier_space_after_overflow() {
+        // After the soft wrap "ab " / "cdef", "cdef" has no space — the next
+        // overflow must hard-wrap, not jump back to the previous space.
+        assert_eq!(wraps_of("ab cdefgh", 4), vec![[0, 3], [3, 7], [7, 9]]);
+    }
+
+    #[test]
+    fn multi_byte_chars_count_bytes_in_wrap_ranges() {
+        // "héllo" is 6 bytes ('é' is 2), 5 chars — fits in width 10.
+        assert_eq!(wraps_of("héllo", 10), vec![[0, 6]]);
+    }
+
+    #[test]
+    fn grid_from_wraps_at_start() {
+        let text: BString = "hello\nworld".into();
+        let wraps = vec![[0, 5], [6, 11]];
+        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 0), [0, 0]);
+    }
+
+    #[test]
+    fn grid_from_wraps_at_end_of_first_line() {
+        let text: BString = "hello\nworld".into();
+        let wraps = vec![[0, 5], [6, 11]];
+        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 5), [5, 0]);
+    }
+
+    #[test]
+    fn grid_from_wraps_at_start_of_second_line() {
+        let text: BString = "hello\nworld".into();
+        let wraps = vec![[0, 5], [6, 11]];
+        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 6), [0, 1]);
+    }
+
+    #[test]
+    fn grid_from_wraps_at_end_of_text() {
+        let text: BString = "hello\nworld".into();
+        let wraps = vec![[0, 5], [6, 11]];
+        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 11), [5, 1]);
+    }
+
+    #[test]
+    fn grid_from_wraps_counts_chars_not_bytes() {
+        // 'é' is 2 bytes but 1 column.
+        let text: BString = "héllo".into();
+        let wraps = vec![[0, 6]];
+        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 3), [2, 0]);
+    }
+
+    #[test]
+    fn grid_from_wraps_picks_later_line_on_boundary() {
+        // pos sits on both the end of line 0 and the start of line 1 — the
+        // reverse iteration returns the later (line 1) match.
+        let text: BString = "ab\ncd".into();
+        let wraps = vec![[0, 2], [3, 5]];
+        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 3), [0, 1]);
     }
 }

@@ -333,4 +333,61 @@ mod tests {
     fn panics_on_overlapping_deletes() {
         doc("abcd").apply_edits(&[del(0, "ab"), del(1, "b")]);
     }
+
+    fn filled(s: &str) -> Document {
+        let mut d = Document::new();
+        d.apply_edits(&[ins(0, s)]);
+        d
+    }
+
+    #[test]
+    fn grid_from_pos_in_empty_document() {
+        assert_eq!(filled("").grid_from_pos(0), [0, 0]);
+    }
+
+    #[test]
+    fn grid_from_pos_on_single_line() {
+        let d = filled("abc");
+        assert_eq!(d.grid_from_pos(0), [0, 0]);
+        assert_eq!(d.grid_from_pos(2), [2, 0]);
+        assert_eq!(d.grid_from_pos(3), [3, 0]);
+    }
+
+    #[test]
+    fn grid_from_pos_just_before_newline() {
+        // Position is on line 0 because the newline byte is still ahead.
+        let d = filled("ab\ncd");
+        assert_eq!(d.grid_from_pos(2), [2, 0]);
+    }
+
+    #[test]
+    fn grid_from_pos_just_after_newline() {
+        // Position is at column 0 of line 1.
+        let d = filled("ab\ncd");
+        assert_eq!(d.grid_from_pos(3), [0, 1]);
+    }
+
+    #[test]
+    fn grid_from_pos_mid_second_line() {
+        let d = filled("ab\ncd");
+        assert_eq!(d.grid_from_pos(5), [2, 1]);
+    }
+
+    #[test]
+    fn grid_from_pos_across_multiple_newlines() {
+        // "a\nb\nc" — newlines at byte 1 and 3.
+        let d = filled("a\nb\nc");
+        assert_eq!(d.grid_from_pos(0), [0, 0]);
+        assert_eq!(d.grid_from_pos(2), [0, 1]);
+        assert_eq!(d.grid_from_pos(4), [0, 2]);
+        assert_eq!(d.grid_from_pos(5), [1, 2]);
+    }
+
+    #[test]
+    fn grid_from_pos_counts_chars_not_bytes() {
+        // 'é' is 2 bytes but 1 column.
+        let d = filled("é\nb");
+        assert_eq!(d.grid_from_pos(2), [1, 0]);
+        assert_eq!(d.grid_from_pos(4), [1, 1]);
+    }
 }
