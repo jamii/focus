@@ -111,7 +111,8 @@ impl Editor {
         {
             let text = &self.document_id.get(app).text;
             for [start, end] in &self.wraps {
-                let grid = self.grid_from_pos(app, *start);
+                let mut grid = self.grid_from_pos(app, *start);
+                grid[0] += 1; // gutter
                 drawing.draw_text(
                     &app.atlas,
                     &text.as_bstr()[*start..*end],
@@ -131,9 +132,11 @@ impl Editor {
 
         if self.show_cursor {
             for cursor in &self.cursors {
+                let mut grid = self.grid_from_pos(app, cursor.pos);
+                grid[0] += 1; // gutter
                 let mut pos = app
                     .atlas
-                    .screen_from_grid(self.grid_from_pos(app, cursor.pos));
+                    .screen_from_grid(grid);
                 let mut size = [app.atlas.cell_size[0] as f32, app.atlas.cell_size[1] as f32];
                 size[0] /= 8.0;
                 pos[0] -= size[0] / 2.0;
@@ -202,8 +205,7 @@ impl Editor {
         let text = &self.document_id.get(app).text;
         for (line, [start, end]) in self.wraps.iter().enumerate().rev() {
             if *start <= pos && pos <= *end {
-                // +1 to account for gutter
-                let col = text[*start..pos].chars().count() + 1;
+                let col = text[*start..pos].chars().count();
                 return [col, line];
             }
         }
