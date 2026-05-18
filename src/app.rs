@@ -88,7 +88,6 @@ impl App {
                 }
             }
             InputEvent::ModifiersChanged(modifiers) => {
-                println!("{modifiers:?}");
                 self.modifiers = *modifiers;
             }
             InputEvent::KeyboardInput {
