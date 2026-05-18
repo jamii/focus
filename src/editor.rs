@@ -18,12 +18,12 @@ pub fn input(editor_id: EditorId, app: &App, _io: &mut dyn IO, event: InputEvent
     match event {
         InputEvent::KeyboardInput {
             event: key_event, ..
-        } if key_event.state == ElementState::Pressed => match key_event.logical_key.as_ref() {
-            Key::Character(char) => {
+        } if key_event.state == ElementState::Pressed => match key_event.text.as_ref() {
+            Some(char) => {
                 let end = document.text.len();
                 edits.push(document.insert(vec![Insert {
                     pos: end,
-                    text: char.into(),
+                    text: char.as_ref().into(),
                 }]));
             }
             _ => {}

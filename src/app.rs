@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use fontdue::{Font, FontSettings};
 use winit::dpi::LogicalSize;
-use winit::event::ElementState;
+use winit::event::{ElementState, Modifiers};
 use winit::keyboard::Key;
 use winit::window::WindowId;
 
@@ -19,6 +19,7 @@ pub struct App {
     pub atlas: Atlas,
 
     pub windows: HashMap<WindowId, RefCell<Window>>,
+    pub modifiers: Modifiers,
 
     next_editor_id: EditorId,
     pub editors: HashMap<EditorId, RefCell<Editor>>,
@@ -65,6 +66,7 @@ impl App {
             px_size: INITIAL_PX,
             atlas,
             windows: HashMap::new(),
+            modifiers: Modifiers::default(),
             next_editor_id: EditorId(0),
             editors: HashMap::new(),
             next_document_id: DocumentId(0),
@@ -84,6 +86,9 @@ impl App {
                 if self.windows.is_empty() {
                     io.exit();
                 }
+            }
+            InputEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = *modifiers;
             }
             InputEvent::KeyboardInput {
                 event: key_event, ..
