@@ -1,7 +1,10 @@
 use std::time::Duration;
 
 use bstr::{BStr, ByteSlice};
-use winit::{event::ElementState, keyboard::{Key, NamedKey}};
+use winit::{
+    event::ElementState,
+    keyboard::{Key, NamedKey},
+};
 
 use crate::{
     app::{App, DocumentId, IO, InputEvent},
@@ -31,15 +34,17 @@ enum Direction {
 }
 
 impl Editor {
-    pub fn new(document_id: DocumentId) -> Self {
-        Editor {
+    pub fn new(document_id: DocumentId, app: &App) -> Self {
+        let mut editor = Editor {
             document_id: document_id,
             cursors: vec![Cursor { pos: 0 }],
             show_cursor: true,
             wrap_chars: 0,
-            wraps: vec![[0, 0]],
+            wraps: vec![],
             last_input: Duration::ZERO,
-        }
+        };
+        editor.refresh_wraps(app);
+        editor
     }
 
     pub fn input(&mut self, app: &App, io: &mut dyn IO, event: InputEvent) {
