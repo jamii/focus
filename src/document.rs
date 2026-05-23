@@ -8,7 +8,7 @@ pub struct Document {
 
 pub struct Edit {
     pub kind: EditKind,
-    pub pos: usize,
+    pub offset: usize,
     pub text: BString,
 }
 
@@ -36,29 +36,29 @@ impl Document {
 
     pub fn apply_edits(&mut self, edits: &[Edit]) {
         for edit in edits {
-            assert!(edit.pos <= self.text.len(), "Edit out of bounds");
+            assert!(edit.offset <= self.text.len(), "Edit out of bounds");
             match edit.kind {
                 EditKind::Insert => {}
                 EditKind::Delete => {
                     assert!(
-                        edit.pos + edit.text.len() <= self.text.len(),
+                        edit.offset + edit.text.len() <= self.text.len(),
                         "Delete out of bounds"
                     );
                     assert_eq!(
                         edit.text,
-                        self.text[edit.pos..edit.pos + edit.text.len()],
+                        self.text[edit.offset..edit.offset + edit.text.len()],
                         "Delete text doesn't match document text"
                     );
                 }
             }
         }
         for pair in edits.windows(2) {
-            assert!(pair[0].pos <= pair[1].pos, "Edits are out of order");
+            assert!(pair[0].offset <= pair[1].offset, "Edits are out of order");
             match pair[0].kind {
                 EditKind::Insert => {}
                 EditKind::Delete => {
                     assert!(
-                        pair[0].pos + pair[0].text.len() <= pair[1].pos,
+                        pair[0].offset + pair[0].text.len() <= pair[1].offset,
                         "Edits overlap"
                     );
                 }
@@ -67,20 +67,20 @@ impl Document {
 
         // TODO This can be made way more efficient, so that common cases don't have to allocate a whole new text.
         let mut text_new = BString::new(Vec::with_capacity(self.text.len()));
-        let mut pos = 0;
+        let mut offset = 0;
         for edit in edits {
-            text_new.extend_from_slice(&self.text[pos..edit.pos]);
-            pos = edit.pos;
+            text_new.extend_from_slice(&self.text[offset..edit.offset]);
+            offset = edit.offset;
             match edit.kind {
                 EditKind::Insert => {
                     text_new.extend_from_slice(&edit.text);
                 }
                 EditKind::Delete => {
-                    pos += edit.text.len();
+                    offset += edit.text.len();
                 }
             }
         }
-        text_new.extend_from_slice(&self.text[pos..]);
+        text_new.extend_from_slice(&self.text[offset..]);
         self.text = text_new;
 
         // TODO This can be made way more efficient, so that common cases don't have to iterate over the whole text.
@@ -92,20 +92,20 @@ impl Document {
         }
     }
 
-    pub fn grid_from_pos(&self, pos: usize) -> [usize; 2] {
+    pub fn grid_from_offset(&self, offset: usize) -> [usize; 2] {
         // TODO binary search
         for (line, newline_pos) in self.newlines.iter().enumerate().rev() {
-            if *newline_pos < pos {
-                let col = self.text[*newline_pos + 1..pos].chars().count();
+            if *newline_pos < offset {
+                let col = self.text[*newline_pos + 1..offset].chars().count();
                 return [col, line + 1];
             }
         }
-        let col = self.text[0..pos].chars().count();
+        let col = self.text[0..offset].chars().count();
         [col, 0]
     }
 
-    pub fn line_range_from_pos(&self, pos: usize) -> std::ops::Range<usize> {
-        let line = self.grid_from_pos(pos)[1];
+    pub fn line_range_from_offset(&self, offset: usize) -> std::ops::Range<usize> {
+        let line = self.grid_from_offset(offset)[1];
         if line == 0 {
             0..{
                 if self.newlines.is_empty() {
@@ -125,26 +125,26 @@ impl Document {
         }
     }
 
-    pub fn char_next(&self, pos: usize) -> Option<usize> {
-        if pos == self.text.len() {
+    pub fn char_next(&self, offset: usize) -> Option<usize> {
+        if offset == self.text.len() {
             return None;
         }
-        let (_, char_end, _) = self.text[pos..].char_indices().next().unwrap();
-        return Some(pos + char_end);
+        let (_, char_end, _) = self.text[offset..].char_indices().next().unwrap();
+        return Some(offset + char_end);
     }
 
-    pub fn char_prev(&self, pos: usize) -> Option<usize> {
-        if pos == 0 {
+    pub fn char_prev(&self, offset: usize) -> Option<usize> {
+        if offset == 0 {
             return None;
         }
         // We can't directly iter backwards through potentially invalid utf8, but we can go forwards from the start of the line.
-        let line_start = self.line_range_from_pos(pos).start;
-        if line_start == pos {
+        let line_start = self.line_range_from_offset(offset).start;
+        if line_start == offset {
             // Previous character is a \n
             return Some(line_start - 1);
         }
         for (char_start, char_end, _) in self.text[line_start..].char_indices() {
-            if line_start + char_end == pos {
+            if line_start + char_end == offset {
                 return Some(line_start + char_start);
             }
         }
@@ -162,18 +162,18 @@ mod tests {
         doc
     }
 
-    fn ins(pos: usize, text: &str) -> Edit {
+    fn ins(offset: usize, text: &str) -> Edit {
         Edit {
             kind: EditKind::Insert,
-            pos,
+            offset,
             text: text.into(),
         }
     }
 
-    fn del(pos: usize, text: &str) -> Edit {
+    fn del(offset: usize, text: &str) -> Edit {
         Edit {
             kind: EditKind::Delete,
-            pos,
+            offset,
             text: text.into(),
         }
     }
@@ -341,62 +341,62 @@ mod tests {
     }
 
     #[test]
-    fn grid_from_pos_in_empty_document() {
-        assert_eq!(filled("").grid_from_pos(0), [0, 0]);
+    fn grid_from_offset_in_empty_document() {
+        assert_eq!(filled("").grid_from_offset(0), [0, 0]);
     }
 
     #[test]
-    fn grid_from_pos_on_single_line() {
+    fn grid_from_offset_on_single_line() {
         let d = filled("abc");
-        assert_eq!(d.grid_from_pos(0), [0, 0]);
-        assert_eq!(d.grid_from_pos(2), [2, 0]);
-        assert_eq!(d.grid_from_pos(3), [3, 0]);
+        assert_eq!(d.grid_from_offset(0), [0, 0]);
+        assert_eq!(d.grid_from_offset(2), [2, 0]);
+        assert_eq!(d.grid_from_offset(3), [3, 0]);
     }
 
     #[test]
-    fn grid_from_pos_just_before_newline() {
+    fn grid_from_offset_just_before_newline() {
         // Position is on line 0 because the newline byte is still ahead.
         let d = filled("ab\ncd");
-        assert_eq!(d.grid_from_pos(2), [2, 0]);
+        assert_eq!(d.grid_from_offset(2), [2, 0]);
     }
 
     #[test]
-    fn grid_from_pos_just_after_newline() {
+    fn grid_from_offset_just_after_newline() {
         // Position is at column 0 of line 1.
         let d = filled("ab\ncd");
-        assert_eq!(d.grid_from_pos(3), [0, 1]);
+        assert_eq!(d.grid_from_offset(3), [0, 1]);
     }
 
     #[test]
-    fn grid_from_pos_mid_second_line() {
+    fn grid_from_offset_mid_second_line() {
         let d = filled("ab\ncd");
-        assert_eq!(d.grid_from_pos(5), [2, 1]);
+        assert_eq!(d.grid_from_offset(5), [2, 1]);
     }
 
     #[test]
-    fn grid_from_pos_across_multiple_newlines() {
+    fn grid_from_offset_across_multiple_newlines() {
         // "a\nb\nc" — newlines at byte 1 and 3.
         let d = filled("a\nb\nc");
-        assert_eq!(d.grid_from_pos(0), [0, 0]);
-        assert_eq!(d.grid_from_pos(2), [0, 1]);
-        assert_eq!(d.grid_from_pos(4), [0, 2]);
-        assert_eq!(d.grid_from_pos(5), [1, 2]);
+        assert_eq!(d.grid_from_offset(0), [0, 0]);
+        assert_eq!(d.grid_from_offset(2), [0, 1]);
+        assert_eq!(d.grid_from_offset(4), [0, 2]);
+        assert_eq!(d.grid_from_offset(5), [1, 2]);
     }
 
     #[test]
-    fn line_range_from_pos_covers_full_line_in_unterminated_doc() {
+    fn line_range_from_offset_covers_full_line_in_unterminated_doc() {
         // No newlines anywhere; the single line should span the whole doc.
         let d = filled("abc");
-        assert_eq!(d.line_range_from_pos(0), 0..3);
-        assert_eq!(d.line_range_from_pos(1), 0..3);
-        assert_eq!(d.line_range_from_pos(3), 0..3);
+        assert_eq!(d.line_range_from_offset(0), 0..3);
+        assert_eq!(d.line_range_from_offset(1), 0..3);
+        assert_eq!(d.line_range_from_offset(3), 0..3);
     }
 
     #[test]
-    fn grid_from_pos_counts_chars_not_bytes() {
+    fn grid_from_offset_counts_chars_not_bytes() {
         // 'é' is 2 bytes but 1 column.
         let d = filled("é\nb");
-        assert_eq!(d.grid_from_pos(2), [1, 0]);
-        assert_eq!(d.grid_from_pos(4), [1, 1]);
+        assert_eq!(d.grid_from_offset(2), [1, 0]);
+        assert_eq!(d.grid_from_offset(4), [1, 1]);
     }
 }
