@@ -11,7 +11,7 @@ use crate::{
     app::{App, DocumentId, IO, InputEvent},
     document::{Document, Edit, EditKind},
     style::{HIGHLIGHT_COLOR, TEXT_COLOR},
-    text::{Drawing, Rect},
+    drawing::{Drawing, Rect},
 };
 
 pub struct Editor {

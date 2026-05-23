@@ -1,6 +1,6 @@
 use crate::app::{App, EditorId, IO, InputEvent};
 use crate::style;
-use crate::text::{Drawing, Rect};
+use crate::drawing::{Drawing, Rect};
 
 pub struct Window {
     pub editor_id: EditorId,

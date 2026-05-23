@@ -18,7 +18,8 @@ use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use crate::app::{App, IO, InputEvent, WindowId};
 use crate::fuzz_gen::Frng;
-use crate::text::Atlas;
+use crate::atlas::Atlas;
+use crate::drawing::Drawing;
 
 // Mock IO: tracks open windows, fabricates fresh WindowIds, advances
 // `frame_start` by whatever the harness pushes via `advance`.
@@ -187,7 +188,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             // mask the stale-wraps bug, so omit them when hunting it.
             let w = frng.u32_bounded(0, 4000)? as f32;
             let h = frng.u32_bounded(0, 4000)? as f32;
-            let mut drawing = crate::text::Drawing::new([w, h]);
+            let mut drawing = Drawing::new([w, h]);
             app.draw(window_id, &mut drawing);
         }
         _ => unreachable!(),
@@ -214,7 +215,7 @@ pub fn fuzz_one(bytes: &[u8]) {
     // Touch every open window with a draw so we exercise the layout/draw
     // path against whatever state the fuzz steps produced.
     for window_id in io.open_windows.clone() {
-        let mut drawing = crate::text::Drawing::new([800.0, 600.0]);
+        let mut drawing = Drawing::new([800.0, 600.0]);
         app.draw(window_id, &mut drawing);
     }
 }

@@ -6,5 +6,6 @@ pub mod fuzz;
 pub mod fuzz_gen;
 pub mod render;
 pub mod style;
-pub mod text;
+pub mod atlas;
+pub mod drawing;
 pub mod window;

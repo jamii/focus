@@ -9,7 +9,8 @@ use winit::keyboard::{Key, ModifiersState};
 
 use crate::document::Document;
 use crate::editor::Editor;
-use crate::text::{Atlas, Drawing};
+use crate::atlas::Atlas;
+use crate::drawing::Drawing;
 use crate::window::Window;
 
 pub struct App {

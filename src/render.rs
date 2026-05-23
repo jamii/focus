@@ -10,7 +10,8 @@ use std::ffi::CString;
 use std::mem::{self, offset_of};
 use std::ptr;
 
-use crate::text::{Atlas, DrawCommand, Rect};
+use crate::atlas::Atlas;
+use crate::drawing::{DrawCommand, Rect};
 
 // Two shaders, the minimum required: vertex (one invocation per vertex;
 // writes gl_Position in clip space) and fragment (one per pixel covered;
