@@ -16,3 +16,6 @@ bstr = "1"
 png = "0.17"
 gl = "0.14"
 khronos-egl = { version = "6", features = ["dynamic"] }
+
+[workspace]
+members = [".", "hfuzz"]
