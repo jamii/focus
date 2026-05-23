@@ -37,7 +37,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
 
-use crate::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, WindowId};
+use crate::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, InputEvent, WindowId};
 use crate::render::Renderer;
 use crate::text::{Atlas, Drawing};
 
@@ -188,12 +188,15 @@ impl Running {
         if !self.backend.windows.contains_key(&window_id) {
             return;
         }
+        let Some(translated) = translate_event(event) else {
+            return;
+        };
         let mut io = IoReal {
             frame_start: self.last_frame - self.first_frame,
             backend: &mut self.backend,
             event_loop,
         };
-        self.app.input(&mut io, window_id, event);
+        self.app.input(&mut io, window_id, translated);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -327,6 +330,18 @@ fn window_attrs(title: &str, size: LogicalSize<u32>) -> winit::window::WindowAtt
         .with_title(title)
         .with_name(APP_ID, "")
         .with_inner_size(size)
+}
+
+fn translate_event(event: WindowEvent) -> Option<InputEvent> {
+    match event {
+        WindowEvent::CloseRequested => Some(InputEvent::CloseRequested),
+        WindowEvent::ModifiersChanged(m) => Some(InputEvent::ModifiersChanged(m.state())),
+        WindowEvent::KeyboardInput { event, .. } => Some(InputEvent::Key {
+            state: event.state,
+            logical_key: event.logical_key,
+        }),
+        _ => None,
+    }
 }
 
 fn create_surface(gl_config: &Config, window: &Window) -> Surface<WindowSurface> {

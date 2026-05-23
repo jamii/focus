@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use fontdue::{Font, FontSettings};
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, Modifiers};
-use winit::keyboard::Key;
+use winit::event::ElementState;
+use winit::keyboard::{Key, ModifiersState};
 
 use crate::document::Document;
 use crate::editor::Editor;
@@ -18,7 +18,7 @@ pub struct App {
     pub atlas: Atlas,
 
     pub windows: HashMap<WindowId, RefCell<Window>>,
-    pub modifiers: Modifiers,
+    pub modifiers: ModifiersState,
 
     next_editor_id: EditorId,
     pub editors: HashMap<EditorId, RefCell<Editor>>,
@@ -66,7 +66,15 @@ impl DocumentId {
     }
 }
 
-pub type InputEvent = winit::event::WindowEvent;
+#[derive(Clone, Debug)]
+pub enum InputEvent {
+    CloseRequested,
+    ModifiersChanged(ModifiersState),
+    Key {
+        state: ElementState,
+        logical_key: Key,
+    },
+}
 
 // External effects. Mocked for testing/fuzzing.
 pub trait IO {
@@ -98,7 +106,7 @@ impl App {
             px_size: INITIAL_PX,
             atlas,
             windows: HashMap::new(),
-            modifiers: Modifiers::default(),
+            modifiers: ModifiersState::default(),
             next_editor_id: EditorId(0),
             editors: HashMap::new(),
             next_document_id: DocumentId(0),
@@ -122,12 +130,10 @@ impl App {
             InputEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = *modifiers;
             }
-            InputEvent::KeyboardInput {
-                event: key_event, ..
-            } if key_event.state == ElementState::Pressed
-                && self.modifiers.state().control_key() =>
-            {
-                match key_event.logical_key.as_ref() {
+            InputEvent::Key {
+                state, logical_key, ..
+            } if *state == ElementState::Pressed && self.modifiers.control_key() => {
+                match logical_key.as_ref() {
                     Key::Character("+") => {
                         self.px_size += 1.0;
                         self.rebuild_atlas(io);

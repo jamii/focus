@@ -2,6 +2,7 @@ pub mod app;
 pub mod chrome;
 pub mod document;
 pub mod editor;
+pub mod fuzz;
 pub mod fuzz_gen;
 pub mod render;
 pub mod style;

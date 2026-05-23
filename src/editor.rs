@@ -47,13 +47,13 @@ impl Editor {
 
     pub fn input(&mut self, app: &App, io: &mut dyn IO, event: InputEvent) {
         match event {
-            InputEvent::KeyboardInput {
-                event: key_event, ..
-            } if key_event.state == ElementState::Pressed
-                && app.modifiers.state().control_key()
-                && !app.modifiers.state().alt_key() =>
+            InputEvent::Key {
+                state, logical_key, ..
+            } if state == ElementState::Pressed
+                && app.modifiers.control_key()
+                && !app.modifiers.alt_key() =>
             {
-                match key_event.logical_key.as_ref() {
+                match logical_key.as_ref() {
                     Key::Character("i") => {
                         self.cursor_move(app, Direction::Up);
                     }
@@ -69,14 +69,14 @@ impl Editor {
                     _ => {}
                 }
             }
-            InputEvent::KeyboardInput {
-                event: key_event, ..
-            } if key_event.state == ElementState::Pressed
-                && !app.modifiers.state().control_key()
-                && !app.modifiers.state().alt_key() =>
+            InputEvent::Key {
+                state, logical_key, ..
+            } if state == ElementState::Pressed
+                && !app.modifiers.control_key()
+                && !app.modifiers.alt_key() =>
             {
                 let mut document = self.document_id.get_mut(app);
-                match key_event.logical_key.as_ref() {
+                match logical_key.as_ref() {
                     Key::Character(char) => {
                         document.queue_edits(
                             self.cursors
