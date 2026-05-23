@@ -9,7 +9,7 @@ use winit::{
 
 use crate::{
     app::{App, DocumentId, IO, InputEvent},
-    document::{Document, Edit, EditKind},
+    document::{Document, Edit, EditKind, OffsetDiff},
     drawing::{Drawing, Rect},
     style::{HIGHLIGHT_COLOR, TEXT_COLOR},
 };
@@ -205,10 +205,10 @@ impl Editor {
         }
     }
 
-    pub fn handle_edits(&mut self, app: &App, edits: &[Edit]) {
-        // TODO This is quadratic - edits come from cursors. Should precompute a diff per range once and use for all editors.
+    pub fn handle_edits(&mut self, app: &App, diff: &OffsetDiff) {
         for cursor in &mut self.cursors {
-            cursor.handle_edits(edits);
+            cursor.head = diff.apply(cursor.head);
+            cursor.tail = diff.apply(cursor.tail);
         }
         self.refresh_wraps(app);
     }
@@ -345,28 +345,6 @@ impl Editor {
 }
 
 impl Cursor {
-    fn handle_edits(&mut self, edits: &[Edit]) {
-        for offset in [&mut self.head, &mut self.tail] {
-            let mut insert_len = 0;
-            let mut delete_len = 0;
-            for edit in edits.iter() {
-                match edit.kind {
-                    EditKind::Insert => {
-                        if *offset >= edit.offset {
-                            insert_len += edit.text.len();
-                        }
-                    }
-                    EditKind::Delete => {
-                        if *offset > edit.offset {
-                            delete_len += (*offset - edit.offset).min(edit.text.len());
-                        }
-                    }
-                }
-            }
-            *offset = *offset + insert_len - delete_len;
-        }
-    }
-
     fn marked_range(&self, marked: bool) -> Option<Range<usize>> {
         if marked && self.head != self.tail {
             Some(self.head.min(self.tail)..self.head.max(self.tail))
@@ -558,13 +536,18 @@ mod tests {
         assert_eq!(wraps_of("a b éef", 3), vec![[0, 2], [2, 4], [4, 8]]);
     }
 
-    fn after_handle_edits(offset: usize, edits: &[Edit]) -> usize {
-        let mut cursor = Cursor {
-            head: offset,
-            tail: offset,
-        };
-        cursor.handle_edits(edits);
-        cursor.head
+    fn apply_helper(offset: usize, edits: &[Edit]) -> usize {
+        let max_edit_end = edits
+            .iter()
+            .map(|e| match e.kind {
+                EditKind::Insert => e.offset,
+                EditKind::Delete => e.offset + e.text.len(),
+            })
+            .max()
+            .unwrap_or(0);
+        let old_len = offset.max(max_edit_end);
+        let diff = OffsetDiff::from_edits(edits, old_len);
+        diff.apply(offset)
     }
 
     #[test]
@@ -574,7 +557,7 @@ mod tests {
             offset: 3,
             text: "a".into(),
         }];
-        assert_eq!(after_handle_edits(10, &edits), 9);
+        assert_eq!(apply_helper(10, &edits), 9);
     }
 
     #[test]
@@ -591,7 +574,7 @@ mod tests {
                 text: "y".into(),
             },
         ];
-        assert_eq!(after_handle_edits(5, &edits), 5);
+        assert_eq!(apply_helper(5, &edits), 5);
     }
 
     #[test]
@@ -603,7 +586,7 @@ mod tests {
         }];
         // Cursor at offset 5 is inside the deleted range [3..7); after the
         // edit it should land at 3 (the start of the deletion), not at 1.
-        assert_eq!(after_handle_edits(5, &edits), 3);
+        assert_eq!(apply_helper(5, &edits), 3);
     }
 
     #[test]
@@ -647,28 +630,24 @@ mod tests {
 
     #[test]
     fn handle_edits_shifts_tail_through_earlier_insert() {
-        // Tail shifts the same way offset does when an edit precedes it.
-        let mut c = Cursor { head: 10, tail: 6 };
-        c.handle_edits(&[Edit {
+        let edits = [Edit {
             kind: EditKind::Insert,
             offset: 2,
             text: "abc".into(),
-        }]);
-        assert_eq!(c.head, 13);
-        assert_eq!(c.tail, 9);
+        }];
+        assert_eq!(apply_helper(10, &edits), 13);
+        assert_eq!(apply_helper(6, &edits), 9);
     }
 
     #[test]
     fn handle_edits_collapses_selection_inside_delete_range() {
-        // Both head and tail are inside a deleted range and clamp to its start.
-        let mut c = Cursor { head: 7, tail: 5 };
-        c.handle_edits(&[Edit {
+        let edits = [Edit {
             kind: EditKind::Delete,
             offset: 3,
             text: "abcdef".into(),
-        }]);
-        assert_eq!(c.head, 3);
-        assert_eq!(c.tail, 3);
+        }];
+        assert_eq!(apply_helper(7, &edits), 3);
+        assert_eq!(apply_helper(5, &edits), 3);
     }
 
     #[test]
@@ -714,9 +693,10 @@ mod tests {
         let mut d = doc_with("hello");
         let mut cursors = vec![Cursor { head: 4, tail: 1 }];
         let edits = calculate_replace_edits(&cursors, true, &d, b"X");
-        d.apply_edits(&edits);
+        let diff = d.apply_edits(&edits);
         for c in &mut cursors {
-            c.handle_edits(&edits);
+            c.head = diff.apply(c.head);
+            c.tail = diff.apply(c.tail);
         }
         assert_eq!(d.text, "hXo");
         assert_eq!(cursors[0].head, 2);
@@ -729,9 +709,10 @@ mod tests {
         let mut d = doc_with("hello");
         let mut cursors = vec![Cursor { head: 2, tail: 2 }];
         let edits = calculate_replace_edits(&cursors, false, &d, b"X");
-        d.apply_edits(&edits);
+        let diff = d.apply_edits(&edits);
         for c in &mut cursors {
-            c.handle_edits(&edits);
+            c.head = diff.apply(c.head);
+            c.tail = diff.apply(c.tail);
         }
         assert_eq!(d.text, "heXllo");
         assert_eq!(cursors[0].head, 3);
@@ -744,9 +725,10 @@ mod tests {
         let mut d = doc_with("hello");
         let mut cursors = vec![Cursor { head: 1, tail: 4 }];
         let edits = calculate_replace_edits(&cursors, true, &d, b"X");
-        d.apply_edits(&edits);
+        let diff = d.apply_edits(&edits);
         for c in &mut cursors {
-            c.handle_edits(&edits);
+            c.head = diff.apply(c.head);
+            c.tail = diff.apply(c.tail);
         }
         assert_eq!(d.text, "hXo");
         assert_eq!(cursors[0].head, 2);

@@ -16,6 +16,11 @@ pub enum EditKind {
     Insert,
     Delete,
 }
+pub struct OffsetDiff {
+    offsets_old: Vec<usize>, // boundaries in old-document space
+    offsets_new: Vec<usize>, // new offset at each segment start (len = offsets_old.len() + 1)
+    deleted: Vec<bool>, // true → clamp to offsets_new[i]; false → shift by offsets_new[i] - old_start
+}
 
 impl Document {
     pub fn new() -> Document {
@@ -34,7 +39,7 @@ impl Document {
         self.queued_edits = Some(edits);
     }
 
-    pub fn apply_edits(&mut self, edits: &[Edit]) {
+    pub fn apply_edits(&mut self, edits: &[Edit]) -> OffsetDiff {
         for edit in edits {
             assert!(edit.offset <= self.text.len(), "Edit out of bounds");
             match edit.kind {
@@ -65,6 +70,8 @@ impl Document {
             }
         }
 
+        let len_old = self.text.len();
+
         // TODO This can be made way more efficient, so that common cases don't have to allocate a whole new text.
         let mut text_new = BString::new(Vec::with_capacity(self.text.len()));
         let mut offset = 0;
@@ -90,13 +97,15 @@ impl Document {
                 self.newlines.push(char_start);
             }
         }
+
+        OffsetDiff::from_edits(edits, len_old)
     }
 
     pub fn grid_from_offset(&self, offset: usize) -> [usize; 2] {
         // TODO binary search
-        for (line, newline_pos) in self.newlines.iter().enumerate().rev() {
-            if *newline_pos < offset {
-                let col = self.text[*newline_pos + 1..offset].chars().count();
+        for (line, newline_offset) in self.newlines.iter().enumerate().rev() {
+            if *newline_offset < offset {
+                let col = self.text[*newline_offset + 1..offset].chars().count();
                 return [col, line + 1];
             }
         }
@@ -149,6 +158,86 @@ impl Document {
             }
         }
         unreachable!()
+    }
+}
+
+impl OffsetDiff {
+    pub fn from_edits(edits: &[Edit], len_old: usize) -> Self {
+        let mut offsets_old: Vec<usize> = Vec::new();
+        let mut offsets_new: Vec<usize> = vec![0]; // F(0) = 0
+        let mut deleted: Vec<bool> = vec![false];
+        let mut cum_shift: isize = 0;
+
+        for edit in edits {
+            match edit.kind {
+                EditKind::Insert => {
+                    offsets_old.push(edit.offset);
+                    cum_shift += edit.text.len() as isize;
+                    offsets_new.push(((edit.offset as isize) + cum_shift) as usize);
+                    deleted.push(false);
+                }
+                EditKind::Delete => {
+                    let end = edit.offset + edit.text.len();
+                    offsets_old.push(edit.offset);
+                    let start_new = ((edit.offset as isize) + cum_shift) as usize;
+                    offsets_new.push(start_new);
+                    deleted.push(true); // offsets in (edit.offset, end) clamp to start_new
+
+                    offsets_old.push(end);
+                    cum_shift -= edit.text.len() as isize;
+                    offsets_new.push(((end as isize) + cum_shift) as usize);
+                    deleted.push(false);
+                }
+            }
+        }
+
+        // Final sentinel segment
+        offsets_old.push(len_old);
+        offsets_new.push(((len_old as isize) + cum_shift) as usize);
+        deleted.push(false);
+
+        // Dedup adjacent same offsets_old by removing the EARLIER occurrence.
+        // The later occurrence reflects the state after the later edit at that offset.
+        let mut i = 0;
+        while i + 1 < offsets_old.len() {
+            if offsets_old[i] == offsets_old[i + 1] {
+                offsets_old.remove(i);
+                offsets_new.remove(i + 1); // remove the segment STARTING at the duplicate
+                deleted.remove(i + 1);
+                // Don't increment i — re-check the new element at this offset
+            } else {
+                i += 1;
+            }
+        }
+
+        let diff = OffsetDiff {
+            offsets_old,
+            offsets_new,
+            deleted,
+        };
+        diff.validate();
+        diff
+    }
+
+    pub fn apply(&self, offset: usize) -> usize {
+        if self.offsets_new.is_empty() {
+            return offset;
+        }
+        let i = self.offsets_old.partition_point(|&o| o <= offset);
+        if self.deleted[i] {
+            self.offsets_new[i]
+        } else {
+            let old_start = if i == 0 { 0 } else { self.offsets_old[i - 1] };
+            offset + self.offsets_new[i] - old_start
+        }
+    }
+
+    pub fn validate(&self) {
+        assert_eq!(self.offsets_old.len() + 1, self.offsets_new.len());
+        assert_eq!(self.offsets_new.len(), self.deleted.len());
+        for pair in self.offsets_old.windows(2) {
+            assert!(pair[0] < pair[1]);
+        }
     }
 }
 
@@ -355,14 +444,14 @@ mod tests {
 
     #[test]
     fn grid_from_offset_just_before_newline() {
-        // Position is on line 0 because the newline byte is still ahead.
+        // Offset is on line 0 because the newline byte is still ahead.
         let d = filled("ab\ncd");
         assert_eq!(d.grid_from_offset(2), [2, 0]);
     }
 
     #[test]
     fn grid_from_offset_just_after_newline() {
-        // Position is at column 0 of line 1.
+        // Offset is at column 0 of line 1.
         let d = filled("ab\ncd");
         assert_eq!(d.grid_from_offset(3), [0, 1]);
     }

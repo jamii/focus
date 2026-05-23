@@ -7,10 +7,10 @@ use winit::dpi::LogicalSize;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState};
 
-use crate::document::Document;
-use crate::editor::Editor;
 use crate::atlas::Atlas;
+use crate::document::Document;
 use crate::drawing::Drawing;
+use crate::editor::Editor;
 use crate::window::Window;
 
 pub struct App {
@@ -161,27 +161,27 @@ impl App {
             }
         }
 
-        let mut document_edits = HashMap::new();
+        let mut document_diffs = HashMap::new();
         for (document_id, document) in &self.documents {
             let mut document = document.borrow_mut();
             if let Some(edits) = document.queued_edits.take() {
-                document.apply_edits(&edits);
-                document_edits.insert(*document_id, edits);
+                let diff = document.apply_edits(&edits);
+                document_diffs.insert(*document_id, diff);
             }
         }
 
-        let mut editor_edits = HashMap::new();
+        let mut editor_diffs = HashMap::new();
         for (editor_id, editor) in &self.editors {
             let mut editor = editor.borrow_mut();
-            if let Some(edits) = document_edits.get(&editor.document_id) {
-                editor.handle_edits(self, edits);
-                editor_edits.insert(*editor_id, edits);
+            if let Some(diff) = document_diffs.get(&editor.document_id) {
+                editor.handle_edits(self, diff);
+                editor_diffs.insert(*editor_id, diff);
             }
         }
 
         for (window_id, window) in &self.windows {
             let window = window.borrow();
-            if editor_edits.contains_key(&window.editor_id) {
+            if editor_diffs.contains_key(&window.editor_id) {
                 io.request_redraw(*window_id);
             }
         }

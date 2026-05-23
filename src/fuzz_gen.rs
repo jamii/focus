@@ -38,7 +38,7 @@ impl Default for Config {
 #[derive(Debug)]
 pub struct Frng<'a> {
     buf: &'a [u8],
-    pos: usize,
+    offset: usize,
 }
 
 // Lemire-style reduction: `(raw * span) >> N` uniformly maps a width-N
@@ -59,15 +59,15 @@ macro_rules! bounded_int {
 
 impl<'a> Frng<'a> {
     pub fn new(buf: &'a [u8]) -> Self {
-        Self { buf, pos: 0 }
+        Self { buf, offset: 0 }
     }
 
     pub fn bytes(&mut self, n: usize) -> Option<&[u8]> {
-        if self.pos + n > self.buf.len() {
+        if self.offset + n > self.buf.len() {
             return None;
         }
-        let bytes = &self.buf[self.pos..self.pos + n];
-        self.pos += n;
+        let bytes = &self.buf[self.offset..self.offset + n];
+        self.offset += n;
         Some(bytes)
     }
 
@@ -272,7 +272,7 @@ mod tests {
         let buf = [0u8, 1, 2, 3];
         let mut frng = Frng::new(&buf);
         assert_eq!(frng.bytes(4), Some(&buf[..]));
-        // Pos is now at the end; another read of >0 should return None.
+        // Offset is now at the end; another read of >0 should return None.
         assert_eq!(frng.bytes(1), None);
     }
 
