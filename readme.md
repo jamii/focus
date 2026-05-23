@@ -1,4 +1,5 @@
-Wishlist:
+## wishlist
+
 * more text structure 
   * https://matklad.github.io/2023/03/08/an-engine-for-an-editor.html
   * https://github.com/matklad/abont
@@ -41,13 +42,41 @@ Wishlist:
   * point agent at special comments, open magit diff, add review comments, run again
   * conversation tree?
 
-Short-term roadmap:
-* scroll
-* load / reload / save
-  * diff on reload
-  * maintain scroll position
-* mark
-* mouse interaction
+## next
+
+Editor:
+* Cursor->Point->col
+* Movement
+  * Line start/end
+  * File start/end
+* Multiple cursors
+  * Ctrl-D to add cursor matching main cursor
+  * Ctrl-Shift-D to pop cursor
+* Mouse interactions
+  * Click to set cursor
+  * Drag to set mark
+  * Ctrl-click to add cursor
+  * Ctrl-drag to add cursor and set mark
+  * Drag causes scrolling
+  * Drag works even if off-screen
+  * Scroll with wheel
+* Undo/redo
+* Copy/cut/paste
+* Navigation stack
+* Loading/saving
+* Open on web
+* Completions
+
+Language:
+* Tokenize + highlight
+* Comment/uncomment
+* Smart indent
+* Paren matching
+* Structural move/select
+* Goto definition
+* Completion provider
+
+## notes
 
 Scrolling on master (lib/focus/editor.zig):
 * state lives on the editor as `top_pixel: isize` (which buffer pixel is at the top of the viewport), plus `wanted_center_pos: ?usize` for deferred centering requests
