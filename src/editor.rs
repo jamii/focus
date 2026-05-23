@@ -312,7 +312,6 @@ fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
         let mut col = 0;
         let mut last_soft_wrap = None;
         let mut newline = false;
-        dbg!(start, end);
         while let Some((_, char_end, char)) = text[end..].char_indices().next() {
             if char == '\n' {
                 newline = true;
