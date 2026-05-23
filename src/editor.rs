@@ -126,7 +126,7 @@ impl Editor {
             let text = &self.document_id.get(app).text;
             for [start, _end] in &self.wraps {
                 if *start > 0 && text[start - 1] != b'\n' {
-                    let grid = self.grid_from_pos(app, *start);
+                    let grid = self.grid_from_offset(app, *start);
                     drawing.draw_text(
                         &app.atlas,
                         BStr::new(b"\\"),
@@ -174,7 +174,7 @@ impl Editor {
         {
             let text = &self.document_id.get(app).text;
             for [start, end] in &self.wraps {
-                let grid = self.grid_from_pos(app, *start);
+                let grid = self.grid_from_offset(app, *start);
                 let screen = app.atlas.screen_from_grid(grid);
                 drawing.draw_text(
                     &app.atlas,
@@ -188,7 +188,7 @@ impl Editor {
         // Draw cursors.
         if self.show_cursor {
             for cursor in &self.cursors {
-                let grid_start = self.grid_from_pos(app, cursor.head);
+                let grid_start = self.grid_from_offset(app, cursor.head);
                 let mut grid_end = grid_start;
                 grid_end[1] += 1;
                 let mut screen_start = app.atlas.screen_from_grid(grid_start);
@@ -238,13 +238,13 @@ impl Editor {
             if let Some(range) = cursor.marked_range(self.marked) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
-                    pos: range.start,
+                    offset: range.start,
                     text: document.text[range.start..range.end].into(),
                 });
             } else if let Some(start) = document.char_prev(cursor.head) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
-                    pos: start,
+                    offset: start,
                     text: document.text[start..cursor.head].into(),
                 });
             }
@@ -260,13 +260,13 @@ impl Editor {
             if let Some(range) = cursor.marked_range(self.marked) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
-                    pos: range.start,
+                    offset: range.start,
                     text: document.text[range.start..range.end].into(),
                 });
             } else if let Some(end) = document.char_next(cursor.head) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
-                    pos: cursor.head,
+                    offset: cursor.head,
                     text: document.text[cursor.head..end].into(),
                 });
             }
@@ -283,7 +283,7 @@ impl Editor {
 
     fn cursor_move(&mut self, app: &App, direction: Direction) {
         let document = self.document_id.get(app);
-        let pos_new = self
+        let offsets_new = self
             .cursors
             .iter()
             .map(|cursor| match direction {
@@ -293,77 +293,77 @@ impl Editor {
                 Direction::Down => self.line_down(app, cursor.head),
             })
             .collect::<Vec<_>>();
-        for (cursor, pos_new) in self.cursors.iter_mut().zip(pos_new.into_iter()) {
-            if let Some(pos_new) = pos_new {
-                cursor.head = pos_new
+        for (cursor, offset_new) in self.cursors.iter_mut().zip(offsets_new.into_iter()) {
+            if let Some(offset_new) = offset_new {
+                cursor.head = offset_new
             }
         }
     }
 
-    fn grid_from_pos(&self, app: &App, pos: usize) -> [usize; 2] {
+    fn grid_from_offset(&self, app: &App, offset: usize) -> [usize; 2] {
         let text = &self.document_id.get(app).text;
-        grid_from_wraps(&self.wraps, text.as_bstr(), pos)
+        grid_from_wraps(&self.wraps, text.as_bstr(), offset)
     }
 
-    fn line_up(&self, app: &App, pos: usize) -> Option<usize> {
+    fn line_up(&self, app: &App, offset: usize) -> Option<usize> {
         let document = self.document_id.get(app);
-        let line = self.grid_from_pos(app, pos)[1];
+        let line = self.grid_from_offset(app, offset)[1];
         if line == 0 {
             return None;
         }
-        let col = document.text[self.wraps[line][0]..pos].chars().count();
+        let col = document.text[self.wraps[line][0]..offset].chars().count();
         let wrap_prev = self.wraps[line - 1];
-        let mut result_pos = wrap_prev[0];
+        let mut result_offset = wrap_prev[0];
         if let Some((_, char_end, _)) = document.text[wrap_prev[0]..wrap_prev[1]]
             .char_indices()
             .take(col)
             .last()
         {
-            result_pos += char_end;
+            result_offset += char_end;
         }
-        Some(result_pos)
+        Some(result_offset)
     }
 
-    fn line_down(&self, app: &App, pos: usize) -> Option<usize> {
+    fn line_down(&self, app: &App, offset: usize) -> Option<usize> {
         let document = self.document_id.get(app);
-        let line = self.grid_from_pos(app, pos)[1];
+        let line = self.grid_from_offset(app, offset)[1];
         if line == self.wraps.len() - 1 {
             return None;
         }
-        let col = document.text[self.wraps[line][0]..pos].chars().count();
+        let col = document.text[self.wraps[line][0]..offset].chars().count();
         let wrap_next = self.wraps[line + 1];
-        let mut result_pos = wrap_next[0];
+        let mut result_offset = wrap_next[0];
         if let Some((_, char_end, _)) = document.text[wrap_next[0]..wrap_next[1]]
             .char_indices()
             .take(col)
             .last()
         {
-            result_pos += char_end;
+            result_offset += char_end;
         }
-        Some(result_pos)
+        Some(result_offset)
     }
 }
 
 impl Cursor {
     fn handle_edits(&mut self, edits: &[Edit]) {
-        for pos in [&mut self.head, &mut self.tail] {
+        for offset in [&mut self.head, &mut self.tail] {
             let mut insert_len = 0;
             let mut delete_len = 0;
             for edit in edits.iter() {
                 match edit.kind {
                     EditKind::Insert => {
-                        if *pos >= edit.pos {
+                        if *offset >= edit.offset {
                             insert_len += edit.text.len();
                         }
                     }
                     EditKind::Delete => {
-                        if *pos > edit.pos {
-                            delete_len += (*pos - edit.pos).min(edit.text.len());
+                        if *offset > edit.offset {
+                            delete_len += (*offset - edit.offset).min(edit.text.len());
                         }
                     }
                 }
             }
-            *pos = *pos + insert_len - delete_len;
+            *offset = *offset + insert_len - delete_len;
         }
     }
 
@@ -387,18 +387,18 @@ fn calculate_replace_edits(
         if let Some(range) = cursor.marked_range(marked) {
             edits.push(Edit {
                 kind: EditKind::Insert,
-                pos: range.start,
+                offset: range.start,
                 text: insert.into(),
             });
             edits.push(Edit {
                 kind: EditKind::Delete,
-                pos: range.start,
+                offset: range.start,
                 text: document.text[range.start..range.end].into(),
             });
         } else {
             edits.push(Edit {
                 kind: EditKind::Insert,
-                pos: cursor.head,
+                offset: cursor.head,
                 text: insert.into(),
             });
         }
@@ -425,8 +425,8 @@ fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
                 last_soft_wrap = Some(end);
             }
             if col >= wrap_chars {
-                if let Some(pos) = last_soft_wrap {
-                    end = pos;
+                if let Some(offset) = last_soft_wrap {
+                    end = offset;
                 }
                 break;
             }
@@ -441,11 +441,11 @@ fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
     }
 }
 
-fn grid_from_wraps(wraps: &[[usize; 2]], text: &BStr, pos: usize) -> [usize; 2] {
+fn grid_from_wraps(wraps: &[[usize; 2]], text: &BStr, offset: usize) -> [usize; 2] {
     // TODO binary search
     for (line, [start, end]) in wraps.iter().enumerate().rev() {
-        if *start <= pos && pos <= *end {
-            let col = text[*start..pos].chars().count();
+        if *start <= offset && offset <= *end {
+            let col = text[*start..offset].chars().count();
             return [col, line];
         }
     }
@@ -558,10 +558,10 @@ mod tests {
         assert_eq!(wraps_of("a b éef", 3), vec![[0, 2], [2, 4], [4, 8]]);
     }
 
-    fn after_handle_edits(pos: usize, edits: &[Edit]) -> usize {
+    fn after_handle_edits(offset: usize, edits: &[Edit]) -> usize {
         let mut cursor = Cursor {
-            head: pos,
-            tail: pos,
+            head: offset,
+            tail: offset,
         };
         cursor.handle_edits(edits);
         cursor.head
@@ -571,7 +571,7 @@ mod tests {
     fn shift_cursor_through_earlier_delete() {
         let edits = vec![Edit {
             kind: EditKind::Delete,
-            pos: 3,
+            offset: 3,
             text: "a".into(),
         }];
         assert_eq!(after_handle_edits(10, &edits), 9);
@@ -582,12 +582,12 @@ mod tests {
         let edits = vec![
             Edit {
                 kind: EditKind::Insert,
-                pos: 10,
+                offset: 10,
                 text: "X".into(),
             },
             Edit {
                 kind: EditKind::Delete,
-                pos: 11,
+                offset: 11,
                 text: "y".into(),
             },
         ];
@@ -598,17 +598,17 @@ mod tests {
     fn shift_cursor_inside_delete_range_clamps_to_delete_start() {
         let edits = vec![Edit {
             kind: EditKind::Delete,
-            pos: 3,
+            offset: 3,
             text: "abcd".into(),
         }];
-        // Cursor at pos 5 is inside the deleted range [3..7); after the
+        // Cursor at offset 5 is inside the deleted range [3..7); after the
         // edit it should land at 3 (the start of the deletion), not at 1.
         assert_eq!(after_handle_edits(5, &edits), 3);
     }
 
     #[test]
     fn grid_from_wraps_picks_later_line_on_boundary() {
-        // pos sits on both the end of line 0 and the start of line 1 — the
+        // offset sits on both the end of line 0 and the start of line 1 — the
         // reverse iteration returns the later (line 1) match.
         let text: BString = "ab\ncd".into();
         let wraps = vec![[0, 2], [3, 5]];
@@ -619,7 +619,7 @@ mod tests {
         let mut d = Document::new();
         d.apply_edits(&[Edit {
             kind: EditKind::Insert,
-            pos: 0,
+            offset: 0,
             text: s.into(),
         }]);
         d
@@ -647,11 +647,11 @@ mod tests {
 
     #[test]
     fn handle_edits_shifts_tail_through_earlier_insert() {
-        // Tail shifts the same way pos does when an edit precedes it.
+        // Tail shifts the same way offset does when an edit precedes it.
         let mut c = Cursor { head: 10, tail: 6 };
         c.handle_edits(&[Edit {
             kind: EditKind::Insert,
-            pos: 2,
+            offset: 2,
             text: "abc".into(),
         }]);
         assert_eq!(c.head, 13);
@@ -664,7 +664,7 @@ mod tests {
         let mut c = Cursor { head: 7, tail: 5 };
         c.handle_edits(&[Edit {
             kind: EditKind::Delete,
-            pos: 3,
+            offset: 3,
             text: "abcdef".into(),
         }]);
         assert_eq!(c.head, 3);
@@ -672,13 +672,13 @@ mod tests {
     }
 
     #[test]
-    fn calculate_replace_edits_unmarked_emits_single_insert_at_pos() {
+    fn calculate_replace_edits_unmarked_emits_single_insert_at_offset() {
         let d = doc_with("hello");
         let cursors = vec![Cursor { head: 3, tail: 0 }];
         let edits = calculate_replace_edits(&cursors, false, &d, b"X");
         assert_eq!(edits.len(), 1);
         assert!(matches!(edits[0].kind, EditKind::Insert));
-        assert_eq!(edits[0].pos, 3);
+        assert_eq!(edits[0].offset, 3);
         assert_eq!(edits[0].text, "X");
     }
 
@@ -690,10 +690,10 @@ mod tests {
         let edits = calculate_replace_edits(&cursors, true, &d, b"X");
         assert_eq!(edits.len(), 2);
         assert!(matches!(edits[0].kind, EditKind::Insert));
-        assert_eq!(edits[0].pos, 1);
+        assert_eq!(edits[0].offset, 1);
         assert_eq!(edits[0].text, "X");
         assert!(matches!(edits[1].kind, EditKind::Delete));
-        assert_eq!(edits[1].pos, 1);
+        assert_eq!(edits[1].offset, 1);
         assert_eq!(edits[1].text, "ell");
     }
 
@@ -704,7 +704,7 @@ mod tests {
         let edits = calculate_replace_edits(&cursors, true, &d, b"X");
         assert_eq!(edits.len(), 1);
         assert!(matches!(edits[0].kind, EditKind::Insert));
-        assert_eq!(edits[0].pos, 2);
+        assert_eq!(edits[0].offset, 2);
     }
 
     #[test]
