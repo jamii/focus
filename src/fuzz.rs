@@ -17,9 +17,9 @@ use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use crate::app::{App, IO, InputEvent, WindowId};
-use crate::fuzz_gen::Frng;
 use crate::atlas::Atlas;
 use crate::drawing::Drawing;
+use crate::fuzz_gen::Frng;
 
 // Mock IO: tracks open windows, fabricates fresh WindowIds, advances
 // `frame_start` by whatever the harness pushes via `advance`.
@@ -82,7 +82,7 @@ const A_KEY_NAMED: u32 = 20;
 const A_MODIFIERS: u32 = 10;
 const A_CLOSE: u32 = 2;
 const A_TICK_ONLY: u32 = 20;
-const A_DRAW: u32 = 0;
+const A_DRAW: u32 = 40;
 
 // Each step: tick once (advancing time), then perform one randomly
 // chosen action. Returns Some(()) if more entropy is available; None
