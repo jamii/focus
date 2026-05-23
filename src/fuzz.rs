@@ -28,6 +28,7 @@ pub struct MockIO {
     pub frame_start: Duration,
     pub open_windows: Vec<WindowId>,
     pub exited: bool,
+    pub screen_size: [f32; 2],
 }
 
 impl MockIO {
@@ -40,6 +41,7 @@ impl MockIO {
             frame_start: Duration::ZERO,
             open_windows: Vec::new(),
             exited: false,
+            screen_size: [0.0, 0.0],
         }
     }
 
@@ -81,18 +83,13 @@ const A_KEY_CHAR: u32 = 40;
 const A_KEY_NAMED: u32 = 20;
 const A_MODIFIERS: u32 = 10;
 const A_CLOSE: u32 = 2;
-const A_TICK_ONLY: u32 = 20;
+const A_TICK: u32 = 20;
 const A_DRAW: u32 = 40;
 
 // Each step: tick once (advancing time), then perform one randomly
 // chosen action. Returns Some(()) if more entropy is available; None
 // when the buffer is exhausted (Frng signals end-of-stream as None).
 fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
-    // Advance time by a fuzzer-chosen delta in [0, ~1s].
-    let delta_us = frng.u32_bounded(0, 1_000_000)?;
-    io.frame_start += Duration::from_micros(delta_us as u64);
-    app.tick(io);
-
     if io.open_windows.is_empty() {
         return None;
     }
@@ -104,7 +101,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_KEY_NAMED,
         A_MODIFIERS,
         A_CLOSE,
-        A_TICK_ONLY,
+        A_TICK,
         A_DRAW,
     ])?;
     match action {
@@ -180,15 +177,20 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             app.input(io, window_id, InputEvent::CloseRequested);
         }
         4 => {
-            // Nothing — the tick above is the whole step.
+            // Advance time by a fuzzer-chosen delta in [0, ~1s].
+            let delta_us = frng.u32_bounded(0, 1_000_000)?;
+            io.frame_start += Duration::from_micros(delta_us as u64);
+            app.tick(io);
         }
         5 => {
-            // Draw at a fuzzer-chosen screen size. This path changes
-            // `wrap_chars` and triggers `refresh_wraps`. Note: draws
-            // mask the stale-wraps bug, so omit them when hunting it.
-            let w = frng.u32_bounded(0, 4000)? as f32;
-            let h = frng.u32_bounded(0, 4000)? as f32;
-            let mut drawing = Drawing::new([w, h]);
+            // Draw at a fuzzer-chosen screen size.
+            if frng.boolean()? {
+                io.screen_size = [
+                    frng.u32_bounded(0, 4000)? as f32,
+                    frng.u32_bounded(0, 4000)? as f32,
+                ];
+            }
+            let mut drawing = Drawing::new(io.screen_size);
             app.draw(window_id, &mut drawing);
         }
         _ => unreachable!(),
@@ -210,12 +212,5 @@ pub fn fuzz_one(bytes: &[u8]) {
         if io.exited {
             break;
         }
-    }
-
-    // Touch every open window with a draw so we exercise the layout/draw
-    // path against whatever state the fuzz steps produced.
-    for window_id in io.open_windows.clone() {
-        let mut drawing = Drawing::new([800.0, 600.0]);
-        app.draw(window_id, &mut drawing);
     }
 }
