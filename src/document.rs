@@ -102,15 +102,12 @@ impl Document {
     }
 
     pub fn grid_from_offset(&self, offset: usize) -> [usize; 2] {
-        // TODO binary search
-        for (line, newline_offset) in self.newlines.iter().enumerate().rev() {
-            if *newline_offset < offset {
-                let col = self.text[*newline_offset + 1..offset].chars().count();
-                return [col, line + 1];
-            }
+        let line = self.newlines.partition_point(|&nl| nl < offset);
+        if line == 0 {
+            [self.text[0..offset].chars().count(), 0]
+        } else {
+            [self.text[self.newlines[line - 1] + 1..offset].chars().count(), line]
         }
-        let col = self.text[0..offset].chars().count();
-        [col, 0]
     }
 
     pub fn line_range_from_offset(&self, offset: usize) -> std::ops::Range<usize> {

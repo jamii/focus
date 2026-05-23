@@ -420,14 +420,11 @@ fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
 }
 
 fn grid_from_wraps(wraps: &[[usize; 2]], text: &BStr, offset: usize) -> [usize; 2] {
-    // TODO binary search
-    for (line, [start, end]) in wraps.iter().enumerate().rev() {
-        if *start <= offset && offset <= *end {
-            let col = text[*start..offset].chars().count();
-            return [col, line];
-        }
-    }
-    unreachable!();
+    let line = wraps.partition_point(|&[start, _end]| start <= offset) - 1;
+    let [start, end] = wraps[line];
+    assert!(offset <= end);
+    let col = text[start..offset].chars().count();
+    [col, line]
 }
 
 #[cfg(test)]
