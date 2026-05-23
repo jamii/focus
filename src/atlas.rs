@@ -34,9 +34,8 @@ pub struct Atlas {
 
     pub glyphs: HashMap<char, Glyph>,
 
-    // Synthetic hollow-rectangle glyph used as a "tofu" for any
-    // character not in `glyphs`. Same role as TTF's glyph index 0.
-    pub missing: Glyph,
+    // Glyph 0 (.notdef) from the font.
+    pub notdef: Glyph,
 
     // Coordinates of a single solid-white texel. Lives in its own
     // dedicated cell that no glyph quad ever samples; draw_rect points
@@ -66,14 +65,18 @@ impl Atlas {
             raster.push((ch, m, bitmap));
         }
 
+        // Rasterize glyph 0 (the font's .notdef).
+        let (notdef_m, notdef_bitmap) = font.rasterize_indexed(0, px_size);
+        max_advance = max_advance.max(notdef_m.advance_width);
+
         let cell_w = max_advance.ceil() as u32;
         let cell_h = line.new_line_size.ceil() as u32;
 
-        // Layout: ASCII glyphs, then tofu, then white texel. Each lives
+        // Layout: ASCII glyphs, then notdef, then white texel. Each lives
         // in its own cell. 95 + 1 + 1 = 97 cells = 7 rows × 16 cols with
         // 15 unused cells at the end.
-        let tofu_idx = NUM_GLYPHS as u32;
-        let white_idx = tofu_idx + 1;
+        let notdef_idx = NUM_GLYPHS as u32;
+        let white_idx = notdef_idx + 1;
         let rows = (white_idx + 1).div_ceil(ATLAS_COLS);
         let atlas_w = ATLAS_COLS * cell_w;
         let atlas_h = rows * cell_h;
@@ -117,28 +120,28 @@ impl Atlas {
             );
         }
 
-        // Tofu: hollow rectangle painted into its own cell, with margins
-        // so the box visually sits in the cap-letter region.
-        let [tx, ty] = cell_origin(tofu_idx);
-        let margin_x = (cell_w / 8).max(1);
-        let margin_y = (cell_h / 5).max(2);
-        let tw = cell_w - 2 * margin_x;
-        let th = cell_h - 2 * margin_y;
-        for j in 0..th {
-            for k in 0..tw {
-                let on_border = j == 0 || j == th - 1 || k == 0 || k == tw - 1;
-                if on_border {
-                    let dst = ((ty + margin_y + j) * atlas_w + (tx + margin_x + k)) as usize;
-                    pixels[dst] = 255;
+        // Paint glyph 0 (.notdef) into the missing-glyph cell.
+        let [tx, ty] = cell_origin(notdef_idx);
+        let bitmap_left = notdef_m.xmin;
+        let bitmap_top = ascent as i32 - (notdef_m.ymin + notdef_m.height as i32);
+        let gw = notdef_m.width as i32;
+        let gh = notdef_m.height as i32;
+        for j in 0..gh {
+            for k in 0..gw {
+                let cx = bitmap_left + k;
+                let cy = bitmap_top + j;
+                if cx < 0 || cy < 0 || cx >= cell_w as i32 || cy >= cell_h as i32 {
+                    continue;
                 }
+                let dst = ((ty + cy as u32) * atlas_w + (tx + cx as u32)) as usize;
+                pixels[dst] = notdef_bitmap[(j * gw + k) as usize];
             }
         }
-        let missing = Glyph {
+        let notdef = Glyph {
             atlas_pos: [tx, ty],
         };
 
-        // White texel in its own cell — never sampled as part of a glyph
-        // quad, so it doesn't pollute the tofu render.
+        // White texel in its own cell.
         let white_pos = cell_origin(white_idx);
         pixels[(white_pos[1] * atlas_w + white_pos[0]) as usize] = 255;
 
@@ -146,7 +149,7 @@ impl Atlas {
             size: [atlas_w, atlas_h],
             pixels,
             glyphs,
-            missing,
+            notdef,
             white_pos,
             cell_size: [cell_w, cell_h],
         }

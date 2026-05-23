@@ -193,7 +193,7 @@ impl Drawing {
                 '\n' => ' ',
                 _ => char,
             };
-            let g = atlas.glyphs.get(&char).unwrap_or(&atlas.missing);
+            let g = atlas.glyphs.get(&char).unwrap_or(&atlas.notdef);
             self.commands.push(DrawCommand::Quad(Quad {
                 dst_pos: [pen_x, abs_pos[1]],
                 dst_size: [cell_w, cell_h],
