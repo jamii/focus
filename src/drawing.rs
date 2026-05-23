@@ -26,6 +26,15 @@ pub struct Rect {
     pub size: [f32; 2],
 }
 
+impl Rect {
+    pub fn from_corners(start: [f32; 2], end: [f32; 2]) -> Self {
+        Rect {
+            pos: start,
+            size: [end[0] - start[0], end[1] - start[1]],
+        }
+    }
+}
+
 // Axis-aligned intersection. Returns a rect with non-positive size when the
 // inputs don't overlap; callers check size[0] > 0 && size[1] > 0 before drawing.
 pub fn intersect_rects(a: Rect, b: Rect) -> Rect {
@@ -119,7 +128,7 @@ impl Drawing {
         *self.clip_stack.last().unwrap()
     }
 
-    pub fn current_clip_size(&self) -> [f32; 2] {
+    pub fn size(&self) -> [f32; 2] {
         self.current_clip().size
     }
 
@@ -135,7 +144,12 @@ impl Drawing {
     /// Solid rectangle. Trimmed against the current clip in software, so
     /// it doesn't need to break the batch.
     pub fn draw_rect(&mut self, atlas: &Atlas, rect: Rect, color: [u8; 4]) {
-        let trimmed = intersect_rects(rect, self.current_clip());
+        let clip = self.current_clip();
+        let abs_rect = Rect {
+            pos: [clip.pos[0] + rect.pos[0], clip.pos[1] + rect.pos[1]],
+            size: rect.size,
+        };
+        let trimmed = intersect_rects(abs_rect, clip);
         if trimmed.size[0] > 0.0 && trimmed.size[1] > 0.0 {
             self.commands.push(DrawCommand::Quad(Quad {
                 dst_pos: trimmed.pos,
@@ -156,10 +170,11 @@ impl Drawing {
     /// scissor only kicks in for this draw.
     pub fn draw_text(&mut self, atlas: &Atlas, text: &BStr, pos: [f32; 2], color: [u8; 4]) {
         let clip = self.current_clip();
+        let abs_pos = [clip.pos[0] + pos[0], clip.pos[1] + pos[1]];
         let cell_w = atlas.cell_size[0] as f32;
         let cell_h = atlas.cell_size[1] as f32;
         let bbox = Rect {
-            pos,
+            pos: abs_pos,
             size: [cell_w * text.chars().count() as f32, cell_h],
         };
         let state = classify_clip(bbox, clip);
@@ -170,7 +185,7 @@ impl Drawing {
         if needs_scissor {
             self.commands.push(DrawCommand::SetClip(clip));
         }
-        let mut pen_x = pos[0];
+        let mut pen_x = abs_pos[0];
         for char in text.chars() {
             // Unknown chars fall back to the tofu (same role as TTF's
             // glyph 0).
@@ -180,7 +195,7 @@ impl Drawing {
             };
             let g = atlas.glyphs.get(&char).unwrap_or(&atlas.missing);
             self.commands.push(DrawCommand::Quad(Quad {
-                dst_pos: [pen_x, pos[1]],
+                dst_pos: [pen_x, abs_pos[1]],
                 dst_size: [cell_w, cell_h],
                 src_pos: g.atlas_pos,
                 src_size: atlas.cell_size,

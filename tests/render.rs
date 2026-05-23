@@ -191,12 +191,12 @@ fn renders_hello_world() {
     };
     {
         let mut drawing = drawing.push_clip_rect(clip);
-        drawing.draw_rect(&atlas, clip, [255, 240, 170, 255]);
+        drawing.draw_rect(&atlas, Rect { pos: [0.0, 0.0], size: clip.size }, [255, 240, 170, 255]);
         // Non-ASCII '→' is not in the atlas and should render as a tofu box.
         drawing.draw_text(
             &atlas,
             "hello → world".into(),
-            [20.0, 20.0],
+            [4.0, 4.0],
             [30, 30, 40, 255],
         );
     }

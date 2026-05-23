@@ -10,8 +10,8 @@ use winit::{
 use crate::{
     app::{App, DocumentId, IO, InputEvent},
     document::{Document, Edit, EditKind},
-    style::{HIGHLIGHT_COLOR, TEXT_COLOR},
     drawing::{Drawing, Rect},
+    style::{HIGHLIGHT_COLOR, TEXT_COLOR},
 };
 
 pub struct Editor {
@@ -109,17 +109,15 @@ impl Editor {
 
     pub fn draw(&mut self, app: &App, drawing: &mut Drawing) {
         // Update wrapping.
-        let clip_size = drawing.current_clip_size();
-        let cell_w = app.atlas.cell_size[0] as f32;
-        let cell_h = app.atlas.cell_size[1] as f32;
-        let wrap_chars = (clip_size[0] / cell_w).floor() as isize
-            // leave space for gutters
-            - 2;
-        if wrap_chars <= 0 {
+        let clip_size = drawing.size();
+        let wrap_chars = app.atlas.grid_from_screen(clip_size)[0] as usize;
+        if wrap_chars <= 2 {
             return;
         }
-        if self.wrap_chars != wrap_chars as usize {
-            self.wrap_chars = wrap_chars as usize;
+        // Leave space for gutters
+        let wrap_chars = wrap_chars - 2;
+        if self.wrap_chars != wrap_chars {
+            self.wrap_chars = wrap_chars;
             self.refresh_wraps(app);
         }
 
@@ -139,13 +137,12 @@ impl Editor {
             }
         }
 
-        // Clip the gutters out. The scope pops the clip when dropped at the
-        // end of this function.
-        let text_area = Rect {
-            pos: [cell_w, 0.0],
-            size: [(clip_size[0] - 2.0 * cell_w).max(0.0), clip_size[1]],
-        };
-        let mut drawing = drawing.push_clip_rect(text_area);
+        // Clip the gutters out.
+        let width = app.atlas.screen_from_grid([wrap_chars, 0])[0];
+        let mut drawing = drawing.push_clip_rect(Rect {
+            pos: app.atlas.screen_from_grid([1, 0]),
+            size: [width, clip_size[1]],
+        });
 
         // Draw mark.
         if self.marked {
@@ -156,25 +153,16 @@ impl Editor {
                         if range.end <= wrap_start || range.start > wrap_end {
                             continue;
                         }
-                        let line_start = range.start.max(wrap_start);
-                        let line_end = range.end.min(wrap_end);
-                        let grid = grid_from_wraps(&self.wraps, text.as_bstr(), line_start);
-                        let pos = [
-                            text_area.pos[0] + grid[0] as f32 * cell_w,
-                            grid[1] as f32 * cell_h,
-                        ];
-                        let chars_in_sel = text[line_start..line_end].chars().count();
-                        let w = if range.end > wrap_end {
-                            text_area.size[0] - (pos[0] - text_area.pos[0])
-                        } else {
-                            chars_in_sel as f32 * cell_w
-                        };
+                        let mark_start = range.start.max(wrap_start);
+                        let mark_end = range.end.min(wrap_end);
+                        let grid_start = grid_from_wraps(&self.wraps, text.as_bstr(), mark_start);
+                        let mut grid_end = grid_from_wraps(&self.wraps, text.as_bstr(), mark_end);
+                        grid_end[1] += 1;
+                        let screen_start = app.atlas.screen_from_grid(grid_start);
+                        let screen_end = app.atlas.screen_from_grid(grid_end);
                         drawing.draw_rect(
                             &app.atlas,
-                            Rect {
-                                pos,
-                                size: [w, cell_h],
-                            },
+                            Rect::from_corners(screen_start, screen_end),
                             HIGHLIGHT_COLOR,
                         );
                     }
@@ -187,29 +175,30 @@ impl Editor {
             let text = &self.document_id.get(app).text;
             for [start, end] in &self.wraps {
                 let grid = self.grid_from_pos(app, *start);
-                let pos = [
-                    text_area.pos[0] + grid[0] as f32 * cell_w,
-                    grid[1] as f32 * cell_h,
-                ];
-                drawing.draw_text(&app.atlas, &text.as_bstr()[*start..*end], pos, TEXT_COLOR);
+                let screen = app.atlas.screen_from_grid(grid);
+                drawing.draw_text(
+                    &app.atlas,
+                    &text.as_bstr()[*start..*end],
+                    screen,
+                    TEXT_COLOR,
+                );
             }
         }
 
         // Draw cursors.
         if self.show_cursor {
             for cursor in &self.cursors {
-                let grid = self.grid_from_pos(app, cursor.head);
-                let w = cell_w / 8.0;
-                let pos = [
-                    text_area.pos[0] + grid[0] as f32 * cell_w - w / 2.0,
-                    grid[1] as f32 * cell_h,
-                ];
+                let grid_start = self.grid_from_pos(app, cursor.head);
+                let mut grid_end = grid_start;
+                grid_end[1] += 1;
+                let mut screen_start = app.atlas.screen_from_grid(grid_start);
+                let mut screen_end = app.atlas.screen_from_grid(grid_end);
+                let w = app.atlas.cell_size[0] as f32 / 8.0;
+                screen_start[0] -= w / 2.0;
+                screen_end[0] += w / 2.0;
                 drawing.draw_rect(
                     &app.atlas,
-                    Rect {
-                        pos,
-                        size: [w, cell_h],
-                    },
+                    Rect::from_corners(screen_start, screen_end),
                     TEXT_COLOR,
                 );
             }
