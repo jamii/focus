@@ -206,24 +206,7 @@ impl Editor {
     pub fn handle_edits(&mut self, app: &App, edits: &[Edit]) {
         // TODO This is quadratic - edits come from cursors. Should precompute a diff per range once and use for all editors.
         for cursor in &mut self.cursors {
-            let mut insert_len = 0;
-            let mut delete_len = 0;
-            for edit in edits.iter() {
-                match edit.kind {
-                    EditKind::Insert => {
-                        if cursor.pos >= edit.pos {
-                            insert_len += edit.text.len();
-                        }
-                    }
-                    EditKind::Delete => {
-                        if cursor.pos > edit.pos {
-                            delete_len += edit.text.len();
-                        }
-                    }
-                }
-            }
-            cursor.pos += insert_len;
-            cursor.pos -= delete_len;
+            cursor.handle_edits(edits);
         }
         self.refresh_wraps(app);
     }
@@ -297,35 +280,62 @@ impl Editor {
     }
 }
 
-fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
-    let mut start = 0;
-    let mut end = 0;
-    let mut last_soft_wrap = None;
-    let mut col = 0;
-    while let Some((_, char_end, char)) = text[end..].char_indices().next() {
-        if col >= wrap_chars {
-            if let Some(pos) = last_soft_wrap {
-                end = pos;
+impl Cursor {
+    fn handle_edits(&mut self, edits: &[Edit]) {
+        let mut insert_len = 0;
+        let mut delete_len = 0;
+        for edit in edits.iter() {
+            match edit.kind {
+                EditKind::Insert => {
+                    if self.pos >= edit.pos {
+                        insert_len += edit.text.len();
+                    }
+                }
+                EditKind::Delete => {
+                    if self.pos > edit.pos {
+                        delete_len += (self.pos - edit.pos).min(edit.text.len());
+                    }
+                }
             }
-            wraps.push([start, end]);
-            start = end;
-            col = 0;
-            last_soft_wrap = None;
         }
-        if char == '\n' {
-            wraps.push([start, end]);
-            start = end + char_end;
-            col = 0;
-            last_soft_wrap = None;
-        } else {
-            col += 1
+        self.pos = self.pos + insert_len - delete_len;
+    }
+}
+
+fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
+    assert!(wrap_chars > 0);
+    let mut end = 0;
+    loop {
+        let start = end;
+        let mut col = 0;
+        let mut last_soft_wrap = None;
+        let mut newline = false;
+        dbg!(start, end);
+        while let Some((_, char_end, char)) = text[end..].char_indices().next() {
+            if char == '\n' {
+                newline = true;
+                break;
+            }
+            col += 1;
+            end += char_end;
+            if char == ' ' {
+                last_soft_wrap = Some(end);
+            }
+            if col >= wrap_chars {
+                if let Some(pos) = last_soft_wrap {
+                    end = pos;
+                }
+                break;
+            }
         }
-        end += char_end;
-        if char == ' ' {
-            last_soft_wrap = Some(end);
+        wraps.push([start, end]);
+        if end >= text.len() {
+            break;
+        }
+        if newline {
+            end += 1
         }
     }
-    wraps.push([start, text.len()]);
 }
 
 fn grid_from_wraps(wraps: &[[usize; 2]], text: &BStr, pos: usize) -> [usize; 2] {
@@ -434,6 +444,60 @@ mod tests {
         let text: BString = "héllo".into();
         let wraps = vec![[0, 6]];
         assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 3), [2, 0]);
+    }
+
+    #[test]
+    fn soft_wrap_before_multi_byte_char_keeps_it_intact() {
+        // "a b éef" — chars: a, ' ', b, ' ', é (2 bytes), e, f (8 bytes total).
+        // With wrap_chars=3, "a " soft-wraps before 'b', then "b " soft-wraps
+        // before 'é', then "éef" fits exactly. The third wrap must contain
+        // the entire 'é' char, not split its bytes between wraps.
+        assert_eq!(wraps_of("a b éef", 3), vec![[0, 2], [2, 4], [4, 8]]);
+    }
+
+    fn after_handle_edits(pos: usize, edits: &[Edit]) -> usize {
+        let mut cursor = Cursor { pos };
+        cursor.handle_edits(edits);
+        cursor.pos
+    }
+
+    #[test]
+    fn shift_cursor_through_earlier_delete() {
+        let edits = vec![Edit {
+            kind: EditKind::Delete,
+            pos: 3,
+            text: "a".into(),
+        }];
+        assert_eq!(after_handle_edits(10, &edits), 9);
+    }
+
+    #[test]
+    fn shift_cursor_unaffected_by_later_edits() {
+        let edits = vec![
+            Edit {
+                kind: EditKind::Insert,
+                pos: 10,
+                text: "X".into(),
+            },
+            Edit {
+                kind: EditKind::Delete,
+                pos: 11,
+                text: "y".into(),
+            },
+        ];
+        assert_eq!(after_handle_edits(5, &edits), 5);
+    }
+
+    #[test]
+    fn shift_cursor_inside_delete_range_clamps_to_delete_start() {
+        let edits = vec![Edit {
+            kind: EditKind::Delete,
+            pos: 3,
+            text: "abcd".into(),
+        }];
+        // Cursor at pos 5 is inside the deleted range [3..7); after the
+        // edit it should land at 3 (the start of the deletion), not at 1.
+        assert_eq!(after_handle_edits(5, &edits), 3);
     }
 
     #[test]

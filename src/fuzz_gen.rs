@@ -63,7 +63,7 @@ impl<'a> Frng<'a> {
     }
 
     pub fn bytes(&mut self, n: usize) -> Option<&[u8]> {
-        if self.pos + n >= self.buf.len() {
+        if self.pos + n > self.buf.len() {
             return None;
         }
         let bytes = &self.buf[self.pos..self.pos + n];
@@ -262,6 +262,18 @@ mod tests {
         // search may not converge all the way given finite iterations.
         assert!(f.size >= 4, "size = {}", f.size);
         assert!(f.bytes.iter().take(4).all(|&b| b == 0xFF));
+    }
+
+    #[test]
+    fn bytes_can_read_exactly_the_remaining_buffer() {
+        // Reading n bytes when n == buf.len() must succeed — the slice
+        // buf[0..n] is in bounds. Returning None here silently throws away
+        // the last byte of every entropy buffer.
+        let buf = [0u8, 1, 2, 3];
+        let mut frng = Frng::new(&buf);
+        assert_eq!(frng.bytes(4), Some(&buf[..]));
+        // Pos is now at the end; another read of >0 should return None.
+        assert_eq!(frng.bytes(1), None);
     }
 
     #[test]

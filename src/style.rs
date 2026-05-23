@@ -45,12 +45,12 @@ pub fn ident_color(ident: &[u8]) -> [u8; 4] {
     let mut hasher = DefaultHasher::new();
     ident.hash(&mut hasher);
     let hash = hasher.finish().reverse_bits();
-    hsla((hash % 359) as f64, 1.0, 0.8, 1.0)
+    hsla((hash % 360) as f64, 1.0, 0.8, 1.0)
 }
 
 pub fn paren_color(level: usize) -> [u8; 4] {
     let mut hasher = DefaultHasher::new();
     level.hash(&mut hasher);
     let hash = hasher.finish().reverse_bits();
-    hsla((hash % 359) as f64, 1.0, 0.8, 1.0)
+    hsla((hash % 360) as f64, 1.0, 0.8, 1.0)
 }

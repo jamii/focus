@@ -108,8 +108,8 @@ impl Document {
         let line = self.grid_from_pos(pos)[1];
         if line == 0 {
             0..{
-                if self.newlines.len() == 0 {
-                    0
+                if self.newlines.is_empty() {
+                    self.text.len()
                 } else {
                     self.newlines[0]
                 }
@@ -381,6 +381,15 @@ mod tests {
         assert_eq!(d.grid_from_pos(2), [0, 1]);
         assert_eq!(d.grid_from_pos(4), [0, 2]);
         assert_eq!(d.grid_from_pos(5), [1, 2]);
+    }
+
+    #[test]
+    fn line_range_from_pos_covers_full_line_in_unterminated_doc() {
+        // No newlines anywhere; the single line should span the whole doc.
+        let d = filled("abc");
+        assert_eq!(d.line_range_from_pos(0), 0..3);
+        assert_eq!(d.line_range_from_pos(1), 0..3);
+        assert_eq!(d.line_range_from_pos(3), 0..3);
     }
 
     #[test]

@@ -114,8 +114,16 @@ unsafe fn set_scissor(rect: Rect, fb_height: i32) {
     let y = rect.pos[1].floor() as i32;
     let w = rect.size[0].ceil() as i32;
     let h = rect.size[1].ceil() as i32;
+    // glScissor rejects negative x/y with GL_INVALID_VALUE; clamp the
+    // origin to zero and shrink the size by the amount we clipped so the
+    // far edge of the rect stays put.
+    let x_clamped = x.max(0);
+    let y_top = fb_height - (y + h);
+    let y_clamped = y_top.max(0);
+    let w_clamped = (w - (x_clamped - x)).max(0);
+    let h_clamped = (h - (y_clamped - y_top)).max(0);
     unsafe {
-        gl::Scissor(x, fb_height - (y + h), w.max(0), h.max(0));
+        gl::Scissor(x_clamped, y_clamped, w_clamped, h_clamped);
     }
 }
 

@@ -298,11 +298,11 @@ impl Drawing {
     }
 
     pub fn pop_clip_rect(&mut self) {
-        self.clip_stack.pop();
         assert!(
-            !self.clip_stack.is_empty(),
+            self.clip_stack.len() > 1,
             "popped the initial (screen) clip"
         );
+        self.clip_stack.pop();
     }
 
     /// Solid rectangle. Trimmed against the current clip in software, so
