@@ -291,18 +291,12 @@ impl Drawing {
     }
 
     /// Push a new clip, intersected with the current top of the stack.
-    /// Subsequent draws will be clipped to this rectangle.
-    pub fn push_clip_rect(&mut self, rect: Rect) {
+    /// Subsequent draws will be clipped to this rectangle. The returned
+    /// `ClipScope` pops the clip when it is dropped.
+    pub fn push_clip_rect(&mut self, rect: Rect) -> ClipScope<'_> {
         let top = self.current_clip();
         self.clip_stack.push(intersect_rects(rect, top));
-    }
-
-    pub fn pop_clip_rect(&mut self) {
-        assert!(
-            self.clip_stack.len() > 1,
-            "popped the initial (screen) clip"
-        );
-        self.clip_stack.pop();
+        ClipScope { drawing: self }
     }
 
     /// Solid rectangle. Trimmed against the current clip in software, so
@@ -364,5 +358,35 @@ impl Drawing {
         if needs_scissor {
             self.commands.push(DrawCommand::SetClip(self.clip_stack[0]));
         }
+    }
+}
+
+/// RAII guard returned by `Drawing::push_clip_rect`. Derefs to the
+/// underlying `Drawing`, so callers can draw through it; on drop, it pops
+/// the clip it pushed.
+pub struct ClipScope<'a> {
+    drawing: &'a mut Drawing,
+}
+
+impl<'a> std::ops::Deref for ClipScope<'a> {
+    type Target = Drawing;
+    fn deref(&self) -> &Drawing {
+        self.drawing
+    }
+}
+
+impl<'a> std::ops::DerefMut for ClipScope<'a> {
+    fn deref_mut(&mut self) -> &mut Drawing {
+        self.drawing
+    }
+}
+
+impl<'a> Drop for ClipScope<'a> {
+    fn drop(&mut self) {
+        assert!(
+            self.drawing.clip_stack.len() > 1,
+            "popped the initial (screen) clip"
+        );
+        self.drawing.clip_stack.pop();
     }
 }

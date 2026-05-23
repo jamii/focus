@@ -188,16 +188,17 @@ fn renders_hello_world() {
         pos: [16.0, 16.0],
         size: [180.0, atlas.cell_size[1] as f32 + 8.0],
     };
-    drawing.push_clip_rect(clip);
-    drawing.draw_rect(&atlas, clip, [255, 240, 170, 255]);
-    // Non-ASCII '→' is not in the atlas and should render as a tofu box.
-    drawing.draw_text(
-        &atlas,
-        "hello → world".into(),
-        [20.0, 20.0],
-        [30, 30, 40, 255],
-    );
-    drawing.pop_clip_rect();
+    {
+        let mut drawing = drawing.push_clip_rect(clip);
+        drawing.draw_rect(&atlas, clip, [255, 240, 170, 255]);
+        // Non-ASCII '→' is not in the atlas and should render as a tofu box.
+        drawing.draw_text(
+            &atlas,
+            "hello → world".into(),
+            [20.0, 20.0],
+            [30, 30, 40, 255],
+        );
+    }
 
     unsafe { renderer.render(drawing.commands(), W as i32, H as i32) };
 
