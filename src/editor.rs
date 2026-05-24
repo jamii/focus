@@ -149,7 +149,7 @@ impl Editor {
             let text = &self.document_id.get(app).text;
             for [start, _end] in &self.wraps {
                 if *start > 0 && text[start - 1] != b'\n' {
-                    let grid = self.grid_from_offset(app, *start);
+                    let grid = self.grid_from_offset(app, *start)[1];
                     drawing.draw_text(
                         &app.atlas,
                         BStr::new(b"\\"),
@@ -169,7 +169,6 @@ impl Editor {
 
         // Draw mark.
         if self.marked {
-            let text = &self.document_id.get(app).text;
             for cursor in &self.cursors {
                 if let Some(range) = cursor.marked_range(self.marked) {
                     for &[wrap_start, wrap_end] in &self.wraps {
@@ -178,8 +177,8 @@ impl Editor {
                         }
                         let mark_start = range.start.max(wrap_start);
                         let mark_end = range.end.min(wrap_end);
-                        let grid_start = grid_from_wraps(&self.wraps, text.as_bstr(), mark_start);
-                        let mut grid_end = grid_from_wraps(&self.wraps, text.as_bstr(), mark_end);
+                        let grid_start = self.grid_from_offset(app, mark_start)[1];
+                        let mut grid_end = self.grid_from_offset(app, mark_end)[0];
                         grid_end[1] += 1;
                         let screen_start = app.atlas.screen_from_grid(grid_start);
                         let screen_end = app.atlas.screen_from_grid(grid_end);
@@ -197,7 +196,7 @@ impl Editor {
         {
             let text = &self.document_id.get(app).text;
             for [start, end] in &self.wraps {
-                let grid = self.grid_from_offset(app, *start);
+                let grid = self.grid_from_offset(app, *start)[1];
                 let screen = app.atlas.screen_from_grid(grid);
                 drawing.draw_text(
                     &app.atlas,
@@ -211,19 +210,20 @@ impl Editor {
         // Draw cursors.
         if self.show_cursor {
             for cursor in &self.cursors {
-                let grid_start = self.grid_from_offset(app, cursor.head);
-                let mut grid_end = grid_start;
-                grid_end[1] += 1;
-                let mut screen_start = app.atlas.screen_from_grid(grid_start);
-                let mut screen_end = app.atlas.screen_from_grid(grid_end);
-                let w = app.atlas.cell_size[0] as f32 / 8.0;
-                screen_start[0] -= w / 2.0;
-                screen_end[0] += w / 2.0;
-                drawing.draw_rect(
-                    &app.atlas,
-                    Rect::from_corners(screen_start, screen_end),
-                    TEXT_COLOR,
-                );
+                for grid_start in self.grid_from_offset(app, cursor.head) {
+                    let mut grid_end = grid_start;
+                    grid_end[1] += 1;
+                    let mut screen_start = app.atlas.screen_from_grid(grid_start);
+                    let mut screen_end = app.atlas.screen_from_grid(grid_end);
+                    let w = app.atlas.cell_size[0] as f32 / 8.0;
+                    screen_start[0] -= w / 2.0;
+                    screen_end[0] += w / 2.0;
+                    drawing.draw_rect(
+                        &app.atlas,
+                        Rect::from_corners(screen_start, screen_end),
+                        TEXT_COLOR,
+                    );
+                }
             }
         }
     }
@@ -323,14 +323,35 @@ impl Editor {
         }
     }
 
-    fn grid_from_offset(&self, app: &App, offset: usize) -> [usize; 2] {
+    // Return the grid position for a byte offset within the doc.
+    // When the cursor is at a soft-wrap position there are two possible grid positions:
+    // * at the end of one soft-wrapped line
+    // * at the start of the next soft-wrapped line
+    // This returns both.
+    // If the position is not ambiguous then both returned positions are equal.
+    fn grid_from_offset(&self, app: &App, offset: usize) -> [[usize; 2]; 2] {
         let text = &self.document_id.get(app).text;
-        grid_from_wraps(&self.wraps, text.as_bstr(), offset)
+        let line = self.wraps.partition_point(|&[start, _end]| start <= offset) - 1;
+        let grid1 = {
+            let [start, end] = self.wraps[line];
+            assert!(offset <= end);
+            let col = text[start..offset].chars().count();
+            [col, line]
+        };
+        let grid0 = if line > 0 && self.wraps[line - 1][1] == offset {
+            let [start, end] = self.wraps[line - 1];
+            assert!(offset == end);
+            let col = text[start..offset].chars().count();
+            [col, line - 1]
+        } else {
+            grid1
+        };
+        [grid0, grid1]
     }
 
     fn line_up(&self, app: &App, offset: usize) -> Option<usize> {
         let document = self.document_id.get(app);
-        let line = self.grid_from_offset(app, offset)[1];
+        let line = self.grid_from_offset(app, offset)[0][1];
         if line == 0 {
             return None;
         }
@@ -349,7 +370,7 @@ impl Editor {
 
     fn line_down(&self, app: &App, offset: usize) -> Option<usize> {
         let document = self.document_id.get(app);
-        let line = self.grid_from_offset(app, offset)[1];
+        let line = self.grid_from_offset(app, offset)[0][1];
         if line == self.wraps.len() - 1 {
             return None;
         }
@@ -442,18 +463,9 @@ fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
     }
 }
 
-fn grid_from_wraps(wraps: &[[usize; 2]], text: &BStr, offset: usize) -> [usize; 2] {
-    let line = wraps.partition_point(|&[start, _end]| start <= offset) - 1;
-    let [start, end] = wraps[line];
-    assert!(offset <= end);
-    let col = text[start..offset].chars().count();
-    [col, line]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bstr::BString;
 
     fn wraps_of(s: &str, wrap_chars: usize) -> Vec<[usize; 2]> {
         let mut wraps = vec![];
@@ -509,42 +521,6 @@ mod tests {
     fn multi_byte_chars_count_bytes_in_wrap_ranges() {
         // "héllo" is 6 bytes ('é' is 2), 5 chars — fits in width 10.
         assert_eq!(wraps_of("héllo", 10), vec![[0, 6]]);
-    }
-
-    #[test]
-    fn grid_from_wraps_at_start() {
-        let text: BString = "hello\nworld".into();
-        let wraps = vec![[0, 5], [6, 11]];
-        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 0), [0, 0]);
-    }
-
-    #[test]
-    fn grid_from_wraps_at_end_of_first_line() {
-        let text: BString = "hello\nworld".into();
-        let wraps = vec![[0, 5], [6, 11]];
-        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 5), [5, 0]);
-    }
-
-    #[test]
-    fn grid_from_wraps_at_start_of_second_line() {
-        let text: BString = "hello\nworld".into();
-        let wraps = vec![[0, 5], [6, 11]];
-        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 6), [0, 1]);
-    }
-
-    #[test]
-    fn grid_from_wraps_at_end_of_text() {
-        let text: BString = "hello\nworld".into();
-        let wraps = vec![[0, 5], [6, 11]];
-        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 11), [5, 1]);
-    }
-
-    #[test]
-    fn grid_from_wraps_counts_chars_not_bytes() {
-        // 'é' is 2 bytes but 1 column.
-        let text: BString = "héllo".into();
-        let wraps = vec![[0, 6]];
-        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 3), [2, 0]);
     }
 
     #[test]
@@ -607,15 +583,6 @@ mod tests {
         // Cursor at offset 5 is inside the deleted range [3..7); after the
         // edit it should land at 3 (the start of the deletion), not at 1.
         assert_eq!(apply_helper(5, &edits), 3);
-    }
-
-    #[test]
-    fn grid_from_wraps_picks_later_line_on_boundary() {
-        // offset sits on both the end of line 0 and the start of line 1 — the
-        // reverse iteration returns the later (line 1) match.
-        let text: BString = "ab\ncd".into();
-        let wraps = vec![[0, 2], [3, 5]];
-        assert_eq!(grid_from_wraps(&wraps, text.as_bstr(), 3), [0, 1]);
     }
 
     fn doc_with(s: &str) -> Document {
