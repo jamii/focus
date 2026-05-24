@@ -1,12 +1,14 @@
 use crate::app::{App, EditorId, IO, InputEvent};
-use crate::style;
 use crate::drawing::{Drawing, Rect};
+use crate::style;
 
 pub struct Window {
     pub editor_id: EditorId,
 }
 
 impl Window {
+    pub fn assert_invariants(&self) {}
+
     pub fn new(editor_id: EditorId) -> Window {
         Window {
             editor_id: editor_id,

@@ -98,6 +98,20 @@ pub const INITIAL_SIZE: LogicalSize<u32> = LogicalSize {
 };
 
 impl App {
+    pub fn assert_invariants(&self) {
+        // TODO What should we assert for font/atlas?
+
+        for document in self.documents.values() {
+            document.borrow().assert_invariants();
+        }
+        for editor in self.editors.values() {
+            editor.borrow().assert_invariants(self);
+        }
+        for window in self.windows.values() {
+            window.borrow().assert_invariants();
+        }
+    }
+
     pub fn new(initial_window_id: WindowId, io: &mut dyn IO) -> App {
         let font = Font::from_bytes(FONT, FontSettings::default()).unwrap();
         let atlas = Atlas::build(&font, INITIAL_PX);

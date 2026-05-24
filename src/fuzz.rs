@@ -213,4 +213,6 @@ pub fn fuzz_one(bytes: &[u8]) {
             break;
         }
     }
+
+    app.assert_invariants();
 }

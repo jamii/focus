@@ -1,4 +1,4 @@
-use bstr::{BString, ByteSlice};
+use bstr::{BStr, BString, ByteSlice};
 
 pub struct Document {
     pub text: BString,
@@ -23,11 +23,25 @@ pub struct OffsetDiff {
 }
 
 impl Document {
+    pub fn assert_invariants(&self) {
+        assert_eq!(
+            self.text.chars().filter(|c| *c == '\n').count(),
+            self.newlines.len(),
+        );
+        for offset in &self.newlines {
+            assert_eq!(self.text[*offset..].chars().next().unwrap(), '\n');
+        }
+
+        if let Some(edits) = &self.queued_edits {
+            Edit::assert_invariants(edits, self.text.as_bstr());
+        }
+    }
+
     pub fn new() -> Document {
         Document {
             text: "".into(),
-            queued_edits: None,
             newlines: vec![],
+            queued_edits: None,
         }
     }
 
@@ -36,39 +50,12 @@ impl Document {
             self.queued_edits.is_none(),
             "A set of edits is already queued"
         );
+        Edit::assert_invariants(&edits, self.text.as_bstr());
         self.queued_edits = Some(edits);
     }
 
     pub fn apply_edits(&mut self, edits: &[Edit]) -> OffsetDiff {
-        for edit in edits {
-            assert!(edit.offset <= self.text.len(), "Edit out of bounds");
-            match edit.kind {
-                EditKind::Insert => {}
-                EditKind::Delete => {
-                    assert!(
-                        edit.offset + edit.text.len() <= self.text.len(),
-                        "Delete out of bounds"
-                    );
-                    assert_eq!(
-                        edit.text,
-                        self.text[edit.offset..edit.offset + edit.text.len()],
-                        "Delete text doesn't match document text"
-                    );
-                }
-            }
-        }
-        for pair in edits.windows(2) {
-            assert!(pair[0].offset <= pair[1].offset, "Edits are out of order");
-            match pair[0].kind {
-                EditKind::Insert => {}
-                EditKind::Delete => {
-                    assert!(
-                        pair[0].offset + pair[0].text.len() <= pair[1].offset,
-                        "Edits overlap"
-                    );
-                }
-            }
-        }
+        Edit::assert_invariants(edits, self.text.as_bstr());
 
         let len_old = self.text.len();
 
@@ -106,7 +93,12 @@ impl Document {
         if line == 0 {
             [self.text[0..offset].chars().count(), 0]
         } else {
-            [self.text[self.newlines[line - 1] + 1..offset].chars().count(), line]
+            [
+                self.text[self.newlines[line - 1] + 1..offset]
+                    .chars()
+                    .count(),
+                line,
+            ]
         }
     }
 
@@ -158,7 +150,49 @@ impl Document {
     }
 }
 
+impl Edit {
+    pub fn assert_invariants(edits: &[Edit], text: &BStr) {
+        for edit in edits {
+            assert!(edit.offset <= text.len(), "Edit out of bounds");
+            match edit.kind {
+                EditKind::Insert => {}
+                EditKind::Delete => {
+                    assert!(
+                        edit.offset + edit.text.len() <= text.len(),
+                        "Delete out of bounds"
+                    );
+                    assert_eq!(
+                        edit.text,
+                        text[edit.offset..edit.offset + edit.text.len()],
+                        "Delete text doesn't match document text"
+                    );
+                }
+            }
+        }
+        for pair in edits.windows(2) {
+            assert!(pair[0].offset <= pair[1].offset, "Edits are out of order");
+            match pair[0].kind {
+                EditKind::Insert => {}
+                EditKind::Delete => {
+                    assert!(
+                        pair[0].offset + pair[0].text.len() <= pair[1].offset,
+                        "Edits overlap"
+                    );
+                }
+            }
+        }
+    }
+}
+
 impl OffsetDiff {
+    pub fn assert_invariants(&self) {
+        assert_eq!(self.offsets_old.len() + 1, self.offsets_new.len());
+        assert_eq!(self.offsets_new.len(), self.deleted.len());
+        for pair in self.offsets_old.windows(2) {
+            assert!(pair[0] < pair[1]);
+        }
+    }
+
     pub fn from_edits(edits: &[Edit], len_old: usize) -> Self {
         let mut offsets_old: Vec<usize> = Vec::new();
         let mut offsets_new: Vec<usize> = vec![0]; // F(0) = 0
@@ -212,7 +246,7 @@ impl OffsetDiff {
             offsets_new,
             deleted,
         };
-        diff.validate();
+        diff.assert_invariants();
         diff
     }
 
@@ -226,14 +260,6 @@ impl OffsetDiff {
         } else {
             let old_start = if i == 0 { 0 } else { self.offsets_old[i - 1] };
             offset + self.offsets_new[i] - old_start
-        }
-    }
-
-    pub fn validate(&self) {
-        assert_eq!(self.offsets_old.len() + 1, self.offsets_new.len());
-        assert_eq!(self.offsets_new.len(), self.deleted.len());
-        for pair in self.offsets_old.windows(2) {
-            assert!(pair[0] < pair[1]);
         }
     }
 }

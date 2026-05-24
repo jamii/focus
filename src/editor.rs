@@ -37,6 +37,29 @@ enum Direction {
 }
 
 impl Editor {
+    pub fn assert_invariants(&self, app: &App) {
+        let document = self.document_id.get(app);
+        for cursor in &self.cursors {
+            assert!(cursor.head <= document.text.len());
+            assert!(cursor.tail <= document.text.len());
+        }
+
+        assert!(!self.wraps.is_empty());
+        assert_eq!(self.wraps[0][0], 0);
+        assert_eq!(self.wraps.last().unwrap()[1], document.text.len());
+        for wrap in &self.wraps {
+            assert!(wrap[0] <= wrap[1]);
+            assert!(document.text[wrap[0]..wrap[1]].chars().count() <= self.wrap_chars)
+        }
+        for pair in self.wraps.windows(2) {
+            let gap = pair[1][0] - pair[0][1];
+            assert!(gap <= 1);
+            if gap == 1 {
+                assert!(document.text[pair[0][1]..].chars().next().unwrap() == '\n')
+            }
+        }
+    }
+
     pub fn new(document_id: DocumentId, app: &App) -> Self {
         let mut editor = Editor {
             document_id: document_id,
