@@ -131,6 +131,28 @@ impl Editor {
                 state, logical_key, ..
             } if state == ElementState::Pressed
                 && !app.modifiers.control_key()
+                && app.modifiers.alt_key() =>
+            {
+                match logical_key.as_ref() {
+                    Key::Character("j") => {
+                        self.cursor_goto_line_start(app);
+                    }
+                    Key::Character("l") => {
+                        self.cursor_goto_line_end(app);
+                    }
+                    Key::Character("i") => {
+                        self.cursor_goto_doc_start(app);
+                    }
+                    Key::Character("k") => {
+                        self.cursor_goto_doc_end(app);
+                    }
+                    _ => {}
+                }
+            }
+            InputEvent::Key {
+                state, logical_key, ..
+            } if state == ElementState::Pressed
+                && !app.modifiers.control_key()
                 && !app.modifiers.alt_key() =>
             {
                 match logical_key.as_ref() {
@@ -473,6 +495,49 @@ impl Editor {
         let text = &self.document_id.get(app).text;
         self.wraps.clear();
         compute_wraps(text.as_bstr(), self.wrap_chars, &mut self.wraps);
+    }
+
+    fn cursor_goto_line_start(&mut self, app: &App) {
+        let document = self.document_id.get(app);
+        for cursor in &mut self.cursors {
+            cursor.head = CursorPoint {
+                offset: document.line_range_from_offset(cursor.head.offset).start,
+                col_wanted: None,
+            };
+        }
+        self.scroll_to_main_cursor = true;
+    }
+
+    fn cursor_goto_line_end(&mut self, app: &App) {
+        let document = self.document_id.get(app);
+        for cursor in &mut self.cursors {
+            cursor.head = CursorPoint {
+                offset: document.line_range_from_offset(cursor.head.offset).end,
+                col_wanted: None,
+            };
+        }
+        self.scroll_to_main_cursor = true;
+    }
+
+    fn cursor_goto_doc_start(&mut self, app: &App) {
+        for cursor in &mut self.cursors {
+            cursor.head = CursorPoint {
+                offset: 0,
+                col_wanted: None,
+            };
+        }
+        self.scroll_offset_into_view(app, 0);
+    }
+
+    fn cursor_goto_doc_end(&mut self, app: &App) {
+        let end = self.document_id.get(app).text.len();
+        for cursor in &mut self.cursors {
+            cursor.head = CursorPoint {
+                offset: end,
+                col_wanted: None,
+            };
+        }
+        self.scroll_offset_into_center(app, end);
     }
 
     fn cursor_move(&mut self, app: &App, direction: Direction) {
@@ -1009,5 +1074,168 @@ mod tests {
         assert_eq!(d.text, "hXo");
         assert_eq!(cursors[0].head.offset, 2);
         assert_eq!(cursors[0].tail.offset, 2);
+    }
+
+    fn editor_with_text(text: &str, wrap_chars: usize) -> (crate::app::App, crate::app::EditorId) {
+        use crate::fuzz::MockIO;
+        let mut io = MockIO::new();
+        let initial = io.fresh_window_id();
+        io.open_windows.push(initial);
+        let app = crate::app::App::new(initial, &mut io);
+        let document_id = *app.documents.keys().next().unwrap();
+        let editor_id = *app.editors.keys().next().unwrap();
+        if !text.is_empty() {
+            document_id.get_mut(&app).apply_edits(&[Edit {
+                kind: EditKind::Insert,
+                offset: 0,
+                text: text.into(),
+            }]);
+        }
+        {
+            let mut editor = editor_id.get_mut(&app);
+            editor.wrap_chars = wrap_chars;
+            editor.refresh_wraps(&app);
+            // The scroll helpers bail when viewport_h == 0, so give the editor
+            // a viewport big enough for the small docs used in these tests.
+            editor.last_viewport_size = [800.0, 600.0];
+        }
+        (app, editor_id)
+    }
+
+    fn set_heads(editor: &mut Editor, heads: &[usize]) {
+        editor.cursors = heads
+            .iter()
+            .map(|&offset| Cursor {
+                head: CursorPoint {
+                    offset,
+                    col_wanted: None,
+                },
+                tail: CursorPoint {
+                    offset,
+                    col_wanted: None,
+                },
+            })
+            .collect();
+    }
+
+    fn head_offsets(editor: &Editor) -> Vec<usize> {
+        editor.cursors.iter().map(|c| c.head.offset).collect()
+    }
+
+    #[test]
+    fn alt_l_moves_to_end_of_real_line() {
+        let (app, editor_id) = editor_with_text("abc\ndefg\nhij", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[1]);
+        editor.cursor_goto_line_end(&app);
+        assert_eq!(head_offsets(&editor), vec![3]);
+    }
+
+    #[test]
+    fn alt_l_at_end_of_line_stays() {
+        let (app, editor_id) = editor_with_text("abc\ndef", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[3]);
+        editor.cursor_goto_line_end(&app);
+        assert_eq!(head_offsets(&editor), vec![3]);
+    }
+
+    #[test]
+    fn alt_l_crosses_soft_wrap_to_end_of_real_line() {
+        // Real line "abcdefg" soft-wraps into ["abc","def","g"] at wrap_chars=3.
+        // From a cursor on the first soft-wrapped row, Alt+l must reach the
+        // *real* line end (offset 7), not the soft-wrap end (offset 3).
+        let (app, editor_id) = editor_with_text("abcdefg", 3);
+        let mut editor = editor_id.get_mut(&app);
+        assert!(editor.wraps.len() > 1, "test requires a soft wrap");
+        set_heads(&mut editor, &[1]);
+        editor.cursor_goto_line_end(&app);
+        assert_eq!(head_offsets(&editor), vec![7]);
+    }
+
+    #[test]
+    fn alt_j_moves_to_start_of_real_line() {
+        let (app, editor_id) = editor_with_text("abc\ndefg\nhij", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[6]);
+        editor.cursor_goto_line_start(&app);
+        assert_eq!(head_offsets(&editor), vec![4]);
+    }
+
+    #[test]
+    fn alt_j_at_start_of_line_stays() {
+        let (app, editor_id) = editor_with_text("abc\ndef", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[4]);
+        editor.cursor_goto_line_start(&app);
+        assert_eq!(head_offsets(&editor), vec![4]);
+    }
+
+    #[test]
+    fn alt_j_crosses_soft_wrap_to_start_of_real_line() {
+        // Same soft-wrap setup as above: from a cursor in the middle of
+        // a soft-wrapped row, Alt+j must reach the real line start (0),
+        // not the soft-wrap start.
+        let (app, editor_id) = editor_with_text("abcdefg", 3);
+        let mut editor = editor_id.get_mut(&app);
+        assert!(editor.wraps.len() > 1, "test requires a soft wrap");
+        set_heads(&mut editor, &[5]);
+        editor.cursor_goto_line_start(&app);
+        assert_eq!(head_offsets(&editor), vec![0]);
+    }
+
+    #[test]
+    fn alt_l_moves_every_cursor() {
+        let (app, editor_id) = editor_with_text("abc\ndefg\nhij", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[1, 5, 10]);
+        editor.cursor_goto_line_end(&app);
+        assert_eq!(head_offsets(&editor), vec![3, 8, 12]);
+    }
+
+    #[test]
+    fn alt_j_moves_every_cursor() {
+        let (app, editor_id) = editor_with_text("abc\ndefg\nhij", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[2, 6, 11]);
+        editor.cursor_goto_line_start(&app);
+        assert_eq!(head_offsets(&editor), vec![0, 4, 9]);
+    }
+
+    #[test]
+    fn alt_i_moves_all_cursors_to_doc_start_and_scrolls_to_top() {
+        let (app, editor_id) = editor_with_text("abc\ndef", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[2, 5]);
+        editor.top_pixel = 100;
+        editor.cursor_goto_doc_start(&app);
+        assert_eq!(head_offsets(&editor), vec![0, 0]);
+        assert_eq!(editor.top_pixel, 0);
+    }
+
+    #[test]
+    fn alt_k_moves_all_cursors_to_doc_end() {
+        let (app, editor_id) = editor_with_text("abc\ndef", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[0, 2]);
+        editor.cursor_goto_doc_end(&app);
+        assert_eq!(head_offsets(&editor), vec![7, 7]);
+    }
+
+    #[test]
+    fn alt_k_scrolls_viewport_to_end() {
+        // Long enough doc that the end is below the initial viewport.
+        let text: String = (0..50).map(|i| format!("line{}\n", i)).collect();
+        let (app, editor_id) = editor_with_text(&text, 80);
+        let mut editor = editor_id.get_mut(&app);
+        editor.top_pixel = 0;
+        editor.cursor_goto_doc_end(&app);
+        assert!(editor.top_pixel > 0, "expected to scroll down");
+        // The last line is centered in the viewport.
+        let last_line = editor.wraps.len() - 1;
+        let y = app.atlas.screen_from_grid([0, last_line])[1] as isize;
+        let y_end = app.atlas.screen_from_grid([0, last_line + 1])[1] as isize;
+        let viewport_h = editor.last_viewport_size[1] as isize;
+        assert_eq!(editor.top_pixel, (y + y_end) / 2 - viewport_h / 2);
     }
 }
