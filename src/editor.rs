@@ -1,5 +1,5 @@
-use std::ops::Range;
 use std::time::Duration;
+use std::{mem::replace, ops::Range};
 
 use bstr::{BStr, ByteSlice};
 use winit::{
@@ -25,8 +25,15 @@ pub struct Editor {
 }
 
 struct Cursor {
-    head: usize,
-    tail: usize,
+    head: CursorPoint,
+    tail: CursorPoint,
+}
+
+#[derive(Copy, Clone)]
+struct CursorPoint {
+    offset: usize,
+    // The column the cursor 'wants' to be at when moving up/down, if any.
+    col_wanted: Option<usize>,
 }
 
 enum Direction {
@@ -40,8 +47,9 @@ impl Editor {
     pub fn assert_invariants(&self, app: &App) {
         let document = self.document_id.get(app);
         for cursor in &self.cursors {
-            assert!(cursor.head <= document.text.len());
-            assert!(cursor.tail <= document.text.len());
+            for point in [&cursor.head, &cursor.tail] {
+                assert!(point.offset <= document.text.len());
+            }
         }
 
         assert!(!self.wraps.is_empty());
@@ -63,7 +71,16 @@ impl Editor {
     pub fn new(document_id: DocumentId, app: &App) -> Self {
         let mut editor = Editor {
             document_id: document_id,
-            cursors: vec![Cursor { head: 0, tail: 0 }],
+            cursors: vec![Cursor {
+                head: CursorPoint {
+                    offset: 0,
+                    col_wanted: None,
+                },
+                tail: CursorPoint {
+                    offset: 0,
+                    col_wanted: None,
+                },
+            }],
             marked: false,
             show_cursor: true,
             wrap_chars: 80,
@@ -210,7 +227,7 @@ impl Editor {
         // Draw cursors.
         if self.show_cursor {
             for cursor in &self.cursors {
-                for grid_start in self.grid_from_offset(app, cursor.head) {
+                for grid_start in self.grid_from_offset(app, cursor.head.offset) {
                     let mut grid_end = grid_start;
                     grid_end[1] += 1;
                     let mut screen_start = app.atlas.screen_from_grid(grid_start);
@@ -229,10 +246,16 @@ impl Editor {
     }
 
     pub fn handle_edits(&mut self, app: &App, diff: &OffsetDiff) {
-        for cursor in &mut self.cursors {
-            cursor.head = diff.apply(cursor.head);
-            cursor.tail = diff.apply(cursor.tail);
+        let mut cursors = replace(&mut self.cursors, vec![]);
+        for cursor in &mut cursors {
+            for point in [&mut cursor.head, &mut cursor.tail] {
+                *point = CursorPoint {
+                    offset: diff.apply(point.offset),
+                    col_wanted: None,
+                };
+            }
         }
+        self.cursors = cursors;
         self.refresh_wraps(app);
     }
 
@@ -264,11 +287,11 @@ impl Editor {
                     offset: range.start,
                     text: document.text[range.start..range.end].into(),
                 });
-            } else if let Some(start) = document.char_prev(cursor.head) {
+            } else if let Some(start) = document.char_prev(cursor.head.offset) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: start,
-                    text: document.text[start..cursor.head].into(),
+                    text: document.text[start..cursor.head.offset].into(),
                 });
             }
         }
@@ -286,11 +309,11 @@ impl Editor {
                     offset: range.start,
                     text: document.text[range.start..range.end].into(),
                 });
-            } else if let Some(end) = document.char_next(cursor.head) {
+            } else if let Some(end) = document.char_next(cursor.head.offset) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
-                    offset: cursor.head,
-                    text: document.text[cursor.head..end].into(),
+                    offset: cursor.head.offset,
+                    text: document.text[cursor.head.offset..end].into(),
                 });
             }
         }
@@ -306,21 +329,34 @@ impl Editor {
 
     fn cursor_move(&mut self, app: &App, direction: Direction) {
         let document = self.document_id.get(app);
-        let offsets_new = self
-            .cursors
-            .iter()
-            .map(|cursor| match direction {
-                Direction::Left => document.char_prev(cursor.head),
-                Direction::Right => document.char_next(cursor.head),
-                Direction::Up => self.line_up(app, cursor.head),
-                Direction::Down => self.line_down(app, cursor.head),
-            })
-            .collect::<Vec<_>>();
-        for (cursor, offset_new) in self.cursors.iter_mut().zip(offsets_new.into_iter()) {
-            if let Some(offset_new) = offset_new {
-                cursor.head = offset_new
-            }
+        let mut cursors = replace(&mut self.cursors, vec![]);
+        for cursor in &mut cursors {
+            match direction {
+                Direction::Left => {
+                    cursor.head = CursorPoint {
+                        offset: document
+                            .char_prev(cursor.head.offset)
+                            .unwrap_or(cursor.head.offset),
+                        col_wanted: None,
+                    };
+                }
+                Direction::Right => {
+                    cursor.head = CursorPoint {
+                        offset: document
+                            .char_next(cursor.head.offset)
+                            .unwrap_or(cursor.head.offset),
+                        col_wanted: None,
+                    };
+                }
+                Direction::Up => {
+                    cursor.head = self.line_up(app, cursor.head).unwrap_or(cursor.head);
+                }
+                Direction::Down => {
+                    cursor.head = self.line_down(app, cursor.head).unwrap_or(cursor.head);
+                }
+            };
         }
+        self.cursors = cursors;
     }
 
     // Return the grid position for a byte offset within the doc.
@@ -349,13 +385,17 @@ impl Editor {
         [grid0, grid1]
     }
 
-    fn line_up(&self, app: &App, offset: usize) -> Option<usize> {
+    fn line_up(&self, app: &App, point: CursorPoint) -> Option<CursorPoint> {
         let document = self.document_id.get(app);
-        let line = self.grid_from_offset(app, offset)[0][1];
+        let line = self.grid_from_offset(app, point.offset)[0][1];
         if line == 0 {
             return None;
         }
-        let col = document.text[self.wraps[line][0]..offset].chars().count();
+        let col = point.col_wanted.unwrap_or(
+            document.text[self.wraps[line][0]..point.offset]
+                .chars()
+                .count(),
+        );
         let wrap_prev = self.wraps[line - 1];
         let mut result_offset = wrap_prev[0];
         if let Some((_, char_end, _)) = document.text[wrap_prev[0]..wrap_prev[1]]
@@ -365,16 +405,23 @@ impl Editor {
         {
             result_offset += char_end;
         }
-        Some(result_offset)
+        Some(CursorPoint {
+            offset: result_offset,
+            col_wanted: Some(col),
+        })
     }
 
-    fn line_down(&self, app: &App, offset: usize) -> Option<usize> {
+    fn line_down(&self, app: &App, point: CursorPoint) -> Option<CursorPoint> {
         let document = self.document_id.get(app);
-        let line = self.grid_from_offset(app, offset)[0][1];
+        let line = self.grid_from_offset(app, point.offset)[0][1];
         if line == self.wraps.len() - 1 {
             return None;
         }
-        let col = document.text[self.wraps[line][0]..offset].chars().count();
+        let col = point.col_wanted.unwrap_or(
+            document.text[self.wraps[line][0]..point.offset]
+                .chars()
+                .count(),
+        );
         let wrap_next = self.wraps[line + 1];
         let mut result_offset = wrap_next[0];
         if let Some((_, char_end, _)) = document.text[wrap_next[0]..wrap_next[1]]
@@ -384,14 +431,17 @@ impl Editor {
         {
             result_offset += char_end;
         }
-        Some(result_offset)
+        Some(CursorPoint {
+            offset: result_offset,
+            col_wanted: Some(col),
+        })
     }
 }
 
 impl Cursor {
     fn marked_range(&self, marked: bool) -> Option<Range<usize>> {
-        if marked && self.head != self.tail {
-            Some(self.head.min(self.tail)..self.head.max(self.tail))
+        if marked && self.head.offset != self.tail.offset {
+            Some(self.head.offset.min(self.tail.offset)..self.head.offset.max(self.tail.offset))
         } else {
             None
         }
@@ -420,7 +470,7 @@ fn calculate_replace_edits(
         } else {
             edits.push(Edit {
                 kind: EditKind::Insert,
-                offset: cursor.head,
+                offset: cursor.head.offset,
                 text: insert.into(),
             });
         }
@@ -441,16 +491,16 @@ fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
                 newline = true;
                 break;
             }
-            col += 1;
-            end += char_end;
-            if char == ' ' {
-                last_soft_wrap = Some(end);
-            }
             if col >= wrap_chars {
                 if let Some(offset) = last_soft_wrap {
                     end = offset;
                 }
                 break;
+            }
+            col += 1;
+            end += char_end;
+            if char == ' ' {
+                last_soft_wrap = Some(end);
             }
         }
         wraps.push([start, end]);
@@ -597,21 +647,57 @@ mod tests {
 
     #[test]
     fn marked_range_unmarked_is_none() {
-        let c = Cursor { head: 7, tail: 3 };
+        let c = Cursor {
+            head: CursorPoint {
+                offset: 7,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 3,
+                col_wanted: None,
+            },
+        };
         assert_eq!(c.marked_range(false), None);
     }
 
     #[test]
     fn marked_range_orders_head_and_tail() {
-        let c = Cursor { head: 7, tail: 3 };
+        let c = Cursor {
+            head: CursorPoint {
+                offset: 7,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 3,
+                col_wanted: None,
+            },
+        };
         assert_eq!(c.marked_range(true), Some(3..7));
-        let c = Cursor { head: 3, tail: 7 };
+        let c = Cursor {
+            head: CursorPoint {
+                offset: 3,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 7,
+                col_wanted: None,
+            },
+        };
         assert_eq!(c.marked_range(true), Some(3..7));
     }
 
     #[test]
     fn marked_range_with_equal_head_and_tail_is_none() {
-        let c = Cursor { head: 4, tail: 4 };
+        let c = Cursor {
+            head: CursorPoint {
+                offset: 4,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 4,
+                col_wanted: None,
+            },
+        };
         assert_eq!(c.marked_range(true), None);
     }
 
@@ -640,7 +726,16 @@ mod tests {
     #[test]
     fn calculate_replace_edits_unmarked_emits_single_insert_at_offset() {
         let d = doc_with("hello");
-        let cursors = vec![Cursor { head: 3, tail: 0 }];
+        let cursors = vec![Cursor {
+            head: CursorPoint {
+                offset: 3,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 0,
+                col_wanted: None,
+            },
+        }];
         let edits = calculate_replace_edits(&cursors, false, &d, b"X");
         assert_eq!(edits.len(), 1);
         assert!(matches!(edits[0].kind, EditKind::Insert));
@@ -652,7 +747,16 @@ mod tests {
     fn calculate_replace_edits_marked_with_selection_emits_insert_then_delete_at_sel_start() {
         let d = doc_with("hello");
         // Selection covers "ell" (positions 1..4).
-        let cursors = vec![Cursor { head: 4, tail: 1 }];
+        let cursors = vec![Cursor {
+            head: CursorPoint {
+                offset: 4,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 1,
+                col_wanted: None,
+            },
+        }];
         let edits = calculate_replace_edits(&cursors, true, &d, b"X");
         assert_eq!(edits.len(), 2);
         assert!(matches!(edits[0].kind, EditKind::Insert));
@@ -666,7 +770,16 @@ mod tests {
     #[test]
     fn calculate_replace_edits_marked_with_empty_selection_emits_just_insert() {
         let d = doc_with("hello");
-        let cursors = vec![Cursor { head: 2, tail: 2 }];
+        let cursors = vec![Cursor {
+            head: CursorPoint {
+                offset: 2,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 2,
+                col_wanted: None,
+            },
+        }];
         let edits = calculate_replace_edits(&cursors, true, &d, b"X");
         assert_eq!(edits.len(), 1);
         assert!(matches!(edits[0].kind, EditKind::Insert));
@@ -678,47 +791,74 @@ mod tests {
         // End-to-end: the emitted edits, when applied, produce "hXo" from
         // "hello" and leave both head and tail at the position after "X".
         let mut d = doc_with("hello");
-        let mut cursors = vec![Cursor { head: 4, tail: 1 }];
+        let mut cursors = vec![Cursor {
+            head: CursorPoint {
+                offset: 4,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 1,
+                col_wanted: None,
+            },
+        }];
         let edits = calculate_replace_edits(&cursors, true, &d, b"X");
         let diff = d.apply_edits(&edits);
         for c in &mut cursors {
-            c.head = diff.apply(c.head);
-            c.tail = diff.apply(c.tail);
+            c.head.offset = diff.apply(c.head.offset);
+            c.tail.offset = diff.apply(c.tail.offset);
         }
         assert_eq!(d.text, "hXo");
-        assert_eq!(cursors[0].head, 2);
-        assert_eq!(cursors[0].tail, 2);
+        assert_eq!(cursors[0].head.offset, 2);
+        assert_eq!(cursors[0].tail.offset, 2);
     }
 
     #[test]
     fn calculate_replace_edits_apply_inserts_when_selection_is_empty() {
         // No mark → single insert; both head and tail shift past it.
         let mut d = doc_with("hello");
-        let mut cursors = vec![Cursor { head: 2, tail: 2 }];
+        let mut cursors = vec![Cursor {
+            head: CursorPoint {
+                offset: 2,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 2,
+                col_wanted: None,
+            },
+        }];
         let edits = calculate_replace_edits(&cursors, false, &d, b"X");
         let diff = d.apply_edits(&edits);
         for c in &mut cursors {
-            c.head = diff.apply(c.head);
-            c.tail = diff.apply(c.tail);
+            c.head.offset = diff.apply(c.head.offset);
+            c.tail.offset = diff.apply(c.tail.offset);
         }
         assert_eq!(d.text, "heXllo");
-        assert_eq!(cursors[0].head, 3);
-        assert_eq!(cursors[0].tail, 3);
+        assert_eq!(cursors[0].head.offset, 3);
+        assert_eq!(cursors[0].tail.offset, 3);
     }
 
     #[test]
     fn calculate_replace_edits_apply_handles_head_before_tail() {
         // Head < tail: selection still spans [min, max], result is the same.
         let mut d = doc_with("hello");
-        let mut cursors = vec![Cursor { head: 1, tail: 4 }];
+        let mut cursors = vec![Cursor {
+            head: CursorPoint {
+                offset: 1,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 4,
+                col_wanted: None,
+            },
+        }];
         let edits = calculate_replace_edits(&cursors, true, &d, b"X");
         let diff = d.apply_edits(&edits);
         for c in &mut cursors {
-            c.head = diff.apply(c.head);
-            c.tail = diff.apply(c.tail);
+            c.head.offset = diff.apply(c.head.offset);
+            c.tail.offset = diff.apply(c.tail.offset);
         }
         assert_eq!(d.text, "hXo");
-        assert_eq!(cursors[0].head, 2);
-        assert_eq!(cursors[0].tail, 2);
+        assert_eq!(cursors[0].head.offset, 2);
+        assert_eq!(cursors[0].tail.offset, 2);
     }
 }
