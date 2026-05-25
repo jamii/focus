@@ -45,7 +45,6 @@
 ## next
 
 Editor:
-* Cursor->Point->col
 * Movement
   * Line start/end
   * File start/end
@@ -59,7 +58,6 @@ Editor:
   * Ctrl-drag to add cursor and set mark
   * Drag causes scrolling
   * Drag works even if off-screen
-  * Scroll with wheel
 * Undo/redo
 * Copy/cut/paste
 * Navigation stack
@@ -77,19 +75,6 @@ Language:
 * Completion provider
 
 ## notes
-
-Scrolling on master (lib/focus/editor.zig):
-* state lives on the editor as `top_pixel: isize` (which buffer pixel is at the top of the viewport), plus `wanted_center_pos: ?usize` for deferred centering requests
-* mouse wheel: `top_pixel -= scroll_amount * yoffset` (scroll_amount = 32)
-* drag past the top/bottom edge of the text rect nudges `top_pixel` by `±scroll_amount` per frame
-* whenever the main cursor moves, `scrollPosIntoView` shifts `top_pixel` just enough to keep the cursor's wrapped line on screen (snap to top if above, snap to bottom if below)
-* `scrollPosToCenter` / `scrollWrappedLineToCenter` set `top_pixel = max(0, center_pixel - text_rect.h/2)`; used by undo/redo, jump-to-pos, and after window resizes
-* window-resize preserves the center: capture `getCenterPos` before updating `line_wrapped_buffer.max_chars_per_line`, then re-center on that pos afterwards
-* alt+i / alt+k (buffer start/end) hardcode `top_pixel` directly so the view scrolls even when the cursor was already there
-* each frame `top_pixel` is clamped to `[0, total_text_height - text_rect.h/2 - 1]` so you can always scroll the last line to roughly the middle but no further
-* persistence: `buffer.last_center_pos` is written every frame and restored via `wanted_center_pos` in `Editor.init`, so reopening a buffer returns to the same view
-* the left/right gutters draw `>` / `<` markers at a y proportional to `top_pixel` as a minimal scrollbar
-* deferred application: `setCenterAtPos` only stores `wanted_center_pos`; the actual scroll happens at the top of the next `frame`, after line wrapping has been updated
 
 Mouse interactions on master (lib/focus/editor.zig, events from lib/focus/mach_compat.zig):
 * events come from GLFW callbacks wrapped as a tagged union: `mouse_motion`, `mouse_press`, `mouse_release`, `mouse_scroll`. buttons and mods are raw GLFW constants
