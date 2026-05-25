@@ -45,15 +45,9 @@
 ## next
 
 Editor:
-* Multiple cursors
-  * Ctrl-D to add cursor matching main cursor
-  * Ctrl-Shift-D to pop cursor
 * Undo/redo
-* Copy/cut/paste
-* Navigation stack
 * Loading/saving
 * Open on web
-* Completions
 
 Language:
 * Tokenize + highlight
@@ -62,6 +56,7 @@ Language:
 * Paren matching
 * Structural move/select
 * Goto definition
+* Completion ui
 * Completion provider
 
 ## notes
