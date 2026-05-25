@@ -66,19 +66,29 @@ Language:
 
 ## notes
 
-Mouse interactions on master (lib/focus/editor.zig, events from lib/focus/mach_compat.zig):
-* events come from GLFW callbacks wrapped as a tagged union: `mouse_motion`, `mouse_press`, `mouse_release`, `mouse_scroll`. buttons and mods are raw GLFW constants
-* `mouse_motion` is emitted but the editor never reads it — drag tracking is done by polling instead (see below)
-* pixel → buffer pos: `line = (top_pixel + (mouse_y - text_rect.y)) / char_height`, `col = (mouse_x - text_rect.x + char_width/2) / char_width` (the half-cell offset rounds to nearest column), then `line_wrapped_buffer.getPosForLineCol(line, col)` clamped to the last wrapped line
-* `mouse_press` (left button, only when inside `text_rect`) branches on modifiers:
-  * ctrl → `addCursor()` at pos, both head and tail set, `dragging = .CtrlDragging`
-  * shift → extend current selection: `marked = true`, move only head, `dragging = .ShiftDragging`
-  * none → `collapseCursors()`, `clearMark()`, move both head and tail, `dragging = .Dragging`
-* every left-button press also calls `buffer.newUndoGroup()` so typing after a click is a separate undo
-* `mouse_release` (left) just resets `dragging = .NotDragging`
-* drag continuation does not use `mouse_motion`: while `dragging != .NotDragging`, the frame polls `glfwGetCursorPos` directly so dragging still works when the cursor leaves the window
-  * each frame the dragged cursor's head is updated to the polled pos; if `cursor.tail.pos != pos and !marked` it calls `setMark()` so a drag implicitly starts a selection
-  * if the mouse is past the top/bottom of `text_rect`, `top_pixel` is nudged by `±scroll_amount` per frame (auto-scroll while drag-selecting)
-* `mouse_scroll`: `top_pixel -= scroll_amount * yoffset` (32 px per wheel notch)
-* the completer popup is suppressed while any drag is in progress (`if (self.dragging != .NotDragging) break :completer`)
-* clicks outside `text_rect` (gutters, status bar) are ignored — no cursor is created there
+Loading/saving on master (lib/focus/buffer.zig, plus call sites in lib/focus.zig, lib/focus/window.zig, lib/focus/editor.zig):
+* `BufferSource` is a tagged union: `.None` (scratch) or `.File { absolute_filename, mtime }`. Buffer also carries `modified_since_last_save` and `deleted_since_last_save` flags
+* buffers are cached app-wide by absolute filename: `App.getBufferFromAbsoluteFilename` returns the existing buffer or creates one with `Buffer.initFromAbsoluteFilename`, then calls `refresh()` once to pick up any external changes
+* `initFromAbsoluteFilename` picks the `Language` from the filename, sets `source.File` with `mtime = 0`, then calls `load(.Init)`, then resets `undos` and `modified_since_last_save = false` (the initial load is not undoable)
+* `tryLoad` reads via `std.fs.cwd().openFile`, into a `frame_allocator` slice sized by `stat().size`. If `options.limit_load_bytes` is set, the read is capped at `limited_load_bytes` (200*500) — used by previews
+* `load(kind)`:
+  * passes raw bytes through `language.afterLoad` (normalization hook, e.g. line endings)
+  * `.Init` → `rawReplace` (no undo entry); `.Refresh` → `replace` (creates an undo entry, but only if bytes differ — `replace` early-exits when equal)
+  * updates `source.File.mtime` to the stat'd value
+  * on error, replaces the buffer with the formatted error string instead of the file contents (so the buffer shows the error inline)
+* `refresh()`: stats the file; if `mtime` differs from the stored one, calls `load(.Refresh)`. If the file is missing (`FileNotFound`), sets both `modified_since_last_save` and `deleted_since_last_save` and keeps the in-memory contents
+* `App.frame` calls `refresh()` every frame on the top editor of each window (only visible buffers are polled) before running window frames
+* `save(source)` — `source` is `User` or `Auto`:
+  * `.User` → `createFile(truncate=true)` (creates the file if missing — re-creates after external delete)
+  * `.Auto` → `openFile(write_only)` + `setEndPos(0)` + `seekTo(0)`; on `FileNotFound` it silently bails out and just sets `modified_since_last_save = true` (autosave will not recreate a file the user deleted)
+  * bytes go through `language.beforeSave` (formatter hook) before being written; mtime is re-stat'd post-write; `modified_since_last_save` and `deleted_since_last_save` are cleared; then `app.handleAfterSave()` fires
+* `Editor.save(source)` wraps `Buffer.save`: it no-ops when `!modified_since_last_save`, and on `.User` it calls `tryFormat()` (runs `language.format` and `replace`s if it returns non-null) before saving
+* Ctrl-S → `editor.save(.User)`. Autosave (`editor.save(.Auto)`) fires on:
+  * window `focus_lost`
+  * `Window.pushView` and `Window.popView` whenever the current top view is an Editor (so leaving an editor for the file opener, project searcher, maker, etc. saves first)
+  * `Window.deinitPoppedViews` (every popped Editor saves on destruction)
+  * `close_after_frame` (window close path)
+  * each of these also stamps `buffer.last_lost_focus_ms = app.frame_time_ms`
+* `App.handleAfterSave` fans out to `Window.handleAfterSave` on every window; only `Maker` does anything — if it's in the `Running` state it clears its result buffer and respawns its build command (so saving triggers a rebuild)
+* preview buffers (file_opener, buffer_opener, project_file_opener) construct buffers with `limit_load_bytes = true`, `enable_completions = false`, `enable_undo = false`, and are torn down and rebuilt whenever the selected entry changes; preview-only buffers are created directly with `initFromAbsoluteFilename` and `deinit()`'d locally (not added to the App buffer cache)
+* status bar paints `style.emphasisRed` when `deleted_since_last_save` is set — the only visible indication of save state
