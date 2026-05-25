@@ -45,6 +45,7 @@
 ## next
 
 Editor:
+* Move coalesce into cursors. Preserve edit ordering. See if multi-cursor replace can leave cursors nicely.
 * Undo/redo
 * Loading/saving
 * Open on web
