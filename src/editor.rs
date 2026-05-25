@@ -26,6 +26,7 @@ pub struct Editor {
     top_pixel: isize,
     last_viewport_size: [f32; 2],
     scroll_to_main_cursor: bool,
+    dragging: Option<DragInfo>,
 }
 
 const SCROLL_AMOUNT: f32 = 32.0;
@@ -47,6 +48,11 @@ enum Direction {
     Down,
     Left,
     Right,
+}
+
+#[derive(Copy, Clone)]
+struct DragInfo {
+    cursor_index: usize,
 }
 
 impl Editor {
@@ -95,6 +101,7 @@ impl Editor {
             top_pixel: 0,
             last_viewport_size: [0.0, 0.0],
             scroll_to_main_cursor: false,
+            dragging: None,
         };
         editor.refresh_wraps(app);
         editor
@@ -164,6 +171,37 @@ impl Editor {
                     _ => {}
                 }
             }
+            InputEvent::MouseButton { state, position } => {
+                match state {
+                    ElementState::Pressed => {
+                        let offset = self.offset_from_screen(app, position);
+
+                        // Ctrl-click / Ctrl-drag: add a new cursor
+                        // Click / drag: set main cursor, remove others
+                        if !app.modifiers.control_key() {
+                            self.cursors.clear();
+                        }
+
+                        let idx = self.cursors.len();
+                        self.cursors.push(Cursor {
+                            head: CursorPoint {
+                                offset,
+                                col_wanted: None,
+                            },
+                            tail: CursorPoint {
+                                offset,
+                                col_wanted: None,
+                            },
+                        });
+                        self.dragging = Some(DragInfo { cursor_index: idx });
+                        self.marked = false;
+                        self.scroll_to_main_cursor = true;
+                    }
+                    ElementState::Released => {
+                        self.dragging = None;
+                    }
+                }
+            }
             InputEvent::MouseWheel { y_offset } => {
                 self.top_pixel -= (SCROLL_AMOUNT * y_offset) as isize;
             }
@@ -172,7 +210,34 @@ impl Editor {
         self.last_input = io.frame_start();
     }
 
-    pub fn tick(&mut self, _app: &App, io: &mut dyn IO, redraw: &mut bool) {
+    pub fn tick(&mut self, app: &App, io: &mut dyn IO, redraw: &mut bool) {
+        // During drag, poll mouse position and update cursor head.
+        if let Some(drag_info) = self.dragging {
+            let mouse_pos = io.mouse_position();
+            // Scroll when mouse is off-screen vertically.
+            if mouse_pos[1] < 0.0 {
+                self.top_pixel -= SCROLL_AMOUNT as isize;
+            } else if mouse_pos[1] > self.last_viewport_size[1] {
+                self.top_pixel += SCROLL_AMOUNT as isize;
+            }
+            self.clamp_top_pixel(app);
+
+            // Convert screen position to document offset, accounting for scroll.
+            let offset = self.offset_from_screen(app, mouse_pos);
+            if let Some(cursor) = self.cursors.get_mut(drag_info.cursor_index) {
+                if cursor.head.offset != offset {
+                    self.marked = true;
+                }
+                cursor.head = CursorPoint {
+                    offset,
+                    col_wanted: None,
+                };
+            }
+
+            self.last_input = io.frame_start();
+            *redraw = true;
+        }
+
         let show_cursor = ((io.frame_start().as_millis() / 500) % 2) == 0
             || (io.frame_start() - self.last_input < Duration::from_millis(500));
         if self.show_cursor != show_cursor {
@@ -406,6 +471,44 @@ impl Editor {
         if self.top_pixel < 0 {
             self.top_pixel = 0;
         }
+    }
+
+    fn offset_from_screen(&self, app: &App, screen_pos: [f32; 2]) -> usize {
+        let cell_w = app.atlas.cell_size[0] as f32;
+        let doc_y = screen_pos[1] + self.top_pixel as f32;
+        let grid = app.atlas.grid_from_screen([screen_pos[0], doc_y]);
+        // Clamp to document bounds.
+        if grid[1] < 0 {
+            return 0;
+        }
+        let line = grid[1] as usize;
+        if line >= self.wraps.len() {
+            return self.document_id.get(app).text.len();
+        }
+        // grid_from_screen returns columns where 0 = gutter, 1 = first text char.
+        // Convert to wrap-relative column by subtracting the gutter (1 grid column).
+        let screen_col = grid[0].max(0) as usize;
+        let col = screen_col.saturating_sub(1);
+
+        // Pixel position within this wrap-character cell.
+        // The cell's left edge in screen space is at (screen_col) * cell_w.
+        // But we want the offset within the wrap character's cell, whose left
+        // edge is at (col + 1) * cell_w = screen_col * cell_w.
+        let sub_x = screen_pos[0] - (screen_col as f32) * cell_w;
+        let col = if sub_x >= cell_w / 2.0 { col + 1 } else { col };
+
+        let [wrap_start, wrap_end] = self.wraps[line];
+        let text = &self.document_id.get(app).text;
+        let text_span = &text[wrap_start..wrap_end];
+        // Find the byte offset at the given character column.
+        let mut char_idx = 0;
+        for (char_start, _char_end, _) in text_span.char_indices() {
+            if char_idx >= col {
+                return wrap_start + char_start;
+            }
+            char_idx += 1;
+        }
+        wrap_end
     }
 
     pub fn handle_edits(&mut self, app: &App, diff: &OffsetDiff) {
@@ -1220,6 +1323,255 @@ mod tests {
         set_heads(&mut editor, &[0, 2]);
         editor.cursor_goto_doc_end(&app);
         assert_eq!(head_offsets(&editor), vec![7, 7]);
+    }
+
+    // Build a modifiers state with (or without) Ctrl.
+    #[test]
+    fn offset_from_screen_left_half_of_first_char_returns_zero() {
+        let (app, editor_id) = editor_with_text("hello\nworld", 80);
+        let editor = editor_id.get_mut(&app);
+        let cell_w = app.atlas.cell_size[0] as f32;
+        // Screen columns: 0=gutter, 1=h
+        // Left half of screen col 1 (first char 'h') → before first char = offset 0.
+        assert_eq!(editor.offset_from_screen(&app, [0.0, 0.0]), 0);
+        assert!(
+            editor.offset_from_screen(&app, [1.0 * cell_w + cell_w / 4.0, 0.0]) == 0,
+            "left half of first char should be offset 0"
+        );
+    }
+
+    #[test]
+    fn offset_from_screen_right_half_of_first_char_returns_end_of_first_char() {
+        let (app, editor_id) = editor_with_text("hello\nworld", 80);
+        let editor = editor_id.get_mut(&app);
+        let cell_w = app.atlas.cell_size[0] as f32;
+        // Screen columns: 0=gutter, 1=h, 2=e
+        // Right half of screen col 1 ('h') → after first char = offset 1.
+        let x = 1.0 * cell_w + cell_w / 2.0 + 1.0;
+        assert_eq!(editor.offset_from_screen(&app, [x, 0.0]), 1);
+    }
+
+    #[test]
+    fn offset_from_screen_right_half_of_second_char_returns_two() {
+        let (app, editor_id) = editor_with_text("hello", 80);
+        let editor = editor_id.get_mut(&app);
+        let cell_w = app.atlas.cell_size[0] as f32;
+        // Screen columns: 0=gutter, 1=h, 2=e
+        // Right half of screen col 2 ('e') → after 'e' = offset 2.
+        let x = 2.0 * cell_w + cell_w / 2.0 + 1.0;
+        assert_eq!(editor.offset_from_screen(&app, [x, 0.0]), 2);
+    }
+
+    #[test]
+    fn offset_from_screen_maps_second_line_correctly() {
+        let (app, editor_id) = editor_with_text("hello\nworld", 80);
+        let editor = editor_id.get_mut(&app);
+        let cell_h = app.atlas.cell_size[1] as f32;
+        assert_eq!(editor.offset_from_screen(&app, [0.0, cell_h]), 6);
+    }
+
+    #[test]
+    fn offset_from_screen_above_doc_returns_zero() {
+        let (app, editor_id) = editor_with_text("hello", 80);
+        let editor = editor_id.get_mut(&app);
+        assert_eq!(editor.offset_from_screen(&app, [0.0, -100.0]), 0);
+    }
+
+    #[test]
+    fn offset_from_screen_below_doc_returns_end() {
+        let (app, editor_id) = editor_with_text("hello", 80);
+        let editor = editor_id.get_mut(&app);
+        assert_eq!(editor.offset_from_screen(&app, [0.0, 10000.0]), 5);
+    }
+
+    #[test]
+    fn click_clears_other_cursors_and_sets_single_cursor() {
+        let (mut app, editor_id) = editor_with_text("hello world", 80);
+        app.modifiers = winit::keyboard::ModifiersState::empty();
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[0, 6]);
+        editor.dragging = None;
+        let mut io = crate::fuzz::MockIO::new();
+        editor.input(
+            &app,
+            &mut io,
+            InputEvent::MouseButton {
+                state: ElementState::Pressed,
+                position: [0.0, 0.0],
+            },
+        );
+        assert_eq!(editor.cursors.len(), 1);
+        assert_eq!(editor.cursors[0].head.offset, 0);
+        assert_eq!(editor.cursors[0].tail.offset, 0);
+        assert!(!editor.marked);
+        assert!(editor.dragging.is_some());
+    }
+
+    #[test]
+    fn ctrl_click_adds_new_cursor() {
+        let (mut app, editor_id) = editor_with_text("hello world", 80);
+        {
+            let mut m = winit::keyboard::ModifiersState::empty();
+            m |= winit::keyboard::ModifiersState::CONTROL;
+            app.modifiers = m;
+        }
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[0]);
+        // Screen columns: 0=gutter, 1=h, 2=e, 3=l, 4=l, 5=o, 6=' ', 7=w
+        let cell_w = app.atlas.cell_size[0] as f32;
+        let world_x = 7.0 * cell_w;
+        let mut io = crate::fuzz::MockIO::new();
+        editor.input(
+            &app,
+            &mut io,
+            InputEvent::MouseButton {
+                state: ElementState::Pressed,
+                position: [world_x, 0.0],
+            },
+        );
+        assert_eq!(editor.cursors.len(), 2);
+        assert_eq!(editor.cursors[1].head.offset, 6);
+    }
+
+    #[test]
+    fn drag_creates_selection() {
+        let (mut app, editor_id) = editor_with_text("hello world", 80);
+        app.modifiers = winit::keyboard::ModifiersState::empty();
+        let mut editor = editor_id.get_mut(&app);
+        let cell_w = app.atlas.cell_size[0] as f32;
+        // Screen columns: 0=gutter, 1=h, 2=e, 3=l, 4=l, 5=o, 6=' ', 7=w
+        let world_x = 7.0 * cell_w;
+        let mut io = crate::fuzz::MockIO::new();
+        editor.input(
+            &app,
+            &mut io,
+            InputEvent::MouseButton {
+                state: ElementState::Pressed,
+                position: [world_x, 0.0],
+            },
+        );
+        assert_eq!(editor.cursors.len(), 1);
+        assert_eq!(editor.cursors[0].head.offset, 6);
+        // 'o' in "hello" is char idx 4 at screen col 5
+        let hello_mid_x = 5.0 * cell_w;
+        let mut io2 = crate::fuzz::MockIO::new();
+        io2.mouse_pos = [hello_mid_x, 0.0];
+        let mut redraw = false;
+        editor.tick(&app, &mut io2, &mut redraw);
+        assert!(redraw);
+        assert!(editor.dragging.is_some());
+        assert_eq!(editor.cursors[0].head.offset, 4);
+        assert_eq!(editor.cursors[0].tail.offset, 6);
+    }
+
+    #[test]
+    fn ctrl_drag_adds_cursor_with_selection() {
+        let (mut app, editor_id) = editor_with_text("hello world", 80);
+        {
+            let mut m = winit::keyboard::ModifiersState::empty();
+            m |= winit::keyboard::ModifiersState::CONTROL;
+            app.modifiers = m;
+        }
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[0]);
+        let cell_w = app.atlas.cell_size[0] as f32;
+        // Screen columns: 0=gutter, 1=h, 2=e, 3=l, 4=l, 5=o, 6=' ', 7=w
+        let world_x = 7.0 * cell_w;
+        let mut io = crate::fuzz::MockIO::new();
+        editor.input(
+            &app,
+            &mut io,
+            InputEvent::MouseButton {
+                state: ElementState::Pressed,
+                position: [world_x, 0.0],
+            },
+        );
+        assert_eq!(editor.cursors.len(), 2);
+        assert_eq!(editor.cursors[1].head.offset, 6);
+        // 'o' in "hello" is char idx 4 at screen col 5
+        let hello_mid_x = 5.0 * cell_w;
+        let mut io2 = crate::fuzz::MockIO::new();
+        io2.mouse_pos = [hello_mid_x, 0.0];
+        let mut redraw = false;
+        editor.tick(&app, &mut io2, &mut redraw);
+        assert!(redraw);
+        assert_eq!(editor.cursors.len(), 2);
+        assert_eq!(editor.cursors[1].head.offset, 4);
+        assert_eq!(editor.cursors[1].tail.offset, 6);
+    }
+
+    #[test]
+    fn drag_release_clears_drag_state() {
+        let (mut app, editor_id) = editor_with_text("hello", 80);
+        app.modifiers = winit::keyboard::ModifiersState::empty();
+        let mut editor = editor_id.get_mut(&app);
+        let mut io = crate::fuzz::MockIO::new();
+        editor.input(
+            &app,
+            &mut io,
+            InputEvent::MouseButton {
+                state: ElementState::Pressed,
+                position: [0.0, 0.0],
+            },
+        );
+        assert!(editor.dragging.is_some());
+        editor.input(
+            &app,
+            &mut io,
+            InputEvent::MouseButton {
+                state: ElementState::Released,
+                position: [0.0, 0.0],
+            },
+        );
+        assert!(editor.dragging.is_none());
+    }
+
+    #[test]
+    fn drag_off_screen_bottom_scrolls_down() {
+        // Long enough doc that scrolling down is possible.
+        let text: String = (0..50).map(|i| format!("line{}\n", i)).collect();
+        let (mut app, editor_id) = editor_with_text(&text, 80);
+        app.modifiers = winit::keyboard::ModifiersState::empty();
+        let mut editor = editor_id.get_mut(&app);
+        editor.top_pixel = 0;
+        let mut io = crate::fuzz::MockIO::new();
+        editor.input(
+            &app,
+            &mut io,
+            InputEvent::MouseButton {
+                state: ElementState::Pressed,
+                position: [0.0, 0.0],
+            },
+        );
+        let top_before = editor.top_pixel;
+        io.mouse_pos = [0.0, editor.last_viewport_size[1] + 50.0];
+        let mut redraw = false;
+        editor.tick(&app, &mut io, &mut redraw);
+        assert!(editor.top_pixel > top_before, "expected scroll down");
+    }
+
+    #[test]
+    fn drag_off_screen_top_scrolls_up() {
+        // Long enough doc that we can scroll without hitting the bottom edge.
+        let text: String = (0..50).map(|i| format!("line{}\n", i)).collect();
+        let (mut app, editor_id) = editor_with_text(&text, 80);
+        app.modifiers = winit::keyboard::ModifiersState::empty();
+        let mut editor = editor_id.get_mut(&app);
+        editor.top_pixel = 100;
+        let mut io = crate::fuzz::MockIO::new();
+        editor.input(
+            &app,
+            &mut io,
+            InputEvent::MouseButton {
+                state: ElementState::Pressed,
+                position: [0.0, 50.0],
+            },
+        );
+        let top_before = editor.top_pixel;
+        io.mouse_pos = [0.0, -50.0];
+        let mut redraw = false;
+        editor.tick(&app, &mut io, &mut redraw);
+        assert!(editor.top_pixel < top_before, "expected scroll up");
     }
 
     #[test]

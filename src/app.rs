@@ -78,6 +78,10 @@ pub enum InputEvent {
     MouseWheel {
         y_offset: f32,
     },
+    MouseButton {
+        state: ElementState,
+        position: [f32; 2],
+    },
 }
 
 // External effects. Mocked for testing/fuzzing.
@@ -88,6 +92,7 @@ pub trait IO {
     fn set_window_title(&mut self, window_id: WindowId, title: String);
     fn request_redraw(&mut self, window_id: WindowId);
     fn reload_atlas(&mut self, atlas: &Atlas);
+    fn mouse_position(&self) -> [f32; 2];
     fn exit(&mut self);
 }
 

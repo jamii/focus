@@ -83,6 +83,7 @@ struct Backend {
     gl_config: Config,
     context: PossiblyCurrentContext,
     renderer: Renderer,
+    last_mouse_pos: [f32; 2],
 }
 
 // Held only across an app callback; carries the live `ActiveEventLoop`
@@ -96,6 +97,10 @@ struct IoReal<'a> {
 impl IO for IoReal<'_> {
     fn frame_start(&self) -> Duration {
         self.frame_start
+    }
+
+    fn mouse_position(&self) -> [f32; 2] {
+        self.backend.last_mouse_pos
     }
 
     fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId {
@@ -183,13 +188,42 @@ impl Running {
             self.draw(window_id);
             return;
         }
+        if let WindowEvent::CursorMoved { position, .. } = &event {
+            self.backend.last_mouse_pos = [position.x as f32, position.y as f32];
+        }
         if let WindowEvent::Resized(size) = &event {
             self.backend.resize_surface(window_id, *size);
         }
         if !self.backend.windows.contains_key(&window_id) {
             return;
         }
-        let Some(translated) = translate_event(event) else {
+        let translated = match event {
+            WindowEvent::CloseRequested => Some(InputEvent::CloseRequested),
+            WindowEvent::ModifiersChanged(m) => Some(InputEvent::ModifiersChanged(m.state())),
+            WindowEvent::KeyboardInput { event, .. } => Some(InputEvent::Key {
+                state: event.state,
+                logical_key: event.logical_key,
+            }),
+            WindowEvent::MouseWheel { delta, .. } => {
+                let y_offset = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                    winit::event::MouseScrollDelta::PixelDelta(p) => (p.y as f32) / 32.0,
+                };
+                Some(InputEvent::MouseWheel { y_offset })
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if button == winit::event::MouseButton::Left {
+                    Some(InputEvent::MouseButton {
+                        state,
+                        position: self.backend.last_mouse_pos,
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let Some(translated) = translated else {
             return;
         };
         let mut io = IoReal {
@@ -293,6 +327,7 @@ impl Backend {
             gl_config,
             context,
             renderer,
+            last_mouse_pos: [0.0, 0.0],
         };
         (backend, id)
     }
@@ -331,25 +366,6 @@ fn window_attrs(title: &str, size: LogicalSize<u32>) -> winit::window::WindowAtt
         .with_title(title)
         .with_name(APP_ID, "")
         .with_inner_size(size)
-}
-
-fn translate_event(event: WindowEvent) -> Option<InputEvent> {
-    match event {
-        WindowEvent::CloseRequested => Some(InputEvent::CloseRequested),
-        WindowEvent::ModifiersChanged(m) => Some(InputEvent::ModifiersChanged(m.state())),
-        WindowEvent::KeyboardInput { event, .. } => Some(InputEvent::Key {
-            state: event.state,
-            logical_key: event.logical_key,
-        }),
-        WindowEvent::MouseWheel { delta, .. } => {
-            let y_offset = match delta {
-                winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-                winit::event::MouseScrollDelta::PixelDelta(p) => (p.y as f32) / 32.0,
-            };
-            Some(InputEvent::MouseWheel { y_offset })
-        }
-        _ => None,
-    }
 }
 
 fn create_surface(gl_config: &Config, window: &Window) -> Surface<WindowSurface> {

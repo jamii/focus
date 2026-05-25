@@ -45,19 +45,9 @@
 ## next
 
 Editor:
-* Movement
-  * Line start/end
-  * File start/end
 * Multiple cursors
   * Ctrl-D to add cursor matching main cursor
   * Ctrl-Shift-D to pop cursor
-* Mouse interactions
-  * Click to set cursor
-  * Drag to set mark
-  * Ctrl-click to add cursor
-  * Ctrl-drag to add cursor and set mark
-  * Drag causes scrolling
-  * Drag works even if off-screen
 * Undo/redo
 * Copy/cut/paste
 * Navigation stack

@@ -26,6 +26,7 @@ pub struct MockIO {
     pub open_windows: Vec<WindowId>,
     pub exited: bool,
     pub screen_size: [f32; 2],
+    pub mouse_pos: [f32; 2],
 }
 
 impl MockIO {
@@ -39,6 +40,7 @@ impl MockIO {
             open_windows: Vec::new(),
             exited: false,
             screen_size: [0.0, 0.0],
+            mouse_pos: [0.0, 0.0],
         }
     }
 
@@ -65,6 +67,10 @@ impl IO for MockIO {
     }
 
     fn set_window_title(&mut self, _window_id: WindowId, _title: String) {}
+
+    fn mouse_position(&self) -> [f32; 2] {
+        self.mouse_pos
+    }
 
     fn request_redraw(&mut self, _window_id: WindowId) {}
 
