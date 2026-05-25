@@ -4,6 +4,7 @@ pub struct Document {
     pub text: BString,
     pub newlines: Vec<usize>,
     pub queued_edits: Option<Vec<Edit>>,
+    pub last_center_offset: usize,
 }
 
 pub struct Edit {
@@ -42,6 +43,7 @@ impl Document {
             text: "".into(),
             newlines: vec![],
             queued_edits: None,
+            last_center_offset: 0,
         }
     }
 

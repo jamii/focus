@@ -341,6 +341,13 @@ fn translate_event(event: WindowEvent) -> Option<InputEvent> {
             state: event.state,
             logical_key: event.logical_key,
         }),
+        WindowEvent::MouseWheel { delta, .. } => {
+            let y_offset = match delta {
+                winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                winit::event::MouseScrollDelta::PixelDelta(p) => (p.y as f32) / 32.0,
+            };
+            Some(InputEvent::MouseWheel { y_offset })
+        }
         _ => None,
     }
 }

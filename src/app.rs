@@ -75,6 +75,9 @@ pub enum InputEvent {
         state: ElementState,
         logical_key: Key,
     },
+    MouseWheel {
+        y_offset: f32,
+    },
 }
 
 // External effects. Mocked for testing/fuzzing.

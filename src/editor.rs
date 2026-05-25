@@ -7,6 +7,7 @@ use winit::{
     keyboard::{Key, NamedKey},
 };
 
+use crate::style::BACKGROUND_COLOR;
 use crate::{
     app::{App, DocumentId, IO, InputEvent},
     document::{Document, Edit, EditKind, OffsetDiff},
@@ -22,7 +23,12 @@ pub struct Editor {
     wrap_chars: usize,
     wraps: Vec<[usize; 2]>,
     last_input: Duration,
+    top_pixel: isize,
+    last_viewport_size: [f32; 2],
+    scroll_to_main_cursor: bool,
 }
+
+const SCROLL_AMOUNT: f32 = 32.0;
 
 struct Cursor {
     head: CursorPoint,
@@ -86,6 +92,9 @@ impl Editor {
             wrap_chars: 80,
             wraps: vec![],
             last_input: Duration::ZERO,
+            top_pixel: 0,
+            last_viewport_size: [0.0, 0.0],
+            scroll_to_main_cursor: false,
         };
         editor.refresh_wraps(app);
         editor
@@ -133,6 +142,9 @@ impl Editor {
                     _ => {}
                 }
             }
+            InputEvent::MouseWheel { y_offset } => {
+                self.top_pixel -= (SCROLL_AMOUNT * y_offset) as isize;
+            }
             _ => {}
         }
         self.last_input = io.frame_start();
@@ -149,103 +161,234 @@ impl Editor {
 
     pub fn draw(&mut self, app: &App, drawing: &mut Drawing) {
         // Update wrapping.
-        let clip_size = drawing.size();
-        let wrap_chars = app.atlas.grid_from_screen(clip_size)[0] as usize;
-        if wrap_chars <= 2 {
+        let viewport_size = drawing.size();
+        let grid_w = app.atlas.grid_from_screen(viewport_size)[0] as usize;
+        if grid_w <= 2 {
             return;
         }
         // Leave space for gutters
-        let wrap_chars = wrap_chars - 2;
+        let wrap_chars = grid_w - 2;
+
+        let center_before = self.center_offset(app);
+
         if self.wrap_chars != wrap_chars {
             self.wrap_chars = wrap_chars;
             self.refresh_wraps(app);
         }
 
-        // Draw gutters.
+        let viewport_changed = self.last_viewport_size != viewport_size;
+        self.last_viewport_size = viewport_size;
+
+        // Handle viewport resize: re-center on the same logical position.
+        if viewport_changed {
+            let center_before = center_before.min(self.document_id.get(app).text.len());
+            self.scroll_offset_into_center(app, center_before);
+        }
+
+        self.clamp_top_pixel(app);
+
+        // Record the new center for any future editor opening this buffer.
+        let center_now = self.center_offset(app);
+        self.document_id.get_mut(app).last_center_offset = center_now;
+
+        let translate_y = -self.top_pixel as f32;
+
+        // Maybe scroll the main cursor into view.
+        if self.scroll_to_main_cursor {
+            self.scroll_to_main_cursor = false;
+            if let Some(cursor) = self.cursors.last() {
+                self.scroll_offset_into_view(app, cursor.head.offset);
+            }
+        }
+
+        // Compute the visible line range so we don't iterate the whole doc.
+        let line_first = (app.atlas.grid_from_screen([0.0, self.top_pixel as f32])[1].max(0)
+            as usize)
+            .min(self.wraps.len());
+        let line_after = (app
+            .atlas
+            .grid_from_screen([0.0, self.top_pixel as f32 + viewport_size[1]])[1]
+            .max(0) as usize
+            + 1)
+        .min(self.wraps.len());
+
+        let gutter_w = app.atlas.screen_from_grid([1, 0])[0];
+
+        // Left gutter: soft-wrap continuation markers.
         {
+            let mut drawing = drawing.push_clip_rect(Rect {
+                pos: [0.0, 0.0],
+                size: [gutter_w, viewport_size[1]],
+            });
             let text = &self.document_id.get(app).text;
-            for [start, _end] in &self.wraps {
-                if *start > 0 && text[start - 1] != b'\n' {
-                    let grid = self.grid_from_offset(app, *start)[1];
-                    drawing.draw_text(
-                        &app.atlas,
-                        BStr::new(b"\\"),
-                        app.atlas.screen_from_grid([0, grid[1]]),
-                        HIGHLIGHT_COLOR,
-                    );
+            for line_idx in line_first..line_after {
+                let [start, _end] = self.wraps[line_idx];
+                if start > 0 && text[start - 1] != b'\n' {
+                    let mut pos = app.atlas.screen_from_grid([0, line_idx]);
+                    pos[1] += translate_y;
+                    drawing.draw_text(&app.atlas, BStr::new(b"\\"), pos, HIGHLIGHT_COLOR);
                 }
             }
         }
 
-        // Clip the gutters out.
-        let width = app.atlas.screen_from_grid([wrap_chars, 0])[0];
-        let mut drawing = drawing.push_clip_rect(Rect {
-            pos: app.atlas.screen_from_grid([1, 0]),
-            size: [width, clip_size[1]],
-        });
+        // Right gutter: viewport-indicator rect.
+        {
+            let mut drawing = drawing.push_clip_rect(Rect {
+                pos: [viewport_size[0] - gutter_w, 0.0],
+                size: [gutter_w, viewport_size[1]],
+            });
+            let viewport_h_f = viewport_size[1];
+            let total_h = (app.atlas.screen_from_grid([0, self.wraps.len()])[1]).max(viewport_h_f);
+            let top_y = ((self.top_pixel as f32) / total_h * viewport_h_f).clamp(0.0, viewport_h_f);
+            let bot_y = (((self.top_pixel as f32) + viewport_h_f) / total_h * viewport_h_f)
+                .clamp(0.0, viewport_h_f);
+            let h = (bot_y - top_y).max(1.0);
+            let gutter_size = drawing.size();
+            drawing.draw_rect(
+                &app.atlas,
+                Rect {
+                    pos: [0.0, 0.0],
+                    size: gutter_size,
+                },
+                HIGHLIGHT_COLOR,
+            );
+            drawing.draw_rect(
+                &app.atlas,
+                Rect {
+                    pos: [0.0, top_y],
+                    size: [gutter_w, h],
+                },
+                BACKGROUND_COLOR,
+            );
+        }
 
-        // Draw mark.
-        if self.marked {
-            for cursor in &self.cursors {
-                if let Some(range) = cursor.marked_range(self.marked) {
-                    for &[wrap_start, wrap_end] in &self.wraps {
-                        if range.end <= wrap_start || range.start > wrap_end {
-                            continue;
+        // Text region: marks, text, cursors.
+        {
+            let width = app.atlas.screen_from_grid([wrap_chars, 0])[0];
+            let mut drawing = drawing.push_clip_rect(Rect {
+                pos: app.atlas.screen_from_grid([1, 0]),
+                size: [width, viewport_size[1]],
+            });
+
+            // Draw mark.
+            if self.marked {
+                for cursor in &self.cursors {
+                    if let Some(range) = cursor.marked_range(self.marked) {
+                        for line_idx in line_first..line_after {
+                            let [wrap_start, wrap_end] = self.wraps[line_idx];
+                            if range.end <= wrap_start || range.start > wrap_end {
+                                continue;
+                            }
+                            let mark_start = range.start.max(wrap_start);
+                            let mark_end = range.end.min(wrap_end);
+                            let grid_start = self.grid_from_offset(app, mark_start)[1];
+                            let mut grid_end = self.grid_from_offset(app, mark_end)[0];
+                            grid_end[1] += 1;
+                            let mut screen_start = app.atlas.screen_from_grid(grid_start);
+                            let mut screen_end = app.atlas.screen_from_grid(grid_end);
+                            screen_start[1] += translate_y;
+                            screen_end[1] += translate_y;
+                            drawing.draw_rect(
+                                &app.atlas,
+                                Rect::from_corners(screen_start, screen_end),
+                                HIGHLIGHT_COLOR,
+                            );
                         }
-                        let mark_start = range.start.max(wrap_start);
-                        let mark_end = range.end.min(wrap_end);
-                        let grid_start = self.grid_from_offset(app, mark_start)[1];
-                        let mut grid_end = self.grid_from_offset(app, mark_end)[0];
+                    }
+                }
+            }
+
+            // Draw text.
+            {
+                let text = &self.document_id.get(app).text;
+                for line_idx in line_first..line_after {
+                    let [start, end] = self.wraps[line_idx];
+                    let mut screen = app.atlas.screen_from_grid([0, line_idx]);
+                    screen[1] += translate_y;
+                    drawing.draw_text(&app.atlas, &text.as_bstr()[start..end], screen, TEXT_COLOR);
+                }
+            }
+
+            // Draw cursors.
+            if self.show_cursor {
+                for cursor in &self.cursors {
+                    for grid_start in self.grid_from_offset(app, cursor.head.offset) {
+                        let mut grid_end = grid_start;
                         grid_end[1] += 1;
-                        let screen_start = app.atlas.screen_from_grid(grid_start);
-                        let screen_end = app.atlas.screen_from_grid(grid_end);
+                        let mut screen_start = app.atlas.screen_from_grid(grid_start);
+                        let mut screen_end = app.atlas.screen_from_grid(grid_end);
+                        screen_start[1] += translate_y;
+                        screen_end[1] += translate_y;
+                        let w = app.atlas.screen_from_grid([1, 0])[0] / 8.0;
+                        screen_start[0] -= w / 2.0;
+                        screen_end[0] += w / 2.0;
                         drawing.draw_rect(
                             &app.atlas,
                             Rect::from_corners(screen_start, screen_end),
-                            HIGHLIGHT_COLOR,
+                            TEXT_COLOR,
                         );
                     }
                 }
             }
         }
+    }
 
-        // Draw text.
-        {
-            let text = &self.document_id.get(app).text;
-            for [start, end] in &self.wraps {
-                let grid = self.grid_from_offset(app, *start)[1];
-                let screen = app.atlas.screen_from_grid(grid);
-                drawing.draw_text(
-                    &app.atlas,
-                    &text.as_bstr()[*start..*end],
-                    screen,
-                    TEXT_COLOR,
-                );
+    fn offset_line(&self, app: &App, offset: usize) -> usize {
+        self.grid_from_offset(app, offset)[1][1]
+    }
+
+    fn scroll_offset_into_view(&mut self, app: &App, offset: usize) {
+        let viewport_h = self.last_viewport_size[1] as isize;
+        if viewport_h <= 0 {
+            return;
+        }
+        let line = self.offset_line(app, offset);
+        let y = app.atlas.screen_from_grid([0, line])[1] as isize;
+        let y_end = app.atlas.screen_from_grid([0, line + 1])[1] as isize;
+        if y < self.top_pixel {
+            self.top_pixel = y;
+        }
+        if y_end > self.top_pixel + viewport_h {
+            self.top_pixel = y_end - viewport_h;
+        }
+    }
+
+    fn scroll_offset_into_center(&mut self, app: &App, offset: usize) {
+        let viewport_h = self.last_viewport_size[1] as isize;
+        if viewport_h <= 0 {
+            return;
+        }
+        let line = self.offset_line(app, offset);
+        let y = app.atlas.screen_from_grid([0, line])[1] as isize;
+        let y_end = app.atlas.screen_from_grid([0, line + 1])[1] as isize;
+        self.top_pixel = (y + y_end) / 2 - viewport_h / 2;
+    }
+
+    fn center_offset(&self, app: &App) -> usize {
+        let viewport_h = self.last_viewport_size[1] as isize;
+        let center_y = self.top_pixel + viewport_h / 2;
+        let line = app.atlas.grid_from_screen([0.0, center_y as f32])[1].max(0) as usize;
+        let line = line.min(self.wraps.len() - 1);
+        self.wraps[line][0]
+    }
+
+    fn clamp_top_pixel(&mut self, app: &App) {
+        let viewport_h = self.last_viewport_size[1] as isize;
+        let total_h = app.atlas.screen_from_grid([0, self.wraps.len()])[1] as isize;
+        if viewport_h > 0 {
+            let max_top = (total_h - viewport_h / 2).max(0);
+            if self.top_pixel > max_top {
+                self.top_pixel = max_top;
             }
         }
-
-        // Draw cursors.
-        if self.show_cursor {
-            for cursor in &self.cursors {
-                for grid_start in self.grid_from_offset(app, cursor.head.offset) {
-                    let mut grid_end = grid_start;
-                    grid_end[1] += 1;
-                    let mut screen_start = app.atlas.screen_from_grid(grid_start);
-                    let mut screen_end = app.atlas.screen_from_grid(grid_end);
-                    let w = app.atlas.cell_size[0] as f32 / 8.0;
-                    screen_start[0] -= w / 2.0;
-                    screen_end[0] += w / 2.0;
-                    drawing.draw_rect(
-                        &app.atlas,
-                        Rect::from_corners(screen_start, screen_end),
-                        TEXT_COLOR,
-                    );
-                }
-            }
+        if self.top_pixel < 0 {
+            self.top_pixel = 0;
         }
     }
 
     pub fn handle_edits(&mut self, app: &App, diff: &OffsetDiff) {
+        let center_before = self.center_offset(app);
+
         let mut cursors = replace(&mut self.cursors, vec![]);
         for cursor in &mut cursors {
             for point in [&mut cursor.head, &mut cursor.tail] {
@@ -257,6 +400,8 @@ impl Editor {
         }
         self.cursors = cursors;
         self.refresh_wraps(app);
+
+        self.scroll_offset_into_center(app, diff.apply(center_before));
     }
 
     fn toggle_mark(&mut self) {
@@ -275,6 +420,7 @@ impl Editor {
         let edits = calculate_replace_edits(&self.cursors, self.marked, &document, insert);
         document.queue_edits(edits);
         self.marked = false;
+        self.scroll_to_main_cursor = true;
     }
 
     fn cursor_delete_left(&mut self, app: &App) {
@@ -297,6 +443,7 @@ impl Editor {
         }
         document.queue_edits(edits);
         self.marked = false;
+        self.scroll_to_main_cursor = true;
     }
 
     fn cursor_delete_right(&mut self, app: &App) {
@@ -319,6 +466,7 @@ impl Editor {
         }
         document.queue_edits(edits);
         self.marked = false;
+        self.scroll_to_main_cursor = true;
     }
 
     fn refresh_wraps(&mut self, app: &App) {
@@ -357,6 +505,7 @@ impl Editor {
             };
         }
         self.cursors = cursors;
+        self.scroll_to_main_cursor = true;
     }
 
     // Return the grid position for a byte offset within the doc.

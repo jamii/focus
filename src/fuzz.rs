@@ -85,6 +85,7 @@ const A_MODIFIERS: u32 = 10;
 const A_CLOSE: u32 = 2;
 const A_TICK: u32 = 20;
 const A_DRAW: u32 = 40;
+const A_SCROLL: u32 = 20;
 
 // Each step: tick once (advancing time), then perform one randomly
 // chosen action. Returns Some(()) if more entropy is available; None
@@ -103,6 +104,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_CLOSE,
         A_TICK,
         A_DRAW,
+        A_SCROLL,
     ])?;
     match action {
         0 => {
@@ -192,6 +194,14 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             }
             let mut drawing = Drawing::new(io.screen_size);
             app.draw(window_id, &mut drawing);
+        }
+        6 => {
+            // Mouse wheel scroll. Map the raw byte into a signed scroll
+            // amount roughly the size of a wheel notch, with occasional
+            // larger jumps (smooth-scroll / pixel-delta sized).
+            let raw = frng.u8_bounded(0, 200)? as f32;
+            let y_offset = (raw - 100.0) / 10.0;
+            app.input(io, window_id, InputEvent::MouseWheel { y_offset });
         }
         _ => unreachable!(),
     }
