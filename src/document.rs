@@ -184,6 +184,40 @@ impl Edit {
             }
         }
     }
+
+    /// Sort by offset and truncate overlapping deletions. Inserts whose
+    /// offset falls inside a previously deleted region are moved forward
+    /// past that region.
+    pub fn coalesce(edits: &mut Vec<Edit>) {
+        edits.sort_by_key(|e| e.offset);
+
+        let mut consumed_up_to: usize = 0;
+        let mut i = 0;
+        while i < edits.len() {
+            match edits[i].kind {
+                EditKind::Insert => {
+                    if edits[i].offset < consumed_up_to {
+                        edits[i].offset = consumed_up_to;
+                    }
+                    consumed_up_to = edits[i].offset;
+                }
+                EditKind::Delete => {
+                    let end = edits[i].offset + edits[i].text.len();
+                    if edits[i].offset < consumed_up_to {
+                        if end <= consumed_up_to {
+                            edits.remove(i);
+                            continue;
+                        }
+                        let skip = consumed_up_to - edits[i].offset;
+                        edits[i].offset = consumed_up_to;
+                        edits[i].text = edits[i].text[skip..].into();
+                    }
+                    consumed_up_to = edits[i].offset + edits[i].text.len();
+                }
+            }
+            i += 1;
+        }
+    }
 }
 
 impl OffsetDiff {

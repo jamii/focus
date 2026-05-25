@@ -1,3 +1,4 @@
+use std::mem::swap;
 use std::time::Duration;
 use std::{mem::replace, ops::Range};
 
@@ -10,9 +11,9 @@ use winit::{
 use crate::style::BACKGROUND_COLOR;
 use crate::{
     app::{App, DocumentId, IO, InputEvent},
-    document::{Document, Edit, EditKind, OffsetDiff},
+    document::{Edit, EditKind, OffsetDiff},
     drawing::{Drawing, Rect},
-    style::{HIGHLIGHT_COLOR, TEXT_COLOR},
+    style::{HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR},
 };
 
 pub struct Editor {
@@ -31,6 +32,7 @@ pub struct Editor {
 
 const SCROLL_AMOUNT: f32 = 32.0;
 
+#[derive(Clone)]
 struct Cursor {
     head: CursorPoint,
     tail: CursorPoint,
@@ -58,6 +60,8 @@ struct DragInfo {
 impl Editor {
     pub fn assert_invariants(&self, app: &App) {
         let document = self.document_id.get(app);
+
+        assert!(self.cursors.len() > 0);
         for cursor in &self.cursors {
             for point in [&cursor.head, &cursor.tail] {
                 assert!(point.offset <= document.text.len());
@@ -130,6 +134,12 @@ impl Editor {
                     }
                     Key::Named(NamedKey::Space) => {
                         self.toggle_mark();
+                    }
+                    Key::Character("d") => {
+                        self.cursor_add_next_match(app);
+                    }
+                    Key::Character("D") => {
+                        self.cursor_remove_last();
                     }
                     Key::Character("c") => {
                         self.cursor_copy(app, io);
@@ -410,6 +420,11 @@ impl Editor {
 
             // Draw cursors.
             if self.show_cursor {
+                let cursor_color = if self.cursors.len() > 1 {
+                    MULTI_CURSOR_COLOR
+                } else {
+                    TEXT_COLOR
+                };
                 for cursor in &self.cursors {
                     for grid_start in self.grid_from_offset(app, cursor.head.offset) {
                         let mut grid_end = grid_start;
@@ -424,7 +439,7 @@ impl Editor {
                         drawing.draw_rect(
                             &app.atlas,
                             Rect::from_corners(screen_start, screen_end),
-                            TEXT_COLOR,
+                            cursor_color,
                         );
                     }
                 }
@@ -554,10 +569,65 @@ impl Editor {
 
     fn cursor_replace(&mut self, app: &App, insert: &[u8]) {
         let mut document = self.document_id.get_mut(app);
-        let edits = calculate_replace_edits(&self.cursors, self.marked, &document, insert);
+        let mut edits = Vec::with_capacity(self.cursors.len() * 2);
+        for cursor in &self.cursors {
+            if let Some(range) = cursor.marked_range(self.marked) {
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: range.start,
+                    text: insert.into(),
+                });
+                edits.push(Edit {
+                    kind: EditKind::Delete,
+                    offset: range.start,
+                    text: document.text[range.start..range.end].into(),
+                });
+            } else {
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: cursor.head.offset,
+                    text: insert.into(),
+                });
+            }
+        }
+        Edit::coalesce(&mut edits);
         document.queue_edits(edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
+    }
+
+    fn cursor_add_next_match(&mut self, app: &App) {
+        let document = self.document_id.get(app);
+        let cursor_main = self.cursors.last().unwrap();
+        let Some(range) = cursor_main.marked_range(self.marked) else {
+            return;
+        };
+        let search_start = range.end;
+        let search_text = &document.text[range];
+        if let Some(offset) = document.text[search_start..].find(search_text.as_bstr()) {
+            let start = search_start + offset;
+            let end = start + search_text.len();
+            let mut cursor_new = Cursor {
+                head: CursorPoint {
+                    offset: end,
+                    col_wanted: None,
+                },
+                tail: CursorPoint {
+                    offset: start,
+                    col_wanted: None,
+                },
+            };
+            if cursor_main.head.offset < cursor_main.tail.offset {
+                swap(&mut cursor_new.head, &mut cursor_new.tail);
+            }
+            self.cursors.push(cursor_new);
+        }
+    }
+
+    fn cursor_remove_last(&mut self) {
+        if self.cursors.len() > 1 {
+            self.cursors.pop();
+        }
     }
 
     fn cursor_delete_left(&mut self, app: &App) {
@@ -578,6 +648,7 @@ impl Editor {
                 });
             }
         }
+        Edit::coalesce(&mut edits);
         document.queue_edits(edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
@@ -601,6 +672,7 @@ impl Editor {
                 });
             }
         }
+        Edit::coalesce(&mut edits);
         document.queue_edits(edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
@@ -645,6 +717,7 @@ impl Editor {
                 });
             }
         }
+        Edit::coalesce(&mut edits);
         document.queue_edits(edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
@@ -677,6 +750,7 @@ impl Editor {
                 });
             }
         }
+        Edit::coalesce(&mut edits);
         document.queue_edits(edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
@@ -710,6 +784,7 @@ impl Editor {
                 });
             }
         }
+        Edit::coalesce(&mut edits);
         document.queue_edits(edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
@@ -886,35 +961,7 @@ impl Cursor {
     }
 }
 
-fn calculate_replace_edits(
-    cursors: &[Cursor],
-    marked: bool,
-    document: &Document,
-    insert: &[u8],
-) -> Vec<Edit> {
-    let mut edits = Vec::with_capacity(cursors.len() * 2);
-    for cursor in cursors {
-        if let Some(range) = cursor.marked_range(marked) {
-            edits.push(Edit {
-                kind: EditKind::Insert,
-                offset: range.start,
-                text: insert.into(),
-            });
-            edits.push(Edit {
-                kind: EditKind::Delete,
-                offset: range.start,
-                text: document.text[range.start..range.end].into(),
-            });
-        } else {
-            edits.push(Edit {
-                kind: EditKind::Insert,
-                offset: cursor.head.offset,
-                text: insert.into(),
-            });
-        }
-    }
-    edits
-}
+
 
 fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
     assert!(wrap_chars > 0);
@@ -1073,16 +1120,6 @@ mod tests {
         assert_eq!(apply_helper(5, &edits), 3);
     }
 
-    fn doc_with(s: &str) -> Document {
-        let mut d = Document::new();
-        d.apply_edits(&[Edit {
-            kind: EditKind::Insert,
-            offset: 0,
-            text: s.into(),
-        }]);
-        d
-    }
-
     #[test]
     fn marked_range_unmarked_is_none() {
         let c = Cursor {
@@ -1162,142 +1199,67 @@ mod tests {
     }
 
     #[test]
-    fn calculate_replace_edits_unmarked_emits_single_insert_at_offset() {
-        let d = doc_with("hello");
-        let cursors = vec![Cursor {
-            head: CursorPoint {
-                offset: 3,
-                col_wanted: None,
-            },
-            tail: CursorPoint {
-                offset: 0,
-                col_wanted: None,
-            },
-        }];
-        let edits = calculate_replace_edits(&cursors, false, &d, b"X");
-        assert_eq!(edits.len(), 1);
-        assert!(matches!(edits[0].kind, EditKind::Insert));
-        assert_eq!(edits[0].offset, 3);
-        assert_eq!(edits[0].text, "X");
-    }
-
-    #[test]
-    fn calculate_replace_edits_marked_with_selection_emits_insert_then_delete_at_sel_start() {
-        let d = doc_with("hello");
-        // Selection covers "ell" (positions 1..4).
-        let cursors = vec![Cursor {
-            head: CursorPoint {
-                offset: 4,
-                col_wanted: None,
-            },
-            tail: CursorPoint {
-                offset: 1,
-                col_wanted: None,
-            },
-        }];
-        let edits = calculate_replace_edits(&cursors, true, &d, b"X");
-        assert_eq!(edits.len(), 2);
-        assert!(matches!(edits[0].kind, EditKind::Insert));
-        assert_eq!(edits[0].offset, 1);
-        assert_eq!(edits[0].text, "X");
-        assert!(matches!(edits[1].kind, EditKind::Delete));
-        assert_eq!(edits[1].offset, 1);
-        assert_eq!(edits[1].text, "ell");
-    }
-
-    #[test]
-    fn calculate_replace_edits_marked_with_empty_selection_emits_just_insert() {
-        let d = doc_with("hello");
-        let cursors = vec![Cursor {
-            head: CursorPoint {
-                offset: 2,
-                col_wanted: None,
-            },
-            tail: CursorPoint {
-                offset: 2,
-                col_wanted: None,
-            },
-        }];
-        let edits = calculate_replace_edits(&cursors, true, &d, b"X");
-        assert_eq!(edits.len(), 1);
-        assert!(matches!(edits[0].kind, EditKind::Insert));
-        assert_eq!(edits[0].offset, 2);
-    }
-
-    #[test]
-    fn calculate_replace_edits_apply_replaces_selection_in_document() {
-        // End-to-end: the emitted edits, when applied, produce "hXo" from
-        // "hello" and leave both head and tail at the position after "X".
-        let mut d = doc_with("hello");
-        let mut cursors = vec![Cursor {
-            head: CursorPoint {
-                offset: 4,
-                col_wanted: None,
-            },
-            tail: CursorPoint {
-                offset: 1,
-                col_wanted: None,
-            },
-        }];
-        let edits = calculate_replace_edits(&cursors, true, &d, b"X");
-        let diff = d.apply_edits(&edits);
-        for c in &mut cursors {
-            c.head.offset = diff.apply(c.head.offset);
-            c.tail.offset = diff.apply(c.tail.offset);
+    fn cursor_replace_unmarked_inserts_at_head() {
+        let (app, editor_id) = editor_with_text("hello", 80);
+        let document_id;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_heads(&mut editor, &[3]);
+            editor.cursor_replace(&app, b"X");
         }
-        assert_eq!(d.text, "hXo");
-        assert_eq!(cursors[0].head.offset, 2);
-        assert_eq!(cursors[0].tail.offset, 2);
+        let mut doc = document_id.get_mut(&app);
+        let edits = doc.queued_edits.take().unwrap();
+        doc.apply_edits(&edits);
+        assert_eq!(doc.text, "helXlo");
     }
 
     #[test]
-    fn calculate_replace_edits_apply_inserts_when_selection_is_empty() {
-        // No mark → single insert; both head and tail shift past it.
-        let mut d = doc_with("hello");
-        let mut cursors = vec![Cursor {
-            head: CursorPoint {
-                offset: 2,
-                col_wanted: None,
-            },
-            tail: CursorPoint {
-                offset: 2,
-                col_wanted: None,
-            },
-        }];
-        let edits = calculate_replace_edits(&cursors, false, &d, b"X");
-        let diff = d.apply_edits(&edits);
-        for c in &mut cursors {
-            c.head.offset = diff.apply(c.head.offset);
-            c.tail.offset = diff.apply(c.tail.offset);
+    fn cursor_replaces_selection_in_document() {
+        let (app, editor_id) = editor_with_text("hello", 80);
+        let document_id;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_mark(&mut editor, &[4], &[1]);
+            editor.cursor_replace(&app, b"X");
         }
-        assert_eq!(d.text, "heXllo");
-        assert_eq!(cursors[0].head.offset, 3);
-        assert_eq!(cursors[0].tail.offset, 3);
+        let mut doc = document_id.get_mut(&app);
+        let edits = doc.queued_edits.take().unwrap();
+        doc.apply_edits(&edits);
+        assert_eq!(doc.text, "hXo");
     }
 
     #[test]
-    fn calculate_replace_edits_apply_handles_head_before_tail() {
-        // Head < tail: selection still spans [min, max], result is the same.
-        let mut d = doc_with("hello");
-        let mut cursors = vec![Cursor {
-            head: CursorPoint {
-                offset: 1,
-                col_wanted: None,
-            },
-            tail: CursorPoint {
-                offset: 4,
-                col_wanted: None,
-            },
-        }];
-        let edits = calculate_replace_edits(&cursors, true, &d, b"X");
-        let diff = d.apply_edits(&edits);
-        for c in &mut cursors {
-            c.head.offset = diff.apply(c.head.offset);
-            c.tail.offset = diff.apply(c.tail.offset);
+    fn cursor_replace_with_empty_mark_just_inserts() {
+        let (app, editor_id) = editor_with_text("hello", 80);
+        let document_id;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_mark(&mut editor, &[2], &[2]);
+            editor.cursor_replace(&app, b"X");
         }
-        assert_eq!(d.text, "hXo");
-        assert_eq!(cursors[0].head.offset, 2);
-        assert_eq!(cursors[0].tail.offset, 2);
+        let mut doc = document_id.get_mut(&app);
+        let edits = doc.queued_edits.take().unwrap();
+        doc.apply_edits(&edits);
+        assert_eq!(doc.text, "heXllo");
+    }
+
+    #[test]
+    fn cursor_replace_handles_head_before_tail() {
+        let (app, editor_id) = editor_with_text("hello", 80);
+        let document_id;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_mark(&mut editor, &[1], &[4]);
+            editor.cursor_replace(&app, b"X");
+        }
+        let mut doc = document_id.get_mut(&app);
+        let edits = doc.queued_edits.take().unwrap();
+        doc.apply_edits(&edits);
+        assert_eq!(doc.text, "hXo");
     }
 
     fn editor_with_text(text: &str, wrap_chars: usize) -> (crate::app::App, crate::app::EditorId) {
@@ -1344,6 +1306,192 @@ mod tests {
 
     fn head_offsets(editor: &Editor) -> Vec<usize> {
         editor.cursors.iter().map(|c| c.head.offset).collect()
+    }
+
+    fn set_mark(editor: &mut Editor, heads: &[usize], tails: &[usize]) {
+        assert_eq!(heads.len(), tails.len());
+        editor.marked = true;
+        editor.cursors = heads
+            .iter()
+            .zip(tails.iter())
+            .map(|(&head, &tail)| Cursor {
+                head: CursorPoint {
+                    offset: head,
+                    col_wanted: None,
+                },
+                tail: CursorPoint {
+                    offset: tail,
+                    col_wanted: None,
+                },
+            })
+            .collect();
+    }
+
+    fn cursor_count(editor: &Editor) -> usize {
+        editor.cursors.len()
+    }
+
+    fn tail_offsets(editor: &Editor) -> Vec<usize> {
+        editor.cursors.iter().map(|c| c.tail.offset).collect()
+    }
+
+    #[test]
+    fn ctrl_d_with_no_selection_does_nothing() {
+        let (app, editor_id) = editor_with_text("hello hello", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[0]);
+        // Not marked, so no selection range
+        editor.marked = false;
+        editor.cursor_add_next_match(&app);
+        assert_eq!(cursor_count(&editor), 1);
+        assert_eq!(head_offsets(&editor), vec![0]);
+    }
+
+    #[test]
+    fn ctrl_d_finds_next_match_and_adds_cursor() {
+        let (app, editor_id) = editor_with_text("hello hello", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Select first "hello" (0..5)
+        set_mark(&mut editor, &[5], &[0]);
+        editor.cursor_add_next_match(&app);
+        assert_eq!(cursor_count(&editor), 2);
+        // First cursor unchanged
+        assert_eq!(head_offsets(&editor)[0], 5);
+        assert_eq!(tail_offsets(&editor)[0], 0);
+        // Second cursor selects second "hello" (6..11)
+        assert_eq!(head_offsets(&editor)[1], 11);
+        assert_eq!(tail_offsets(&editor)[1], 6);
+    }
+
+    #[test]
+    fn ctrl_d_no_match_does_nothing() {
+        let (app, editor_id) = editor_with_text("hello world", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Select "hello" - "world" is not a match
+        set_mark(&mut editor, &[5], &[0]);
+        editor.cursor_add_next_match(&app);
+        assert_eq!(cursor_count(&editor), 1);
+    }
+
+    #[test]
+    fn ctrl_d_does_not_wrap_around() {
+        let (app, editor_id) = editor_with_text("abc abc abc", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Select second "abc" (4..7) - should find third, not wrap to first
+        set_mark(&mut editor, &[7], &[4]);
+        editor.cursor_add_next_match(&app);
+        assert_eq!(cursor_count(&editor), 2);
+        assert_eq!(head_offsets(&editor)[1], 11);
+        assert_eq!(tail_offsets(&editor)[1], 8);
+    }
+
+    #[test]
+    fn ctrl_shift_d_removes_last_cursor() {
+        let (app, editor_id) = editor_with_text("hello", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[0, 2, 4]);
+        assert_eq!(cursor_count(&editor), 3);
+        editor.cursor_remove_last();
+        assert_eq!(cursor_count(&editor), 2);
+        assert_eq!(head_offsets(&editor), vec![0, 2]);
+    }
+
+    #[test]
+    fn ctrl_shift_d_with_one_cursor_does_nothing() {
+        let (app, editor_id) = editor_with_text("hello", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[0]);
+        assert_eq!(cursor_count(&editor), 1);
+        editor.cursor_remove_last();
+        assert_eq!(cursor_count(&editor), 1);
+    }
+
+    #[test]
+    fn delete_left_with_overlapping_cursors_truncates() {
+        let (app, editor_id) = editor_with_text("abcde", 80);
+        let document_id;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_heads(&mut editor, &[1, 2]);
+            editor.cursor_delete_left(&app);
+        }
+        // Flush queued edits
+        let mut doc = document_id.get_mut(&app);
+        let edits = doc.queued_edits.take().unwrap();
+        doc.apply_edits(&edits);
+        // First cursor deletes 'a' (0..1), second tries to delete 'b' (1..2)
+        // but first already consumed [0,1), so second starts at 1: deletes 'b'
+        assert_eq!(doc.text, "cde");
+    }
+
+    #[test]
+    fn delete_right_with_overlapping_cursors_truncates() {
+        let (app, editor_id) = editor_with_text("abcde", 80);
+        let document_id;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_heads(&mut editor, &[0, 1]);
+            editor.cursor_delete_right(&app);
+        }
+        // Flush queued edits
+        let mut doc = document_id.get_mut(&app);
+        let edits = doc.queued_edits.take().unwrap();
+        doc.apply_edits(&edits);
+        // First cursor deletes 'a' (0..1), second tries to delete 'b' (1..2)
+        // but first already consumed [0,1), so second starts at 1: deletes 'b'
+        assert_eq!(doc.text, "cde");
+    }
+
+    #[test]
+    fn cursor_replace_with_overlapping_selections_truncates() {
+        let (app, editor_id) = editor_with_text("abcdefghij", 80);
+        let document_id;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            // Two selections: [0..5) and [3..8), replace with "X"
+            set_mark(&mut editor, &[5, 8], &[0, 3]);
+            editor.cursor_replace(&app, b"X");
+        }
+        let mut doc = document_id.get_mut(&app);
+        let edits = doc.queued_edits.take().unwrap();
+        doc.apply_edits(&edits);
+        // First selection [0..5) = "abcde" becomes "X". Second selection
+        // [3..8) = "defg" starts inside first's range, so its insert moves
+        // to 5 (first's end) and delete covers [5..8) = "fgh".
+        // Result: "XX" + "ij" = "XXij"
+        assert_eq!(doc.text, "XXij");
+    }
+
+    #[test]
+    fn multiple_cursors_same_delete_left_position_ok() {
+        let (app, editor_id) = editor_with_text("abc", 80);
+        let document_id;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_heads(&mut editor, &[1, 1]);
+            editor.cursor_delete_left(&app);
+        }
+        // Flush queued edits
+        let mut doc = document_id.get_mut(&app);
+        let edits = doc.queued_edits.take().unwrap();
+        doc.apply_edits(&edits);
+        // Both try to delete char before offset 1 ('a', 0..1)
+        // First deletes [0..1), second's [0..1) is fully consumed → no-op
+        assert_eq!(doc.text, "bc");
+    }
+
+    #[test]
+    fn ctrl_d_on_last_match_does_nothing() {
+        let (app, editor_id) = editor_with_text("abc abc abc", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Select third "abc" (8..11) - no more matches after it
+        set_mark(&mut editor, &[11], &[8]);
+        editor.cursor_add_next_match(&app);
+        assert_eq!(cursor_count(&editor), 1);
     }
 
     #[test]
