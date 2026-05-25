@@ -12,9 +12,9 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::ptr;
 
-use focus::render::Renderer;
 use focus::atlas::Atlas;
 use focus::drawing::{Drawing, Rect};
+use focus::render::Renderer;
 use fontdue::{Font, FontSettings};
 use khronos_egl::{self as egl, DynamicInstance};
 
@@ -191,7 +191,14 @@ fn renders_hello_world() {
     };
     {
         let mut drawing = drawing.push_clip_rect(clip);
-        drawing.draw_rect(&atlas, Rect { pos: [0.0, 0.0], size: clip.size }, [255, 240, 170, 255]);
+        drawing.draw_rect(
+            &atlas,
+            Rect {
+                pos: [0.0, 0.0],
+                size: clip.size,
+            },
+            [255, 240, 170, 255],
+        );
         // Non-ASCII '→' is not in the atlas and should render as a tofu box.
         drawing.draw_text(
             &atlas,

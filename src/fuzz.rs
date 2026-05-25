@@ -3,12 +3,9 @@
 // `fuzz_one` drives an empty `App` with a sequence of synthesized
 // `InputEvent`s and ticks, both pulled from a `Frng` (see fuzz_gen.rs).
 // Time advances by a fuzzer-chosen delta between events. The IO is mocked
-// — no winit, no GL — so the harness runs anywhere.
+// so the harness runs anywhere.
 //
-// This is the body of the honggfuzz target (see src/bin/fuzz_hfuzz.rs)
-// and is also driven from the standalone runner (src/bin/fuzz.rs), which
-// finds crashes locally via fuzz_gen::minimize without a honggfuzz
-// toolchain.
+// This is the body of the honggfuzz target (see src/bin/fuzz_hfuzz.rs).
 
 use std::time::Duration;
 
