@@ -11,6 +11,7 @@ raw-window-handle = "0.6"
 fontdue = "0.9"
 gl = "0.14"
 bstr = "1"
+arboard = { version = "3", features = ["wayland-data-control"] }
 
 [dev-dependencies]
 png = "0.17"

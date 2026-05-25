@@ -84,6 +84,7 @@ struct Backend {
     context: PossiblyCurrentContext,
     renderer: Renderer,
     last_mouse_pos: [f32; 2],
+    clipboard: arboard::Clipboard,
 }
 
 // Held only across an app callback; carries the live `ActiveEventLoop`
@@ -125,6 +126,14 @@ impl IO for IoReal<'_> {
 
     fn reload_atlas(&mut self, atlas: &Atlas) {
         unsafe { self.backend.renderer.upload_atlas(atlas) };
+    }
+
+    fn get_clipboard_text(&mut self) -> Option<String> {
+        self.backend.clipboard.get_text().ok()
+    }
+
+    fn set_clipboard_text(&mut self, text: String) {
+        let _ = self.backend.clipboard.set_text(text);
     }
 
     fn exit(&mut self) {
@@ -322,12 +331,15 @@ impl Backend {
         window.request_redraw();
         let mut windows = HashMap::new();
         windows.insert(id, WindowState { window, surface });
+        let clipboard = arboard::Clipboard::new()
+            .expect("arboard::Clipboard::new() — is a wayland or x11 session running?");
         let backend = Backend {
             windows,
             gl_config,
             context,
             renderer,
             last_mouse_pos: [0.0, 0.0],
+            clipboard,
         };
         (backend, id)
     }

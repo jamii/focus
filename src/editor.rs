@@ -131,6 +131,18 @@ impl Editor {
                     Key::Named(NamedKey::Space) => {
                         self.toggle_mark();
                     }
+                    Key::Character("c") => {
+                        self.cursor_copy(app, io);
+                    }
+                    Key::Character("x") => {
+                        self.cursor_cut(app, io);
+                    }
+                    Key::Character("v") => {
+                        self.cursor_paste(app, io);
+                    }
+                    Key::Character("V") => {
+                        self.cursor_paste_many(app, io);
+                    }
                     _ => {}
                 }
             }
@@ -586,6 +598,115 @@ impl Editor {
                     kind: EditKind::Delete,
                     offset: cursor.head.offset,
                     text: document.text[cursor.head.offset..end].into(),
+                });
+            }
+        }
+        document.queue_edits(edits);
+        self.marked = false;
+        self.scroll_to_main_cursor = true;
+    }
+
+    fn cursor_copy(&self, app: &App, io: &mut dyn IO) {
+        let document = self.document_id.get(app);
+        let texts: Vec<&[u8]> = self
+            .cursors
+            .iter()
+            .filter_map(|cursor| cursor.marked_range(self.marked))
+            .map(|range| &document.text[range])
+            .collect();
+        if texts.is_empty() {
+            return;
+        }
+
+        // Join multiple selections with newlines.
+        let mut joined = texts[0].to_vec();
+        for t in &texts[1..] {
+            joined.push(b'\n');
+            joined.extend_from_slice(t);
+        }
+
+        // Convert to String.
+        if let Ok(s) = String::from_utf8(joined) {
+            io.set_clipboard_text(s);
+        }
+    }
+
+    fn cursor_cut(&mut self, app: &App, io: &mut dyn IO) {
+        self.cursor_copy(app, io);
+
+        let mut document = self.document_id.get_mut(app);
+        let mut edits = Vec::with_capacity(self.cursors.len());
+        for cursor in &self.cursors {
+            if let Some(range) = cursor.marked_range(self.marked) {
+                edits.push(Edit {
+                    kind: EditKind::Delete,
+                    offset: range.start,
+                    text: document.text[range.start..range.end].into(),
+                });
+            }
+        }
+        document.queue_edits(edits);
+        self.marked = false;
+        self.scroll_to_main_cursor = true;
+    }
+
+    fn cursor_paste(&mut self, app: &App, io: &mut dyn IO) {
+        let Some(clip_text) = io.get_clipboard_text() else {
+            return;
+        };
+        let mut document = self.document_id.get_mut(app);
+        let mut edits = Vec::with_capacity(self.cursors.len() * 2);
+        for cursor in &self.cursors {
+            if let Some(range) = cursor.marked_range(self.marked) {
+                // Replace selection with clipboard.
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: range.start,
+                    text: clip_text.as_bytes().into(),
+                });
+                edits.push(Edit {
+                    kind: EditKind::Delete,
+                    offset: range.start,
+                    text: document.text[range.start..range.end].into(),
+                });
+            } else {
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: cursor.head.offset,
+                    text: clip_text.as_bytes().into(),
+                });
+            }
+        }
+        document.queue_edits(edits);
+        self.marked = false;
+        self.scroll_to_main_cursor = true;
+    }
+
+    fn cursor_paste_many(&mut self, app: &App, io: &mut dyn IO) {
+        let Some(clip_text) = io.get_clipboard_text() else {
+            return;
+        };
+        let lines: Vec<&[u8]> = clip_text.split('\n').map(|s| s.as_bytes()).collect();
+        let mut document = self.document_id.get_mut(app);
+        let mut edits = Vec::new();
+        for (cursor, line) in self.cursors.iter_mut().zip(lines) {
+            if let Some(range) = cursor.marked_range(self.marked) {
+                // Replace selection with this line.
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: range.start,
+                    text: line.into(),
+                });
+                edits.push(Edit {
+                    kind: EditKind::Delete,
+                    offset: range.start,
+                    text: document.text[range.start..range.end].into(),
+                });
+            } else {
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: cursor.head.offset,
+                    text: line.into(),
                 });
             }
         }
@@ -1572,6 +1693,141 @@ mod tests {
         let mut redraw = false;
         editor.tick(&app, &mut io, &mut redraw);
         assert!(editor.top_pixel < top_before, "expected scroll up");
+    }
+
+    #[test]
+    fn copy_with_no_selection_does_nothing() {
+        let (app, editor_id) = editor_with_text("hello world", 80);
+        let editor = editor_id.get_mut(&app);
+        let mut io = crate::fuzz::MockIO::new();
+        editor.cursor_copy(&app, &mut io);
+        assert!(io.clipboard.is_none());
+    }
+
+    #[test]
+    fn copy_copies_marked_text_to_clipboard() {
+        let (app, editor_id) = editor_with_text("hello world", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Set head=5.tail=0 so the selection covers "hello" (bytes 0..5).
+        editor.cursors[0].head.offset = 5;
+        editor.cursors[0].tail.offset = 0;
+        editor.marked = true;
+        let mut io = crate::fuzz::MockIO::new();
+        editor.cursor_copy(&app, &mut io);
+        assert_eq!(io.clipboard, Some("hello".to_string()));
+    }
+
+    #[test]
+    fn cut_copies_marked_text_and_deletes_it() {
+        let (app, editor_id) = editor_with_text("hello world", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Selection "hello" (0..5).
+        editor.cursors[0].head.offset = 5;
+        editor.cursors[0].tail.offset = 0;
+        editor.marked = true;
+        let mut io = crate::fuzz::MockIO::new();
+        editor.cursor_cut(&app, &mut io);
+        assert_eq!(io.clipboard, Some("hello".to_string()));
+        let document = editor.document_id.get(&app);
+        assert!(document.queued_edits.is_some());
+    }
+
+    #[test]
+    fn paste_inserts_clipboard_text_at_cursor() {
+        let (app, editor_id) = editor_with_text("hello world", 80);
+        let mut editor = editor_id.get_mut(&app);
+        editor.cursors[0].head.offset = 5;
+        editor.cursors[0].tail.offset = 5;
+        editor.marked = false;
+        let mut io = crate::fuzz::MockIO::new();
+        io.clipboard = Some("XY".to_string());
+        editor.cursor_paste(&app, &mut io);
+        let document = editor.document_id.get(&app);
+        assert!(document.queued_edits.is_some());
+    }
+
+    #[test]
+    fn paste_replaces_selection_with_clipboard_text() {
+        let (app, editor_id) = editor_with_text("hello world", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Selection "hello" (0..5).
+        editor.cursors[0].head.offset = 5;
+        editor.cursors[0].tail.offset = 0;
+        editor.marked = true;
+        let mut io = crate::fuzz::MockIO::new();
+        io.clipboard = Some("hi".to_string());
+        editor.cursor_paste(&app, &mut io);
+        let document = editor.document_id.get(&app);
+        assert!(document.queued_edits.is_some());
+    }
+
+    #[test]
+    fn copy_copies_multiple_selections_joined() {
+        let (app, editor_id) = editor_with_text("hello world", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Two cursors with selections.
+        editor.cursors.push(Cursor {
+            head: CursorPoint {
+                offset: 11,
+                col_wanted: None,
+            },
+            tail: CursorPoint {
+                offset: 6,
+                col_wanted: None,
+            },
+        });
+        editor.cursors[0].head.offset = 5;
+        editor.cursors[0].tail.offset = 0;
+        editor.marked = true;
+        let mut io = crate::fuzz::MockIO::new();
+        editor.cursor_copy(&app, &mut io);
+        // "hello" and "world" joined with newline.
+        assert_eq!(io.clipboard, Some("hello\nworld".to_string()));
+    }
+
+    #[test]
+    fn paste_many_splits_lines_across_cursors() {
+        let (app, editor_id) = editor_with_text("hello world foo", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Two cursors at offsets 5 and 12.
+        set_heads(&mut editor, &[5, 12]);
+        editor.marked = false;
+        let mut io = crate::fuzz::MockIO::new();
+        io.clipboard = Some("line1\nline2".to_string());
+        editor.cursor_paste_many(&app, &mut io);
+        let document = editor.document_id.get(&app);
+        assert!(document.queued_edits.is_some());
+    }
+
+    #[test]
+    fn paste_many_extra_cursors_get_nothing() {
+        let (app, editor_id) = editor_with_text("a b c d e", 80);
+        let mut editor = editor_id.get_mut(&app);
+        // Three cursors but only 2 lines in clipboard.
+        set_heads(&mut editor, &[0, 2, 4]);
+        editor.marked = false;
+        let mut io = crate::fuzz::MockIO::new();
+        io.clipboard = Some("X\nY".to_string());
+        editor.cursor_paste_many(&app, &mut io);
+        let document = editor.document_id.get(&app);
+        assert!(document.queued_edits.is_some());
+    }
+
+    #[test]
+    fn paste_many_replaces_selections() {
+        let (app, editor_id) = editor_with_text("hello world foo", 80);
+        let mut editor = editor_id.get_mut(&app);
+        set_heads(&mut editor, &[5, 11]);
+        // First cursor selects "hello" (0..5), second selects "foo" (11..14).
+        // We need the range to cover the selection.
+        editor.cursors[0].tail.offset = 0;
+        editor.cursors[1].tail.offset = 14;
+        editor.marked = true;
+        let mut io = crate::fuzz::MockIO::new();
+        io.clipboard = Some("hi\nbye".to_string());
+        editor.cursor_paste_many(&app, &mut io);
+        let document = editor.document_id.get(&app);
+        assert!(document.queued_edits.is_some());
     }
 
     #[test]

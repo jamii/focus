@@ -27,6 +27,7 @@ pub struct MockIO {
     pub exited: bool,
     pub screen_size: [f32; 2],
     pub mouse_pos: [f32; 2],
+    pub clipboard: Option<String>,
 }
 
 impl MockIO {
@@ -41,6 +42,7 @@ impl MockIO {
             exited: false,
             screen_size: [0.0, 0.0],
             mouse_pos: [0.0, 0.0],
+            clipboard: None,
         }
     }
 
@@ -70,6 +72,14 @@ impl IO for MockIO {
 
     fn mouse_position(&self) -> [f32; 2] {
         self.mouse_pos
+    }
+
+    fn get_clipboard_text(&mut self) -> Option<String> {
+        self.clipboard.clone()
+    }
+
+    fn set_clipboard_text(&mut self, text: String) {
+        self.clipboard = Some(text);
     }
 
     fn request_redraw(&mut self, _window_id: WindowId) {}

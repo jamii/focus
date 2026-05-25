@@ -93,6 +93,8 @@ pub trait IO {
     fn request_redraw(&mut self, window_id: WindowId);
     fn reload_atlas(&mut self, atlas: &Atlas);
     fn mouse_position(&self) -> [f32; 2];
+    fn get_clipboard_text(&mut self) -> Option<String>;
+    fn set_clipboard_text(&mut self, text: String);
     fn exit(&mut self);
 }
 
