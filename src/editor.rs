@@ -243,7 +243,7 @@ impl Editor {
     }
 
     pub fn tick(&mut self, app: &App, io: &mut dyn IO, redraw: &mut bool) {
-        self.document_id.get_mut(app).refresh_from_disk(io);
+        self.document_id.get_mut(app).tick(app, io, redraw);
 
         // During drag, poll mouse position and update cursor head.
         if let Some(drag_info) = self.dragging {

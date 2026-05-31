@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use bstr::{BStr, BString, ByteSlice};
 
-use crate::app::IO;
+use crate::app::{App, IO};
 
 pub struct Document {
     pub text: BString,
@@ -15,12 +15,14 @@ pub struct Document {
 
 pub enum Source {
     Scratch,
-    File {
-        absolute_path: PathBuf,
-        last_load_mtime: SystemTime,
-        modified_since_last_save: bool,
-        deleted_since_last_save: bool,
-    },
+    File(SourceFile),
+}
+
+pub struct SourceFile {
+    absolute_path: PathBuf,
+    last_load_mtime: SystemTime,
+    modified_since_last_save: bool,
+    deleted_since_last_save: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,12 +81,29 @@ impl Document {
             newlines: vec![],
             queued_edits: None,
             last_center_offset: 0,
-            source: Source::File {
+            source: Source::File(SourceFile {
                 absolute_path,
                 last_load_mtime: SystemTime::UNIX_EPOCH,
                 modified_since_last_save: false,
                 deleted_since_last_save: false,
-            },
+            }),
+        }
+    }
+
+    pub fn tick(&mut self, _app: &App, io: &mut dyn IO, redraw: &mut bool) {
+        if let Source::File(source) = &mut self.source {
+            if let Some(text_new) = source.refresh_from_disk(io) {
+                let edits = diff_text(self.text.as_bstr(), text_new.as_bstr());
+                self.queue_edits(edits);
+                if let Source::File(SourceFile {
+                    modified_since_last_save,
+                    ..
+                }) = &mut self.source
+                {
+                    *modified_since_last_save = false;
+                }
+                *redraw = true;
+            }
         }
     }
 
@@ -95,10 +114,10 @@ impl Document {
         );
         Edit::assert_invariants(&edits, self.text.as_bstr());
         self.queued_edits = Some(edits);
-        if let Source::File {
+        if let Source::File(SourceFile {
             modified_since_last_save,
             ..
-        } = &mut self.source
+        }) = &mut self.source
         {
             *modified_since_last_save = true;
         }
@@ -109,22 +128,22 @@ impl Document {
     /// No-op for Scratch sources or when not modified since last save.
     pub fn save(&mut self, io: &mut dyn IO, kind: SaveKind) {
         let absolute_path = match &self.source {
-            Source::File {
+            Source::File(SourceFile {
                 absolute_path,
                 modified_since_last_save,
                 ..
-            } if *modified_since_last_save => absolute_path.clone(),
+            }) if *modified_since_last_save => absolute_path.clone(),
             _ => return,
         };
         let create = kind == SaveKind::Explicit;
         match io.file_write(&absolute_path, &self.text, create) {
             Ok(mtime) => {
-                if let Source::File {
+                if let Source::File(SourceFile {
                     last_load_mtime,
                     modified_since_last_save,
                     deleted_since_last_save,
                     ..
-                } = &mut self.source
+                }) = &mut self.source
                 {
                     *last_load_mtime = mtime;
                     *modified_since_last_save = false;
@@ -132,10 +151,10 @@ impl Document {
                 }
             }
             Err(err) if kind == SaveKind::Auto && err.kind() == std::io::ErrorKind::NotFound => {
-                if let Source::File {
+                if let Source::File(SourceFile {
                     deleted_since_last_save,
                     ..
-                } = &mut self.source
+                }) = &mut self.source
                 {
                     *deleted_since_last_save = true;
                 }
@@ -143,51 +162,6 @@ impl Document {
             Err(err) => {
                 eprintln!("error saving {}: {}", absolute_path.display(), err);
             }
-        }
-    }
-
-    /// If the file's mtime has advanced past `last_load_mtime` and the doc is
-    /// not modified, reload its contents and queue a diff as edits. Reloads
-    /// clear their temporary modified flag after going through `queue_edits`.
-    pub fn refresh_from_disk(&mut self, io: &mut dyn IO) {
-        let (absolute_path, last_load_mtime) = match &self.source {
-            Source::File {
-                absolute_path,
-                last_load_mtime,
-                modified_since_last_save,
-                ..
-            } if !*modified_since_last_save => (absolute_path.clone(), *last_load_mtime),
-            _ => return,
-        };
-        let Ok(mtime) = io.file_mtime(&absolute_path) else {
-            return;
-        };
-        if mtime <= last_load_mtime {
-            return;
-        }
-        let contents = match io.file_read(&absolute_path) {
-            Ok(c) => c,
-            Err(err) => {
-                eprintln!("error reading {}: {}", absolute_path.display(), err);
-                return;
-            }
-        };
-        let edits = diff_text(&self.text, &contents);
-        if !edits.is_empty() {
-            self.queue_edits(edits);
-            if let Source::File {
-                modified_since_last_save,
-                ..
-            } = &mut self.source
-            {
-                *modified_since_last_save = false;
-            }
-        }
-        if let Source::File {
-            last_load_mtime, ..
-        } = &mut self.source
-        {
-            *last_load_mtime = mtime;
         }
     }
 
@@ -284,6 +258,31 @@ impl Document {
             }
         }
         unreachable!()
+    }
+}
+
+impl SourceFile {
+    /// If the file's mtime has advanced past `last_load_mtime` and the doc is
+    /// not modified, reload its contents.
+    pub fn refresh_from_disk(&mut self, io: &mut dyn IO) -> Option<BString> {
+        if self.modified_since_last_save {
+            return None;
+        }
+        let Ok(mtime) = io.file_mtime(&self.absolute_path) else {
+            return None;
+        };
+        if mtime <= self.last_load_mtime {
+            return None;
+        }
+        let contents = match io.file_read(&self.absolute_path) {
+            Ok(c) => c,
+            Err(err) => {
+                eprintln!("error reading {}: {}", self.absolute_path.display(), err);
+                return None;
+            }
+        };
+        self.last_load_mtime = mtime;
+        Some(contents.into())
     }
 }
 
@@ -437,8 +436,8 @@ impl OffsetDiff {
 
 // Char-based diff via the `similar` crate. Produces edits that transform
 // `old` into `new`.
-pub fn diff_text(old: &[u8], new: &[u8]) -> Vec<Edit> {
-    let diff = similar::TextDiff::from_chars(old, new);
+pub fn diff_text(old: &BStr, new: &BStr) -> Vec<Edit> {
+    let diff = similar::TextDiff::from_chars(old.as_bytes(), new.as_bytes());
     let mut edits = Vec::new();
     let mut byte_offset: usize = 0;
     let mut hunk_offset: Option<usize> = None;
@@ -748,7 +747,7 @@ mod tests {
     }
 
     fn check_diff(old: &str, new: &str) {
-        let edits = diff_text(old.as_bytes(), new.as_bytes());
+        let edits = diff_text(old.into(), new.into());
         let mut d = doc(old);
         d.apply_edits(&edits);
         assert_eq!(d.text, new, "edits did not transform {old:?} into {new:?}");
@@ -756,7 +755,7 @@ mod tests {
 
     #[test]
     fn diff_identical() {
-        assert!(diff_text(b"abc", b"abc").is_empty());
+        assert!(diff_text(b"abc".into(), b"abc".into()).is_empty());
     }
 
     #[test]
