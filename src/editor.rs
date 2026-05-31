@@ -527,7 +527,11 @@ impl Editor {
         // grid_from_screen returns columns where 0 = gutter, 1 = first text char.
         // Convert to wrap-relative column by subtracting the gutter (1 grid column).
         let screen_col = grid[0].max(0) as usize;
-        let col = screen_col.saturating_sub(1);
+        if screen_col == 0 {
+            return self.wraps[line][0];
+        }
+
+        let col = screen_col - 1;
 
         // Pixel position within this wrap-character cell.
         // The cell's left edge in screen space is at (screen_col) * cell_w.
@@ -1678,6 +1682,17 @@ mod tests {
             editor.offset_from_screen(&app, [1.0 * cell_w + cell_w / 4.0, 0.0]) == 0,
             "left half of first char should be offset 0"
         );
+    }
+
+    #[test]
+    fn offset_from_screen_right_half_of_left_gutter_returns_line_start() {
+        let (app, editor_id) = editor_with_text(test_app(), "hello\nworld", 80);
+        let editor = editor_id.get_mut(&app);
+        let cell_w = app.atlas.cell_size[0] as f32;
+        let cell_h = app.atlas.cell_size[1] as f32;
+
+        assert_eq!(editor.offset_from_screen(&app, [cell_w * 0.75, 0.0]), 0);
+        assert_eq!(editor.offset_from_screen(&app, [cell_w * 0.75, cell_h]), 6);
     }
 
     #[test]
