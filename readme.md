@@ -47,7 +47,6 @@
 Editor:
 * Move coalesce into cursors. Preserve edit ordering. See if multi-cursor replace can leave cursors nicely.
 * Undo/redo
-* Loading/saving
 * Open on web
 
 Language:
@@ -59,32 +58,3 @@ Language:
 * Goto definition
 * Completion ui
 * Completion provider
-
-## notes
-
-Loading/saving on master (lib/focus/buffer.zig, plus call sites in lib/focus.zig, lib/focus/window.zig, lib/focus/editor.zig):
-* `BufferSource` is a tagged union: `.None` (scratch) or `.File { absolute_filename, mtime }`. Buffer also carries `modified_since_last_save` and `deleted_since_last_save` flags
-* buffers are cached app-wide by absolute filename: `App.getBufferFromAbsoluteFilename` returns the existing buffer or creates one with `Buffer.initFromAbsoluteFilename`, then calls `refresh()` once to pick up any external changes
-* `initFromAbsoluteFilename` picks the `Language` from the filename, sets `source.File` with `mtime = 0`, then calls `load(.Init)`, then resets `undos` and `modified_since_last_save = false` (the initial load is not undoable)
-* `tryLoad` reads via `std.fs.cwd().openFile`, into a `frame_allocator` slice sized by `stat().size`. If `options.limit_load_bytes` is set, the read is capped at `limited_load_bytes` (200*500) — used by previews
-* `load(kind)`:
-  * passes raw bytes through `language.afterLoad` (normalization hook, e.g. line endings)
-  * `.Init` → `rawReplace` (no undo entry); `.Refresh` → `replace` (creates an undo entry, but only if bytes differ — `replace` early-exits when equal)
-  * updates `source.File.mtime` to the stat'd value
-  * on error, replaces the buffer with the formatted error string instead of the file contents (so the buffer shows the error inline)
-* `refresh()`: stats the file; if `mtime` differs from the stored one, calls `load(.Refresh)`. If the file is missing (`FileNotFound`), sets both `modified_since_last_save` and `deleted_since_last_save` and keeps the in-memory contents
-* `App.frame` calls `refresh()` every frame on the top editor of each window (only visible buffers are polled) before running window frames
-* `save(source)` — `source` is `User` or `Auto`:
-  * `.User` → `createFile(truncate=true)` (creates the file if missing — re-creates after external delete)
-  * `.Auto` → `openFile(write_only)` + `setEndPos(0)` + `seekTo(0)`; on `FileNotFound` it silently bails out and just sets `modified_since_last_save = true` (autosave will not recreate a file the user deleted)
-  * bytes go through `language.beforeSave` (formatter hook) before being written; mtime is re-stat'd post-write; `modified_since_last_save` and `deleted_since_last_save` are cleared; then `app.handleAfterSave()` fires
-* `Editor.save(source)` wraps `Buffer.save`: it no-ops when `!modified_since_last_save`, and on `.User` it calls `tryFormat()` (runs `language.format` and `replace`s if it returns non-null) before saving
-* Ctrl-S → `editor.save(.User)`. Autosave (`editor.save(.Auto)`) fires on:
-  * window `focus_lost`
-  * `Window.pushView` and `Window.popView` whenever the current top view is an Editor (so leaving an editor for the file opener, project searcher, maker, etc. saves first)
-  * `Window.deinitPoppedViews` (every popped Editor saves on destruction)
-  * `close_after_frame` (window close path)
-  * each of these also stamps `buffer.last_lost_focus_ms = app.frame_time_ms`
-* `App.handleAfterSave` fans out to `Window.handleAfterSave` on every window; only `Maker` does anything — if it's in the `Running` state it clears its result buffer and respawns its build command (so saving triggers a rebuild)
-* preview buffers (file_opener, buffer_opener, project_file_opener) construct buffers with `limit_load_bytes = true`, `enable_completions = false`, `enable_undo = false`, and are torn down and rebuilt whenever the selected entry changes; preview-only buffers are created directly with `initFromAbsoluteFilename` and `deinit()`'d locally (not added to the App buffer cache)
-* status bar paints `style.emphasisRed` when `deleted_since_last_save` is set — the only visible indication of save state
