@@ -1,6 +1,7 @@
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use fontdue::{Font, FontSettings};
 use winit::dpi::LogicalSize;
@@ -82,6 +83,7 @@ pub enum InputEvent {
         state: ElementState,
         position: [f32; 2],
     },
+    FocusChanged { focused: bool },
 }
 
 // External effects. Mocked for testing/fuzzing.
@@ -96,6 +98,18 @@ pub trait IO {
     fn get_clipboard_text(&mut self) -> Option<String>;
     fn set_clipboard_text(&mut self, text: String);
     fn exit(&mut self);
+
+    fn file_mtime(&mut self, path: &Path) -> std::io::Result<SystemTime>;
+    fn file_read(&mut self, path: &Path) -> std::io::Result<Vec<u8>>;
+    /// Write `contents` to `path`, truncating any existing file. If `create` is
+    /// false and the file does not exist, returns Err(NotFound). Returns the
+    /// post-write mtime on success.
+    fn file_write(
+        &mut self,
+        path: &Path,
+        contents: &[u8],
+        create: bool,
+    ) -> std::io::Result<SystemTime>;
 }
 
 const FONT: &[u8] = include_bytes!("../deps/FiraCode-Regular.ttf");
@@ -122,7 +136,11 @@ impl App {
         }
     }
 
-    pub fn new(initial_window_id: WindowId, io: &mut dyn IO) -> App {
+    pub fn new(
+        initial_window_id: WindowId,
+        io: &mut dyn IO,
+        initial_path: Option<PathBuf>,
+    ) -> App {
         let font = Font::from_bytes(FONT, FontSettings::default()).unwrap();
         let atlas = Atlas::build(&font, INITIAL_PX);
         io.reload_atlas(&atlas);
@@ -137,7 +155,11 @@ impl App {
             next_document_id: DocumentId(0),
             documents: HashMap::new(),
         };
-        let editor_id = app.insert_editor_empty();
+        let document_id = match initial_path {
+            Some(path) => app.insert_document(Document::from_file(path)),
+            None => app.insert_document(Document::scratch()),
+        };
+        let editor_id = app.insert_editor(Editor::new(document_id, &app));
         app.windows
             .insert(initial_window_id, RefCell::new(Window::new(editor_id)));
         app
@@ -185,6 +207,24 @@ impl App {
             }
         }
 
+        self.flush_queued_edits(io);
+
+        io.request_redraw(window_id);
+    }
+
+    pub fn tick(&mut self, io: &mut dyn IO) {
+        for (window_id, window) in &self.windows {
+            let mut redraw = false;
+            window.borrow_mut().tick(self, io, &mut redraw);
+            if redraw {
+                io.request_redraw(*window_id);
+            }
+        }
+
+        self.flush_queued_edits(io);
+    }
+
+    fn flush_queued_edits(&mut self, io: &mut dyn IO) {
         let mut document_diffs = HashMap::new();
         for (document_id, document) in &self.documents {
             let mut document = document.borrow_mut();
@@ -206,18 +246,6 @@ impl App {
         for (window_id, window) in &self.windows {
             let window = window.borrow();
             if editor_diffs.contains_key(&window.editor_id) {
-                io.request_redraw(*window_id);
-            }
-        }
-
-        io.request_redraw(window_id);
-    }
-
-    pub fn tick(&mut self, io: &mut dyn IO) {
-        for (window_id, window) in &self.windows {
-            let mut redraw = false;
-            window.borrow_mut().tick(self, io, &mut redraw);
-            if redraw {
                 io.request_redraw(*window_id);
             }
         }
@@ -259,7 +287,7 @@ impl App {
     }
 
     pub fn insert_document_empty(&mut self) -> DocumentId {
-        self.insert_document(Document::new())
+        self.insert_document(Document::scratch())
     }
 
     pub fn insert_document(&mut self, document: Document) -> DocumentId {

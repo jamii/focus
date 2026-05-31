@@ -11,7 +11,7 @@ use winit::{
 use crate::style::BACKGROUND_COLOR;
 use crate::{
     app::{App, DocumentId, IO, InputEvent},
-    document::{Edit, EditKind, OffsetDiff},
+    document::{Edit, EditKind, OffsetDiff, SaveKind},
     drawing::{Drawing, Rect},
     style::{HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR},
 };
@@ -153,6 +153,9 @@ impl Editor {
                     Key::Character("V") => {
                         self.cursor_paste_many(app, io);
                     }
+                    Key::Character("s") => {
+                        self.save(app, io, SaveKind::Explicit);
+                    }
                     _ => {}
                 }
             }
@@ -227,12 +230,21 @@ impl Editor {
             InputEvent::MouseWheel { y_offset } => {
                 self.top_pixel -= (SCROLL_AMOUNT * y_offset) as isize;
             }
+            InputEvent::FocusChanged { focused: false } => {
+                self.save(app, io, SaveKind::Auto);
+            }
             _ => {}
         }
         self.last_input = io.frame_start();
     }
 
+    fn save(&self, app: &App, io: &mut dyn IO, kind: SaveKind) {
+        self.document_id.get_mut(app).save(io, kind);
+    }
+
     pub fn tick(&mut self, app: &App, io: &mut dyn IO, redraw: &mut bool) {
+        self.document_id.get_mut(app).refresh_from_disk(io);
+
         // During drag, poll mouse position and update cursor head.
         if let Some(drag_info) = self.dragging {
             let mouse_pos = io.mouse_position();
@@ -961,8 +973,6 @@ impl Cursor {
     }
 }
 
-
-
 fn compute_wraps(text: &BStr, wrap_chars: usize, wraps: &mut Vec<[usize; 2]>) {
     assert!(wrap_chars > 0);
     let mut end = 0;
@@ -1200,7 +1210,7 @@ mod tests {
 
     #[test]
     fn cursor_replace_unmarked_inserts_at_head() {
-        let (app, editor_id) = editor_with_text("hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello", 80);
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
@@ -1216,7 +1226,7 @@ mod tests {
 
     #[test]
     fn cursor_replaces_selection_in_document() {
-        let (app, editor_id) = editor_with_text("hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello", 80);
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
@@ -1232,7 +1242,7 @@ mod tests {
 
     #[test]
     fn cursor_replace_with_empty_mark_just_inserts() {
-        let (app, editor_id) = editor_with_text("hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello", 80);
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
@@ -1248,7 +1258,7 @@ mod tests {
 
     #[test]
     fn cursor_replace_handles_head_before_tail() {
-        let (app, editor_id) = editor_with_text("hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello", 80);
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
@@ -1262,12 +1272,19 @@ mod tests {
         assert_eq!(doc.text, "hXo");
     }
 
-    fn editor_with_text(text: &str, wrap_chars: usize) -> (crate::app::App, crate::app::EditorId) {
+    fn test_app() -> crate::app::App {
         use crate::fuzz::MockIO;
         let mut io = MockIO::new();
         let initial = io.fresh_window_id();
         io.open_windows.push(initial);
-        let app = crate::app::App::new(initial, &mut io);
+        crate::app::App::new(initial, &mut io, None)
+    }
+
+    fn editor_with_text(
+        app: crate::app::App,
+        text: &str,
+        wrap_chars: usize,
+    ) -> (crate::app::App, crate::app::EditorId) {
         let document_id = *app.documents.keys().next().unwrap();
         let editor_id = *app.editors.keys().next().unwrap();
         if !text.is_empty() {
@@ -1337,7 +1354,7 @@ mod tests {
 
     #[test]
     fn ctrl_d_with_no_selection_does_nothing() {
-        let (app, editor_id) = editor_with_text("hello hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello hello", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[0]);
         // Not marked, so no selection range
@@ -1349,7 +1366,7 @@ mod tests {
 
     #[test]
     fn ctrl_d_finds_next_match_and_adds_cursor() {
-        let (app, editor_id) = editor_with_text("hello hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello hello", 80);
         let mut editor = editor_id.get_mut(&app);
         // Select first "hello" (0..5)
         set_mark(&mut editor, &[5], &[0]);
@@ -1365,7 +1382,7 @@ mod tests {
 
     #[test]
     fn ctrl_d_no_match_does_nothing() {
-        let (app, editor_id) = editor_with_text("hello world", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         let mut editor = editor_id.get_mut(&app);
         // Select "hello" - "world" is not a match
         set_mark(&mut editor, &[5], &[0]);
@@ -1375,7 +1392,7 @@ mod tests {
 
     #[test]
     fn ctrl_d_does_not_wrap_around() {
-        let (app, editor_id) = editor_with_text("abc abc abc", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc abc abc", 80);
         let mut editor = editor_id.get_mut(&app);
         // Select second "abc" (4..7) - should find third, not wrap to first
         set_mark(&mut editor, &[7], &[4]);
@@ -1387,7 +1404,7 @@ mod tests {
 
     #[test]
     fn ctrl_shift_d_removes_last_cursor() {
-        let (app, editor_id) = editor_with_text("hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[0, 2, 4]);
         assert_eq!(cursor_count(&editor), 3);
@@ -1398,7 +1415,7 @@ mod tests {
 
     #[test]
     fn ctrl_shift_d_with_one_cursor_does_nothing() {
-        let (app, editor_id) = editor_with_text("hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[0]);
         assert_eq!(cursor_count(&editor), 1);
@@ -1408,7 +1425,7 @@ mod tests {
 
     #[test]
     fn delete_left_with_overlapping_cursors_truncates() {
-        let (app, editor_id) = editor_with_text("abcde", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abcde", 80);
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
@@ -1427,7 +1444,7 @@ mod tests {
 
     #[test]
     fn delete_right_with_overlapping_cursors_truncates() {
-        let (app, editor_id) = editor_with_text("abcde", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abcde", 80);
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
@@ -1446,7 +1463,7 @@ mod tests {
 
     #[test]
     fn cursor_replace_with_overlapping_selections_truncates() {
-        let (app, editor_id) = editor_with_text("abcdefghij", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abcdefghij", 80);
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
@@ -1467,7 +1484,7 @@ mod tests {
 
     #[test]
     fn multiple_cursors_same_delete_left_position_ok() {
-        let (app, editor_id) = editor_with_text("abc", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc", 80);
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
@@ -1486,7 +1503,7 @@ mod tests {
 
     #[test]
     fn ctrl_d_on_last_match_does_nothing() {
-        let (app, editor_id) = editor_with_text("abc abc abc", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc abc abc", 80);
         let mut editor = editor_id.get_mut(&app);
         // Select third "abc" (8..11) - no more matches after it
         set_mark(&mut editor, &[11], &[8]);
@@ -1496,7 +1513,7 @@ mod tests {
 
     #[test]
     fn alt_l_moves_to_end_of_real_line() {
-        let (app, editor_id) = editor_with_text("abc\ndefg\nhij", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc\ndefg\nhij", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[1]);
         editor.cursor_goto_line_end(&app);
@@ -1505,7 +1522,7 @@ mod tests {
 
     #[test]
     fn alt_l_at_end_of_line_stays() {
-        let (app, editor_id) = editor_with_text("abc\ndef", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc\ndef", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[3]);
         editor.cursor_goto_line_end(&app);
@@ -1517,7 +1534,7 @@ mod tests {
         // Real line "abcdefg" soft-wraps into ["abc","def","g"] at wrap_chars=3.
         // From a cursor on the first soft-wrapped row, Alt+l must reach the
         // *real* line end (offset 7), not the soft-wrap end (offset 3).
-        let (app, editor_id) = editor_with_text("abcdefg", 3);
+        let (app, editor_id) = editor_with_text(test_app(), "abcdefg", 3);
         let mut editor = editor_id.get_mut(&app);
         assert!(editor.wraps.len() > 1, "test requires a soft wrap");
         set_heads(&mut editor, &[1]);
@@ -1527,7 +1544,7 @@ mod tests {
 
     #[test]
     fn alt_j_moves_to_start_of_real_line() {
-        let (app, editor_id) = editor_with_text("abc\ndefg\nhij", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc\ndefg\nhij", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[6]);
         editor.cursor_goto_line_start(&app);
@@ -1536,7 +1553,7 @@ mod tests {
 
     #[test]
     fn alt_j_at_start_of_line_stays() {
-        let (app, editor_id) = editor_with_text("abc\ndef", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc\ndef", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[4]);
         editor.cursor_goto_line_start(&app);
@@ -1548,7 +1565,7 @@ mod tests {
         // Same soft-wrap setup as above: from a cursor in the middle of
         // a soft-wrapped row, Alt+j must reach the real line start (0),
         // not the soft-wrap start.
-        let (app, editor_id) = editor_with_text("abcdefg", 3);
+        let (app, editor_id) = editor_with_text(test_app(), "abcdefg", 3);
         let mut editor = editor_id.get_mut(&app);
         assert!(editor.wraps.len() > 1, "test requires a soft wrap");
         set_heads(&mut editor, &[5]);
@@ -1558,7 +1575,7 @@ mod tests {
 
     #[test]
     fn alt_l_moves_every_cursor() {
-        let (app, editor_id) = editor_with_text("abc\ndefg\nhij", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc\ndefg\nhij", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[1, 5, 10]);
         editor.cursor_goto_line_end(&app);
@@ -1567,7 +1584,7 @@ mod tests {
 
     #[test]
     fn alt_j_moves_every_cursor() {
-        let (app, editor_id) = editor_with_text("abc\ndefg\nhij", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc\ndefg\nhij", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[2, 6, 11]);
         editor.cursor_goto_line_start(&app);
@@ -1576,7 +1593,7 @@ mod tests {
 
     #[test]
     fn alt_i_moves_all_cursors_to_doc_start_and_scrolls_to_top() {
-        let (app, editor_id) = editor_with_text("abc\ndef", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc\ndef", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[2, 5]);
         editor.top_pixel = 100;
@@ -1587,7 +1604,7 @@ mod tests {
 
     #[test]
     fn alt_k_moves_all_cursors_to_doc_end() {
-        let (app, editor_id) = editor_with_text("abc\ndef", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "abc\ndef", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[0, 2]);
         editor.cursor_goto_doc_end(&app);
@@ -1597,7 +1614,7 @@ mod tests {
     // Build a modifiers state with (or without) Ctrl.
     #[test]
     fn offset_from_screen_left_half_of_first_char_returns_zero() {
-        let (app, editor_id) = editor_with_text("hello\nworld", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello\nworld", 80);
         let editor = editor_id.get_mut(&app);
         let cell_w = app.atlas.cell_size[0] as f32;
         // Screen columns: 0=gutter, 1=h
@@ -1611,7 +1628,7 @@ mod tests {
 
     #[test]
     fn offset_from_screen_right_half_of_first_char_returns_end_of_first_char() {
-        let (app, editor_id) = editor_with_text("hello\nworld", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello\nworld", 80);
         let editor = editor_id.get_mut(&app);
         let cell_w = app.atlas.cell_size[0] as f32;
         // Screen columns: 0=gutter, 1=h, 2=e
@@ -1622,7 +1639,7 @@ mod tests {
 
     #[test]
     fn offset_from_screen_right_half_of_second_char_returns_two() {
-        let (app, editor_id) = editor_with_text("hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello", 80);
         let editor = editor_id.get_mut(&app);
         let cell_w = app.atlas.cell_size[0] as f32;
         // Screen columns: 0=gutter, 1=h, 2=e
@@ -1633,7 +1650,7 @@ mod tests {
 
     #[test]
     fn offset_from_screen_maps_second_line_correctly() {
-        let (app, editor_id) = editor_with_text("hello\nworld", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello\nworld", 80);
         let editor = editor_id.get_mut(&app);
         let cell_h = app.atlas.cell_size[1] as f32;
         assert_eq!(editor.offset_from_screen(&app, [0.0, cell_h]), 6);
@@ -1641,21 +1658,21 @@ mod tests {
 
     #[test]
     fn offset_from_screen_above_doc_returns_zero() {
-        let (app, editor_id) = editor_with_text("hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello", 80);
         let editor = editor_id.get_mut(&app);
         assert_eq!(editor.offset_from_screen(&app, [0.0, -100.0]), 0);
     }
 
     #[test]
     fn offset_from_screen_below_doc_returns_end() {
-        let (app, editor_id) = editor_with_text("hello", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello", 80);
         let editor = editor_id.get_mut(&app);
         assert_eq!(editor.offset_from_screen(&app, [0.0, 10000.0]), 5);
     }
 
     #[test]
     fn click_clears_other_cursors_and_sets_single_cursor() {
-        let (mut app, editor_id) = editor_with_text("hello world", 80);
+        let (mut app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         app.modifiers = winit::keyboard::ModifiersState::empty();
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[0, 6]);
@@ -1678,7 +1695,7 @@ mod tests {
 
     #[test]
     fn ctrl_click_adds_new_cursor() {
-        let (mut app, editor_id) = editor_with_text("hello world", 80);
+        let (mut app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         {
             let mut m = winit::keyboard::ModifiersState::empty();
             m |= winit::keyboard::ModifiersState::CONTROL;
@@ -1704,7 +1721,7 @@ mod tests {
 
     #[test]
     fn drag_creates_selection() {
-        let (mut app, editor_id) = editor_with_text("hello world", 80);
+        let (mut app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         app.modifiers = winit::keyboard::ModifiersState::empty();
         let mut editor = editor_id.get_mut(&app);
         let cell_w = app.atlas.cell_size[0] as f32;
@@ -1735,7 +1752,7 @@ mod tests {
 
     #[test]
     fn ctrl_drag_adds_cursor_with_selection() {
-        let (mut app, editor_id) = editor_with_text("hello world", 80);
+        let (mut app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         {
             let mut m = winit::keyboard::ModifiersState::empty();
             m |= winit::keyboard::ModifiersState::CONTROL;
@@ -1771,7 +1788,7 @@ mod tests {
 
     #[test]
     fn drag_release_clears_drag_state() {
-        let (mut app, editor_id) = editor_with_text("hello", 80);
+        let (mut app, editor_id) = editor_with_text(test_app(), "hello", 80);
         app.modifiers = winit::keyboard::ModifiersState::empty();
         let mut editor = editor_id.get_mut(&app);
         let mut io = crate::fuzz::MockIO::new();
@@ -1799,7 +1816,7 @@ mod tests {
     fn drag_off_screen_bottom_scrolls_down() {
         // Long enough doc that scrolling down is possible.
         let text: String = (0..50).map(|i| format!("line{}\n", i)).collect();
-        let (mut app, editor_id) = editor_with_text(&text, 80);
+        let (mut app, editor_id) = editor_with_text(test_app(), &text, 80);
         app.modifiers = winit::keyboard::ModifiersState::empty();
         let mut editor = editor_id.get_mut(&app);
         editor.top_pixel = 0;
@@ -1823,7 +1840,7 @@ mod tests {
     fn drag_off_screen_top_scrolls_up() {
         // Long enough doc that we can scroll without hitting the bottom edge.
         let text: String = (0..50).map(|i| format!("line{}\n", i)).collect();
-        let (mut app, editor_id) = editor_with_text(&text, 80);
+        let (mut app, editor_id) = editor_with_text(test_app(), &text, 80);
         app.modifiers = winit::keyboard::ModifiersState::empty();
         let mut editor = editor_id.get_mut(&app);
         editor.top_pixel = 100;
@@ -1845,7 +1862,7 @@ mod tests {
 
     #[test]
     fn copy_with_no_selection_does_nothing() {
-        let (app, editor_id) = editor_with_text("hello world", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         let editor = editor_id.get_mut(&app);
         let mut io = crate::fuzz::MockIO::new();
         editor.cursor_copy(&app, &mut io);
@@ -1854,7 +1871,7 @@ mod tests {
 
     #[test]
     fn copy_copies_marked_text_to_clipboard() {
-        let (app, editor_id) = editor_with_text("hello world", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         let mut editor = editor_id.get_mut(&app);
         // Set head=5.tail=0 so the selection covers "hello" (bytes 0..5).
         editor.cursors[0].head.offset = 5;
@@ -1867,7 +1884,7 @@ mod tests {
 
     #[test]
     fn cut_copies_marked_text_and_deletes_it() {
-        let (app, editor_id) = editor_with_text("hello world", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         let mut editor = editor_id.get_mut(&app);
         // Selection "hello" (0..5).
         editor.cursors[0].head.offset = 5;
@@ -1882,7 +1899,7 @@ mod tests {
 
     #[test]
     fn paste_inserts_clipboard_text_at_cursor() {
-        let (app, editor_id) = editor_with_text("hello world", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         let mut editor = editor_id.get_mut(&app);
         editor.cursors[0].head.offset = 5;
         editor.cursors[0].tail.offset = 5;
@@ -1896,7 +1913,7 @@ mod tests {
 
     #[test]
     fn paste_replaces_selection_with_clipboard_text() {
-        let (app, editor_id) = editor_with_text("hello world", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         let mut editor = editor_id.get_mut(&app);
         // Selection "hello" (0..5).
         editor.cursors[0].head.offset = 5;
@@ -1911,7 +1928,7 @@ mod tests {
 
     #[test]
     fn copy_copies_multiple_selections_joined() {
-        let (app, editor_id) = editor_with_text("hello world", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello world", 80);
         let mut editor = editor_id.get_mut(&app);
         // Two cursors with selections.
         editor.cursors.push(Cursor {
@@ -1935,7 +1952,7 @@ mod tests {
 
     #[test]
     fn paste_many_splits_lines_across_cursors() {
-        let (app, editor_id) = editor_with_text("hello world foo", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello world foo", 80);
         let mut editor = editor_id.get_mut(&app);
         // Two cursors at offsets 5 and 12.
         set_heads(&mut editor, &[5, 12]);
@@ -1949,7 +1966,7 @@ mod tests {
 
     #[test]
     fn paste_many_extra_cursors_get_nothing() {
-        let (app, editor_id) = editor_with_text("a b c d e", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "a b c d e", 80);
         let mut editor = editor_id.get_mut(&app);
         // Three cursors but only 2 lines in clipboard.
         set_heads(&mut editor, &[0, 2, 4]);
@@ -1963,7 +1980,7 @@ mod tests {
 
     #[test]
     fn paste_many_replaces_selections() {
-        let (app, editor_id) = editor_with_text("hello world foo", 80);
+        let (app, editor_id) = editor_with_text(test_app(), "hello world foo", 80);
         let mut editor = editor_id.get_mut(&app);
         set_heads(&mut editor, &[5, 11]);
         // First cursor selects "hello" (0..5), second selects "foo" (11..14).
@@ -1982,7 +1999,7 @@ mod tests {
     fn alt_k_scrolls_viewport_to_end() {
         // Long enough doc that the end is below the initial viewport.
         let text: String = (0..50).map(|i| format!("line{}\n", i)).collect();
-        let (app, editor_id) = editor_with_text(&text, 80);
+        let (app, editor_id) = editor_with_text(test_app(), &text, 80);
         let mut editor = editor_id.get_mut(&app);
         editor.top_pixel = 0;
         editor.cursor_goto_doc_end(&app);

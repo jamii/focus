@@ -19,9 +19,11 @@
 
 use std::collections::HashMap;
 use std::ffi::CString;
+use std::io::Write;
 use std::num::NonZeroU32;
+use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use glutin::config::{Config, ConfigTemplateBuilder};
 use glutin::context::{ContextApi, ContextAttributesBuilder, PossiblyCurrentContext, Version};
@@ -52,17 +54,17 @@ const APP_ID: &str = if cfg!(debug_assertions) {
 
 const TARGET_FRAME: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
-pub fn run() {
+pub fn run(initial_path: Option<PathBuf>) {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut chrome = Chrome::Init;
+    let mut chrome = Chrome::Init { initial_path };
     event_loop.run_app(&mut chrome).unwrap();
 }
 
 // Two-phase: stay in `Init` until the first `resumed` gives us an
 // `ActiveEventLoop`, then transition to `Running` and stay there.
 enum Chrome {
-    Init,
+    Init { initial_path: Option<PathBuf> },
     Running(Running),
 }
 
@@ -139,13 +141,35 @@ impl IO for IoReal<'_> {
     fn exit(&mut self) {
         self.event_loop.exit();
     }
+
+    fn file_mtime(&mut self, path: &Path) -> std::io::Result<SystemTime> {
+        std::fs::metadata(path)?.modified()
+    }
+
+    fn file_read(&mut self, path: &Path) -> std::io::Result<Vec<u8>> {
+        std::fs::read(path)
+    }
+
+    fn file_write(
+        &mut self,
+        path: &Path,
+        contents: &[u8],
+        create: bool,
+    ) -> std::io::Result<SystemTime> {
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).truncate(true).create(create);
+        let mut f = opts.open(path)?;
+        f.write_all(contents)?;
+        f.metadata()?.modified()
+    }
 }
 
 impl ApplicationHandler for Chrome {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if matches!(self, Chrome::Running(_)) {
-            return;
-        }
+        let initial_path = match self {
+            Chrome::Init { initial_path } => initial_path.take(),
+            Chrome::Running(_) => return,
+        };
         let (mut backend, initial_window_id) =
             Backend::bootstrap(event_loop, INITIAL_TITLE, INITIAL_SIZE);
         let app = {
@@ -154,7 +178,7 @@ impl ApplicationHandler for Chrome {
                 backend: &mut backend,
                 event_loop,
             };
-            App::new(initial_window_id, &mut io)
+            App::new(initial_window_id, &mut io, initial_path)
         };
         let now = Instant::now();
         *self = Chrome::Running(Running {
@@ -208,6 +232,7 @@ impl Running {
         }
         let translated = match event {
             WindowEvent::CloseRequested => Some(InputEvent::CloseRequested),
+            WindowEvent::Focused(focused) => Some(InputEvent::FocusChanged { focused }),
             WindowEvent::ModifiersChanged(m) => Some(InputEvent::ModifiersChanged(m.state())),
             WindowEvent::KeyboardInput { event, .. } => Some(InputEvent::Key {
                 state: event.state,

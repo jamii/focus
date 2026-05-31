@@ -7,7 +7,9 @@
 //
 // This is the body of the honggfuzz target (see src/bin/fuzz_hfuzz.rs).
 
-use std::time::Duration;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use winit::dpi::LogicalSize;
 use winit::event::ElementState;
@@ -28,6 +30,7 @@ pub struct MockIO {
     pub screen_size: [f32; 2],
     pub mouse_pos: [f32; 2],
     pub clipboard: Option<String>,
+    pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
 }
 
 impl MockIO {
@@ -43,6 +46,7 @@ impl MockIO {
             screen_size: [0.0, 0.0],
             mouse_pos: [0.0, 0.0],
             clipboard: None,
+            files: HashMap::new(),
         }
     }
 
@@ -89,6 +93,35 @@ impl IO for MockIO {
     fn exit(&mut self) {
         self.exited = true;
     }
+
+    fn file_mtime(&mut self, path: &Path) -> std::io::Result<SystemTime> {
+        self.files
+            .get(path)
+            .map(|(_, m)| *m)
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))
+    }
+
+    fn file_read(&mut self, path: &Path) -> std::io::Result<Vec<u8>> {
+        self.files
+            .get(path)
+            .map(|(c, _)| c.clone())
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))
+    }
+
+    fn file_write(
+        &mut self,
+        path: &Path,
+        contents: &[u8],
+        create: bool,
+    ) -> std::io::Result<SystemTime> {
+        if !create && !self.files.contains_key(path) {
+            return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+        }
+        let mtime = SystemTime::UNIX_EPOCH + self.frame_start + Duration::from_nanos(1);
+        self.files
+            .insert(path.to_path_buf(), (contents.to_vec(), mtime));
+        Ok(mtime)
+    }
 }
 
 // Action picked by the fuzzer for each step.
@@ -99,6 +132,7 @@ const A_CLOSE: u32 = 2;
 const A_TICK: u32 = 20;
 const A_DRAW: u32 = 40;
 const A_SCROLL: u32 = 20;
+const A_FILE_MODIFY: u32 = 10;
 
 // Each step: tick once (advancing time), then perform one randomly
 // chosen action. Returns Some(()) if more entropy is available; None
@@ -118,6 +152,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_TICK,
         A_DRAW,
         A_SCROLL,
+        A_FILE_MODIFY,
     ])?;
     match action {
         0 => {
@@ -216,6 +251,23 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             let y_offset = (raw - 100.0) / 10.0;
             app.input(io, window_id, InputEvent::MouseWheel { y_offset });
         }
+        7 => {
+            let paths: Vec<PathBuf> = io.files.keys().cloned().collect();
+            if !paths.is_empty() {
+                let path = paths[frng.usize_bounded(0, paths.len() - 1)?].clone();
+                let len = frng.usize_bounded(0, 64)?;
+                let mut contents = Vec::with_capacity(len);
+                for _ in 0..len {
+                    contents.push(frng.u8_bounded(0x20, 0x7e)?);
+                }
+                let mtime = io
+                    .files
+                    .get(&path)
+                    .map(|(_, mtime)| *mtime + Duration::from_nanos(1))
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+                io.files.insert(path, (contents, mtime));
+            }
+        }
         _ => unreachable!(),
     }
     Some(())
@@ -226,7 +278,12 @@ pub fn fuzz_one(bytes: &[u8]) {
     let mut io = MockIO::new();
     let initial = io.fresh_window_id();
     io.open_windows.push(initial);
-    let mut app = App::new(initial, &mut io);
+    let initial_path = PathBuf::from("fuzz.txt");
+    io.files.insert(
+        initial_path.clone(),
+        (Vec::new(), SystemTime::UNIX_EPOCH),
+    );
+    let mut app = App::new(initial, &mut io, Some(initial_path));
 
     loop {
         if step(&mut frng, &mut app, &mut io).is_none() {

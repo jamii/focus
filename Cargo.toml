@@ -12,6 +12,7 @@ fontdue = "0.9"
 gl = "0.14"
 bstr = "1"
 arboard = { version = "3", features = ["wayland-data-control"] }
+similar = { version = "3", features = ["bytes"] }
 
 [dev-dependencies]
 png = "0.17"

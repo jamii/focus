@@ -1,22 +1,47 @@
+use std::path::PathBuf;
+use std::time::SystemTime;
+
 use bstr::{BStr, BString, ByteSlice};
+
+use crate::app::IO;
 
 pub struct Document {
     pub text: BString,
     pub newlines: Vec<usize>,
     pub queued_edits: Option<Vec<Edit>>,
     pub last_center_offset: usize,
+    pub source: Source,
 }
 
+pub enum Source {
+    Scratch,
+    File {
+        absolute_path: PathBuf,
+        last_load_mtime: SystemTime,
+        modified_since_last_save: bool,
+        deleted_since_last_save: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaveKind {
+    Explicit,
+    Auto,
+}
+
+#[derive(Debug)]
 pub struct Edit {
     pub kind: EditKind,
     pub offset: usize,
     pub text: BString,
 }
 
+#[derive(Debug)]
 pub enum EditKind {
     Insert,
     Delete,
 }
+
 pub struct OffsetDiff {
     offsets_old: Vec<usize>, // boundaries in old-document space
     offsets_new: Vec<usize>, // new offset at each segment start (len = offsets_old.len() + 1)
@@ -38,12 +63,28 @@ impl Document {
         }
     }
 
-    pub fn new() -> Document {
+    pub fn scratch() -> Document {
         Document {
             text: "".into(),
             newlines: vec![],
             queued_edits: None,
             last_center_offset: 0,
+            source: Source::Scratch,
+        }
+    }
+
+    pub fn from_file(absolute_path: PathBuf) -> Document {
+        Document {
+            text: "".into(),
+            newlines: vec![],
+            queued_edits: None,
+            last_center_offset: 0,
+            source: Source::File {
+                absolute_path,
+                last_load_mtime: SystemTime::UNIX_EPOCH,
+                modified_since_last_save: false,
+                deleted_since_last_save: false,
+            },
         }
     }
 
@@ -54,6 +95,100 @@ impl Document {
         );
         Edit::assert_invariants(&edits, self.text.as_bstr());
         self.queued_edits = Some(edits);
+        if let Source::File {
+            modified_since_last_save,
+            ..
+        } = &mut self.source
+        {
+            *modified_since_last_save = true;
+        }
+    }
+
+    /// Save to disk. Explicit saves create the file if missing; autosaves
+    /// treat NotFound as an external deletion.
+    /// No-op for Scratch sources or when not modified since last save.
+    pub fn save(&mut self, io: &mut dyn IO, kind: SaveKind) {
+        let absolute_path = match &self.source {
+            Source::File {
+                absolute_path,
+                modified_since_last_save,
+                ..
+            } if *modified_since_last_save => absolute_path.clone(),
+            _ => return,
+        };
+        let create = kind == SaveKind::Explicit;
+        match io.file_write(&absolute_path, &self.text, create) {
+            Ok(mtime) => {
+                if let Source::File {
+                    last_load_mtime,
+                    modified_since_last_save,
+                    deleted_since_last_save,
+                    ..
+                } = &mut self.source
+                {
+                    *last_load_mtime = mtime;
+                    *modified_since_last_save = false;
+                    *deleted_since_last_save = false;
+                }
+            }
+            Err(err) if kind == SaveKind::Auto && err.kind() == std::io::ErrorKind::NotFound => {
+                if let Source::File {
+                    deleted_since_last_save,
+                    ..
+                } = &mut self.source
+                {
+                    *deleted_since_last_save = true;
+                }
+            }
+            Err(err) => {
+                eprintln!("error saving {}: {}", absolute_path.display(), err);
+            }
+        }
+    }
+
+    /// If the file's mtime has advanced past `last_load_mtime` and the doc is
+    /// not modified, reload its contents and queue a diff as edits. Reloads
+    /// clear their temporary modified flag after going through `queue_edits`.
+    pub fn refresh_from_disk(&mut self, io: &mut dyn IO) {
+        let (absolute_path, last_load_mtime) = match &self.source {
+            Source::File {
+                absolute_path,
+                last_load_mtime,
+                modified_since_last_save,
+                ..
+            } if !*modified_since_last_save => (absolute_path.clone(), *last_load_mtime),
+            _ => return,
+        };
+        let Ok(mtime) = io.file_mtime(&absolute_path) else {
+            return;
+        };
+        if mtime <= last_load_mtime {
+            return;
+        }
+        let contents = match io.file_read(&absolute_path) {
+            Ok(c) => c,
+            Err(err) => {
+                eprintln!("error reading {}: {}", absolute_path.display(), err);
+                return;
+            }
+        };
+        let edits = diff_text(&self.text, &contents);
+        if !edits.is_empty() {
+            self.queue_edits(edits);
+            if let Source::File {
+                modified_since_last_save,
+                ..
+            } = &mut self.source
+            {
+                *modified_since_last_save = false;
+            }
+        }
+        if let Source::File {
+            last_load_mtime, ..
+        } = &mut self.source
+        {
+            *last_load_mtime = mtime;
+        }
     }
 
     pub fn apply_edits(&mut self, edits: &[Edit]) -> OffsetDiff {
@@ -300,12 +435,76 @@ impl OffsetDiff {
     }
 }
 
+// Char-based diff via the `similar` crate. Produces edits that transform
+// `old` into `new`.
+pub fn diff_text(old: &[u8], new: &[u8]) -> Vec<Edit> {
+    let diff = similar::TextDiff::from_chars(old, new);
+    let mut edits = Vec::new();
+    let mut byte_offset: usize = 0;
+    let mut hunk_offset: Option<usize> = None;
+    let mut hunk_ins: Vec<u8> = Vec::new();
+    let mut hunk_del: Vec<u8> = Vec::new();
+
+    for change in diff.iter_all_changes() {
+        let value: &[u8] = change.value();
+        match change.tag() {
+            similar::ChangeTag::Equal => {
+                diff_text_flush(&mut edits, &mut hunk_offset, &mut hunk_ins, &mut hunk_del);
+                byte_offset += value.len();
+            }
+            similar::ChangeTag::Delete => {
+                if hunk_offset.is_none() {
+                    hunk_offset = Some(byte_offset);
+                }
+                hunk_del.extend_from_slice(value);
+                byte_offset += value.len();
+            }
+            similar::ChangeTag::Insert => {
+                if hunk_offset.is_none() {
+                    hunk_offset = Some(byte_offset);
+                }
+                hunk_ins.extend_from_slice(value);
+            }
+        }
+    }
+    diff_text_flush(&mut edits, &mut hunk_offset, &mut hunk_ins, &mut hunk_del);
+    dbg!(edits)
+}
+
+fn diff_text_flush(
+    edits: &mut Vec<Edit>,
+    hunk_offset: &mut Option<usize>,
+    hunk_ins: &mut Vec<u8>,
+    hunk_del: &mut Vec<u8>,
+) {
+    let Some(offset) = hunk_offset.take() else {
+        return;
+    };
+    // `similar` can emit adjacent per-char inserts/deletes for a single
+    // replacement. Keep hunk buffers so those changes coalesce into one insert
+    // and one delete at the same offset, which preserves Edit invariants.
+    if !hunk_ins.is_empty() {
+        edits.push(Edit {
+            kind: EditKind::Insert,
+            offset,
+            text: std::mem::take(hunk_ins).into(),
+        });
+    }
+    if !hunk_del.is_empty() {
+        edits.push(Edit {
+            kind: EditKind::Delete,
+            offset,
+            text: std::mem::take(hunk_del).into(),
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn doc(s: &str) -> Document {
-        let mut doc = Document::new();
+        let mut doc = Document::scratch();
         doc.text = s.into();
         doc
     }
@@ -483,7 +682,7 @@ mod tests {
     }
 
     fn filled(s: &str) -> Document {
-        let mut d = Document::new();
+        let mut d = Document::scratch();
         d.apply_edits(&[ins(0, s)]);
         d
     }
@@ -546,5 +745,59 @@ mod tests {
         let d = filled("é\nb");
         assert_eq!(d.grid_from_offset(2), [1, 0]);
         assert_eq!(d.grid_from_offset(4), [1, 1]);
+    }
+
+    fn check_diff(old: &str, new: &str) {
+        let edits = diff_text(old.as_bytes(), new.as_bytes());
+        let mut d = doc(old);
+        d.apply_edits(&edits);
+        assert_eq!(d.text, new, "edits did not transform {old:?} into {new:?}");
+    }
+
+    #[test]
+    fn diff_identical() {
+        assert!(diff_text(b"abc", b"abc").is_empty());
+    }
+
+    #[test]
+    fn diff_empty_to_nonempty() {
+        check_diff("", "hello\n");
+    }
+
+    #[test]
+    fn diff_nonempty_to_empty() {
+        check_diff("hello\n", "");
+    }
+
+    #[test]
+    fn diff_replace_middle_line() {
+        check_diff("a\nb\nc\n", "a\nX\nc\n");
+    }
+
+    #[test]
+    fn diff_insert_lines_in_middle() {
+        check_diff("a\nb\n", "a\nX\nY\nb\n");
+    }
+
+    #[test]
+    fn diff_delete_lines_in_middle() {
+        check_diff("a\nX\nY\nb\n", "a\nb\n");
+    }
+
+    #[test]
+    fn diff_replace_one_with_two() {
+        check_diff("a\nB\nc\n", "a\nX\nY\nc\n");
+    }
+
+    #[test]
+    fn diff_format_like_change() {
+        let old = "fn f() {\n    let x=1;\n    let y=2;\n}\n";
+        let new = "fn f() {\n    let x = 1;\n    let y = 2;\n}\n";
+        check_diff(old, new);
+    }
+
+    #[test]
+    fn diff_no_trailing_newline() {
+        check_diff("abc", "abd");
     }
 }
