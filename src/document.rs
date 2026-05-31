@@ -467,7 +467,7 @@ pub fn diff_text(old: &BStr, new: &BStr) -> Vec<Edit> {
         }
     }
     diff_text_flush(&mut edits, &mut hunk_offset, &mut hunk_ins, &mut hunk_del);
-    dbg!(edits)
+    edits
 }
 
 fn diff_text_flush(
