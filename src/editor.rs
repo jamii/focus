@@ -527,7 +527,11 @@ impl Editor {
         // grid_from_screen returns columns where 0 = gutter, 1 = first text char.
         // Convert to wrap-relative column by subtracting the gutter (1 grid column).
         let screen_col = grid[0].max(0) as usize;
-        let col = screen_col.saturating_sub(1);
+        if screen_col == 0 {
+            return self.wraps[line][0];
+        }
+
+        let col = screen_col - 1;
 
         // Pixel position within this wrap-character cell.
         // The cell's left edge in screen space is at (screen_col) * cell_w.
@@ -582,7 +586,7 @@ impl Editor {
     fn cursor_replace(&mut self, app: &App, insert: &[u8]) {
         let mut document = self.document_id.get_mut(app);
         let mut edits = Vec::with_capacity(self.cursors.len() * 2);
-        for cursor in &self.cursors {
+        for cursor in &mut self.cursors {
             if let Some(range) = cursor.marked_range(self.marked) {
                 edits.push(Edit {
                     kind: EditKind::Insert,
@@ -594,6 +598,8 @@ impl Editor {
                     offset: range.start,
                     text: document.text[range.start..range.end].into(),
                 });
+                cursor.head.offset = range.start;
+                cursor.tail.offset = range.start;
             } else {
                 edits.push(Edit {
                     kind: EditKind::Insert,
@@ -772,7 +778,7 @@ impl Editor {
         let Some(clip_text) = io.get_clipboard_text() else {
             return;
         };
-        let lines: Vec<&[u8]> = clip_text.split('\n').map(|s| s.as_bytes()).collect();
+        let lines: Vec<&str> = clip_text.split('\n').collect();
         let mut document = self.document_id.get_mut(app);
         let mut edits = Vec::new();
         for (cursor, line) in self.cursors.iter_mut().zip(lines) {
@@ -788,6 +794,8 @@ impl Editor {
                     offset: range.start,
                     text: document.text[range.start..range.end].into(),
                 });
+                cursor.head.offset = range.start;
+                cursor.tail.offset = range.start;
             } else {
                 edits.push(Edit {
                     kind: EditKind::Insert,
@@ -1272,6 +1280,56 @@ mod tests {
         assert_eq!(doc.text, "hXo");
     }
 
+    #[test]
+    fn cursor_replace_adjacent_selections_collapses_left_heads_after_each_insert() {
+        let (app, editor_id) = editor_with_text(test_app(), "abc", 80);
+        let document_id;
+        let diff;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_mark(&mut editor, &[0, 1, 2], &[1, 2, 3]);
+            editor.cursor_replace(&app, b"x");
+        }
+        {
+            let mut doc = document_id.get_mut(&app);
+            let edits = doc.queued_edits.take().unwrap();
+            diff = doc.apply_edits(&edits);
+            assert_eq!(doc.text, "xxx");
+        }
+        {
+            let mut editor = editor_id.get_mut(&app);
+            editor.handle_edits(&app, &diff);
+            assert_eq!(head_offsets(&editor), vec![1, 2, 3]);
+            assert_eq!(tail_offsets(&editor), vec![1, 2, 3]);
+        }
+    }
+
+    #[test]
+    fn cursor_replace_adjacent_selections_collapses_right_heads_after_each_insert() {
+        let (app, editor_id) = editor_with_text(test_app(), "abc", 80);
+        let document_id;
+        let diff;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_mark(&mut editor, &[1, 2, 3], &[0, 1, 2]);
+            editor.cursor_replace(&app, b"x");
+        }
+        {
+            let mut doc = document_id.get_mut(&app);
+            let edits = doc.queued_edits.take().unwrap();
+            diff = doc.apply_edits(&edits);
+            assert_eq!(doc.text, "xxx");
+        }
+        {
+            let mut editor = editor_id.get_mut(&app);
+            editor.handle_edits(&app, &diff);
+            assert_eq!(head_offsets(&editor), vec![1, 2, 3]);
+            assert_eq!(tail_offsets(&editor), vec![1, 2, 3]);
+        }
+    }
+
     fn test_app() -> crate::app::App {
         use crate::fuzz::MockIO;
         let mut io = MockIO::new();
@@ -1624,6 +1682,17 @@ mod tests {
             editor.offset_from_screen(&app, [1.0 * cell_w + cell_w / 4.0, 0.0]) == 0,
             "left half of first char should be offset 0"
         );
+    }
+
+    #[test]
+    fn offset_from_screen_right_half_of_left_gutter_returns_line_start() {
+        let (app, editor_id) = editor_with_text(test_app(), "hello\nworld", 80);
+        let editor = editor_id.get_mut(&app);
+        let cell_w = app.atlas.cell_size[0] as f32;
+        let cell_h = app.atlas.cell_size[1] as f32;
+
+        assert_eq!(editor.offset_from_screen(&app, [cell_w * 0.75, 0.0]), 0);
+        assert_eq!(editor.offset_from_screen(&app, [cell_w * 0.75, cell_h]), 6);
     }
 
     #[test]
@@ -1993,6 +2062,60 @@ mod tests {
         editor.cursor_paste_many(&app, &mut io);
         let document = editor.document_id.get(&app);
         assert!(document.queued_edits.is_some());
+    }
+
+    #[test]
+    fn paste_many_adjacent_selections_collapses_left_heads_after_each_insert() {
+        let (app, editor_id) = editor_with_text(test_app(), "abc", 80);
+        let document_id;
+        let diff;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_mark(&mut editor, &[0, 1, 2], &[1, 2, 3]);
+            let mut io = crate::fuzz::MockIO::new();
+            io.clipboard = Some("x\ny\nz".to_string());
+            editor.cursor_paste_many(&app, &mut io);
+        }
+        {
+            let mut doc = document_id.get_mut(&app);
+            let edits = doc.queued_edits.take().unwrap();
+            diff = doc.apply_edits(&edits);
+            assert_eq!(doc.text, "xyz");
+        }
+        {
+            let mut editor = editor_id.get_mut(&app);
+            editor.handle_edits(&app, &diff);
+            assert_eq!(head_offsets(&editor), vec![1, 2, 3]);
+            assert_eq!(tail_offsets(&editor), vec![1, 2, 3]);
+        }
+    }
+
+    #[test]
+    fn paste_many_adjacent_selections_collapses_right_heads_after_each_insert() {
+        let (app, editor_id) = editor_with_text(test_app(), "abc", 80);
+        let document_id;
+        let diff;
+        {
+            let mut editor = editor_id.get_mut(&app);
+            document_id = editor.document_id;
+            set_mark(&mut editor, &[1, 2, 3], &[0, 1, 2]);
+            let mut io = crate::fuzz::MockIO::new();
+            io.clipboard = Some("x\ny\nz".to_string());
+            editor.cursor_paste_many(&app, &mut io);
+        }
+        {
+            let mut doc = document_id.get_mut(&app);
+            let edits = doc.queued_edits.take().unwrap();
+            diff = doc.apply_edits(&edits);
+            assert_eq!(doc.text, "xyz");
+        }
+        {
+            let mut editor = editor_id.get_mut(&app);
+            editor.handle_edits(&app, &diff);
+            assert_eq!(head_offsets(&editor), vec![1, 2, 3]);
+            assert_eq!(tail_offsets(&editor), vec![1, 2, 3]);
+        }
     }
 
     #[test]
