@@ -5,7 +5,6 @@ use std::{path::PathBuf, time::Duration};
 use bstr::{BStr, BString, ByteSlice};
 
 use crate::app::{App, DocumentId, IO};
-use crate::editor::Editor;
 
 pub struct Document {
     pub text: BString,
@@ -104,21 +103,27 @@ impl Document {
         });
         document
     }
+}
 
-    pub fn tick(document_id: DocumentId, app: &App, io: &mut dyn IO) {
+impl DocumentId {
+    pub fn assert_invariants(self, app: &App) {
+        self.get(app).assert_invariants();
+    }
+
+    pub fn tick(self, app: &App, io: &mut dyn IO) {
         // Maybe flush doing.
         {
-            let document = document_id.get(app);
+            let document = self.get(app);
             if io.frame_start() - document.last_modified_time > Duration::from_secs(1) {
                 drop(document);
-                Document::flush_doing(document_id, app);
+                self.flush_doing(app);
             }
         }
 
         // Maybe reload.
         let mut edits = vec![];
         {
-            let mut document = document_id.get_mut(app);
+            let mut document = self.get_mut(app);
             let last_modified_time = document.last_modified_time;
             if let Source::File(source) = &mut document.source {
                 if !(last_modified_time > source.last_save_time) {
@@ -128,25 +133,25 @@ impl Document {
                 }
             }
         }
-        Document::apply_edits(document_id, app, io, &edits);
+        self.apply_edits(app, io, &edits);
     }
 
-    pub fn apply_edits(document_id: DocumentId, app: &App, io: &mut dyn IO, edits: &[Edit]) {
+    pub fn apply_edits(self, app: &App, io: &mut dyn IO, edits: &[Edit]) {
         if edits.is_empty() {
             return;
         }
 
-        Document::apply_edits_raw(document_id, app, io, edits);
+        self.apply_edits_raw(app, io, edits);
 
-        let mut document = document_id.get_mut(app);
+        let mut document = self.get_mut(app);
         document.doing.push(edits.to_vec());
         document.redos.clear();
     }
 
-    fn apply_edits_raw(document_id: DocumentId, app: &App, io: &mut dyn IO, edits: &[Edit]) {
+    fn apply_edits_raw(self, app: &App, io: &mut dyn IO, edits: &[Edit]) {
         assert!(!edits.is_empty());
 
-        let mut document = document_id.get_mut(app);
+        let mut document = self.get_mut(app);
         Edit::assert_invariants(edits, document.text.as_bstr());
 
         let len_old = document.text.len();
@@ -185,9 +190,9 @@ impl Document {
         drop(document);
 
         for (editor_id, editor) in &app.editors {
-            let matches = editor.borrow().document_id == document_id;
+            let matches = editor.borrow().document_id == self;
             if matches {
-                Editor::handle_edits(*editor_id, app, &diff);
+                editor_id.handle_edits(app, &diff);
             }
         }
     }
@@ -195,8 +200,8 @@ impl Document {
     /// Save to disk. Explicit saves create the file if missing; autosaves
     /// treat NotFound as an external deletion.
     /// No-op for Scratch sources or when not modified since last save.
-    pub fn save(document_id: DocumentId, app: &App, io: &mut dyn IO, kind: SaveKind) {
-        let mut document = document_id.get_mut(app);
+    pub fn save(self, app: &App, io: &mut dyn IO, kind: SaveKind) {
+        let mut document = self.get_mut(app);
         let absolute_path = match &document.source {
             Source::File(SourceFile {
                 absolute_path,
@@ -235,8 +240,8 @@ impl Document {
         }
     }
 
-    pub fn grid_from_offset(document_id: DocumentId, app: &App, offset: usize) -> [usize; 2] {
-        let document = document_id.get(app);
+    pub fn grid_from_offset(self, app: &App, offset: usize) -> [usize; 2] {
+        let document = self.get(app);
         let line = document.newlines.partition_point(|&nl| nl < offset);
         if line == 0 {
             [document.text[0..offset].chars().count(), 0]
@@ -250,13 +255,9 @@ impl Document {
         }
     }
 
-    pub fn line_range_from_offset(
-        document_id: DocumentId,
-        app: &App,
-        offset: usize,
-    ) -> std::ops::Range<usize> {
-        let line = Document::grid_from_offset(document_id, app, offset)[1];
-        let document = document_id.get(app);
+    pub fn line_range_from_offset(self, app: &App, offset: usize) -> std::ops::Range<usize> {
+        let line = self.grid_from_offset(app, offset)[1];
+        let document = self.get(app);
         if line == 0 {
             0..{
                 if document.newlines.is_empty() {
@@ -276,8 +277,8 @@ impl Document {
         }
     }
 
-    pub fn char_next(document_id: DocumentId, app: &App, offset: usize) -> Option<usize> {
-        let document = document_id.get(app);
+    pub fn char_next(self, app: &App, offset: usize) -> Option<usize> {
+        let document = self.get(app);
         if offset == document.text.len() {
             return None;
         }
@@ -285,14 +286,14 @@ impl Document {
         Some(offset + char_end)
     }
 
-    pub fn char_prev(document_id: DocumentId, app: &App, offset: usize) -> Option<usize> {
+    pub fn char_prev(self, app: &App, offset: usize) -> Option<usize> {
         if offset == 0 {
             return None;
         }
         // We can't directly iter backwards through potentially invalid utf8, but we
         // can go forwards from the start of the line.
-        let line_start = Document::line_range_from_offset(document_id, app, offset).start;
-        let document = document_id.get(app);
+        let line_start = self.line_range_from_offset(app, offset).start;
+        let document = self.get(app);
         if line_start == offset {
             // Previous character is a \n
             return Some(line_start - 1);
@@ -305,8 +306,8 @@ impl Document {
         unreachable!()
     }
 
-    pub fn flush_doing(document_id: DocumentId, app: &App) {
-        let mut document = document_id.get_mut(app);
+    pub fn flush_doing(self, app: &App) {
+        let mut document = self.get_mut(app);
         if document.doing.is_empty() {
             return;
         }
@@ -314,31 +315,31 @@ impl Document {
         document.undos.push(doing);
     }
 
-    pub fn undo(document_id: DocumentId, app: &App, io: &mut dyn IO) -> Option<usize> {
-        Document::flush_doing(document_id, app);
-        let undo = document_id.get_mut(app).undos.pop()?;
+    pub fn undo(self, app: &App, io: &mut dyn IO) -> Option<usize> {
+        self.flush_doing(app);
+        let undo = self.get_mut(app).undos.pop()?;
         let mut redo = vec![];
-        let offset = undo.last().unwrap().last().unwrap().offset;
         for mut edits in undo.into_iter().rev() {
             Edit::undo(&mut edits);
-            Document::apply_edits_raw(document_id, app, io, &edits);
+            self.apply_edits_raw(app, io, &edits);
             redo.push(edits);
         }
-        document_id.get_mut(app).redos.push(redo);
+        let offset = redo.last().unwrap().last().unwrap().offset;
+        self.get_mut(app).redos.push(redo);
         Some(offset)
     }
 
-    pub fn redo(document_id: DocumentId, app: &App, io: &mut dyn IO) -> Option<usize> {
-        Document::flush_doing(document_id, app);
-        let redo = document_id.get_mut(app).redos.pop()?;
+    pub fn redo(self, app: &App, io: &mut dyn IO) -> Option<usize> {
+        self.flush_doing(app);
+        let redo = self.get_mut(app).redos.pop()?;
         let mut undo = vec![];
-        let offset = redo.last().unwrap().last().unwrap().offset;
         for mut edits in redo.into_iter().rev() {
             Edit::undo(&mut edits);
-            Document::apply_edits_raw(document_id, app, io, &edits);
+            self.apply_edits_raw(app, io, &edits);
             undo.push(edits);
         }
-        document_id.get_mut(app).undos.push(undo);
+        let offset = undo.last().unwrap().last().unwrap().offset;
+        self.get_mut(app).undos.push(undo);
         Some(offset)
     }
 }

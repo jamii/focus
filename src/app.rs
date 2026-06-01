@@ -97,14 +97,14 @@ impl App {
     pub fn assert_invariants(&self) {
         // TODO What should we assert for font/atlas?
 
-        for document in self.documents.values() {
-            document.borrow().assert_invariants();
+        for document_id in self.documents.keys() {
+            document_id.assert_invariants(self);
         }
-        for editor in self.editors.values() {
-            editor.borrow().assert_invariants(self);
+        for editor_id in self.editors.keys() {
+            editor_id.assert_invariants(self);
         }
-        for window in self.windows.values() {
-            window.borrow().assert_invariants();
+        for window_id in self.windows.keys() {
+            window_id.assert_invariants(self);
         }
     }
 
@@ -166,25 +166,25 @@ impl App {
                         self.insert_window(io, Window::new(editor_id_new));
                     }
                     _ => {
-                        Window::input(window_id, self, io, event);
+                        window_id.input(self, io, event);
                     }
                 }
             }
             _ => {
-                Window::input(window_id, self, io, event);
+                window_id.input(self, io, event);
             }
         }
     }
 
     pub fn tick(&mut self, io: &mut dyn IO) {
         for window_id in self.windows.keys() {
-            Window::tick(*window_id, self, io);
+            window_id.tick(self, io);
             io.request_redraw(*window_id);
         }
     }
 
     pub fn draw(&mut self, window_id: WindowId, drawing: &mut Drawing) {
-        Window::draw(window_id, self, drawing);
+        window_id.draw(self, drawing);
     }
 
     fn rebuild_atlas(&mut self, io: &mut dyn IO) {
