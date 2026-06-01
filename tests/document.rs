@@ -59,7 +59,7 @@ fn undo_and_redo_restore_text() {
     common::text_input(&mut app, &mut io, window_id, "abc");
 
     common::control_key(&mut app, &mut io, window_id, Key::Character("z".into()));
-    assert_eq!(common::text(&app), "ab");
+    assert_eq!(common::text(&app), "");
 
     common::control_key(&mut app, &mut io, window_id, Key::Character("Z".into()));
     assert_eq!(common::text(&app), "abc");

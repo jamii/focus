@@ -128,20 +128,22 @@ impl Document {
                 }
             }
         }
-        Document::apply_edits(document_id, app, &edits);
+        Document::apply_edits(document_id, app, io, &edits);
     }
 
-    pub fn apply_edits(document_id: DocumentId, app: &App, edits: &[Edit]) {
+    pub fn apply_edits(document_id: DocumentId, app: &App, io: &mut dyn IO, edits: &[Edit]) {
         if edits.is_empty() {
             return;
         }
 
-        Document::apply_edits_raw(document_id, app, edits);
+        Document::apply_edits_raw(document_id, app, io, edits);
 
-        document_id.get_mut(app).doing.push(edits.to_vec());
+        let mut document = document_id.get_mut(app);
+        document.doing.push(edits.to_vec());
+        document.redos.clear();
     }
 
-    fn apply_edits_raw(document_id: DocumentId, app: &App, edits: &[Edit]) {
+    fn apply_edits_raw(document_id: DocumentId, app: &App, io: &mut dyn IO, edits: &[Edit]) {
         assert!(!edits.is_empty());
 
         let mut document = document_id.get_mut(app);
@@ -177,6 +179,8 @@ impl Document {
         document.newlines = newlines;
 
         let diff = OffsetDiff::from_edits(&edits, len_old);
+
+        document.last_modified_time = io.frame_start();
 
         drop(document);
 
@@ -310,28 +314,28 @@ impl Document {
         document.undos.push(doing);
     }
 
-    pub fn undo(document_id: DocumentId, app: &App) -> Option<usize> {
+    pub fn undo(document_id: DocumentId, app: &App, io: &mut dyn IO) -> Option<usize> {
         Document::flush_doing(document_id, app);
         let undo = document_id.get_mut(app).undos.pop()?;
         let mut redo = vec![];
         let offset = undo.last().unwrap().last().unwrap().offset;
         for mut edits in undo.into_iter().rev() {
             Edit::undo(&mut edits);
-            Document::apply_edits_raw(document_id, app, &edits);
+            Document::apply_edits_raw(document_id, app, io, &edits);
             redo.push(edits);
         }
         document_id.get_mut(app).redos.push(redo);
         Some(offset)
     }
 
-    pub fn redo(document_id: DocumentId, app: &App) -> Option<usize> {
+    pub fn redo(document_id: DocumentId, app: &App, io: &mut dyn IO) -> Option<usize> {
         Document::flush_doing(document_id, app);
         let redo = document_id.get_mut(app).redos.pop()?;
         let mut undo = vec![];
         let offset = redo.last().unwrap().last().unwrap().offset;
         for mut edits in redo.into_iter().rev() {
             Edit::undo(&mut edits);
-            Document::apply_edits_raw(document_id, app, &edits);
+            Document::apply_edits_raw(document_id, app, io, &edits);
             undo.push(edits);
         }
         document_id.get_mut(app).undos.push(undo);

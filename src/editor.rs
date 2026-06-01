@@ -112,10 +112,9 @@ impl Editor {
     }
 
     pub fn input(editor_id: EditorId, app: &App, io: &mut dyn IO, event: InputEvent) {
-        let cursor_main_old;
+        let mut flush_doing = true;
         {
             let mut editor = editor_id.get_mut(app);
-            cursor_main_old = editor.cursors.last().unwrap().clone();
             match event {
                 InputEvent::Key {
                     state, logical_key, ..
@@ -168,13 +167,15 @@ impl Editor {
                         }
                         Key::Character("z") => {
                             drop(editor);
-                            Editor::undo(editor_id, app);
+                            Editor::undo(editor_id, app, io);
                         }
                         Key::Character("Z") => {
                             drop(editor);
-                            Editor::redo(editor_id, app);
+                            Editor::redo(editor_id, app, io);
                         }
-                        _ => {}
+                        _ => {
+                            flush_doing = false;
+                        }
                     }
                 }
                 InputEvent::Key {
@@ -196,7 +197,9 @@ impl Editor {
                         Key::Character("k") => {
                             editor.cursor_goto_doc_end(app);
                         }
-                        _ => {}
+                        _ => {
+                            flush_doing = false;
+                        }
                     }
                 }
                 InputEvent::Key {
@@ -209,24 +212,31 @@ impl Editor {
                         Key::Character(char) => {
                             drop(editor);
                             Editor::cursor_replace(editor_id, app, io, char.as_bytes());
+                            flush_doing = false;
                         }
                         Key::Named(NamedKey::Enter) => {
                             drop(editor);
                             Editor::cursor_replace(editor_id, app, io, b"\n");
+                            flush_doing = false;
                         }
                         Key::Named(NamedKey::Space) => {
                             drop(editor);
                             Editor::cursor_replace(editor_id, app, io, b" ");
+                            flush_doing = false;
                         }
                         Key::Named(NamedKey::Backspace) => {
                             drop(editor);
                             Editor::cursor_delete_left(editor_id, app, io);
+                            flush_doing = false;
                         }
                         Key::Named(NamedKey::Delete) => {
                             drop(editor);
                             Editor::cursor_delete_right(editor_id, app, io);
+                            flush_doing = false;
                         }
-                        _ => {}
+                        _ => {
+                            flush_doing = false;
+                        }
                     }
                 }
                 InputEvent::MouseButton { state, position } => {
@@ -266,16 +276,15 @@ impl Editor {
                 InputEvent::FocusChanged { focused: false } => {
                     editor.save(app, io, SaveKind::Auto);
                 }
-                _ => {}
+                _ => {
+                    flush_doing = false;
+                }
             }
         }
 
         let mut editor = editor_id.get_mut(app);
-
         editor.last_input = io.frame_start();
-
-        // If the main cursor moved, start a new undo group.
-        if cursor_main_old.head.offset != editor.cursors.last().unwrap().head.offset {
+        if flush_doing {
             Document::flush_doing(editor.document_id, app);
         }
     }
@@ -658,7 +667,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, &edits);
+        Document::apply_edits(document_id, app, io, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -722,7 +731,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, &edits);
+        Document::apply_edits(document_id, app, io, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -752,7 +761,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, &edits);
+        Document::apply_edits(document_id, app, io, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -803,7 +812,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, &edits);
+        Document::apply_edits(document_id, app, io, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -843,7 +852,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, &edits);
+        Document::apply_edits(document_id, app, io, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -887,7 +896,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, &edits);
+        Document::apply_edits(document_id, app, io, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -1083,18 +1092,18 @@ impl Editor {
         })
     }
 
-    fn undo(editor_id: EditorId, app: &App) {
+    fn undo(editor_id: EditorId, app: &App, io: &mut dyn IO) {
         let document_id = editor_id.get(app).document_id;
-        if let Some(offset) = Document::undo(document_id, app) {
+        if let Some(offset) = Document::undo(document_id, app, io) {
             editor_id
                 .get_mut(app)
                 .scroll_offset_into_center(app, offset);
         }
     }
 
-    fn redo(editor_id: EditorId, app: &App) {
+    fn redo(editor_id: EditorId, app: &App, io: &mut dyn IO) {
         let document_id = editor_id.get(app).document_id;
-        if let Some(offset) = Document::redo(document_id, app) {
+        if let Some(offset) = Document::redo(document_id, app, io) {
             editor_id
                 .get_mut(app)
                 .scroll_offset_into_center(app, offset);
