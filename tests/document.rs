@@ -72,6 +72,7 @@ fn tick_loads_file_document_from_mock_io() {
     let path = PathBuf::from("/tmp/focus-document-test.txt");
     let (mut app, mut io, _) = common::file_app(path, "from disk\n");
 
+    common::sync_app_io(&mut app, &io);
     app.tick(&mut io);
 
     assert_eq!(common::text(&app), "from disk\n");
@@ -82,6 +83,7 @@ fn tick_loads_file_document_from_mock_io() {
 fn tick_reloads_clean_file_after_external_change() {
     let path = PathBuf::from("/tmp/focus-document-reload-test.txt");
     let (mut app, mut io, _) = common::file_app(path.clone(), "before\n");
+    common::sync_app_io(&mut app, &io);
     app.tick(&mut io);
 
     io.frame_start += Duration::from_secs(1);
@@ -92,6 +94,7 @@ fn tick_reloads_clean_file_after_external_change() {
             SystemTime::UNIX_EPOCH + Duration::from_secs(2),
         ),
     );
+    common::sync_app_io(&mut app, &io);
     app.tick(&mut io);
 
     assert_eq!(common::text(&app), "after\n");

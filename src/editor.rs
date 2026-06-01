@@ -189,8 +189,8 @@ impl EditorId {
                         self.save(app, io, SaveKind::Explicit);
                         return;
                     }
-                    Key::Character("z") => self.undo(app, io),
-                    Key::Character("Z") => self.redo(app, io),
+                    Key::Character("z") => self.undo(app),
+                    Key::Character("Z") => self.redo(app),
                     _ => flush_doing = false,
                 }
             }
@@ -216,23 +216,23 @@ impl EditorId {
             {
                 match logical_key.as_ref() {
                     Key::Character(char) => {
-                        self.cursor_replace(app, io, char.as_bytes());
+                        self.cursor_replace(app, char.as_bytes());
                         flush_doing = false;
                     }
                     Key::Named(NamedKey::Enter) => {
-                        self.cursor_replace(app, io, b"\n");
+                        self.cursor_replace(app, b"\n");
                         flush_doing = false;
                     }
                     Key::Named(NamedKey::Space) => {
-                        self.cursor_replace(app, io, b" ");
+                        self.cursor_replace(app, b" ");
                         flush_doing = false;
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        self.cursor_delete_left(app, io);
+                        self.cursor_delete_left(app);
                         flush_doing = false;
                     }
                     Key::Named(NamedKey::Delete) => {
-                        self.cursor_delete_right(app, io);
+                        self.cursor_delete_right(app);
                         flush_doing = false;
                     }
                     _ => flush_doing = false,
@@ -252,8 +252,9 @@ impl EditorId {
             _ => flush_doing = false,
         }
 
+        let frame_start = app.frame_start;
         let editor = self.get_mut(app);
-        editor.last_input = io.frame_start();
+        editor.last_input = frame_start;
         if flush_doing {
             editor.document_id.flush_doing(app);
         }
@@ -269,7 +270,7 @@ impl EditorId {
 
         // During drag, poll mouse position and update cursor head.
         if let Some(drag_info) = self.get(app).dragging {
-            let mouse_pos = io.mouse_position();
+            let mouse_pos = app.mouse_position;
             {
                 let editor = self.get_mut(app);
                 // Scroll when mouse is off-screen vertically.
@@ -283,6 +284,7 @@ impl EditorId {
 
             // Convert screen position to document offset, accounting for scroll.
             let offset = self.offset_from_screen(app, mouse_pos);
+            let frame_start = app.frame_start;
             let editor = self.get_mut(app);
             if let Some(cursor) = editor.cursors.get_mut(drag_info.cursor_index) {
                 let moved = cursor.head.offset != offset;
@@ -295,12 +297,13 @@ impl EditorId {
                 }
             }
 
-            editor.last_input = io.frame_start();
+            editor.last_input = frame_start;
         }
 
+        let frame_start = app.frame_start;
         let editor = self.get_mut(app);
-        editor.show_cursor = ((io.frame_start().as_millis() / 500) % 2) == 0
-            || (io.frame_start() - editor.last_input < Duration::from_millis(500));
+        editor.show_cursor = ((frame_start.as_millis() / 500) % 2) == 0
+            || (frame_start - editor.last_input < Duration::from_millis(500));
     }
 
     pub fn draw(self, app: &mut App, drawing: &mut Drawing) {
@@ -646,7 +649,7 @@ impl EditorId {
         }
     }
 
-    fn cursor_replace(self, app: &mut App, io: &mut dyn IO, insert: &[u8]) {
+    fn cursor_replace(self, app: &mut App, insert: &[u8]) {
         let (document_id, marked, mut cursors) = {
             let editor = self.get(app);
             (editor.document_id, editor.marked, editor.cursors.clone())
@@ -677,7 +680,7 @@ impl EditorId {
         }
         Edit::coalesce(&mut edits);
         self.get_mut(app).cursors = cursors;
-        document_id.apply_edits(app, io, &edits);
+        document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -726,7 +729,7 @@ impl EditorId {
         }
     }
 
-    fn cursor_delete_left(self, app: &mut App, io: &mut dyn IO) {
+    fn cursor_delete_left(self, app: &mut App) {
         let editor = self.get(app);
         let document_id = editor.document_id;
         let document = document_id.get(app);
@@ -747,13 +750,13 @@ impl EditorId {
             }
         }
         Edit::coalesce(&mut edits);
-        document_id.apply_edits(app, io, &edits);
+        document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
     }
 
-    fn cursor_delete_right(self, app: &mut App, io: &mut dyn IO) {
+    fn cursor_delete_right(self, app: &mut App) {
         let editor = self.get(app);
         let document_id = editor.document_id;
         let document = document_id.get(app);
@@ -774,7 +777,7 @@ impl EditorId {
             }
         }
         Edit::coalesce(&mut edits);
-        document_id.apply_edits(app, io, &edits);
+        document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -823,7 +826,7 @@ impl EditorId {
             }
         }
         Edit::coalesce(&mut edits);
-        document_id.apply_edits(app, io, &edits);
+        document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -859,7 +862,7 @@ impl EditorId {
             }
         }
         Edit::coalesce(&mut edits);
-        document_id.apply_edits(app, io, &edits);
+        document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -901,7 +904,7 @@ impl EditorId {
         }
         Edit::coalesce(&mut edits);
         self.get_mut(app).cursors = cursors;
-        document_id.apply_edits(app, io, &edits);
+        document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -1090,16 +1093,16 @@ impl EditorId {
         })
     }
 
-    fn undo(self, app: &mut App, io: &mut dyn IO) {
+    fn undo(self, app: &mut App) {
         let document_id = self.get(app).document_id;
-        if let Some(offset) = document_id.undo(app, io) {
+        if let Some(offset) = document_id.undo(app) {
             self.scroll_offset_into_center(app, offset);
         }
     }
 
-    fn redo(self, app: &mut App, io: &mut dyn IO) {
+    fn redo(self, app: &mut App) {
         let document_id = self.get(app).document_id;
-        if let Some(offset) = document_id.redo(app, io) {
+        if let Some(offset) = document_id.redo(app) {
             self.scroll_offset_into_center(app, offset);
         }
     }

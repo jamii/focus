@@ -26,7 +26,9 @@ pub struct App {
     next_document_id: DocumentId,
     pub documents: HashMap<DocumentId, Document>,
 
+    pub frame_start: Duration,
     pub modifiers: ModifiersState,
+    pub mouse_position: [f32; 2],
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
@@ -60,13 +62,11 @@ pub enum InputEvent {
 
 // External effects. Mocked for testing/fuzzing.
 pub trait IO {
-    fn frame_start(&self) -> Duration;
     fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId;
     fn close_window(&mut self, window_id: WindowId);
     fn set_window_title(&mut self, window_id: WindowId, title: String);
     fn request_redraw(&mut self, window_id: WindowId);
     fn reload_atlas(&mut self, atlas: &Atlas);
-    fn mouse_position(&self) -> [f32; 2];
     fn get_clipboard_text(&mut self) -> Option<String>;
     fn set_clipboard_text(&mut self, text: String);
     fn exit(&mut self);
@@ -121,7 +121,9 @@ impl App {
             editors: HashMap::new(),
             next_document_id: DocumentId(0),
             documents: HashMap::new(),
+            frame_start: Duration::ZERO,
             modifiers: ModifiersState::default(),
+            mouse_position: [0.0, 0.0],
         };
         let document_id = match initial_path {
             Some(path) => app.insert_document(Document::from_file(path)),

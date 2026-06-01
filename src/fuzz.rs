@@ -58,10 +58,6 @@ impl MockIO {
 }
 
 impl IO for MockIO {
-    fn frame_start(&self) -> Duration {
-        self.frame_start
-    }
-
     fn open_window(&mut self, _title: String, _size: LogicalSize<u32>) -> WindowId {
         let id = self.fresh_window_id();
         self.open_windows.push(id);
@@ -73,10 +69,6 @@ impl IO for MockIO {
     }
 
     fn set_window_title(&mut self, _window_id: WindowId, _title: String) {}
-
-    fn mouse_position(&self) -> [f32; 2] {
-        self.mouse_pos
-    }
 
     fn get_clipboard_text(&mut self) -> Option<String> {
         self.clipboard.clone()
@@ -138,6 +130,7 @@ const A_FILE_MODIFY: u32 = 10;
 // chosen action. Returns Some(()) if more entropy is available; None
 // when the buffer is exhausted (Frng signals end-of-stream as None).
 fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
+    sync_app_io(app, io);
     if io.open_windows.is_empty() {
         return None;
     }
@@ -230,6 +223,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             // Advance time by a fuzzer-chosen delta in [0, ~1s].
             let delta_us = frng.u32_bounded(0, 1_000_000)?;
             io.frame_start += Duration::from_micros(delta_us as u64);
+            sync_app_io(app, io);
             app.tick(io);
         }
         5 => {
@@ -271,6 +265,11 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         _ => unreachable!(),
     }
     Some(())
+}
+
+pub fn sync_app_io(app: &mut App, io: &MockIO) {
+    app.frame_start = io.frame_start;
+    app.mouse_position = io.mouse_pos;
 }
 
 pub fn fuzz_one(bytes: &[u8]) {

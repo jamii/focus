@@ -114,42 +114,44 @@ impl DocumentId {
         // Maybe flush doing.
         {
             let document = self.get(app);
-            if io.frame_start() - document.last_modified_time > Duration::from_secs(1) {
+            if app.frame_start - document.last_modified_time > Duration::from_secs(1) {
                 self.flush_doing(app);
             }
         }
 
         // Maybe reload.
         let mut edits = vec![];
+        let frame_start = app.frame_start;
         {
             let document = self.get_mut(app);
             let last_modified_time = document.last_modified_time;
             if let Source::File(source) = &mut document.source {
                 if !(last_modified_time > source.last_save_time) {
-                    if let Some(text) = source.load(io) {
+                    if let Some(text) = source.load(io, frame_start) {
                         edits = diff_text(document.text.as_bstr(), text.as_bstr());
                     }
                 }
             }
         }
-        self.apply_edits(app, io, &edits);
+        self.apply_edits(app, &edits);
     }
 
-    pub fn apply_edits(self, app: &mut App, io: &mut dyn IO, edits: &[Edit]) {
+    pub fn apply_edits(self, app: &mut App, edits: &[Edit]) {
         if edits.is_empty() {
             return;
         }
 
-        self.apply_edits_raw(app, io, edits);
+        self.apply_edits_raw(app, edits);
 
         let document = self.get_mut(app);
         document.doing.push(edits.to_vec());
         document.redos.clear();
     }
 
-    fn apply_edits_raw(self, app: &mut App, io: &mut dyn IO, edits: &[Edit]) {
+    fn apply_edits_raw(self, app: &mut App, edits: &[Edit]) {
         assert!(!edits.is_empty());
 
+        let frame_start = app.frame_start;
         let document = self.get_mut(app);
         Edit::assert_invariants(edits, document.text.as_bstr());
 
@@ -184,7 +186,7 @@ impl DocumentId {
 
         let diff = OffsetDiff::from_edits(&edits, len_old);
 
-        document.last_modified_time = io.frame_start();
+        document.last_modified_time = frame_start;
 
         let editor_ids: Vec<_> = app
             .editors
@@ -200,6 +202,7 @@ impl DocumentId {
     /// treat NotFound as an external deletion.
     /// No-op for Scratch sources or when not modified since last save.
     pub fn save(self, app: &mut App, io: &mut dyn IO, kind: SaveKind) {
+        let frame_start = app.frame_start;
         let document = self.get_mut(app);
         let absolute_path = match &document.source {
             Source::File(SourceFile {
@@ -220,7 +223,7 @@ impl DocumentId {
                 }) = &mut document.source
                 {
                     *last_load_mtime = mtime;
-                    *last_save_time = io.frame_start();
+                    *last_save_time = frame_start;
                     *deleted_since_last_save = false;
                 }
             }
@@ -314,13 +317,13 @@ impl DocumentId {
         document.undos.push(doing);
     }
 
-    pub fn undo(self, app: &mut App, io: &mut dyn IO) -> Option<usize> {
+    pub fn undo(self, app: &mut App) -> Option<usize> {
         self.flush_doing(app);
         let undo = self.get_mut(app).undos.pop()?;
         let mut redo = vec![];
         for mut edits in undo.into_iter().rev() {
             Edit::undo(&mut edits);
-            self.apply_edits_raw(app, io, &edits);
+            self.apply_edits_raw(app, &edits);
             redo.push(edits);
         }
         let offset = redo.last().unwrap().last().unwrap().offset;
@@ -328,13 +331,13 @@ impl DocumentId {
         Some(offset)
     }
 
-    pub fn redo(self, app: &mut App, io: &mut dyn IO) -> Option<usize> {
+    pub fn redo(self, app: &mut App) -> Option<usize> {
         self.flush_doing(app);
         let redo = self.get_mut(app).redos.pop()?;
         let mut undo = vec![];
         for mut edits in redo.into_iter().rev() {
             Edit::undo(&mut edits);
-            self.apply_edits_raw(app, io, &edits);
+            self.apply_edits_raw(app, &edits);
             undo.push(edits);
         }
         let offset = undo.last().unwrap().last().unwrap().offset;
@@ -346,7 +349,7 @@ impl DocumentId {
 impl SourceFile {
     /// If the file's mtime has advanced past `last_load_mtime` and the doc is
     /// not modified, reload its contents.
-    fn load(&mut self, io: &mut dyn IO) -> Option<BString> {
+    fn load(&mut self, io: &mut dyn IO, frame_start: Duration) -> Option<BString> {
         let Ok(mtime) = io.file_mtime(&self.absolute_path) else {
             return None;
         };
@@ -361,7 +364,7 @@ impl SourceFile {
             }
         };
         self.last_load_mtime = mtime;
-        self.last_save_time = io.frame_start();
+        self.last_save_time = frame_start;
         Some(contents.into())
     }
 }

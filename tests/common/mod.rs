@@ -11,6 +11,10 @@ use focus::style::TEXT_COLOR;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
+pub fn sync_app_io(app: &mut App, io: &MockIO) {
+    focus::fuzz::sync_app_io(app, io);
+}
+
 pub fn scratch_app() -> (App, MockIO, WindowId) {
     let mut io = MockIO::new();
     let window_id = io.fresh_window_id();
@@ -44,6 +48,7 @@ pub fn text(app: &App) -> String {
 }
 
 pub fn key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key) {
+    sync_app_io(app, io);
     app.input(
         io,
         window_id,
@@ -69,6 +74,7 @@ pub fn text_input(app: &mut App, io: &mut MockIO, window_id: WindowId, text: &st
 }
 
 pub fn modifiers(app: &mut App, io: &mut MockIO, window_id: WindowId, modifiers: ModifiersState) {
+    sync_app_io(app, io);
     app.input(io, window_id, InputEvent::ModifiersChanged(modifiers));
 }
 

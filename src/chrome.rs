@@ -73,20 +73,11 @@ struct Backend {
 // Held only across an app callback; carries the live `ActiveEventLoop`
 // (needed for `create_window`) plus the backend it mutates.
 struct IoReal<'a> {
-    frame_start: Duration,
     backend: &'a mut Backend,
     event_loop: &'a ActiveEventLoop,
 }
 
 impl IO for IoReal<'_> {
-    fn frame_start(&self) -> Duration {
-        self.frame_start
-    }
-
-    fn mouse_position(&self) -> [f32; 2] {
-        self.backend.last_mouse_pos
-    }
-
     fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId {
         self.backend.open_window(self.event_loop, &title, size)
     }
@@ -155,7 +146,6 @@ impl ApplicationHandler for Chrome {
             Backend::bootstrap(event_loop, INITIAL_TITLE, INITIAL_SIZE);
         let app = {
             let mut io = IoReal {
-                frame_start: Duration::ZERO,
                 backend: &mut backend,
                 event_loop,
             };
@@ -201,9 +191,10 @@ impl Running {
     fn new_events(&mut self, event_loop: &ActiveEventLoop) {
         let frame_start = Instant::now();
         self.last_frame = frame_start;
+        self.app.frame_start = self.last_frame - self.first_frame;
+        self.app.mouse_position = self.backend.last_mouse_pos;
 
         let mut io = IoReal {
-            frame_start: self.last_frame - self.first_frame,
             backend: &mut self.backend,
             event_loop,
         };
@@ -261,7 +252,6 @@ impl Running {
             return;
         };
         let mut io = IoReal {
-            frame_start: self.last_frame - self.first_frame,
             backend: &mut self.backend,
             event_loop,
         };
