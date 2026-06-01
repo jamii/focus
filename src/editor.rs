@@ -671,7 +671,6 @@ impl Editor {
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
-        editor.last_input = io.frame_start();
     }
 
     fn cursor_add_next_match(&mut self, app: &App) {
@@ -735,7 +734,6 @@ impl Editor {
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
-        editor.last_input = io.frame_start();
     }
 
     fn cursor_delete_right(editor_id: EditorId, app: &App, io: &mut dyn IO) {
@@ -765,7 +763,6 @@ impl Editor {
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
-        editor.last_input = io.frame_start();
     }
 
     fn cursor_copy(&self, app: &App, io: &mut dyn IO) {
@@ -816,12 +813,10 @@ impl Editor {
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
-        editor.last_input = io.frame_start();
     }
 
     fn cursor_paste(editor_id: EditorId, app: &App, io: &mut dyn IO) {
         let Some(clip_text) = io.get_clipboard_text() else {
-            editor_id.get_mut(app).last_input = io.frame_start();
             return;
         };
         let editor = editor_id.get(app);
@@ -856,12 +851,10 @@ impl Editor {
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
-        editor.last_input = io.frame_start();
     }
 
     fn cursor_paste_many(editor_id: EditorId, app: &App, io: &mut dyn IO) {
         let Some(clip_text) = io.get_clipboard_text() else {
-            editor_id.get_mut(app).last_input = io.frame_start();
             return;
         };
         let lines: Vec<&str> = clip_text.split('\n').collect();
@@ -900,7 +893,6 @@ impl Editor {
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
-        editor.last_input = io.frame_start();
     }
 
     fn refresh_wraps(&mut self, app: &App) {
