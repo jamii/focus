@@ -38,36 +38,6 @@ pub struct DocumentId(usize);
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct EditorId(usize);
 
-impl WindowId {
-    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Window> {
-        app.windows.get(&self).unwrap().borrow()
-    }
-
-    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Window> {
-        app.windows.get(&self).unwrap().borrow_mut()
-    }
-}
-
-impl EditorId {
-    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Editor> {
-        app.editors.get(&self).unwrap().borrow()
-    }
-
-    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Editor> {
-        app.editors.get(&self).unwrap().borrow_mut()
-    }
-}
-
-impl DocumentId {
-    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Document> {
-        app.documents.get(&self).unwrap().borrow()
-    }
-
-    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Document> {
-        app.documents.get(&self).unwrap().borrow_mut()
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum InputEvent {
     CloseRequested,
@@ -278,5 +248,35 @@ impl App {
         self.next_document_id.0 += 1;
         self.documents.insert(document_id, RefCell::new(document));
         document_id
+    }
+}
+
+impl WindowId {
+    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Window> {
+        app.windows.get(&self).unwrap().borrow()
+    }
+
+    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Window> {
+        app.windows.get(&self).unwrap().borrow_mut()
+    }
+}
+
+impl EditorId {
+    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Editor> {
+        app.editors.get(&self).unwrap().borrow()
+    }
+
+    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Editor> {
+        app.editors.get(&self).unwrap().borrow_mut()
+    }
+}
+
+impl DocumentId {
+    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Document> {
+        app.documents.get(&self).unwrap().borrow()
+    }
+
+    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Document> {
+        app.documents.get(&self).unwrap().borrow_mut()
     }
 }
