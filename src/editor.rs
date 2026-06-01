@@ -112,157 +112,172 @@ impl Editor {
     }
 
     pub fn input(editor_id: EditorId, app: &App, io: &mut dyn IO, event: InputEvent) {
-        let mut editor = editor_id.get_mut(app);
-        match event {
-            InputEvent::Key {
-                state, logical_key, ..
-            } if state == ElementState::Pressed
-                && app.modifiers.control_key()
-                && !app.modifiers.alt_key() =>
-            {
-                match logical_key.as_ref() {
-                    Key::Character("i") => {
-                        editor.cursor_move(app, Direction::Up);
-                    }
-                    Key::Character("k") => {
-                        editor.cursor_move(app, Direction::Down);
-                    }
-                    Key::Character("j") => {
-                        editor.cursor_move(app, Direction::Left);
-                    }
-                    Key::Character("l") => {
-                        editor.cursor_move(app, Direction::Right);
-                    }
-                    Key::Named(NamedKey::Space) => {
-                        editor.toggle_mark();
-                    }
-                    Key::Character("d") => {
-                        editor.cursor_add_next_match(app);
-                    }
-                    Key::Character("D") => {
-                        editor.cursor_remove_last();
-                    }
-                    Key::Character("c") => {
-                        editor.cursor_copy(app, io);
-                    }
-                    Key::Character("x") => {
-                        drop(editor);
-                        Editor::cursor_cut(editor_id, app, io);
-                        return;
-                    }
-                    Key::Character("v") => {
-                        drop(editor);
-                        Editor::cursor_paste(editor_id, app, io);
-                        return;
-                    }
-                    Key::Character("V") => {
-                        drop(editor);
-                        Editor::cursor_paste_many(editor_id, app, io);
-                        return;
-                    }
-                    Key::Character("s") => {
-                        editor.save(app, io, SaveKind::Explicit);
-                    }
-                    _ => {}
-                }
-            }
-            InputEvent::Key {
-                state, logical_key, ..
-            } if state == ElementState::Pressed
-                && !app.modifiers.control_key()
-                && app.modifiers.alt_key() =>
-            {
-                match logical_key.as_ref() {
-                    Key::Character("j") => {
-                        editor.cursor_goto_line_start(app);
-                    }
-                    Key::Character("l") => {
-                        editor.cursor_goto_line_end(app);
-                    }
-                    Key::Character("i") => {
-                        editor.cursor_goto_doc_start(app);
-                    }
-                    Key::Character("k") => {
-                        editor.cursor_goto_doc_end(app);
-                    }
-                    _ => {}
-                }
-            }
-            InputEvent::Key {
-                state, logical_key, ..
-            } if state == ElementState::Pressed
-                && !app.modifiers.control_key()
-                && !app.modifiers.alt_key() =>
-            {
-                match logical_key.as_ref() {
-                    Key::Character(char) => {
-                        drop(editor);
-                        Editor::cursor_replace(editor_id, app, io, char.as_bytes());
-                        return;
-                    }
-                    Key::Named(NamedKey::Enter) => {
-                        drop(editor);
-                        Editor::cursor_replace(editor_id, app, io, b"\n");
-                        return;
-                    }
-                    Key::Named(NamedKey::Space) => {
-                        drop(editor);
-                        Editor::cursor_replace(editor_id, app, io, b" ");
-                        return;
-                    }
-                    Key::Named(NamedKey::Backspace) => {
-                        drop(editor);
-                        Editor::cursor_delete_left(editor_id, app, io);
-                        return;
-                    }
-                    Key::Named(NamedKey::Delete) => {
-                        drop(editor);
-                        Editor::cursor_delete_right(editor_id, app, io);
-                        return;
-                    }
-                    _ => {}
-                }
-            }
-            InputEvent::MouseButton { state, position } => {
-                match state {
-                    ElementState::Pressed => {
-                        let offset = editor.offset_from_screen(app, position);
-
-                        // Ctrl-click / Ctrl-drag: add a new cursor
-                        // Click / drag: set main cursor, remove others
-                        if !app.modifiers.control_key() {
-                            editor.cursors.clear();
+        let cursor_main_old;
+        {
+            let mut editor = editor_id.get_mut(app);
+            cursor_main_old = editor.cursors.last().unwrap().clone();
+            match event {
+                InputEvent::Key {
+                    state, logical_key, ..
+                } if state == ElementState::Pressed
+                    && app.modifiers.control_key()
+                    && !app.modifiers.alt_key() =>
+                {
+                    match logical_key.as_ref() {
+                        Key::Character("i") => {
+                            editor.cursor_move(app, Direction::Up);
                         }
-
-                        let idx = editor.cursors.len();
-                        editor.cursors.push(Cursor {
-                            head: CursorPoint {
-                                offset,
-                                col_wanted: None,
-                            },
-                            tail: CursorPoint {
-                                offset,
-                                col_wanted: None,
-                            },
-                        });
-                        editor.dragging = Some(DragInfo { cursor_index: idx });
-                        editor.marked = false;
-                        editor.scroll_to_main_cursor = true;
-                    }
-                    ElementState::Released => {
-                        editor.dragging = None;
+                        Key::Character("k") => {
+                            editor.cursor_move(app, Direction::Down);
+                        }
+                        Key::Character("j") => {
+                            editor.cursor_move(app, Direction::Left);
+                        }
+                        Key::Character("l") => {
+                            editor.cursor_move(app, Direction::Right);
+                        }
+                        Key::Named(NamedKey::Space) => {
+                            editor.toggle_mark();
+                        }
+                        Key::Character("d") => {
+                            editor.cursor_add_next_match(app);
+                        }
+                        Key::Character("D") => {
+                            editor.cursor_remove_last();
+                        }
+                        Key::Character("c") => {
+                            editor.cursor_copy(app, io);
+                        }
+                        Key::Character("x") => {
+                            drop(editor);
+                            Editor::cursor_cut(editor_id, app, io);
+                            return;
+                        }
+                        Key::Character("v") => {
+                            drop(editor);
+                            Editor::cursor_paste(editor_id, app, io);
+                            return;
+                        }
+                        Key::Character("V") => {
+                            drop(editor);
+                            Editor::cursor_paste_many(editor_id, app, io);
+                            return;
+                        }
+                        Key::Character("s") => {
+                            editor.save(app, io, SaveKind::Explicit);
+                        }
+                        Key::Character("z") => {
+                            drop(editor);
+                            Editor::undo(editor_id, app);
+                        }
+                        Key::Character("Z") => {
+                            drop(editor);
+                            Editor::redo(editor_id, app);
+                        }
+                        _ => {}
                     }
                 }
+                InputEvent::Key {
+                    state, logical_key, ..
+                } if state == ElementState::Pressed
+                    && !app.modifiers.control_key()
+                    && app.modifiers.alt_key() =>
+                {
+                    match logical_key.as_ref() {
+                        Key::Character("j") => {
+                            editor.cursor_goto_line_start(app);
+                        }
+                        Key::Character("l") => {
+                            editor.cursor_goto_line_end(app);
+                        }
+                        Key::Character("i") => {
+                            editor.cursor_goto_doc_start(app);
+                        }
+                        Key::Character("k") => {
+                            editor.cursor_goto_doc_end(app);
+                        }
+                        _ => {}
+                    }
+                }
+                InputEvent::Key {
+                    state, logical_key, ..
+                } if state == ElementState::Pressed
+                    && !app.modifiers.control_key()
+                    && !app.modifiers.alt_key() =>
+                {
+                    match logical_key.as_ref() {
+                        Key::Character(char) => {
+                            drop(editor);
+                            Editor::cursor_replace(editor_id, app, io, char.as_bytes());
+                        }
+                        Key::Named(NamedKey::Enter) => {
+                            drop(editor);
+                            Editor::cursor_replace(editor_id, app, io, b"\n");
+                        }
+                        Key::Named(NamedKey::Space) => {
+                            drop(editor);
+                            Editor::cursor_replace(editor_id, app, io, b" ");
+                        }
+                        Key::Named(NamedKey::Backspace) => {
+                            drop(editor);
+                            Editor::cursor_delete_left(editor_id, app, io);
+                        }
+                        Key::Named(NamedKey::Delete) => {
+                            drop(editor);
+                            Editor::cursor_delete_right(editor_id, app, io);
+                        }
+                        _ => {}
+                    }
+                }
+                InputEvent::MouseButton { state, position } => {
+                    match state {
+                        ElementState::Pressed => {
+                            let offset = editor.offset_from_screen(app, position);
+
+                            // Ctrl-click / Ctrl-drag: add a new cursor
+                            // Click / drag: set main cursor, remove others
+                            if !app.modifiers.control_key() {
+                                editor.cursors.clear();
+                            }
+
+                            let idx = editor.cursors.len();
+                            editor.cursors.push(Cursor {
+                                head: CursorPoint {
+                                    offset,
+                                    col_wanted: None,
+                                },
+                                tail: CursorPoint {
+                                    offset,
+                                    col_wanted: None,
+                                },
+                            });
+                            editor.dragging = Some(DragInfo { cursor_index: idx });
+                            editor.marked = false;
+                            editor.scroll_to_main_cursor = true;
+                        }
+                        ElementState::Released => {
+                            editor.dragging = None;
+                        }
+                    }
+                }
+                InputEvent::MouseWheel { y_offset } => {
+                    editor.top_pixel -= (SCROLL_AMOUNT * y_offset) as isize;
+                }
+                InputEvent::FocusChanged { focused: false } => {
+                    editor.save(app, io, SaveKind::Auto);
+                }
+                _ => {}
             }
-            InputEvent::MouseWheel { y_offset } => {
-                editor.top_pixel -= (SCROLL_AMOUNT * y_offset) as isize;
-            }
-            InputEvent::FocusChanged { focused: false } => {
-                editor.save(app, io, SaveKind::Auto);
-            }
-            _ => {}
         }
+
+        let mut editor = editor_id.get_mut(app);
+
         editor.last_input = io.frame_start();
+
+        // If the main cursor moved, start a new undo group.
+        if cursor_main_old.head.offset != editor.cursors.last().unwrap().head.offset {
+            Document::flush_doing(editor.document_id, app);
+        }
     }
 
     fn save(&self, app: &App, io: &mut dyn IO, kind: SaveKind) {
@@ -643,7 +658,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, edits);
+        Document::apply_edits(document_id, app, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -707,7 +722,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, edits);
+        Document::apply_edits(document_id, app, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -737,7 +752,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, edits);
+        Document::apply_edits(document_id, app, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -788,7 +803,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, edits);
+        Document::apply_edits(document_id, app, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -828,7 +843,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, edits);
+        Document::apply_edits(document_id, app, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -872,7 +887,7 @@ impl Editor {
         Edit::coalesce(&mut edits);
         drop(document);
         drop(editor);
-        Document::apply_edits(document_id, app, edits);
+        Document::apply_edits(document_id, app, &edits);
         let mut editor = editor_id.get_mut(app);
         editor.marked = false;
         editor.scroll_to_main_cursor = true;
@@ -1066,6 +1081,24 @@ impl Editor {
             offset: result_offset,
             col_wanted: Some(col),
         })
+    }
+
+    fn undo(editor_id: EditorId, app: &App) {
+        let document_id = editor_id.get(app).document_id;
+        if let Some(offset) = Document::undo(document_id, app) {
+            editor_id
+                .get_mut(app)
+                .scroll_offset_into_center(app, offset);
+        }
+    }
+
+    fn redo(editor_id: EditorId, app: &App) {
+        let document_id = editor_id.get(app).document_id;
+        if let Some(offset) = Document::redo(document_id, app) {
+            editor_id
+                .get_mut(app)
+                .scroll_offset_into_center(app, offset);
+        }
     }
 }
 
