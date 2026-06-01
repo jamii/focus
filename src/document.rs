@@ -320,13 +320,13 @@ impl DocumentId {
     pub fn undo(self, app: &mut App) -> Option<usize> {
         self.flush_doing(app);
         let undo = self.get_mut(app).undos.pop()?;
+        let offset = undo.first().unwrap().first().unwrap().offset;
         let mut redo = vec![];
         for mut edits in undo.into_iter().rev() {
             Edit::undo(&mut edits);
             self.apply_edits_raw(app, &edits);
             redo.push(edits);
         }
-        let offset = redo.last().unwrap().last().unwrap().offset;
         self.get_mut(app).redos.push(redo);
         Some(offset)
     }

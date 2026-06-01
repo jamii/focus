@@ -46,6 +46,7 @@
 
 Editor:
 * Status bar
+  * Should text be selectable? Separate editor?
 * Copy file:line
 * Open on web
 
