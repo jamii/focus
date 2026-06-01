@@ -412,6 +412,7 @@ impl OffsetDiff {
         offsets_new.push(((len_old as isize) + cum_shift) as usize);
         deleted.push(false);
 
+        // TODO fix this slop.
         // Dedup adjacent same offsets_old by removing the EARLIER occurrence.
         // The later occurrence reflects the state after the later edit at that offset.
         let mut i = 0;
