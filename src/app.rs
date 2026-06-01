@@ -1,4 +1,3 @@
-use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -19,14 +18,15 @@ pub struct App {
     px_size: f32,
     pub atlas: Atlas,
 
-    pub windows: HashMap<WindowId, RefCell<Window>>,
-    pub modifiers: ModifiersState,
+    pub windows: HashMap<WindowId, Window>,
 
     next_editor_id: EditorId,
-    pub editors: HashMap<EditorId, RefCell<Editor>>,
+    pub editors: HashMap<EditorId, Editor>,
 
     next_document_id: DocumentId,
-    pub documents: HashMap<DocumentId, RefCell<Document>>,
+    pub documents: HashMap<DocumentId, Document>,
+
+    pub modifiers: ModifiersState,
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
@@ -117,11 +117,11 @@ impl App {
             px_size: INITIAL_PX,
             atlas,
             windows: HashMap::new(),
-            modifiers: ModifiersState::default(),
             next_editor_id: EditorId(0),
             editors: HashMap::new(),
             next_document_id: DocumentId(0),
             documents: HashMap::new(),
+            modifiers: ModifiersState::default(),
         };
         let document_id = match initial_path {
             Some(path) => app.insert_document(Document::from_file(path)),
@@ -129,7 +129,7 @@ impl App {
         };
         let editor_id = app.insert_editor(Editor::new(document_id, &app));
         app.windows
-            .insert(initial_window_id, RefCell::new(Window::new(editor_id)));
+            .insert(initial_window_id, Window::new(editor_id));
         app
     }
 
@@ -177,9 +177,10 @@ impl App {
     }
 
     pub fn tick(&mut self, io: &mut dyn IO) {
-        for window_id in self.windows.keys() {
+        let window_ids: Vec<_> = self.windows.keys().copied().collect();
+        for window_id in window_ids {
             window_id.tick(self, io);
-            io.request_redraw(*window_id);
+            io.request_redraw(window_id);
         }
     }
 
@@ -199,7 +200,7 @@ impl App {
 
     fn insert_window(&mut self, io: &mut dyn IO, window: Window) -> WindowId {
         let window_id = io.open_window(INITIAL_TITLE.to_string(), INITIAL_SIZE);
-        self.windows.insert(window_id, RefCell::new(window));
+        self.windows.insert(window_id, window);
         window_id
     }
 
@@ -211,7 +212,7 @@ impl App {
     pub fn insert_editor(&mut self, editor: Editor) -> EditorId {
         let editor_id = self.next_editor_id;
         self.next_editor_id.0 += 1;
-        self.editors.insert(editor_id, RefCell::new(editor));
+        self.editors.insert(editor_id, editor);
         editor_id
     }
 
@@ -222,37 +223,37 @@ impl App {
     pub fn insert_document(&mut self, document: Document) -> DocumentId {
         let document_id = self.next_document_id;
         self.next_document_id.0 += 1;
-        self.documents.insert(document_id, RefCell::new(document));
+        self.documents.insert(document_id, document);
         document_id
     }
 }
 
 impl WindowId {
-    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Window> {
-        app.windows.get(&self).unwrap().borrow()
+    pub fn get<'a>(self, app: &'a App) -> &'a Window {
+        app.windows.get(&self).unwrap()
     }
 
-    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Window> {
-        app.windows.get(&self).unwrap().borrow_mut()
+    pub fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Window {
+        app.windows.get_mut(&self).unwrap()
     }
 }
 
 impl EditorId {
-    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Editor> {
-        app.editors.get(&self).unwrap().borrow()
+    pub fn get<'a>(self, app: &'a App) -> &'a Editor {
+        app.editors.get(&self).unwrap()
     }
 
-    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Editor> {
-        app.editors.get(&self).unwrap().borrow_mut()
+    pub fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Editor {
+        app.editors.get_mut(&self).unwrap()
     }
 }
 
 impl DocumentId {
-    pub fn get<'a>(self, app: &'a App) -> Ref<'a, Document> {
-        app.documents.get(&self).unwrap().borrow()
+    pub fn get<'a>(self, app: &'a App) -> &'a Document {
+        app.documents.get(&self).unwrap()
     }
 
-    pub fn get_mut<'a>(self, app: &'a App) -> RefMut<'a, Document> {
-        app.documents.get(&self).unwrap().borrow_mut()
+    pub fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Document {
+        app.documents.get_mut(&self).unwrap()
     }
 }

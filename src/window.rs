@@ -17,17 +17,17 @@ impl Window {
 impl WindowId {
     pub fn assert_invariants(self, _app: &App) {}
 
-    pub fn input(self, app: &App, io: &mut dyn IO, event: InputEvent) {
+    pub fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent) {
         let editor_id = self.get(app).editor_id;
         editor_id.input(app, io, event);
     }
 
-    pub fn tick(self, app: &App, io: &mut dyn IO) {
+    pub fn tick(self, app: &mut App, io: &mut dyn IO) {
         let editor_id = self.get(app).editor_id;
         editor_id.tick(app, io);
     }
 
-    pub fn draw(self, app: &App, drawing: &mut Drawing) {
+    pub fn draw(self, app: &mut App, drawing: &mut Drawing) {
         let editor_id = self.get(app).editor_id;
         drawing.draw_rect(
             &app.atlas,

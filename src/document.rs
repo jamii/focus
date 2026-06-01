@@ -110,12 +110,11 @@ impl DocumentId {
         self.get(app).assert_invariants();
     }
 
-    pub fn tick(self, app: &App, io: &mut dyn IO) {
+    pub fn tick(self, app: &mut App, io: &mut dyn IO) {
         // Maybe flush doing.
         {
             let document = self.get(app);
             if io.frame_start() - document.last_modified_time > Duration::from_secs(1) {
-                drop(document);
                 self.flush_doing(app);
             }
         }
@@ -123,7 +122,7 @@ impl DocumentId {
         // Maybe reload.
         let mut edits = vec![];
         {
-            let mut document = self.get_mut(app);
+            let document = self.get_mut(app);
             let last_modified_time = document.last_modified_time;
             if let Source::File(source) = &mut document.source {
                 if !(last_modified_time > source.last_save_time) {
@@ -136,22 +135,22 @@ impl DocumentId {
         self.apply_edits(app, io, &edits);
     }
 
-    pub fn apply_edits(self, app: &App, io: &mut dyn IO, edits: &[Edit]) {
+    pub fn apply_edits(self, app: &mut App, io: &mut dyn IO, edits: &[Edit]) {
         if edits.is_empty() {
             return;
         }
 
         self.apply_edits_raw(app, io, edits);
 
-        let mut document = self.get_mut(app);
+        let document = self.get_mut(app);
         document.doing.push(edits.to_vec());
         document.redos.clear();
     }
 
-    fn apply_edits_raw(self, app: &App, io: &mut dyn IO, edits: &[Edit]) {
+    fn apply_edits_raw(self, app: &mut App, io: &mut dyn IO, edits: &[Edit]) {
         assert!(!edits.is_empty());
 
-        let mut document = self.get_mut(app);
+        let document = self.get_mut(app);
         Edit::assert_invariants(edits, document.text.as_bstr());
 
         let len_old = document.text.len();
@@ -187,21 +186,21 @@ impl DocumentId {
 
         document.last_modified_time = io.frame_start();
 
-        drop(document);
-
-        for (editor_id, editor) in &app.editors {
-            let matches = editor.borrow().document_id == self;
-            if matches {
-                editor_id.handle_edits(app, &diff);
-            }
+        let editor_ids: Vec<_> = app
+            .editors
+            .iter()
+            .filter_map(|(editor_id, editor)| (editor.document_id == self).then_some(*editor_id))
+            .collect();
+        for editor_id in editor_ids {
+            editor_id.handle_edits(app, &diff);
         }
     }
 
     /// Save to disk. Explicit saves create the file if missing; autosaves
     /// treat NotFound as an external deletion.
     /// No-op for Scratch sources or when not modified since last save.
-    pub fn save(self, app: &App, io: &mut dyn IO, kind: SaveKind) {
-        let mut document = self.get_mut(app);
+    pub fn save(self, app: &mut App, io: &mut dyn IO, kind: SaveKind) {
+        let document = self.get_mut(app);
         let absolute_path = match &document.source {
             Source::File(SourceFile {
                 absolute_path,
@@ -306,8 +305,8 @@ impl DocumentId {
         unreachable!()
     }
 
-    pub fn flush_doing(self, app: &App) {
-        let mut document = self.get_mut(app);
+    pub fn flush_doing(self, app: &mut App) {
+        let document = self.get_mut(app);
         if document.doing.is_empty() {
             return;
         }
@@ -315,7 +314,7 @@ impl DocumentId {
         document.undos.push(doing);
     }
 
-    pub fn undo(self, app: &App, io: &mut dyn IO) -> Option<usize> {
+    pub fn undo(self, app: &mut App, io: &mut dyn IO) -> Option<usize> {
         self.flush_doing(app);
         let undo = self.get_mut(app).undos.pop()?;
         let mut redo = vec![];
@@ -329,7 +328,7 @@ impl DocumentId {
         Some(offset)
     }
 
-    pub fn redo(self, app: &App, io: &mut dyn IO) -> Option<usize> {
+    pub fn redo(self, app: &mut App, io: &mut dyn IO) -> Option<usize> {
         self.flush_doing(app);
         let redo = self.get_mut(app).redos.pop()?;
         let mut undo = vec![];
