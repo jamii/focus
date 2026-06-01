@@ -45,7 +45,6 @@
 ## next
 
 Editor:
-* Undo/redo
 * Open on web
 
 Read code and clean up slop.
