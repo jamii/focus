@@ -19,8 +19,8 @@ impl Window {
         self.editor_id.get_mut(app).input(app, io, event);
     }
 
-    pub fn tick(&mut self, app: &App, io: &mut dyn IO, redraw: &mut bool) {
-        self.editor_id.get_mut(app).tick(app, io, redraw);
+    pub fn tick(&mut self, app: &App, io: &mut dyn IO) {
+        self.editor_id.get_mut(app).tick(app, io);
     }
 
     pub fn draw(&mut self, app: &App, drawing: &mut Drawing) {

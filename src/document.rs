@@ -93,14 +93,13 @@ impl Document {
         }
     }
 
-    pub fn tick(&mut self, _app: &App, io: &mut dyn IO, redraw: &mut bool) {
+    pub fn tick(&mut self, _app: &App, io: &mut dyn IO) {
         if let Source::File(source) = &mut self.source {
             if !(self.last_modified_time > source.last_save_time) {
                 if let Some(text_new) = source.refresh_from_disk(io) {
                     source.last_save_time = io.frame_start();
                     let edits = diff_text(self.text.as_bstr(), text_new.as_bstr());
                     self.queue_edits(io, edits);
-                    *redraw = true;
                 }
             }
         }

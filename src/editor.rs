@@ -242,8 +242,8 @@ impl Editor {
         self.document_id.get_mut(app).save(io, kind);
     }
 
-    pub fn tick(&mut self, app: &App, io: &mut dyn IO, redraw: &mut bool) {
-        self.document_id.get_mut(app).tick(app, io, redraw);
+    pub fn tick(&mut self, app: &App, io: &mut dyn IO) {
+        self.document_id.get_mut(app).tick(app, io);
 
         // During drag, poll mouse position and update cursor head.
         if let Some(drag_info) = self.dragging {
@@ -269,15 +269,10 @@ impl Editor {
             }
 
             self.last_input = io.frame_start();
-            *redraw = true;
         }
 
-        let show_cursor = ((io.frame_start().as_millis() / 500) % 2) == 0
+        self.show_cursor = ((io.frame_start().as_millis() / 500) % 2) == 0
             || (io.frame_start() - self.last_input < Duration::from_millis(500));
-        if self.show_cursor != show_cursor {
-            self.show_cursor = show_cursor;
-            *redraw = true;
-        }
     }
 
     pub fn draw(&mut self, app: &App, drawing: &mut Drawing) {
@@ -1821,9 +1816,7 @@ mod tests {
         let hello_mid_x = 5.0 * cell_w;
         let mut io2 = crate::fuzz::MockIO::new();
         io2.mouse_pos = [hello_mid_x, 0.0];
-        let mut redraw = false;
-        editor.tick(&app, &mut io2, &mut redraw);
-        assert!(redraw);
+        editor.tick(&app, &mut io2);
         assert!(editor.dragging.is_some());
         assert_eq!(editor.cursors[0].head.offset, 4);
         assert_eq!(editor.cursors[0].tail.offset, 6);
@@ -1857,9 +1850,7 @@ mod tests {
         let hello_mid_x = 5.0 * cell_w;
         let mut io2 = crate::fuzz::MockIO::new();
         io2.mouse_pos = [hello_mid_x, 0.0];
-        let mut redraw = false;
-        editor.tick(&app, &mut io2, &mut redraw);
-        assert!(redraw);
+        editor.tick(&app, &mut io2);
         assert_eq!(editor.cursors.len(), 2);
         assert_eq!(editor.cursors[1].head.offset, 4);
         assert_eq!(editor.cursors[1].tail.offset, 6);
@@ -1910,8 +1901,7 @@ mod tests {
         );
         let top_before = editor.top_pixel;
         io.mouse_pos = [0.0, editor.last_viewport_size[1] + 50.0];
-        let mut redraw = false;
-        editor.tick(&app, &mut io, &mut redraw);
+        editor.tick(&app, &mut io);
         assert!(editor.top_pixel > top_before, "expected scroll down");
     }
 
@@ -1934,8 +1924,7 @@ mod tests {
         );
         let top_before = editor.top_pixel;
         io.mouse_pos = [0.0, -50.0];
-        let mut redraw = false;
-        editor.tick(&app, &mut io, &mut redraw);
+        editor.tick(&app, &mut io);
         assert!(editor.top_pixel < top_before, "expected scroll up");
     }
 

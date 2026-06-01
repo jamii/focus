@@ -83,7 +83,9 @@ pub enum InputEvent {
         state: ElementState,
         position: [f32; 2],
     },
-    FocusChanged { focused: bool },
+    FocusChanged {
+        focused: bool,
+    },
 }
 
 // External effects. Mocked for testing/fuzzing.
@@ -136,11 +138,7 @@ impl App {
         }
     }
 
-    pub fn new(
-        initial_window_id: WindowId,
-        io: &mut dyn IO,
-        initial_path: Option<PathBuf>,
-    ) -> App {
+    pub fn new(initial_window_id: WindowId, io: &mut dyn IO, initial_path: Option<PathBuf>) -> App {
         let font = Font::from_bytes(FONT, FontSettings::default()).unwrap();
         let atlas = Atlas::build(&font, INITIAL_PX);
         io.reload_atlas(&atlas);
@@ -208,17 +206,12 @@ impl App {
         }
 
         self.flush_queued_edits(io);
-
-        io.request_redraw(window_id);
     }
 
     pub fn tick(&mut self, io: &mut dyn IO) {
         for (window_id, window) in &self.windows {
-            let mut redraw = false;
-            window.borrow_mut().tick(self, io, &mut redraw);
-            if redraw {
-                io.request_redraw(*window_id);
-            }
+            window.borrow_mut().tick(self, io);
+            io.request_redraw(*window_id);
         }
 
         self.flush_queued_edits(io);
@@ -242,13 +235,6 @@ impl App {
                 editor_diffs.insert(*editor_id, diff);
             }
         }
-
-        for (window_id, window) in &self.windows {
-            let window = window.borrow();
-            if editor_diffs.contains_key(&window.editor_id) {
-                io.request_redraw(*window_id);
-            }
-        }
     }
 
     pub fn draw(&mut self, window_id: WindowId, drawing: &mut Drawing) {
@@ -258,9 +244,6 @@ impl App {
     fn rebuild_atlas(&mut self, io: &mut dyn IO) {
         self.atlas = Atlas::build(&self.font, self.px_size);
         io.reload_atlas(&self.atlas);
-        for (window_id, _) in self.windows.iter() {
-            io.request_redraw(*window_id);
-        }
     }
 
     fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {

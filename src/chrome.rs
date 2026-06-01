@@ -1,23 +1,3 @@
-// Plumbing between winit/glutin and `app::App`.
-//
-// Lifecycle:
-//   * On `resumed` we bootstrap one window with its GL display, context,
-//     and renderer, then build the `App` against that window. After this
-//     point everything we care about (context, renderer, app) is
-//     unconditionally present — no `Option` dance.
-//   * Each loop iteration is paced by a fixed-rate timing loop: tick at
-//     `NewEvents`, then `thread::sleep` in `AboutToWait` for whatever's
-//     left of the frame budget. winit runs in `ControlFlow::Poll`, so the
-//     loop is ours to throttle.
-//   * Input events go straight to `app.input`. The app may call
-//     `io.request_redraw`, which schedules a `WindowEvent::RedrawRequested`
-//     for the same iteration; we draw on that. So input → pixels stays
-//     on one loop pass with no queued-for-next-frame lag.
-//
-// No vsync: with many windows, per-surface vsync serializes swaps. The
-// timing loop's sleep already caps us at ~60 Hz, which on most displays
-// is also the refresh rate.
-
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::io::Write;
@@ -361,9 +341,6 @@ impl Backend {
         let renderer = unsafe { Renderer::new() };
 
         let id = WindowId(window.id());
-        // Initial paint — drives the first `RedrawRequested` so the
-        // window doesn't stay blank until something dirties it.
-        window.request_redraw();
         let mut windows = HashMap::new();
         windows.insert(id, WindowState { window, surface });
         let clipboard = arboard::Clipboard::new()
@@ -392,7 +369,6 @@ impl Backend {
         self.context.make_current(&surface).expect("make_current");
         let _ = surface.set_swap_interval(&self.context, SwapInterval::DontWait);
         let id = WindowId(window.id());
-        window.request_redraw();
         self.windows.insert(id, WindowState { window, surface });
         id
     }
