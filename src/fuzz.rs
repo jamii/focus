@@ -124,7 +124,17 @@ const A_CLOSE: u32 = 2;
 const A_TICK: u32 = 20;
 const A_DRAW: u32 = 40;
 const A_SCROLL: u32 = 20;
+const A_MOUSE_MOVE: u32 = 20;
+const A_MOUSE_BUTTON: u32 = 20;
 const A_FILE_MODIFY: u32 = 10;
+
+fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> {
+    let x_limit = (screen_size[0].max(0.0) as u32).saturating_add(200).max(4000);
+    let y_limit = (screen_size[1].max(0.0) as u32).saturating_add(200).max(4000);
+    let x = frng.u32_bounded(0, x_limit)? as f32 - 100.0;
+    let y = frng.u32_bounded(0, y_limit)? as f32 - 100.0;
+    Some([x, y])
+}
 
 // Each step: tick once (advancing time), then perform one randomly
 // chosen action. Returns Some(()) if more entropy is available; None
@@ -145,6 +155,8 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_TICK,
         A_DRAW,
         A_SCROLL,
+        A_MOUSE_MOVE,
+        A_MOUSE_BUTTON,
         A_FILE_MODIFY,
     ])?;
     match action {
@@ -246,6 +258,31 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             app.input(io, window_id, InputEvent::MouseWheel { y_offset });
         }
         7 => {
+            // Cursor movement is not an InputEvent in the real app; winit
+            // updates the last cursor position, then App samples it on tick.
+            io.mouse_pos = random_mouse_pos(frng, io.screen_size)?;
+            sync_app_io(app, io);
+        }
+        8 => {
+            let position = if frng.boolean()? {
+                io.mouse_pos
+            } else {
+                random_mouse_pos(frng, io.screen_size)?
+            };
+            io.mouse_pos = position;
+            sync_app_io(app, io);
+            let state = if frng.boolean()? {
+                ElementState::Pressed
+            } else {
+                ElementState::Released
+            };
+            app.input(
+                io,
+                window_id,
+                InputEvent::MouseButton { state, position },
+            );
+        }
+        9 => {
             let paths: Vec<PathBuf> = io.files.keys().cloned().collect();
             if !paths.is_empty() {
                 let path = paths[frng.usize_bounded(0, paths.len() - 1)?].clone();

@@ -45,6 +45,8 @@
 ## next
 
 Editor:
+* Status bar
+* Copy file:line
 * Open on web
 
 Read code and clean up slop.
