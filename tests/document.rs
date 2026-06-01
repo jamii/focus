@@ -20,8 +20,18 @@ fn backspace_updates_document_through_editor() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcd");
 
-    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Backspace));
-    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Backspace));
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::Backspace),
+    );
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::Backspace),
+    );
 
     assert_eq!(common::text(&app), "ab");
     app.assert_invariants();

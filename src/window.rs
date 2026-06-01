@@ -1,4 +1,4 @@
-use crate::app::{App, EditorId, IO, InputEvent};
+use crate::app::{App, EditorId, IO, InputEvent, WindowId};
 use crate::drawing::{Drawing, Rect};
 use crate::style;
 
@@ -9,21 +9,24 @@ pub struct Window {
 impl Window {
     pub fn assert_invariants(&self) {}
 
-    pub fn new(editor_id: EditorId) -> Window {
+    pub(crate) fn new(editor_id: EditorId) -> Window {
         Window {
             editor_id: editor_id,
         }
     }
 
-    pub fn input(&mut self, app: &App, io: &mut dyn IO, event: InputEvent) {
-        self.editor_id.get_mut(app).input(app, io, event);
+    pub fn input(window_id: WindowId, app: &App, io: &mut dyn IO, event: InputEvent) {
+        let editor_id = window_id.get(app).editor_id;
+        crate::editor::Editor::input(editor_id, app, io, event);
     }
 
-    pub fn tick(&mut self, app: &App, io: &mut dyn IO) {
-        self.editor_id.get_mut(app).tick(app, io);
+    pub fn tick(window_id: WindowId, app: &App, io: &mut dyn IO) {
+        let editor_id = window_id.get(app).editor_id;
+        crate::editor::Editor::tick(editor_id, app, io);
     }
 
-    pub fn draw(&mut self, app: &App, drawing: &mut Drawing) {
+    pub fn draw(window_id: WindowId, app: &App, drawing: &mut Drawing) {
+        let editor_id = window_id.get(app).editor_id;
         drawing.draw_rect(
             &app.atlas,
             Rect {
@@ -32,6 +35,6 @@ impl Window {
             },
             style::BACKGROUND_COLOR,
         );
-        self.editor_id.get_mut(app).draw(app, drawing);
+        crate::editor::Editor::draw(editor_id, app, drawing);
     }
 }

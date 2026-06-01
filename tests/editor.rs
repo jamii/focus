@@ -204,7 +204,10 @@ fn empty_text_draws_cursor_on_first_wrap() {
 
     let drawing = common::draw(&mut app, window_id, 10, 3);
 
-    assert_eq!(common::text_line_lengths(&app, &drawing), Vec::<usize>::new());
+    assert_eq!(
+        common::text_line_lengths(&app, &drawing),
+        Vec::<usize>::new()
+    );
     assert_eq!(common::cursor_lines(&app, &drawing), vec![0]);
     app.assert_invariants();
 }
@@ -238,7 +241,10 @@ fn lone_newline_moves_cursor_to_empty_second_wrap() {
 
     let drawing = common::draw(&mut app, window_id, 10, 4);
 
-    assert_eq!(common::text_line_lengths(&app, &drawing), Vec::<usize>::new());
+    assert_eq!(
+        common::text_line_lengths(&app, &drawing),
+        Vec::<usize>::new()
+    );
     assert_eq!(common::cursor_lines(&app, &drawing), vec![1]);
     app.assert_invariants();
 }

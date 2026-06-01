@@ -3,7 +3,7 @@ use std::{path::PathBuf, time::Duration};
 
 use bstr::{BStr, BString, ByteSlice};
 
-use crate::app::{App, IO};
+use crate::app::{App, DocumentId, IO};
 
 pub struct Document {
     pub text: BString,
@@ -52,21 +52,7 @@ pub struct OffsetDiff {
 }
 
 impl Document {
-    pub fn assert_invariants(&self) {
-        assert_eq!(
-            self.text.chars().filter(|c| *c == '\n').count(),
-            self.newlines.len(),
-        );
-        for offset in &self.newlines {
-            assert_eq!(self.text[*offset..].chars().next().unwrap(), '\n');
-        }
-
-        if let Some(edits) = &self.queued_edits {
-            Edit::assert_invariants(edits, self.text.as_bstr());
-        }
-    }
-
-    pub fn scratch() -> Document {
+    pub(crate) fn scratch() -> Document {
         Document {
             text: "".into(),
             newlines: vec![],
@@ -77,7 +63,7 @@ impl Document {
         }
     }
 
-    pub fn from_file(absolute_path: PathBuf) -> Document {
+    pub(crate) fn from_file(absolute_path: PathBuf) -> Document {
         Document {
             text: "".into(),
             newlines: vec![],
@@ -93,49 +79,58 @@ impl Document {
         }
     }
 
-    pub fn tick(&mut self, _app: &App, io: &mut dyn IO) {
-        if let Source::File(source) = &mut self.source {
-            if !(self.last_modified_time > source.last_save_time) {
-                if let Some(text_new) = source.refresh_from_disk(io) {
+    pub fn tick(document_id: DocumentId, app: &App, io: &mut dyn IO) {
+        let mut document = document_id.get_mut(app);
+        let last_modified_time = document.last_modified_time;
+        let mut text_new = None;
+        if let Source::File(source) = &mut document.source {
+            if !(last_modified_time > source.last_save_time) {
+                if let Some(text) = source.refresh_from_disk(io) {
                     source.last_save_time = io.frame_start();
-                    let edits = diff_text(self.text.as_bstr(), text_new.as_bstr());
-                    self.queue_edits(io, edits);
+                    text_new = Some(text);
                 }
             }
         }
+        if let Some(text_new) = text_new {
+            let edits = diff_text(document.text.as_bstr(), text_new.as_bstr());
+            drop(document);
+            Document::queue_edits(document_id, app, io, edits);
+        }
     }
 
-    pub fn queue_edits(&mut self, io: &mut dyn IO, edits: Vec<Edit>) {
+    pub fn queue_edits(document_id: DocumentId, app: &App, io: &mut dyn IO, edits: Vec<Edit>) {
+        let mut document = document_id.get_mut(app);
         assert!(
-            self.queued_edits.is_none(),
+            document.queued_edits.is_none(),
             "A set of edits is already queued"
         );
-        Edit::assert_invariants(&edits, self.text.as_bstr());
-        self.queued_edits = Some(edits);
-        self.last_modified_time = io.frame_start();
+        Edit::assert_invariants(&edits, document.text.as_bstr());
+        document.queued_edits = Some(edits);
+        document.last_modified_time = io.frame_start();
     }
 
     /// Save to disk. Explicit saves create the file if missing; autosaves
     /// treat NotFound as an external deletion.
     /// No-op for Scratch sources or when not modified since last save.
-    pub fn save(&mut self, io: &mut dyn IO, kind: SaveKind) {
-        let absolute_path = match &self.source {
+    pub fn save(document_id: DocumentId, app: &App, io: &mut dyn IO, kind: SaveKind) {
+        let mut document = document_id.get_mut(app);
+        let absolute_path = match &document.source {
             Source::File(SourceFile {
                 absolute_path,
                 last_save_time,
                 ..
-            }) if *last_save_time > self.last_modified_time => absolute_path.clone(),
+            }) if *last_save_time > document.last_modified_time => absolute_path.clone(),
             _ => return,
         };
         let create = kind == SaveKind::Explicit;
-        match io.file_write(&absolute_path, &self.text, create) {
+        match io.file_write(&absolute_path, &document.text, create) {
             Ok(mtime) => {
                 if let Source::File(SourceFile {
                     last_load_mtime,
                     last_save_time,
                     deleted_since_last_save,
                     ..
-                }) = &mut self.source
+                }) = &mut document.source
                 {
                     *last_load_mtime = mtime;
                     *last_save_time = io.frame_start();
@@ -146,7 +141,7 @@ impl Document {
                 if let Source::File(SourceFile {
                     deleted_since_last_save,
                     ..
-                }) = &mut self.source
+                }) = &mut document.source
                 {
                     *deleted_since_last_save = true;
                 }
@@ -157,16 +152,17 @@ impl Document {
         }
     }
 
-    pub fn apply_edits(&mut self, edits: &[Edit]) -> OffsetDiff {
-        Edit::assert_invariants(edits, self.text.as_bstr());
+    pub fn apply_edits(document_id: DocumentId, app: &App, edits: &[Edit]) -> OffsetDiff {
+        let mut document = document_id.get_mut(app);
+        Edit::assert_invariants(edits, document.text.as_bstr());
 
-        let len_old = self.text.len();
+        let len_old = document.text.len();
 
         // TODO This can be made way more efficient, so that common cases don't have to allocate a whole new text.
-        let mut text_new = BString::new(Vec::with_capacity(self.text.len()));
+        let mut text_new = BString::new(Vec::with_capacity(document.text.len()));
         let mut offset = 0;
         for edit in edits {
-            text_new.extend_from_slice(&self.text[offset..edit.offset]);
+            text_new.extend_from_slice(&document.text[offset..edit.offset]);
             offset = edit.offset;
             match edit.kind {
                 EditKind::Insert => {
@@ -177,21 +173,77 @@ impl Document {
                 }
             }
         }
-        text_new.extend_from_slice(&self.text[offset..]);
-        self.text = text_new;
+        text_new.extend_from_slice(&document.text[offset..]);
+        document.text = text_new;
 
         // TODO This can be made way more efficient, so that common cases don't have to iterate over the whole text.
-        self.newlines.clear();
-        for (char_start, _, char) in self.text.char_indices() {
+        let mut newlines = Vec::new();
+        for (char_start, _, char) in document.text.char_indices() {
             if char == '\n' {
-                self.newlines.push(char_start);
+                newlines.push(char_start);
             }
         }
+        document.newlines = newlines;
 
         OffsetDiff::from_edits(edits, len_old)
     }
 
-    pub fn grid_from_offset(&self, offset: usize) -> [usize; 2] {
+    pub fn grid_from_offset(document_id: DocumentId, app: &App, offset: usize) -> [usize; 2] {
+        document_id.get(app).grid_at_offset(offset)
+    }
+
+    pub fn line_range_from_offset(
+        document_id: DocumentId,
+        app: &App,
+        offset: usize,
+    ) -> std::ops::Range<usize> {
+        document_id.get(app).line_range_at_offset(offset)
+    }
+
+    pub fn char_next(document_id: DocumentId, app: &App, offset: usize) -> Option<usize> {
+        let document = document_id.get(app);
+        if offset == document.text.len() {
+            return None;
+        }
+        let (_, char_end, _) = document.text[offset..].char_indices().next().unwrap();
+        Some(offset + char_end)
+    }
+
+    pub fn char_prev(document_id: DocumentId, app: &App, offset: usize) -> Option<usize> {
+        let document = document_id.get(app);
+        if offset == 0 {
+            return None;
+        }
+        // We can't directly iter backwards through potentially invalid utf8, but we
+        // can go forwards from the start of the line.
+        let line_start = document.line_range_at_offset(offset).start;
+        if line_start == offset {
+            // Previous character is a \n
+            return Some(line_start - 1);
+        }
+        for (char_start, char_end, _) in document.text[line_start..].char_indices() {
+            if line_start + char_end == offset {
+                return Some(line_start + char_start);
+            }
+        }
+        unreachable!()
+    }
+
+    pub fn assert_invariants(&self) {
+        assert_eq!(
+            self.text.chars().filter(|c| *c == '\n').count(),
+            self.newlines.len(),
+        );
+        for offset in &self.newlines {
+            assert_eq!(self.text[*offset..].chars().next().unwrap(), '\n');
+        }
+
+        if let Some(edits) = &self.queued_edits {
+            Edit::assert_invariants(edits, self.text.as_bstr());
+        }
+    }
+
+    fn grid_at_offset(&self, offset: usize) -> [usize; 2] {
         let line = self.newlines.partition_point(|&nl| nl < offset);
         if line == 0 {
             [self.text[0..offset].chars().count(), 0]
@@ -205,8 +257,8 @@ impl Document {
         }
     }
 
-    pub fn line_range_from_offset(&self, offset: usize) -> std::ops::Range<usize> {
-        let line = self.grid_from_offset(offset)[1];
+    fn line_range_at_offset(&self, offset: usize) -> std::ops::Range<usize> {
+        let line = self.grid_at_offset(offset)[1];
         if line == 0 {
             0..{
                 if self.newlines.is_empty() {
@@ -225,38 +277,12 @@ impl Document {
             }
         }
     }
-
-    pub fn char_next(&self, offset: usize) -> Option<usize> {
-        if offset == self.text.len() {
-            return None;
-        }
-        let (_, char_end, _) = self.text[offset..].char_indices().next().unwrap();
-        return Some(offset + char_end);
-    }
-
-    pub fn char_prev(&self, offset: usize) -> Option<usize> {
-        if offset == 0 {
-            return None;
-        }
-        // We can't directly iter backwards through potentially invalid utf8, but we can go forwards from the start of the line.
-        let line_start = self.line_range_from_offset(offset).start;
-        if line_start == offset {
-            // Previous character is a \n
-            return Some(line_start - 1);
-        }
-        for (char_start, char_end, _) in self.text[line_start..].char_indices() {
-            if line_start + char_end == offset {
-                return Some(line_start + char_start);
-            }
-        }
-        unreachable!()
-    }
 }
 
 impl SourceFile {
     /// If the file's mtime has advanced past `last_load_mtime` and the doc is
     /// not modified, reload its contents.
-    pub fn refresh_from_disk(&mut self, io: &mut dyn IO) -> Option<BString> {
+    fn refresh_from_disk(&mut self, io: &mut dyn IO) -> Option<BString> {
         let Ok(mtime) = io.file_mtime(&self.absolute_path) else {
             return None;
         };
@@ -276,7 +302,7 @@ impl SourceFile {
 }
 
 impl Edit {
-    pub fn assert_invariants(edits: &[Edit], text: &BStr) {
+    fn assert_invariants(edits: &[Edit], text: &BStr) {
         for edit in edits {
             assert!(edit.offset <= text.len(), "Edit out of bounds");
             match edit.kind {
@@ -344,7 +370,7 @@ impl Edit {
 }
 
 impl OffsetDiff {
-    pub fn assert_invariants(&self) {
+    fn assert_invariants(&self) {
         assert_eq!(self.offsets_old.len() + 1, self.offsets_new.len());
         assert_eq!(self.offsets_new.len(), self.deleted.len());
         for pair in self.offsets_old.windows(2) {
@@ -352,7 +378,7 @@ impl OffsetDiff {
         }
     }
 
-    pub fn from_edits(edits: &[Edit], len_old: usize) -> Self {
+    fn from_edits(edits: &[Edit], len_old: usize) -> Self {
         let mut offsets_old: Vec<usize> = Vec::new();
         let mut offsets_new: Vec<usize> = vec![0]; // F(0) = 0
         let mut deleted: Vec<bool> = vec![false];
@@ -425,7 +451,7 @@ impl OffsetDiff {
 
 // Char-based diff via the `similar` crate. Produces edits that transform
 // `old` into `new`.
-pub fn diff_text(old: &BStr, new: &BStr) -> Vec<Edit> {
+fn diff_text(old: &BStr, new: &BStr) -> Vec<Edit> {
     let diff = similar::TextDiff::from_chars(old.as_bytes(), new.as_bytes());
     let mut edits = Vec::new();
     let mut byte_offset: usize = 0;
@@ -486,4 +512,3 @@ fn diff_text_flush(
         });
     }
 }
-

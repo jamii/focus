@@ -166,12 +166,12 @@ impl App {
                         self.insert_window(io, Window::new(editor_id_new));
                     }
                     _ => {
-                        window_id.get_mut(self).input(self, io, event);
+                        Window::input(window_id, self, io, event);
                     }
                 }
             }
             _ => {
-                window_id.get_mut(self).input(self, io, event);
+                Window::input(window_id, self, io, event);
             }
         }
 
@@ -179,8 +179,8 @@ impl App {
     }
 
     pub fn tick(&mut self, io: &mut dyn IO) {
-        for (window_id, window) in &self.windows {
-            window.borrow_mut().tick(self, io);
+        for window_id in self.windows.keys() {
+            Window::tick(*window_id, self, io);
             io.request_redraw(*window_id);
         }
 
@@ -190,25 +190,25 @@ impl App {
     fn flush_queued_edits(&mut self) {
         let mut document_diffs = HashMap::new();
         for (document_id, document) in &self.documents {
-            let mut document = document.borrow_mut();
-            if let Some(edits) = document.queued_edits.take() {
-                let diff = document.apply_edits(&edits);
+            let edits = document.borrow_mut().queued_edits.take();
+            if let Some(edits) = edits {
+                let diff = Document::apply_edits(*document_id, self, &edits);
                 document_diffs.insert(*document_id, diff);
             }
         }
 
         let mut editor_diffs = HashMap::new();
         for (editor_id, editor) in &self.editors {
-            let mut editor = editor.borrow_mut();
-            if let Some(diff) = document_diffs.get(&editor.document_id) {
-                editor.handle_edits(self, diff);
+            let document_id = editor.borrow().document_id;
+            if let Some(diff) = document_diffs.get(&document_id) {
+                Editor::handle_edits(*editor_id, self, diff);
                 editor_diffs.insert(*editor_id, diff);
             }
         }
     }
 
     pub fn draw(&mut self, window_id: WindowId, drawing: &mut Drawing) {
-        window_id.get_mut(self).draw(self, drawing);
+        Window::draw(window_id, self, drawing);
     }
 
     fn rebuild_atlas(&mut self, io: &mut dyn IO) {
