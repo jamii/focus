@@ -5,9 +5,10 @@
 //     and renderer, then build the `App` against that window. After this
 //     point everything we care about (context, renderer, app) is
 //     unconditionally present — no `Option` dance.
-//   * Each loop iteration is paced by a fixed-rate timing loop: tick,
-//     then `thread::sleep` for whatever's left of the frame budget.
-//     winit runs in `ControlFlow::Poll`, so the loop is ours to throttle.
+//   * Each loop iteration is paced by a fixed-rate timing loop: tick at
+//     `NewEvents`, then `thread::sleep` in `AboutToWait` for whatever's
+//     left of the frame budget. winit runs in `ControlFlow::Poll`, so the
+//     loop is ours to throttle.
 //   * Input events go straight to `app.input`. The app may call
 //     `io.request_redraw`, which schedules a `WindowEvent::RedrawRequested`
 //     for the same iteration; we draw on that. So input → pixels stays
@@ -34,7 +35,7 @@ use glutin_winit::{DisplayBuilder, GlWindow};
 use raw_window_handle::HasWindowHandle;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalSize};
-use winit::event::WindowEvent;
+use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
@@ -189,6 +190,13 @@ impl ApplicationHandler for Chrome {
         });
     }
 
+    fn new_events(&mut self, event_loop: &ActiveEventLoop, _cause: StartCause) {
+        let Chrome::Running(running) = self else {
+            return;
+        };
+        running.new_events(event_loop);
+    }
+
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -210,6 +218,18 @@ impl ApplicationHandler for Chrome {
 }
 
 impl Running {
+    fn new_events(&mut self, event_loop: &ActiveEventLoop) {
+        let frame_start = Instant::now();
+        self.last_frame = frame_start;
+
+        let mut io = IoReal {
+            frame_start: self.last_frame - self.first_frame,
+            backend: &mut self.backend,
+            event_loop,
+        };
+        self.app.tick(&mut io);
+    }
+
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -268,20 +288,10 @@ impl Running {
         self.app.input(&mut io, window_id, translated);
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        let frame_start = Instant::now();
-        self.last_frame = frame_start;
-
-        let mut io = IoReal {
-            frame_start: self.last_frame - self.first_frame,
-            backend: &mut self.backend,
-            event_loop,
-        };
-        self.app.tick(&mut io);
-
-        // Sleep the remainder of the frame budget. winit's `Poll` mode
-        // would otherwise spin; the sleep is our throttle.
-        let elapsed = frame_start.elapsed();
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        // Sleep the remainder of the frame budget.
+        // winit's `Poll` mode would otherwise spin.
+        let elapsed = self.last_frame.elapsed();
         if elapsed < TARGET_FRAME {
             thread::sleep(TARGET_FRAME - elapsed);
         }
