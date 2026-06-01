@@ -4,11 +4,11 @@ use std::{path::PathBuf, time::Duration};
 use bstr::{BStr, BString, ByteSlice};
 
 use crate::app::{App, DocumentId, IO};
+use crate::editor::Editor;
 
 pub struct Document {
     pub text: BString,
     pub newlines: Vec<usize>,
-    pub queued_edits: Option<Vec<Edit>>,
     pub last_modified_time: Duration,
     pub last_center_offset: usize,
     pub source: Source,
@@ -56,7 +56,6 @@ impl Document {
         Document {
             text: "".into(),
             newlines: vec![],
-            queued_edits: None,
             last_modified_time: Duration::ZERO,
             last_center_offset: 0,
             source: Source::Scratch,
@@ -67,7 +66,6 @@ impl Document {
         Document {
             text: "".into(),
             newlines: vec![],
-            queued_edits: None,
             last_modified_time: Duration::ZERO,
             last_center_offset: 0,
             source: Source::File(SourceFile {
@@ -94,19 +92,53 @@ impl Document {
         if let Some(text_new) = text_new {
             let edits = diff_text(document.text.as_bstr(), text_new.as_bstr());
             drop(document);
-            Document::queue_edits(document_id, app, io, edits);
+            Document::apply_edits(document_id, app, edits);
         }
     }
 
-    pub fn queue_edits(document_id: DocumentId, app: &App, io: &mut dyn IO, edits: Vec<Edit>) {
+    pub fn apply_edits(document_id: DocumentId, app: &App, edits: Vec<Edit>) {
         let mut document = document_id.get_mut(app);
-        assert!(
-            document.queued_edits.is_none(),
-            "A set of edits is already queued"
-        );
         Edit::assert_invariants(&edits, document.text.as_bstr());
-        document.queued_edits = Some(edits);
-        document.last_modified_time = io.frame_start();
+
+        let len_old = document.text.len();
+
+        // TODO This can be made way more efficient, so that common cases don't have to allocate a whole new text.
+        let mut text_new = BString::new(Vec::with_capacity(document.text.len()));
+        let mut offset = 0;
+        for edit in &edits {
+            text_new.extend_from_slice(&document.text[offset..edit.offset]);
+            offset = edit.offset;
+            match edit.kind {
+                EditKind::Insert => {
+                    text_new.extend_from_slice(&edit.text);
+                }
+                EditKind::Delete => {
+                    offset += edit.text.len();
+                }
+            }
+        }
+        text_new.extend_from_slice(&document.text[offset..]);
+        document.text = text_new;
+
+        // TODO This can be made way more efficient, so that common cases don't have to iterate over the whole text.
+        let mut newlines = Vec::new();
+        for (char_start, _, char) in document.text.char_indices() {
+            if char == '\n' {
+                newlines.push(char_start);
+            }
+        }
+        document.newlines = newlines;
+
+        let diff = OffsetDiff::from_edits(&edits, len_old);
+
+        drop(document);
+
+        for (editor_id, editor) in &app.editors {
+            let matches = editor.borrow().document_id == document_id;
+            if matches {
+                Editor::handle_edits(*editor_id, app, &diff);
+            }
+        }
     }
 
     /// Save to disk. Explicit saves create the file if missing; autosaves
@@ -150,42 +182,6 @@ impl Document {
                 eprintln!("error saving {}: {}", absolute_path.display(), err);
             }
         }
-    }
-
-    pub fn apply_edits(document_id: DocumentId, app: &App, edits: &[Edit]) -> OffsetDiff {
-        let mut document = document_id.get_mut(app);
-        Edit::assert_invariants(edits, document.text.as_bstr());
-
-        let len_old = document.text.len();
-
-        // TODO This can be made way more efficient, so that common cases don't have to allocate a whole new text.
-        let mut text_new = BString::new(Vec::with_capacity(document.text.len()));
-        let mut offset = 0;
-        for edit in edits {
-            text_new.extend_from_slice(&document.text[offset..edit.offset]);
-            offset = edit.offset;
-            match edit.kind {
-                EditKind::Insert => {
-                    text_new.extend_from_slice(&edit.text);
-                }
-                EditKind::Delete => {
-                    offset += edit.text.len();
-                }
-            }
-        }
-        text_new.extend_from_slice(&document.text[offset..]);
-        document.text = text_new;
-
-        // TODO This can be made way more efficient, so that common cases don't have to iterate over the whole text.
-        let mut newlines = Vec::new();
-        for (char_start, _, char) in document.text.char_indices() {
-            if char == '\n' {
-                newlines.push(char_start);
-            }
-        }
-        document.newlines = newlines;
-
-        OffsetDiff::from_edits(edits, len_old)
     }
 
     pub fn grid_from_offset(document_id: DocumentId, app: &App, offset: usize) -> [usize; 2] {
@@ -236,10 +232,6 @@ impl Document {
         );
         for offset in &self.newlines {
             assert_eq!(self.text[*offset..].chars().next().unwrap(), '\n');
-        }
-
-        if let Some(edits) = &self.queued_edits {
-            Edit::assert_invariants(edits, self.text.as_bstr());
         }
     }
 

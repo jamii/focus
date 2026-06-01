@@ -146,13 +146,19 @@ impl Editor {
                         editor.cursor_copy(app, io);
                     }
                     Key::Character("x") => {
-                        editor.cursor_cut(app, io);
+                        drop(editor);
+                        Editor::cursor_cut(editor_id, app, io);
+                        return;
                     }
                     Key::Character("v") => {
-                        editor.cursor_paste(app, io);
+                        drop(editor);
+                        Editor::cursor_paste(editor_id, app, io);
+                        return;
                     }
                     Key::Character("V") => {
-                        editor.cursor_paste_many(app, io);
+                        drop(editor);
+                        Editor::cursor_paste_many(editor_id, app, io);
+                        return;
                     }
                     Key::Character("s") => {
                         editor.save(app, io, SaveKind::Explicit);
@@ -189,11 +195,31 @@ impl Editor {
                 && !app.modifiers.alt_key() =>
             {
                 match logical_key.as_ref() {
-                    Key::Character(char) => editor.cursor_replace(app, io, char.as_bytes()),
-                    Key::Named(NamedKey::Enter) => editor.cursor_replace(app, io, b"\n"),
-                    Key::Named(NamedKey::Space) => editor.cursor_replace(app, io, b" "),
-                    Key::Named(NamedKey::Backspace) => editor.cursor_delete_left(app, io),
-                    Key::Named(NamedKey::Delete) => editor.cursor_delete_right(app, io),
+                    Key::Character(char) => {
+                        drop(editor);
+                        Editor::cursor_replace(editor_id, app, io, char.as_bytes());
+                        return;
+                    }
+                    Key::Named(NamedKey::Enter) => {
+                        drop(editor);
+                        Editor::cursor_replace(editor_id, app, io, b"\n");
+                        return;
+                    }
+                    Key::Named(NamedKey::Space) => {
+                        drop(editor);
+                        Editor::cursor_replace(editor_id, app, io, b" ");
+                        return;
+                    }
+                    Key::Named(NamedKey::Backspace) => {
+                        drop(editor);
+                        Editor::cursor_delete_left(editor_id, app, io);
+                        return;
+                    }
+                    Key::Named(NamedKey::Delete) => {
+                        drop(editor);
+                        Editor::cursor_delete_right(editor_id, app, io);
+                        return;
+                    }
                     _ => {}
                 }
             }
@@ -244,9 +270,10 @@ impl Editor {
     }
 
     pub fn tick(editor_id: EditorId, app: &App, io: &mut dyn IO) {
-        let mut editor = editor_id.get_mut(app);
-        Document::tick(editor.document_id, app, io);
+        let document_id = editor_id.get(app).document_id;
+        Document::tick(document_id, app, io);
 
+        let mut editor = editor_id.get_mut(app);
         // During drag, poll mouse position and update cursor head.
         if let Some(drag_info) = editor.dragging {
             let mouse_pos = io.mouse_position();
@@ -585,11 +612,14 @@ impl Editor {
         }
     }
 
-    fn cursor_replace(&mut self, app: &App, io: &mut dyn IO, insert: &[u8]) {
-        let document = self.document_id.get(app);
-        let mut edits = Vec::with_capacity(self.cursors.len() * 2);
-        for cursor in &mut self.cursors {
-            if let Some(range) = cursor.marked_range(self.marked) {
+    fn cursor_replace(editor_id: EditorId, app: &App, io: &mut dyn IO, insert: &[u8]) {
+        let mut editor = editor_id.get_mut(app);
+        let document_id = editor.document_id;
+        let document = document_id.get(app);
+        let mut edits = Vec::with_capacity(editor.cursors.len() * 2);
+        let marked = editor.marked;
+        for cursor in &mut editor.cursors {
+            if let Some(range) = cursor.marked_range(marked) {
                 edits.push(Edit {
                     kind: EditKind::Insert,
                     offset: range.start,
@@ -612,9 +642,12 @@ impl Editor {
         }
         Edit::coalesce(&mut edits);
         drop(document);
-        Document::queue_edits(self.document_id, app, io, edits);
-        self.marked = false;
-        self.scroll_to_main_cursor = true;
+        drop(editor);
+        Document::apply_edits(document_id, app, edits);
+        let mut editor = editor_id.get_mut(app);
+        editor.marked = false;
+        editor.scroll_to_main_cursor = true;
+        editor.last_input = io.frame_start();
     }
 
     fn cursor_add_next_match(&mut self, app: &App) {
@@ -651,19 +684,19 @@ impl Editor {
         }
     }
 
-    fn cursor_delete_left(&mut self, app: &App, io: &mut dyn IO) {
-        let document = self.document_id.get(app);
-        let mut edits = Vec::with_capacity(self.cursors.len());
-        for cursor in &self.cursors {
-            if let Some(range) = cursor.marked_range(self.marked) {
+    fn cursor_delete_left(editor_id: EditorId, app: &App, io: &mut dyn IO) {
+        let editor = editor_id.get(app);
+        let document_id = editor.document_id;
+        let document = document_id.get(app);
+        let mut edits = Vec::with_capacity(editor.cursors.len());
+        for cursor in &editor.cursors {
+            if let Some(range) = cursor.marked_range(editor.marked) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: range.start,
                     text: document.text[range.start..range.end].into(),
                 });
-            } else if let Some(start) =
-                Document::char_prev(self.document_id, app, cursor.head.offset)
-            {
+            } else if let Some(start) = Document::char_prev(document_id, app, cursor.head.offset) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: start,
@@ -673,23 +706,27 @@ impl Editor {
         }
         Edit::coalesce(&mut edits);
         drop(document);
-        Document::queue_edits(self.document_id, app, io, edits);
-        self.marked = false;
-        self.scroll_to_main_cursor = true;
+        drop(editor);
+        Document::apply_edits(document_id, app, edits);
+        let mut editor = editor_id.get_mut(app);
+        editor.marked = false;
+        editor.scroll_to_main_cursor = true;
+        editor.last_input = io.frame_start();
     }
 
-    fn cursor_delete_right(&mut self, app: &App, io: &mut dyn IO) {
-        let document = self.document_id.get(app);
-        let mut edits = Vec::with_capacity(self.cursors.len());
-        for cursor in &self.cursors {
-            if let Some(range) = cursor.marked_range(self.marked) {
+    fn cursor_delete_right(editor_id: EditorId, app: &App, io: &mut dyn IO) {
+        let editor = editor_id.get(app);
+        let document_id = editor.document_id;
+        let document = document_id.get(app);
+        let mut edits = Vec::with_capacity(editor.cursors.len());
+        for cursor in &editor.cursors {
+            if let Some(range) = cursor.marked_range(editor.marked) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: range.start,
                     text: document.text[range.start..range.end].into(),
                 });
-            } else if let Some(end) = Document::char_next(self.document_id, app, cursor.head.offset)
-            {
+            } else if let Some(end) = Document::char_next(document_id, app, cursor.head.offset) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: cursor.head.offset,
@@ -699,9 +736,12 @@ impl Editor {
         }
         Edit::coalesce(&mut edits);
         drop(document);
-        Document::queue_edits(self.document_id, app, io, edits);
-        self.marked = false;
-        self.scroll_to_main_cursor = true;
+        drop(editor);
+        Document::apply_edits(document_id, app, edits);
+        let mut editor = editor_id.get_mut(app);
+        editor.marked = false;
+        editor.scroll_to_main_cursor = true;
+        editor.last_input = io.frame_start();
     }
 
     fn cursor_copy(&self, app: &App, io: &mut dyn IO) {
@@ -729,13 +769,15 @@ impl Editor {
         }
     }
 
-    fn cursor_cut(&mut self, app: &App, io: &mut dyn IO) {
-        self.cursor_copy(app, io);
+    fn cursor_cut(editor_id: EditorId, app: &App, io: &mut dyn IO) {
+        let editor = editor_id.get(app);
+        editor.cursor_copy(app, io);
 
-        let document = self.document_id.get(app);
-        let mut edits = Vec::with_capacity(self.cursors.len());
-        for cursor in &self.cursors {
-            if let Some(range) = cursor.marked_range(self.marked) {
+        let document_id = editor.document_id;
+        let document = document_id.get(app);
+        let mut edits = Vec::with_capacity(editor.cursors.len());
+        for cursor in &editor.cursors {
+            if let Some(range) = cursor.marked_range(editor.marked) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: range.start,
@@ -745,19 +787,25 @@ impl Editor {
         }
         Edit::coalesce(&mut edits);
         drop(document);
-        Document::queue_edits(self.document_id, app, io, edits);
-        self.marked = false;
-        self.scroll_to_main_cursor = true;
+        drop(editor);
+        Document::apply_edits(document_id, app, edits);
+        let mut editor = editor_id.get_mut(app);
+        editor.marked = false;
+        editor.scroll_to_main_cursor = true;
+        editor.last_input = io.frame_start();
     }
 
-    fn cursor_paste(&mut self, app: &App, io: &mut dyn IO) {
+    fn cursor_paste(editor_id: EditorId, app: &App, io: &mut dyn IO) {
         let Some(clip_text) = io.get_clipboard_text() else {
+            editor_id.get_mut(app).last_input = io.frame_start();
             return;
         };
-        let document = self.document_id.get(app);
-        let mut edits = Vec::with_capacity(self.cursors.len() * 2);
-        for cursor in &self.cursors {
-            if let Some(range) = cursor.marked_range(self.marked) {
+        let editor = editor_id.get(app);
+        let document_id = editor.document_id;
+        let document = document_id.get(app);
+        let mut edits = Vec::with_capacity(editor.cursors.len() * 2);
+        for cursor in &editor.cursors {
+            if let Some(range) = cursor.marked_range(editor.marked) {
                 // Replace selection with clipboard.
                 edits.push(Edit {
                     kind: EditKind::Insert,
@@ -779,20 +827,27 @@ impl Editor {
         }
         Edit::coalesce(&mut edits);
         drop(document);
-        Document::queue_edits(self.document_id, app, io, edits);
-        self.marked = false;
-        self.scroll_to_main_cursor = true;
+        drop(editor);
+        Document::apply_edits(document_id, app, edits);
+        let mut editor = editor_id.get_mut(app);
+        editor.marked = false;
+        editor.scroll_to_main_cursor = true;
+        editor.last_input = io.frame_start();
     }
 
-    fn cursor_paste_many(&mut self, app: &App, io: &mut dyn IO) {
+    fn cursor_paste_many(editor_id: EditorId, app: &App, io: &mut dyn IO) {
         let Some(clip_text) = io.get_clipboard_text() else {
+            editor_id.get_mut(app).last_input = io.frame_start();
             return;
         };
         let lines: Vec<&str> = clip_text.split('\n').collect();
-        let document = self.document_id.get(app);
+        let mut editor = editor_id.get_mut(app);
+        let document_id = editor.document_id;
+        let document = document_id.get(app);
         let mut edits = Vec::new();
-        for (cursor, line) in self.cursors.iter_mut().zip(lines) {
-            if let Some(range) = cursor.marked_range(self.marked) {
+        let marked = editor.marked;
+        for (cursor, line) in editor.cursors.iter_mut().zip(lines) {
+            if let Some(range) = cursor.marked_range(marked) {
                 // Replace selection with this line.
                 edits.push(Edit {
                     kind: EditKind::Insert,
@@ -816,9 +871,12 @@ impl Editor {
         }
         Edit::coalesce(&mut edits);
         drop(document);
-        Document::queue_edits(self.document_id, app, io, edits);
-        self.marked = false;
-        self.scroll_to_main_cursor = true;
+        drop(editor);
+        Document::apply_edits(document_id, app, edits);
+        let mut editor = editor_id.get_mut(app);
+        editor.marked = false;
+        editor.scroll_to_main_cursor = true;
+        editor.last_input = io.frame_start();
     }
 
     fn refresh_wraps(&mut self, app: &App) {

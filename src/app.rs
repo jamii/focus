@@ -174,36 +174,12 @@ impl App {
                 Window::input(window_id, self, io, event);
             }
         }
-
-        self.flush_queued_edits();
     }
 
     pub fn tick(&mut self, io: &mut dyn IO) {
         for window_id in self.windows.keys() {
             Window::tick(*window_id, self, io);
             io.request_redraw(*window_id);
-        }
-
-        self.flush_queued_edits();
-    }
-
-    fn flush_queued_edits(&mut self) {
-        let mut document_diffs = HashMap::new();
-        for (document_id, document) in &self.documents {
-            let edits = document.borrow_mut().queued_edits.take();
-            if let Some(edits) = edits {
-                let diff = Document::apply_edits(*document_id, self, &edits);
-                document_diffs.insert(*document_id, diff);
-            }
-        }
-
-        let mut editor_diffs = HashMap::new();
-        for (editor_id, editor) in &self.editors {
-            let document_id = editor.borrow().document_id;
-            if let Some(diff) = document_diffs.get(&document_id) {
-                Editor::handle_edits(*editor_id, self, diff);
-                editor_diffs.insert(*editor_id, diff);
-            }
         }
     }
 
