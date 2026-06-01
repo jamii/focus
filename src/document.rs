@@ -56,6 +56,31 @@ pub struct OffsetDiff {
 }
 
 impl Document {
+    pub fn assert_invariants(&self) {
+        assert_eq!(
+            self.text.chars().filter(|c| *c == '\n').count(),
+            self.newlines.len(),
+        );
+        for offset in &self.newlines {
+            assert_eq!(self.text[*offset..].chars().next().unwrap(), '\n');
+        }
+        for undo in &self.undos {
+            assert!(!undo.is_empty());
+            for edits in undo {
+                assert!(!edits.is_empty());
+            }
+        }
+        for edits in &self.doing {
+            assert!(!edits.is_empty());
+        }
+        for redo in &self.redos {
+            assert!(!redo.is_empty());
+            for edits in redo {
+                assert!(!edits.is_empty());
+            }
+        }
+    }
+
     pub(crate) fn scratch() -> Document {
         Document {
             text: "".into(),
@@ -301,7 +326,7 @@ impl Document {
 
     pub fn redo(document_id: DocumentId, app: &App) -> Option<usize> {
         Document::flush_doing(document_id, app);
-        let redo = document_id.get_mut(app).undos.pop()?;
+        let redo = document_id.get_mut(app).redos.pop()?;
         let mut undo = vec![];
         let offset = redo.last().unwrap().last().unwrap().offset;
         for mut edits in redo.into_iter().rev() {
@@ -311,16 +336,6 @@ impl Document {
         }
         document_id.get_mut(app).undos.push(undo);
         Some(offset)
-    }
-
-    pub fn assert_invariants(&self) {
-        assert_eq!(
-            self.text.chars().filter(|c| *c == '\n').count(),
-            self.newlines.len(),
-        );
-        for offset in &self.newlines {
-            assert_eq!(self.text[*offset..].chars().next().unwrap(), '\n');
-        }
     }
 }
 
@@ -415,7 +430,21 @@ impl Edit {
     }
 
     pub fn undo(edits: &mut Vec<Edit>) {
-        //! Mutate edits to go new->old instead of old->new.
+        let mut shift: isize = 0;
+        for edit in edits {
+            let len = edit.text.len() as isize;
+            edit.offset = (edit.offset as isize + shift) as usize;
+            match edit.kind {
+                EditKind::Insert => {
+                    edit.kind = EditKind::Delete;
+                    shift += len;
+                }
+                EditKind::Delete => {
+                    edit.kind = EditKind::Insert;
+                    shift -= len;
+                }
+            }
+        }
     }
 }
 
@@ -561,5 +590,73 @@ fn diff_text_flush(
             offset,
             text: std::mem::take(hunk_del).into(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn apply_text(text: &[u8], edits: &[Edit]) -> BString {
+        Edit::assert_invariants(edits, text.as_bstr());
+
+        let mut text_new = BString::new(Vec::new());
+        let mut offset = 0;
+        for edit in edits {
+            text_new.extend_from_slice(&text[offset..edit.offset]);
+            offset = edit.offset;
+            match edit.kind {
+                EditKind::Insert => text_new.extend_from_slice(&edit.text),
+                EditKind::Delete => offset += edit.text.len(),
+            }
+        }
+        text_new.extend_from_slice(&text[offset..]);
+        text_new
+    }
+
+    #[test]
+    fn undo_inverts_replacement_edits() {
+        let old = b"abcdef";
+        let mut edits = vec![
+            Edit {
+                kind: EditKind::Insert,
+                offset: 1,
+                text: "XY".into(),
+            },
+            Edit {
+                kind: EditKind::Delete,
+                offset: 1,
+                text: "bcd".into(),
+            },
+        ];
+        let new = apply_text(old, &edits);
+
+        Edit::undo(&mut edits);
+
+        assert_eq!(new, "aXYef");
+        assert_eq!(apply_text(&new, &edits), old.as_slice());
+    }
+
+    #[test]
+    fn undo_inverts_mixed_offset_edits() {
+        let old = b"abcdef";
+        let mut edits = vec![
+            Edit {
+                kind: EditKind::Delete,
+                offset: 1,
+                text: "bc".into(),
+            },
+            Edit {
+                kind: EditKind::Insert,
+                offset: 4,
+                text: "X".into(),
+            },
+        ];
+        let new = apply_text(old, &edits);
+
+        Edit::undo(&mut edits);
+
+        assert_eq!(new, "adXef");
+        assert_eq!(apply_text(&new, &edits), old.as_slice());
     }
 }

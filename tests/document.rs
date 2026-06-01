@@ -54,6 +54,20 @@ fn selection_replacement_updates_document() {
 }
 
 #[test]
+fn undo_and_redo_restore_text() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abc");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z".into()));
+    assert_eq!(common::text(&app), "ab");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("Z".into()));
+    assert_eq!(common::text(&app), "abc");
+
+    app.assert_invariants();
+}
+
+#[test]
 fn tick_loads_file_document_from_mock_io() {
     let path = PathBuf::from("/tmp/focus-document-test.txt");
     let (mut app, mut io, _) = common::file_app(path, "from disk\n");
