@@ -205,7 +205,7 @@ impl App {
             }
         }
 
-        self.flush_queued_edits(io);
+        self.flush_queued_edits();
     }
 
     pub fn tick(&mut self, io: &mut dyn IO) {
@@ -214,10 +214,10 @@ impl App {
             io.request_redraw(*window_id);
         }
 
-        self.flush_queued_edits(io);
+        self.flush_queued_edits();
     }
 
-    fn flush_queued_edits(&mut self, io: &mut dyn IO) {
+    fn flush_queued_edits(&mut self) {
         let mut document_diffs = HashMap::new();
         for (document_id, document) in &self.documents {
             let mut document = document.borrow_mut();
