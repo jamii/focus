@@ -5,7 +5,7 @@
 // Time advances by a fuzzer-chosen delta between events. The IO is mocked
 // so the harness runs anywhere.
 //
-// This is the body of the honggfuzz target (see src/bin/fuzz_hfuzz.rs).
+// This is the body of the honggfuzz target (see hfuzz/src/main.rs).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -127,6 +127,7 @@ const A_SCROLL: u32 = 20;
 const A_MOUSE_MOVE: u32 = 20;
 const A_MOUSE_BUTTON: u32 = 20;
 const A_FILE_MODIFY: u32 = 10;
+const A_FOCUS: u32 = 10;
 
 fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> {
     let x_limit = (screen_size[0].max(0.0) as u32).saturating_add(200).max(4000);
@@ -158,6 +159,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_MOUSE_MOVE,
         A_MOUSE_BUTTON,
         A_FILE_MODIFY,
+        A_FOCUS,
     ])?;
     match action {
         0 => {
@@ -298,6 +300,15 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                     .unwrap_or(SystemTime::UNIX_EPOCH);
                 io.files.insert(path, (contents, mtime));
             }
+        }
+        10 => {
+            app.input(
+                io,
+                window_id,
+                InputEvent::FocusChanged {
+                    focused: frng.boolean()?,
+                },
+            );
         }
         _ => unreachable!(),
     }
