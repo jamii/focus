@@ -188,11 +188,11 @@ impl Editor {
                 && !app.modifiers.alt_key() =>
             {
                 match logical_key.as_ref() {
-                    Key::Character(char) => self.cursor_replace(app, char.as_bytes()),
-                    Key::Named(NamedKey::Enter) => self.cursor_replace(app, b"\n"),
-                    Key::Named(NamedKey::Space) => self.cursor_replace(app, b" "),
-                    Key::Named(NamedKey::Backspace) => self.cursor_delete_left(app),
-                    Key::Named(NamedKey::Delete) => self.cursor_delete_right(app),
+                    Key::Character(char) => self.cursor_replace(app, io, char.as_bytes()),
+                    Key::Named(NamedKey::Enter) => self.cursor_replace(app, io, b"\n"),
+                    Key::Named(NamedKey::Space) => self.cursor_replace(app, io, b" "),
+                    Key::Named(NamedKey::Backspace) => self.cursor_delete_left(app, io),
+                    Key::Named(NamedKey::Delete) => self.cursor_delete_right(app, io),
                     _ => {}
                 }
             }
@@ -583,7 +583,7 @@ impl Editor {
         }
     }
 
-    fn cursor_replace(&mut self, app: &App, insert: &[u8]) {
+    fn cursor_replace(&mut self, app: &App, io: &mut dyn IO, insert: &[u8]) {
         let mut document = self.document_id.get_mut(app);
         let mut edits = Vec::with_capacity(self.cursors.len() * 2);
         for cursor in &mut self.cursors {
@@ -609,7 +609,7 @@ impl Editor {
             }
         }
         Edit::coalesce(&mut edits);
-        document.queue_edits(edits);
+        document.queue_edits(io, edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
     }
@@ -648,7 +648,7 @@ impl Editor {
         }
     }
 
-    fn cursor_delete_left(&mut self, app: &App) {
+    fn cursor_delete_left(&mut self, app: &App, io: &mut dyn IO) {
         let mut document = self.document_id.get_mut(app);
         let mut edits = Vec::with_capacity(self.cursors.len());
         for cursor in &self.cursors {
@@ -667,12 +667,12 @@ impl Editor {
             }
         }
         Edit::coalesce(&mut edits);
-        document.queue_edits(edits);
+        document.queue_edits(io, edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
     }
 
-    fn cursor_delete_right(&mut self, app: &App) {
+    fn cursor_delete_right(&mut self, app: &App, io: &mut dyn IO) {
         let mut document = self.document_id.get_mut(app);
         let mut edits = Vec::with_capacity(self.cursors.len());
         for cursor in &self.cursors {
@@ -691,7 +691,7 @@ impl Editor {
             }
         }
         Edit::coalesce(&mut edits);
-        document.queue_edits(edits);
+        document.queue_edits(io, edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
     }
@@ -736,7 +736,7 @@ impl Editor {
             }
         }
         Edit::coalesce(&mut edits);
-        document.queue_edits(edits);
+        document.queue_edits(io, edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
     }
@@ -769,7 +769,7 @@ impl Editor {
             }
         }
         Edit::coalesce(&mut edits);
-        document.queue_edits(edits);
+        document.queue_edits(io, edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
     }
@@ -805,7 +805,7 @@ impl Editor {
             }
         }
         Edit::coalesce(&mut edits);
-        document.queue_edits(edits);
+        document.queue_edits(io, edits);
         self.marked = false;
         self.scroll_to_main_cursor = true;
     }
@@ -1222,9 +1222,10 @@ mod tests {
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             set_heads(&mut editor, &[3]);
-            editor.cursor_replace(&app, b"X");
+            editor.cursor_replace(&app, &mut io, b"X");
         }
         let mut doc = document_id.get_mut(&app);
         let edits = doc.queued_edits.take().unwrap();
@@ -1238,9 +1239,10 @@ mod tests {
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             set_mark(&mut editor, &[4], &[1]);
-            editor.cursor_replace(&app, b"X");
+            editor.cursor_replace(&app, &mut io, b"X");
         }
         let mut doc = document_id.get_mut(&app);
         let edits = doc.queued_edits.take().unwrap();
@@ -1254,9 +1256,10 @@ mod tests {
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             set_mark(&mut editor, &[2], &[2]);
-            editor.cursor_replace(&app, b"X");
+            editor.cursor_replace(&app, &mut io, b"X");
         }
         let mut doc = document_id.get_mut(&app);
         let edits = doc.queued_edits.take().unwrap();
@@ -1270,9 +1273,10 @@ mod tests {
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             set_mark(&mut editor, &[1], &[4]);
-            editor.cursor_replace(&app, b"X");
+            editor.cursor_replace(&app, &mut io, b"X");
         }
         let mut doc = document_id.get_mut(&app);
         let edits = doc.queued_edits.take().unwrap();
@@ -1287,9 +1291,10 @@ mod tests {
         let diff;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             set_mark(&mut editor, &[0, 1, 2], &[1, 2, 3]);
-            editor.cursor_replace(&app, b"x");
+            editor.cursor_replace(&app, &mut io, b"x");
         }
         {
             let mut doc = document_id.get_mut(&app);
@@ -1312,9 +1317,10 @@ mod tests {
         let diff;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             set_mark(&mut editor, &[1, 2, 3], &[0, 1, 2]);
-            editor.cursor_replace(&app, b"x");
+            editor.cursor_replace(&app, &mut io, b"x");
         }
         {
             let mut doc = document_id.get_mut(&app);
@@ -1487,9 +1493,10 @@ mod tests {
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             set_heads(&mut editor, &[1, 2]);
-            editor.cursor_delete_left(&app);
+            editor.cursor_delete_left(&app, &mut io);
         }
         // Flush queued edits
         let mut doc = document_id.get_mut(&app);
@@ -1506,9 +1513,10 @@ mod tests {
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             set_heads(&mut editor, &[0, 1]);
-            editor.cursor_delete_right(&app);
+            editor.cursor_delete_right(&app, &mut io);
         }
         // Flush queued edits
         let mut doc = document_id.get_mut(&app);
@@ -1525,10 +1533,11 @@ mod tests {
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             // Two selections: [0..5) and [3..8), replace with "X"
             set_mark(&mut editor, &[5, 8], &[0, 3]);
-            editor.cursor_replace(&app, b"X");
+            editor.cursor_replace(&app, &mut io, b"X");
         }
         let mut doc = document_id.get_mut(&app);
         let edits = doc.queued_edits.take().unwrap();
@@ -1546,9 +1555,10 @@ mod tests {
         let document_id;
         {
             let mut editor = editor_id.get_mut(&app);
+            let mut io = crate::fuzz::MockIO::new();
             document_id = editor.document_id;
             set_heads(&mut editor, &[1, 1]);
-            editor.cursor_delete_left(&app);
+            editor.cursor_delete_left(&app, &mut io);
         }
         // Flush queued edits
         let mut doc = document_id.get_mut(&app);

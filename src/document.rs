@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use std::time::SystemTime;
+use std::{path::PathBuf, time::Duration};
 
 use bstr::{BStr, BString, ByteSlice};
 
@@ -9,6 +9,7 @@ pub struct Document {
     pub text: BString,
     pub newlines: Vec<usize>,
     pub queued_edits: Option<Vec<Edit>>,
+    pub last_modified_time: Duration,
     pub last_center_offset: usize,
     pub source: Source,
 }
@@ -21,7 +22,7 @@ pub enum Source {
 pub struct SourceFile {
     absolute_path: PathBuf,
     last_load_mtime: SystemTime,
-    modified_since_last_save: bool,
+    last_save_time: Duration,
     deleted_since_last_save: bool,
 }
 
@@ -70,6 +71,7 @@ impl Document {
             text: "".into(),
             newlines: vec![],
             queued_edits: None,
+            last_modified_time: Duration::ZERO,
             last_center_offset: 0,
             source: Source::Scratch,
         }
@@ -80,11 +82,12 @@ impl Document {
             text: "".into(),
             newlines: vec![],
             queued_edits: None,
+            last_modified_time: Duration::ZERO,
             last_center_offset: 0,
             source: Source::File(SourceFile {
                 absolute_path,
                 last_load_mtime: SystemTime::UNIX_EPOCH,
-                modified_since_last_save: false,
+                last_save_time: Duration::ZERO,
                 deleted_since_last_save: false,
             }),
         }
@@ -92,35 +95,25 @@ impl Document {
 
     pub fn tick(&mut self, _app: &App, io: &mut dyn IO, redraw: &mut bool) {
         if let Source::File(source) = &mut self.source {
-            if let Some(text_new) = source.refresh_from_disk(io) {
-                let edits = diff_text(self.text.as_bstr(), text_new.as_bstr());
-                self.queue_edits(edits);
-                if let Source::File(SourceFile {
-                    modified_since_last_save,
-                    ..
-                }) = &mut self.source
-                {
-                    *modified_since_last_save = false;
+            if !(self.last_modified_time > source.last_save_time) {
+                if let Some(text_new) = source.refresh_from_disk(io) {
+                    source.last_save_time = io.frame_start();
+                    let edits = diff_text(self.text.as_bstr(), text_new.as_bstr());
+                    self.queue_edits(io, edits);
+                    *redraw = true;
                 }
-                *redraw = true;
             }
         }
     }
 
-    pub fn queue_edits(&mut self, edits: Vec<Edit>) {
+    pub fn queue_edits(&mut self, io: &mut dyn IO, edits: Vec<Edit>) {
         assert!(
             self.queued_edits.is_none(),
             "A set of edits is already queued"
         );
         Edit::assert_invariants(&edits, self.text.as_bstr());
         self.queued_edits = Some(edits);
-        if let Source::File(SourceFile {
-            modified_since_last_save,
-            ..
-        }) = &mut self.source
-        {
-            *modified_since_last_save = true;
-        }
+        self.last_modified_time = io.frame_start();
     }
 
     /// Save to disk. Explicit saves create the file if missing; autosaves
@@ -130,9 +123,9 @@ impl Document {
         let absolute_path = match &self.source {
             Source::File(SourceFile {
                 absolute_path,
-                modified_since_last_save,
+                last_save_time,
                 ..
-            }) if *modified_since_last_save => absolute_path.clone(),
+            }) if *last_save_time > self.last_modified_time => absolute_path.clone(),
             _ => return,
         };
         let create = kind == SaveKind::Explicit;
@@ -140,13 +133,13 @@ impl Document {
             Ok(mtime) => {
                 if let Source::File(SourceFile {
                     last_load_mtime,
-                    modified_since_last_save,
+                    last_save_time,
                     deleted_since_last_save,
                     ..
                 }) = &mut self.source
                 {
                     *last_load_mtime = mtime;
-                    *modified_since_last_save = false;
+                    *last_save_time = io.frame_start();
                     *deleted_since_last_save = false;
                 }
             }
@@ -265,9 +258,6 @@ impl SourceFile {
     /// If the file's mtime has advanced past `last_load_mtime` and the doc is
     /// not modified, reload its contents.
     pub fn refresh_from_disk(&mut self, io: &mut dyn IO) -> Option<BString> {
-        if self.modified_since_last_save {
-            return None;
-        }
         let Ok(mtime) = io.file_mtime(&self.absolute_path) else {
             return None;
         };
