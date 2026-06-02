@@ -127,6 +127,7 @@ const A_SCROLL: u32 = 20;
 const A_MOUSE_MOVE: u32 = 20;
 const A_MOUSE_BUTTON: u32 = 20;
 const A_FILE_MODIFY: u32 = 10;
+const A_FILE_DELETE: u32 = 5;
 const A_FOCUS: u32 = 10;
 
 fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> {
@@ -164,6 +165,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_MOUSE_BUTTON,
         A_FILE_MODIFY,
         A_FOCUS,
+        A_FILE_DELETE,
     ])?;
     match action {
         0 => {
@@ -309,6 +311,16 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                     focused: frng.boolean()?,
                 },
             );
+        }
+        11 => {
+            // Delete a file out from under the app, as if it had been
+            // removed on disk by another process. Subsequent file_mtime /
+            // file_read calls for this path then return NotFound.
+            let paths: Vec<PathBuf> = io.files.keys().cloned().collect();
+            if !paths.is_empty() {
+                let path = paths[frng.usize_bounded(0, paths.len() - 1)?].clone();
+                io.files.remove(&path);
+            }
         }
         _ => unreachable!(),
     }
