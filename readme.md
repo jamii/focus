@@ -44,13 +44,13 @@
 
 ## next
 
+Read code and clean up slop.
+
 Editor:
 * Status bar
   * Should text be selectable? Separate editor?
 * Copy file:line
 * Open on web
-
-Read code and clean up slop.
 
 Language:
 * Tokenize + highlight
