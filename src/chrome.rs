@@ -283,7 +283,7 @@ impl Running {
         let fb_h = size.height as i32;
         let mut drawing = Drawing::new([fb_w as f32, fb_h as f32]);
         self.app.draw(window_id, &mut drawing);
-        unsafe { self.backend.renderer.render(drawing.commands(), fb_w, fb_h) };
+        unsafe { self.backend.renderer.render(&drawing.commands, fb_w, fb_h) };
         window_state
             .surface
             .swap_buffers(context)

@@ -105,8 +105,8 @@ pub enum DrawCommand {
 // sentinel emitted as SetClip after a partially-clipped text draw to
 // release the scissor.
 pub struct Drawing {
-    commands: Vec<DrawCommand>,
-    clip_stack: Vec<Rect>,
+    pub commands: Vec<DrawCommand>,
+    pub clip_stack: Vec<Rect>,
 }
 
 impl Drawing {
@@ -118,10 +118,6 @@ impl Drawing {
                 size: screen_size,
             }],
         }
-    }
-
-    pub fn commands(&self) -> &[DrawCommand] {
-        &self.commands
     }
 
     fn current_clip(&self) -> Rect {
@@ -189,10 +185,6 @@ impl Drawing {
         for char in text.chars() {
             // Unknown chars fall back to the tofu (same role as TTF's
             // glyph 0).
-            let char = match char {
-                '\n' => ' ',
-                _ => char,
-            };
             let g = atlas.glyphs.get(&char).unwrap_or(&atlas.notdef);
             self.commands.push(DrawCommand::Quad(Quad {
                 dst_pos: [pen_x, abs_pos[1]],

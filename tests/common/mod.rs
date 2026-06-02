@@ -104,7 +104,7 @@ pub fn draw(app: &mut App, window_id: WindowId, wrap_chars: usize, rows: usize) 
 pub fn text_line_lengths(app: &App, drawing: &Drawing) -> Vec<usize> {
     let mut lines = Vec::new();
     let cell_h = app.atlas.cell_size[1] as f32;
-    for command in drawing.commands() {
+    for command in &drawing.commands {
         let DrawCommand::Quad(quad) = command else {
             continue;
         };
@@ -126,7 +126,7 @@ pub fn text_line_lengths(app: &App, drawing: &Drawing) -> Vec<usize> {
 pub fn cursor_lines(app: &App, drawing: &Drawing) -> Vec<usize> {
     let cell_h = app.atlas.cell_size[1] as f32;
     drawing
-        .commands()
+        .commands
         .iter()
         .filter_map(|command| {
             let DrawCommand::Quad(quad) = command else {

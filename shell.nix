@@ -1,5 +1,23 @@
 { pkgs ? import <nixpkgs> {} }:
 
+let
+  # The `cargo hfuzz` subcommand isn't packaged in nixpkgs (only the C
+  # honggfuzz tool is), so build it from the honggfuzz crate. This replaces
+  # `cargo install honggfuzz`. Bump `version` in step with the honggfuzz
+  # dependency in Cargo.lock; refresh both hashes when you do (nix prints the
+  # expected values on mismatch).
+  cargo-hfuzz = pkgs.rustPlatform.buildRustPackage rec {
+    pname = "cargo-hfuzz";
+    version = "0.5.60";
+    src = pkgs.fetchCrate {
+      pname = "honggfuzz";
+      inherit version;
+      sha256 = "sha256-btHYe+rN28bVeDWZB3AQCeF5mk30YNIINMXOOoTIjJk=";
+    };
+    cargoHash = "sha256-9jlu9PDqQRW3r+ZJrGxDXB533gTa8XexZuK5LXcNY3s=";
+    doCheck = false;
+  };
+in
 pkgs.mkShell {
   # honggfuzz's libhfuzz redefines libc symbols (strcpy, etc.) as weak
   # aliases. Nix's cc-wrapper auto-enables fortify, which makes glibc's
@@ -17,6 +35,13 @@ pkgs.mkShell {
     # honggfuzz's libhfuzz build needs bfd.h (binutils) and libunwind.
     pkgs.binutils-unwrapped
     pkgs.libunwind
+    # The `cargo hfuzz` subcommand, built above (avoids `cargo install`).
+    cargo-hfuzz
+    # Code coverage: grcov turns the .profraw data emitted by an
+    # -Cinstrument-coverage build into an HTML report, and it shells out to
+    # llvm-profdata / llvm-cov (from llvm) to do so. See hfuzz/coverage.sh.
+    pkgs.grcov
+    pkgs.llvm
   ];
 
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

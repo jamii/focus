@@ -208,7 +208,7 @@ fn renders_hello_world() {
         );
     }
 
-    unsafe { renderer.render(drawing.commands(), W as i32, H as i32) };
+    unsafe { renderer.render(&drawing.commands, W as i32, H as i32) };
 
     let mut pixels = vec![0u8; (W * H * 4) as usize];
     unsafe {
