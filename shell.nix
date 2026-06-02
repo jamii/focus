@@ -35,13 +35,11 @@ pkgs.mkShell {
     # honggfuzz's libhfuzz build needs bfd.h (binutils) and libunwind.
     pkgs.binutils-unwrapped
     pkgs.libunwind
+    # Coverage reports for tests and fuzz corpus replay.
+    pkgs.cargo-llvm-cov
+    pkgs.llvm
     # The `cargo hfuzz` subcommand, built above (avoids `cargo install`).
     cargo-hfuzz
-    # Code coverage: grcov turns the .profraw data emitted by an
-    # -Cinstrument-coverage build into an HTML report, and it shells out to
-    # llvm-profdata / llvm-cov (from llvm) to do so. See hfuzz/coverage.sh.
-    pkgs.grcov
-    pkgs.llvm
   ];
 
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
