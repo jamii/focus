@@ -15,7 +15,7 @@ use winit::dpi::LogicalSize;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
-use crate::app::{App, IO, InputEvent, WindowId};
+use crate::app::{App, InputEvent, WindowId, IO};
 use crate::atlas::Atlas;
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
@@ -130,8 +130,12 @@ const A_FILE_MODIFY: u32 = 10;
 const A_FOCUS: u32 = 10;
 
 fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> {
-    let x_limit = (screen_size[0].max(0.0) as u32).saturating_add(200).max(4000);
-    let y_limit = (screen_size[1].max(0.0) as u32).saturating_add(200).max(4000);
+    let x_limit = (screen_size[0].max(0.0) as u32)
+        .saturating_add(200)
+        .max(4000);
+    let y_limit = (screen_size[1].max(0.0) as u32)
+        .saturating_add(200)
+        .max(4000);
     let x = frng.u32_bounded(0, x_limit)? as f32 - 100.0;
     let y = frng.u32_bounded(0, y_limit)? as f32 - 100.0;
     Some([x, y])
@@ -278,11 +282,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             } else {
                 ElementState::Released
             };
-            app.input(
-                io,
-                window_id,
-                InputEvent::MouseButton { state, position },
-            );
+            app.input(io, window_id, InputEvent::MouseButton { state, position });
         }
         9 => {
             let paths: Vec<PathBuf> = io.files.keys().cloned().collect();
