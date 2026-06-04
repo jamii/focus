@@ -66,16 +66,16 @@ impl Document {
         for undo in &self.undos {
             assert!(!undo.is_empty());
             for edits in undo {
-                assert!(!edits.is_empty());
+                Edit::assert_invariants(edits, None);
             }
         }
         for edits in &self.doing {
-            assert!(!edits.is_empty());
+            Edit::assert_invariants(edits, None);
         }
         for redo in &self.redos {
             assert!(!redo.is_empty());
             for edits in redo {
-                assert!(!edits.is_empty());
+                Edit::assert_invariants(edits, None);
             }
         }
     }
@@ -153,7 +153,7 @@ impl DocumentId {
 
         let frame_start = app.frame_start;
         let document = self.get_mut(app);
-        Edit::assert_invariants(edits, document.text.as_bstr());
+        Edit::assert_invariants(edits, Some(document.text.as_bstr()));
 
         let len_old = document.text.len();
 
@@ -370,21 +370,24 @@ impl SourceFile {
 }
 
 impl Edit {
-    fn assert_invariants(edits: &[Edit], text: &BStr) {
-        for edit in edits {
-            assert!(edit.offset <= text.len(), "Edit out of bounds");
-            match edit.kind {
-                EditKind::Insert => {}
-                EditKind::Delete => {
-                    assert!(
-                        edit.offset + edit.text.len() <= text.len(),
-                        "Delete out of bounds"
-                    );
-                    assert_eq!(
-                        edit.text,
-                        text[edit.offset..edit.offset + edit.text.len()],
-                        "Delete text doesn't match document text"
-                    );
+    fn assert_invariants(edits: &[Edit], text: Option<&BStr>) {
+        assert!(!edits.is_empty());
+        if let Some(text) = text {
+            for edit in edits {
+                assert!(edit.offset <= text.len(), "Edit out of bounds");
+                match edit.kind {
+                    EditKind::Insert => {}
+                    EditKind::Delete => {
+                        assert!(
+                            edit.offset + edit.text.len() <= text.len(),
+                            "Delete out of bounds"
+                        );
+                        assert_eq!(
+                            edit.text,
+                            text[edit.offset..edit.offset + edit.text.len()],
+                            "Delete text doesn't match document text"
+                        );
+                    }
                 }
             }
         }
@@ -605,7 +608,7 @@ mod tests {
     use super::*;
 
     fn apply_text(text: &[u8], edits: &[Edit]) -> BString {
-        Edit::assert_invariants(edits, text.as_bstr());
+        Edit::assert_invariants(edits, Some(text.as_bstr()));
 
         let mut text_new = BString::new(Vec::new());
         let mut offset = 0;
