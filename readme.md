@@ -1,3 +1,61 @@
+## next
+
+* Read code and clean up slop.
+* Merge coalesce into apply_edits?
+* Should all 'things' be in one big id map?
+* Separate scrollable from editor.
+* Horizontal / vertical splits.
+  * Maybe want a split that renders one half completely, and the other in the remaining space?
+
+## minimum viable editor
+
+Editor:
+* [x] Render monospace ascii
+* [x] Cursor movement
+* [x] Insert/delete text
+* [x] Selections
+* [x] Multiple cursors
+* [x] Multiple editors sharing one document
+* [x] Mouse interactions
+* [x] Cut/copy/paste
+* [x] Load/save
+* [x] Soft wrap
+* [x] Scrolling
+* [x] Undo/redo
+* [ ] Status bar
+
+Tools:
+* [ ] Open file
+* [ ] Search project files
+* [ ] Search open docs
+* [ ] Search within doc
+* [ ] Search within project files
+* [ ] Search errors
+* [ ] Runner
+
+Language specific:
+* [ ] Rust
+* [ ] Highlighting
+* [ ] Comment/uncomment
+* [ ] Smart indent
+* [ ] Paren matching
+* [ ] Completion UI
+* [ ] Formatting
+
+Language server:
+* [ ] Squigglies
+* [ ] Completions
+* [ ] Actions
+
+VCS:
+* [ ] Status
+* [ ] Diff
+* [ ] Traffic lights in editor gutter
+
+Testing:
+* [x] deterministic simulation testing
+* [x] e2e fuzzing
+
 ## wishlist
 
 * more text structure 
@@ -41,23 +99,3 @@
 * tentative ideas for agent integration
   * point agent at special comments, open magit diff, add review comments, run again
   * conversation tree?
-
-## next
-
-Read code and clean up slop.
-
-Editor:
-* Status bar
-  * Should text be selectable? Separate editor?
-* Copy file:line
-* Open on web
-
-Language:
-* Tokenize + highlight
-* Comment/uncomment
-* Smart indent
-* Paren matching
-* Structural move/select
-* Goto definition
-* Completion ui
-* Completion provider
