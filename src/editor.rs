@@ -26,7 +26,7 @@ pub struct Editor {
     last_input: Duration,
     top_pixel: isize,
     last_viewport_size: [f32; 2],
-    dragging: Option<DragInfo>,
+    is_dragging: bool,
 }
 
 const SCROLL_AMOUNT: f32 = 32.0;
@@ -51,13 +51,8 @@ enum Direction {
     Right,
 }
 
-#[derive(Copy, Clone)]
-struct DragInfo {
-    cursor_index: usize,
-}
-
 impl Editor {
-    pub(crate) fn new(document_id: DocumentId, app: &App) -> Self {
+    pub(crate) fn new(app: &App, document_id: DocumentId) -> Self {
         let wrap_chars = 80;
         let wraps = wraps_from_document(document_id, app, wrap_chars);
         Editor {
@@ -79,7 +74,7 @@ impl Editor {
             last_input: Duration::ZERO,
             top_pixel: 0,
             last_viewport_size: [0.0, 0.0],
-            dragging: None,
+            is_dragging: false,
         }
     }
 }
@@ -184,7 +179,7 @@ impl EditorId {
                         return;
                     }
                     Key::Character("s") => {
-                        self.save(app, io, SaveKind::Explicit);
+                        self.get(app).document_id.save(app, io, SaveKind::Explicit);
                         return;
                     }
                     Key::Character("z") => self.undo(app),
@@ -238,13 +233,13 @@ impl EditorId {
             }
             InputEvent::MouseButton { state, position } => match state {
                 ElementState::Pressed => self.cursor_begin_drag(app, position),
-                ElementState::Released => self.get_mut(app).dragging = None,
+                ElementState::Released => self.get_mut(app).is_dragging = false,
             },
             InputEvent::MouseWheel { y_offset } => {
                 self.get_mut(app).top_pixel -= (SCROLL_AMOUNT * y_offset) as isize;
             }
             InputEvent::FocusChanged { focused: false } => {
-                self.save(app, io, SaveKind::Auto);
+                self.get(app).document_id.save(app, io, SaveKind::Auto);
                 return;
             }
             _ => flush_doing = false,
@@ -258,16 +253,12 @@ impl EditorId {
         }
     }
 
-    fn save(self, app: &mut App, io: &mut dyn IO, kind: SaveKind) {
-        self.get(app).document_id.save(app, io, kind);
-    }
-
     pub fn tick(self, app: &mut App, io: &mut dyn IO) {
         let document_id = self.get(app).document_id;
         document_id.tick(app, io);
 
         // During drag, poll mouse position and update cursor head.
-        if let Some(drag_info) = self.get(app).dragging {
+        if self.get(app).is_dragging {
             let mouse_pos = app.mouse_position;
             {
                 let editor = self.get_mut(app);
@@ -284,15 +275,14 @@ impl EditorId {
             let offset = self.offset_from_screen(app, mouse_pos);
             let frame_start = app.frame_start;
             let editor = self.get_mut(app);
-            if let Some(cursor) = editor.cursors.get_mut(drag_info.cursor_index) {
-                let moved = cursor.head.offset != offset;
-                cursor.head = CursorPoint {
-                    offset,
-                    col_wanted: None,
-                };
-                if moved {
-                    editor.marked = true;
-                }
+            let cursor = editor.cursors.last_mut().unwrap();
+            let moved = cursor.head.offset != offset;
+            cursor.head = CursorPoint {
+                offset,
+                col_wanted: None,
+            };
+            if moved {
+                editor.marked = true;
             }
 
             editor.last_input = frame_start;
@@ -591,7 +581,6 @@ impl EditorId {
             editor.cursors.clear();
         }
 
-        let cursor_index = editor.cursors.len();
         editor.cursors.push(Cursor {
             head: CursorPoint {
                 offset,
@@ -602,7 +591,7 @@ impl EditorId {
                 col_wanted: None,
             },
         });
-        editor.dragging = Some(DragInfo { cursor_index });
+        editor.is_dragging = true;
         editor.marked = false;
         self.scroll_main_cursor_into_view(app);
     }
@@ -625,6 +614,7 @@ impl EditorId {
 
         self.scroll_offset_into_center(app, diff.apply(center_before));
     }
+
     fn toggle_mark(self, app: &mut App) {
         let editor = self.get_mut(app);
         if editor.marked {

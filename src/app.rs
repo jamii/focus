@@ -129,7 +129,7 @@ impl App {
             Some(path) => app.insert_document(Document::from_file(path)),
             None => app.insert_document(Document::scratch()),
         };
-        let editor_id = app.insert_editor(Editor::new(document_id, &app));
+        let editor_id = app.insert_editor(Editor::new(&app, document_id));
         app.windows
             .insert(initial_window_id, Window::new(editor_id));
         app
@@ -164,7 +164,7 @@ impl App {
                     }
                     Key::Character("m") => {
                         let document_id = window_id.get(self).editor_id.get(self).document_id;
-                        let editor_id_new = self.insert_editor(Editor::new(document_id, self));
+                        let editor_id_new = self.insert_editor(Editor::new(self, document_id));
                         self.insert_window(io, Window::new(editor_id_new));
                     }
                     _ => {
@@ -208,7 +208,7 @@ impl App {
 
     pub fn insert_editor_empty(&mut self) -> EditorId {
         let document_id = self.insert_document_empty();
-        self.insert_editor(Editor::new(document_id, self))
+        self.insert_editor(Editor::new(self, document_id))
     }
 
     pub fn insert_editor(&mut self, editor: Editor) -> EditorId {
