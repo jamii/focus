@@ -56,6 +56,9 @@ Testing:
 * [x] deterministic simulation testing
 * [x] e2e fuzzing
 
+Arch:
+* [ ] Daemonize
+
 ## wishlist
 
 * more text structure 
