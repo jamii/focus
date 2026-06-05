@@ -1,5 +1,5 @@
 use focus_core::app::InputEvent;
-use winit::keyboard::Key;
+use focus_core::input::Key;
 
 mod common;
 
@@ -7,7 +7,7 @@ mod common;
 fn ctrl_n_opens_a_new_window_with_a_new_document() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("n".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("n"));
 
     assert_eq!(app.windows.len(), 2);
     assert_eq!(app.editors.len(), 2);
@@ -20,7 +20,7 @@ fn ctrl_n_opens_a_new_window_with_a_new_document() {
 fn ctrl_m_opens_a_new_window_on_the_same_document() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("m".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("m"));
 
     assert_eq!(app.windows.len(), 2);
     assert_eq!(app.editors.len(), 2);

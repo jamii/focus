@@ -2,21 +2,19 @@ use focus_core::app::{App, WindowId};
 use focus_core::drawing::{DrawCommand, Drawing};
 use focus_core::fuzz::MockIO;
 use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
-use winit::event::ElementState;
-use winit::keyboard::ModifiersState;
-use winit::keyboard::{Key, NamedKey};
+use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
 
 mod common;
 
 fn move_right(app: &mut App, io: &mut MockIO, window_id: WindowId, count: usize) {
     for _ in 0..count {
-        common::control_key(app, io, window_id, Key::Character("l".into()));
+        common::control_key(app, io, window_id, Key::Character("l"));
     }
 }
 
 fn move_left(app: &mut App, io: &mut MockIO, window_id: WindowId, count: usize) {
     for _ in 0..count {
-        common::control_key(app, io, window_id, Key::Character("j".into()));
+        common::control_key(app, io, window_id, Key::Character("j"));
     }
 }
 
@@ -27,7 +25,7 @@ fn select_right(app: &mut App, io: &mut MockIO, window_id: WindowId, count: usiz
 
 fn move_down(app: &mut App, io: &mut MockIO, window_id: WindowId, count: usize) {
     for _ in 0..count {
-        common::control_key(app, io, window_id, Key::Character("k".into()));
+        common::control_key(app, io, window_id, Key::Character("k"));
     }
 }
 
@@ -72,7 +70,7 @@ fn typing_and_cursor_movement_insert_at_the_cursor() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
     common::text_input(&mut app, &mut io, window_id, "helo");
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     common::char_input(&mut app, &mut io, window_id, 'l');
 
     assert_eq!(common::text(&app), "hello");
@@ -97,7 +95,7 @@ fn unhandled_keys_and_released_keys_do_not_edit_text() {
         window_id,
         Key::Named(NamedKey::ArrowRight),
     );
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
     app.input(
         &mut io,
         window_id,
@@ -155,15 +153,15 @@ fn clipboard_commands_noop_without_selection_or_clipboard_text() {
     common::text_input(&mut app, &mut io, window_id, "abc");
 
     io.clipboard = Some("old".into());
-    common::control_key(&mut app, &mut io, window_id, Key::Character("c".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("x".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("c"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("x"));
 
     assert_eq!(common::text(&app), "abc");
     assert_eq!(io.clipboard, Some("old".into()));
 
     io.clipboard = None;
-    common::control_key(&mut app, &mut io, window_id, Key::Character("v".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("V".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("v"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("V"));
 
     assert_eq!(common::text(&app), "abc");
     app.assert_invariants();
@@ -174,15 +172,15 @@ fn copy_and_paste_use_mock_clipboard() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "hello");
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("c".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("l".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("l".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("v".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("c"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("l"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("l"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("v"));
 
     assert_eq!(io.clipboard, Some("el".into()));
     assert_eq!(common::text(&app), "helello");
@@ -194,12 +192,12 @@ fn cut_deletes_selection_and_updates_clipboard() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "hello");
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("x".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("x"));
 
     assert_eq!(io.clipboard, Some("el".into()));
     assert_eq!(common::text(&app), "hlo");
@@ -261,7 +259,7 @@ fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
     io.mouse_pos = end;
     common::tick(&mut app, &mut io);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, end);
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     common::key(
         &mut app,
@@ -303,13 +301,13 @@ fn ctrl_d_adds_next_match_for_replacement() {
     common::text_input(&mut app, &mut io, window_id, "abc abc abc");
 
     for _ in 0..8 {
-        common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
+        common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     }
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
     for _ in 0..3 {
-        common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
+        common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     }
-    common::control_key(&mut app, &mut io, window_id, Key::Character("d".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("d"));
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "X X abc");
@@ -322,7 +320,7 @@ fn ctrl_d_noops_without_selection() {
     common::text_input(&mut app, &mut io, window_id, "abc abc");
 
     move_left(&mut app, &mut io, window_id, 3);
-    common::control_key(&mut app, &mut io, window_id, Key::Character("d".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("d"));
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "abc Xabc");
@@ -337,7 +335,7 @@ fn ctrl_d_preserves_reverse_selection_direction() {
     move_left(&mut app, &mut io, window_id, 4);
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
     move_left(&mut app, &mut io, window_id, 3);
-    common::control_key(&mut app, &mut io, window_id, Key::Character("d".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("d"));
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "X X");
@@ -351,8 +349,8 @@ fn ctrl_shift_d_removes_last_cursor() {
 
     move_left(&mut app, &mut io, window_id, 11);
     select_right(&mut app, &mut io, window_id, 3);
-    common::control_key(&mut app, &mut io, window_id, Key::Character("d".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("D".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("d"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("D"));
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "X abc abc");
@@ -396,10 +394,10 @@ fn paste_many_distributes_clipboard_lines_across_cursors() {
         ElementState::Released,
         second,
     );
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     io.clipboard = Some("X\nY".into());
-    common::control_key(&mut app, &mut io, window_id, Key::Character("V".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("V"));
 
     assert_eq!(common::text(&app), "Xab Ycd");
     app.assert_invariants();
@@ -442,10 +440,10 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
         ElementState::Released,
         second,
     );
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     io.clipboard = Some("X".into());
-    common::control_key(&mut app, &mut io, window_id, Key::Character("V".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("V"));
     assert_eq!(common::text(&app), "Xab cd");
 
     move_left(&mut app, &mut io, window_id, 6);
@@ -481,10 +479,10 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
         ElementState::Released,
         second,
     );
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     io.clipboard = Some("1\n2\n3".into());
-    common::control_key(&mut app, &mut io, window_id, Key::Character("V".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("V"));
 
     assert_eq!(common::text(&app), "1Xab 2cd");
     app.assert_invariants();
@@ -495,7 +493,7 @@ fn vertical_movement_preserves_wanted_column() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcd\nef\nwxyz");
 
-    common::alt_key(&mut app, &mut io, window_id, Key::Character("i".into()));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
     move_right(&mut app, &mut io, window_id, 3);
     move_down(&mut app, &mut io, window_id, 1);
     move_down(&mut app, &mut io, window_id, 1);
@@ -511,7 +509,7 @@ fn vertical_movement_across_soft_wraps() {
     common::text_input(&mut app, &mut io, window_id, "abcdef");
     common::draw(&mut app, window_id, 3, 4);
 
-    common::alt_key(&mut app, &mut io, window_id, Key::Character("i".into()));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
     move_right(&mut app, &mut io, window_id, 1);
     move_down(&mut app, &mut io, window_id, 1);
     common::char_input(&mut app, &mut io, window_id, 'Q');
@@ -525,14 +523,14 @@ fn alt_navigation_moves_to_line_and_document_boundaries() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abc\ndef");
 
-    common::alt_key(&mut app, &mut io, window_id, Key::Character("i".into()));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
     common::char_input(&mut app, &mut io, window_id, 'A');
-    common::alt_key(&mut app, &mut io, window_id, Key::Character("k".into()));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
     common::char_input(&mut app, &mut io, window_id, 'Z');
     move_left(&mut app, &mut io, window_id, 2);
-    common::alt_key(&mut app, &mut io, window_id, Key::Character("j".into()));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("j"));
     common::char_input(&mut app, &mut io, window_id, 'L');
-    common::alt_key(&mut app, &mut io, window_id, Key::Character("l".into()));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("l"));
     common::char_input(&mut app, &mut io, window_id, 'R');
 
     assert_eq!(common::text(&app), "Aabc\nLdefZR");
@@ -652,7 +650,7 @@ fn ctrl_click_adds_another_cursor() {
     let second = common::point_for_offset(&app, 3, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "aXbcXd");
@@ -1057,7 +1055,7 @@ fn ctrl_d_noops_when_selection_has_no_later_match() {
 
     move_left(&mut app, &mut io, window_id, 3);
     select_right(&mut app, &mut io, window_id, 3);
-    common::control_key(&mut app, &mut io, window_id, Key::Character("d".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("d"));
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "abc X");
@@ -1069,7 +1067,7 @@ fn ctrl_shift_d_noops_with_one_cursor() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abc");
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("D".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("D"));
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "abcX");
@@ -1097,8 +1095,8 @@ fn copy_joins_multiple_selections_with_newlines() {
 
     move_left(&mut app, &mut io, window_id, 7);
     select_right(&mut app, &mut io, window_id, 3);
-    common::control_key(&mut app, &mut io, window_id, Key::Character("d".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("c".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("d"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("c"));
 
     assert_eq!(io.clipboard, Some("abc\nabc".into()));
     assert_eq!(common::text(&app), "abc abc");
@@ -1114,10 +1112,14 @@ fn keys_with_control_and_alt_do_not_trigger_editor_shortcuts() {
         &mut app,
         &mut io,
         window_id,
-        ModifiersState::CONTROL | ModifiersState::ALT,
+        ModifiersState {
+            control: true,
+            alt: true,
+            ..ModifiersState::default()
+        },
     );
-    common::key(&mut app, &mut io, window_id, Key::Character("l".into()));
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+    common::key(&mut app, &mut io, window_id, Key::Character("l"));
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "abX");

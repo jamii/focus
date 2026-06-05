@@ -3,9 +3,8 @@ use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 use focus_core::app::{App, IO, InputEvent, WindowId};
-use winit::dpi::LogicalSize;
-use winit::event::ElementState;
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use focus_core::app::WindowSize;
+use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
 
 mod common;
 
@@ -33,7 +32,7 @@ impl ErrorIO {
 }
 
 impl IO for ErrorIO {
-    fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId {
+    fn open_window(&mut self, title: String, size: WindowSize) -> WindowId {
         self.inner.open_window(title, size)
     }
 
@@ -107,7 +106,7 @@ fn error_file_app(path: PathBuf, text: &str) -> (App, ErrorIO, WindowId) {
     (app, io, window_id)
 }
 
-fn error_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: Key) {
+fn error_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: Key<'_>) {
     io.sync_app_io(app);
     app.input(
         io,
@@ -124,12 +123,15 @@ fn error_text_input(app: &mut App, io: &mut ErrorIO, window_id: WindowId, text: 
         match ch {
             '\n' => error_key(app, io, window_id, Key::Named(NamedKey::Enter)),
             ' ' => error_key(app, io, window_id, Key::Named(NamedKey::Space)),
-            ch => error_key(app, io, window_id, Key::Character(ch.to_string().into())),
+            ch => {
+                let mut buf = [0u8; 4];
+                error_key(app, io, window_id, Key::Character(ch.encode_utf8(&mut buf)))
+            }
         }
     }
 }
 
-fn error_control_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: Key) {
+fn error_control_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: Key<'_>) {
     io.sync_app_io(app);
     app.input(
         io,
@@ -141,7 +143,7 @@ fn error_control_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: 
     app.input(
         io,
         window_id,
-        InputEvent::ModifiersChanged(ModifiersState::empty()),
+        InputEvent::ModifiersChanged(ModifiersState::default()),
     );
 }
 
@@ -192,11 +194,11 @@ fn selection_replacement_updates_document() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "hello");
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "hXlo");
@@ -208,10 +210,10 @@ fn undo_and_redo_restore_text() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abc");
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("z".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
     assert_eq!(common::text(&app), "");
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("Z".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("Z"));
     assert_eq!(common::text(&app), "abc");
 
     app.assert_invariants();
@@ -259,7 +261,7 @@ fn explicit_save_writes_modified_file() {
 
     io.frame_start += Duration::from_secs(1);
     common::text_input(&mut app, &mut io, window_id, " after");
-    common::control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
 
     assert_eq!(io.files.get(&path).unwrap().0, b"before after");
     app.assert_invariants();
@@ -291,7 +293,7 @@ fn autosave_does_not_recreate_deleted_file_but_explicit_save_does() {
     common::focus_changed(&mut app, &mut io, window_id, false);
     assert!(!io.files.contains_key(&path));
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
     assert_eq!(io.files.get(&path).unwrap().0, b"before after");
     app.assert_invariants();
 }
@@ -301,7 +303,7 @@ fn saving_scratch_document_is_a_noop() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
     common::text_input(&mut app, &mut io, window_id, "scratch");
-    common::control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
 
     assert!(io.files.is_empty());
     app.assert_invariants();
@@ -335,7 +337,7 @@ fn clean_external_replacement_updates_text_and_cursor_offsets() {
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "abcd ef");
     common::tick(&mut app, &mut io);
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     io.files.insert(
         path,
         (
@@ -403,14 +405,14 @@ fn undo_redo_batching_and_redo_clearing_follow_input_flushes() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
     common::text_input(&mut app, &mut io, window_id, "ab");
-    common::control_key(&mut app, &mut io, window_id, Key::Character("z".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
     assert_eq!(common::text(&app), "");
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("Z".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("Z"));
     assert_eq!(common::text(&app), "ab");
 
     common::char_input(&mut app, &mut io, window_id, 'c');
-    common::control_key(&mut app, &mut io, window_id, Key::Character("Z".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("Z"));
 
     assert_eq!(common::text(&app), "abc");
     app.assert_invariants();
@@ -424,7 +426,7 @@ fn tick_flushes_idle_edit_batch_for_undo() {
     io.frame_start += Duration::from_millis(1500);
     common::tick(&mut app, &mut io);
     common::text_input(&mut app, &mut io, window_id, "b");
-    common::control_key(&mut app, &mut io, window_id, Key::Character("z".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
 
     assert_eq!(common::text(&app), "a");
     app.assert_invariants();
@@ -439,12 +441,12 @@ fn explicit_save_error_leaves_file_dirty_until_next_successful_save() {
     io.inner.frame_start += Duration::from_secs(1);
     error_text_input(&mut app, &mut io, window_id, " after");
     io.file_write_error = Some(std::io::ErrorKind::PermissionDenied);
-    error_control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    error_control_key(&mut app, &mut io, window_id, Key::Character("s"));
     assert_eq!(io.inner.files.get(&path).unwrap().0, b"before");
 
     io.file_write_error = None;
     io.inner.frame_start += Duration::from_secs(1);
-    error_control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    error_control_key(&mut app, &mut io, window_id, Key::Character("s"));
     assert_eq!(io.inner.files.get(&path).unwrap().0, b"before after");
     app.assert_invariants();
 }
@@ -463,7 +465,7 @@ fn autosave_non_notfound_error_leaves_file_dirty_until_explicit_save() {
 
     io.file_write_error = None;
     io.inner.frame_start += Duration::from_secs(1);
-    error_control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    error_control_key(&mut app, &mut io, window_id, Key::Character("s"));
     assert_eq!(io.inner.files.get(&path).unwrap().0, b"before after");
     app.assert_invariants();
 }
@@ -522,7 +524,7 @@ fn explicit_save_clean_file_is_a_noop() {
     let before = io.files.get(&path).unwrap().clone();
 
     io.frame_start += Duration::from_secs(1);
-    common::control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
 
     assert_eq!(io.files.get(&path).unwrap(), &before);
     app.assert_invariants();
@@ -612,8 +614,8 @@ fn clean_external_multi_hunk_change_reloads_text() {
 fn undo_and_redo_empty_stacks_are_noops() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("z".into()));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("Z".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("Z"));
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "X");

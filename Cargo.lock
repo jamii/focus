@@ -455,7 +455,6 @@ dependencies = [
  "bstr",
  "fontdue",
  "similar",
- "winit",
 ]
 
 [[package]]

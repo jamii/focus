@@ -18,11 +18,13 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamedKey};
 use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
 
-use focus_core::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, InputEvent, WindowId};
+use focus_core::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, InputEvent, WindowId, WindowSize};
 use focus_core::drawing::Drawing;
+use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
 
 use crate::render::Renderer;
 
@@ -64,6 +66,8 @@ struct WindowState {
 
 struct Backend {
     windows: HashMap<WindowId, WindowState>,
+    winit_to_window: HashMap<winit::window::WindowId, WindowId>,
+    next_window_id: WindowId,
     gl_config: Config,
     context: PossiblyCurrentContext,
     renderer: Renderer,
@@ -79,12 +83,12 @@ struct IoReal<'a> {
 }
 
 impl IO for IoReal<'_> {
-    fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId {
+    fn open_window(&mut self, title: String, size: WindowSize) -> WindowId {
         self.backend.open_window(self.event_loop, &title, size)
     }
 
     fn close_window(&mut self, window_id: WindowId) {
-        self.backend.windows.remove(&window_id);
+        self.backend.close_window(window_id);
     }
 
     fn set_window_title(&mut self, window_id: WindowId, title: String) {
@@ -178,7 +182,10 @@ impl ApplicationHandler for Chrome {
         let Chrome::Running(running) = self else {
             return;
         };
-        running.window_event(event_loop, WindowId(window_id), event);
+        let Some(window_id) = running.backend.winit_to_window.get(&window_id).copied() else {
+            return;
+        };
+        running.window_event(event_loop, window_id, event);
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -223,34 +230,7 @@ impl Running {
         if !self.backend.windows.contains_key(&window_id) {
             return;
         }
-        let translated = match event {
-            WindowEvent::CloseRequested => Some(InputEvent::CloseRequested),
-            WindowEvent::Focused(focused) => Some(InputEvent::FocusChanged { focused }),
-            WindowEvent::ModifiersChanged(m) => Some(InputEvent::ModifiersChanged(m.state())),
-            WindowEvent::KeyboardInput { event, .. } => Some(InputEvent::Key {
-                state: event.state,
-                logical_key: event.logical_key,
-            }),
-            WindowEvent::MouseWheel { delta, .. } => {
-                let y_offset = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => y,
-                    winit::event::MouseScrollDelta::PixelDelta(p) => (p.y as f32) / 32.0,
-                };
-                Some(InputEvent::MouseWheel { y_offset })
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if button == winit::event::MouseButton::Left {
-                    Some(InputEvent::MouseButton {
-                        state,
-                        position: self.backend.last_mouse_pos,
-                    })
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
-        let Some(translated) = translated else {
+        let Some(translated) = translate_event(&event, self.backend.last_mouse_pos) else {
             return;
         };
         let mut io = IoReal {
@@ -298,11 +278,7 @@ impl Backend {
     // loads `gl::*` against the now-current context, and constructs the
     // renderer. Returns the freshly-opened window's id alongside the
     // populated `Backend`.
-    fn bootstrap(
-        event_loop: &ActiveEventLoop,
-        title: &str,
-        size: LogicalSize<u32>,
-    ) -> (Self, WindowId) {
+    fn bootstrap(event_loop: &ActiveEventLoop, title: &str, size: WindowSize) -> (Self, WindowId) {
         let attrs = window_attrs(title, size);
         let template = ConfigTemplateBuilder::new().with_alpha_size(8);
         let (window, gl_config) = DisplayBuilder::new()
@@ -332,19 +308,19 @@ impl Backend {
         });
         let renderer = unsafe { Renderer::new() };
 
-        let id = WindowId(window.id());
-        let mut windows = HashMap::new();
-        windows.insert(id, WindowState { window, surface });
         let clipboard = arboard::Clipboard::new()
             .expect("arboard::Clipboard::new() — is a wayland or x11 session running?");
-        let backend = Backend {
-            windows,
+        let mut backend = Backend {
+            windows: HashMap::new(),
+            winit_to_window: HashMap::new(),
+            next_window_id: WindowId(0),
             gl_config,
             context,
             renderer,
             last_mouse_pos: [0.0, 0.0],
             clipboard,
         };
+        let id = backend.register_window(window, surface);
         (backend, id)
     }
 
@@ -352,7 +328,7 @@ impl Backend {
         &mut self,
         event_loop: &ActiveEventLoop,
         title: &str,
-        size: LogicalSize<u32>,
+        size: WindowSize,
     ) -> WindowId {
         let window = event_loop
             .create_window(window_attrs(title, size))
@@ -360,9 +336,24 @@ impl Backend {
         let surface = create_surface(&self.gl_config, &window);
         self.context.make_current(&surface).expect("make_current");
         let _ = surface.set_swap_interval(&self.context, SwapInterval::DontWait);
-        let id = WindowId(window.id());
+        self.register_window(window, surface)
+    }
+
+    // Mint a fresh core `WindowId` for a winit window and record both
+    // directions of the id mapping.
+    fn register_window(&mut self, window: Window, surface: Surface<WindowSurface>) -> WindowId {
+        let winit_id = window.id();
+        let id = self.next_window_id;
+        self.next_window_id.0 += 1;
         self.windows.insert(id, WindowState { window, surface });
+        self.winit_to_window.insert(winit_id, id);
         id
+    }
+
+    fn close_window(&mut self, window_id: WindowId) {
+        if let Some(state) = self.windows.remove(&window_id) {
+            self.winit_to_window.remove(&state.window.id());
+        }
     }
 
     fn resize_surface(&mut self, window_id: WindowId, size: PhysicalSize<u32>) {
@@ -376,11 +367,11 @@ impl Backend {
     }
 }
 
-fn window_attrs(title: &str, size: LogicalSize<u32>) -> winit::window::WindowAttributes {
+fn window_attrs(title: &str, size: WindowSize) -> winit::window::WindowAttributes {
     Window::default_attributes()
         .with_title(title)
         .with_name(APP_ID, "")
-        .with_inner_size(size)
+        .with_inner_size(LogicalSize::new(size.width, size.height))
 }
 
 fn create_surface(gl_config: &Config, window: &Window) -> Surface<WindowSurface> {
@@ -392,5 +383,85 @@ fn create_surface(gl_config: &Config, window: &Window) -> Surface<WindowSurface>
             .display()
             .create_window_surface(gl_config, &surface_attrs)
             .expect("create_window_surface")
+    }
+}
+
+// --- winit -> focus_core input translation ---
+
+// Map a winit window event to the core's `InputEvent`, or `None` for
+// events the core doesn't consume. Borrows `event` so the resulting
+// `Key` can point straight at winit's key string.
+fn translate_event(event: &WindowEvent, last_mouse_pos: [f32; 2]) -> Option<InputEvent<'_>> {
+    match event {
+        WindowEvent::CloseRequested => Some(InputEvent::CloseRequested),
+        WindowEvent::Focused(focused) => Some(InputEvent::FocusChanged { focused: *focused }),
+        WindowEvent::ModifiersChanged(m) => {
+            Some(InputEvent::ModifiersChanged(translate_modifiers(m.state())))
+        }
+        WindowEvent::KeyboardInput { event, .. } => {
+            translate_key(&event.logical_key).map(|logical_key| InputEvent::Key {
+                state: translate_state(event.state),
+                logical_key,
+            })
+        }
+        WindowEvent::MouseWheel { delta, .. } => {
+            let y_offset = match delta {
+                winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
+                winit::event::MouseScrollDelta::PixelDelta(p) => (p.y as f32) / 32.0,
+            };
+            Some(InputEvent::MouseWheel { y_offset })
+        }
+        WindowEvent::MouseInput { state, button, .. } => {
+            if *button == winit::event::MouseButton::Left {
+                Some(InputEvent::MouseButton {
+                    state: translate_state(*state),
+                    position: last_mouse_pos,
+                })
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn translate_state(state: winit::event::ElementState) -> ElementState {
+    match state {
+        winit::event::ElementState::Pressed => ElementState::Pressed,
+        winit::event::ElementState::Released => ElementState::Released,
+    }
+}
+
+// Text keys carry their string; named keys map to the subset the editor
+// understands. Anything else (dead keys, unidentified, unhandled named
+// keys) yields None and is dropped.
+fn translate_key(key: &WinitKey) -> Option<Key<'_>> {
+    match key {
+        WinitKey::Character(s) => Some(Key::Character(s.as_str())),
+        WinitKey::Named(named) => Some(Key::Named(translate_named(*named)?)),
+        _ => None,
+    }
+}
+
+fn translate_named(named: WinitNamedKey) -> Option<NamedKey> {
+    Some(match named {
+        WinitNamedKey::Enter => NamedKey::Enter,
+        WinitNamedKey::Space => NamedKey::Space,
+        WinitNamedKey::Backspace => NamedKey::Backspace,
+        WinitNamedKey::Delete => NamedKey::Delete,
+        WinitNamedKey::ArrowLeft => NamedKey::ArrowLeft,
+        WinitNamedKey::ArrowRight => NamedKey::ArrowRight,
+        WinitNamedKey::ArrowUp => NamedKey::ArrowUp,
+        WinitNamedKey::ArrowDown => NamedKey::ArrowDown,
+        _ => return None,
+    })
+}
+
+fn translate_modifiers(state: winit::keyboard::ModifiersState) -> ModifiersState {
+    ModifiersState {
+        control: state.control_key(),
+        alt: state.alt_key(),
+        shift: state.shift_key(),
+        super_: state.super_key(),
     }
 }

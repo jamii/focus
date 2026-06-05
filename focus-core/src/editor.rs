@@ -3,11 +3,8 @@ use std::time::Duration;
 use std::{mem::replace, ops::Range};
 
 use bstr::{BStr, ByteSlice};
-use winit::{
-    event::ElementState,
-    keyboard::{Key, NamedKey},
-};
 
+use crate::input::{ElementState, Key, NamedKey};
 use crate::style::BACKGROUND_COLOR;
 use crate::{
     app::{App, DocumentId, EditorId, IO, InputEvent},
@@ -103,17 +100,17 @@ impl EditorId {
         }
     }
 
-    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent) {
+    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
         let mut flush_doing = true;
 
         match event {
             InputEvent::Key {
                 state, logical_key, ..
             } if state == ElementState::Pressed
-                && app.modifiers.control_key()
-                && !app.modifiers.alt_key() =>
+                && app.modifiers.control
+                && !app.modifiers.alt =>
             {
-                match logical_key.as_ref() {
+                match logical_key {
                     Key::Character("i") => self.cursor_move(app, Direction::Up),
                     Key::Character("k") => self.cursor_move(app, Direction::Down),
                     Key::Character("j") => self.cursor_move(app, Direction::Left),
@@ -136,10 +133,10 @@ impl EditorId {
             InputEvent::Key {
                 state, logical_key, ..
             } if state == ElementState::Pressed
-                && !app.modifiers.control_key()
-                && app.modifiers.alt_key() =>
+                && !app.modifiers.control
+                && app.modifiers.alt =>
             {
-                match logical_key.as_ref() {
+                match logical_key {
                     Key::Character("j") => self.cursor_goto_line_start(app),
                     Key::Character("l") => self.cursor_goto_line_end(app),
                     Key::Character("i") => self.cursor_goto_doc_start(app),
@@ -150,10 +147,10 @@ impl EditorId {
             InputEvent::Key {
                 state, logical_key, ..
             } if state == ElementState::Pressed
-                && !app.modifiers.control_key()
-                && !app.modifiers.alt_key() =>
+                && !app.modifiers.control
+                && !app.modifiers.alt =>
             {
-                match logical_key.as_ref() {
+                match logical_key {
                     Key::Character(char) => {
                         self.cursor_replace(app, char.into());
                         flush_doing = false;
@@ -536,7 +533,7 @@ impl EditorId {
 
     fn cursor_begin_drag(self, app: &mut App, position: [f32; 2]) {
         let offset = self.offset_from_screen(app, position);
-        let control_key = app.modifiers.control_key();
+        let control_key = app.modifiers.control;
         let editor = self.get_mut(app);
 
         // Ctrl-click / Ctrl-drag: add a new cursor

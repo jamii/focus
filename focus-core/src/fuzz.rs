@@ -12,18 +12,16 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::BString;
-use winit::dpi::LogicalSize;
-use winit::event::ElementState;
-use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
-use crate::app::{App, IO, InputEvent, WindowId};
+use crate::app::{App, IO, InputEvent, WindowId, WindowSize};
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
+use crate::input::{ElementState, Key, ModifiersState, NamedKey};
 
 // Mock IO: tracks open windows, fabricates fresh WindowIds, advances
 // `frame_start` by whatever the harness pushes via `advance`.
 pub struct MockIO {
-    next_winit_id: u64,
+    next_window_id: usize,
     pub open_windows: Vec<WindowId>,
     pub exited: bool,
     pub screen_size: [f32; 2],
@@ -37,10 +35,8 @@ pub struct MockIO {
 impl MockIO {
     pub fn new() -> Self {
         MockIO {
-            // 1, not 0 — `winit::window::WindowId::dummy()` is 0 on some
-            // backends and we don't want to collide with a real id we
-            // pretend to mint.
-            next_winit_id: 1,
+            // Start at 1 so a fabricated id is never zero.
+            next_window_id: 1,
             open_windows: Vec::new(),
             exited: false,
             screen_size: [0.0, 0.0],
@@ -53,8 +49,8 @@ impl MockIO {
     }
 
     pub fn fresh_window_id(&mut self) -> WindowId {
-        let id = WindowId(winit::window::WindowId::from(self.next_winit_id));
-        self.next_winit_id += 1;
+        let id = WindowId(self.next_window_id);
+        self.next_window_id += 1;
         id
     }
 }
@@ -65,7 +61,7 @@ pub fn sync_app_io(app: &mut App, io: &MockIO) {
 }
 
 impl IO for MockIO {
-    fn open_window(&mut self, _title: String, _size: LogicalSize<u32>) -> WindowId {
+    fn open_window(&mut self, _title: String, _size: WindowSize) -> WindowId {
         let id = self.fresh_window_id();
         self.open_windows.push(id);
         id
@@ -193,7 +189,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             let s = ch.encode_utf8(&mut buf);
             let event = InputEvent::Key {
                 state: ElementState::Pressed,
-                logical_key: Key::Character(SmolStr::new(s)),
+                logical_key: Key::Character(s),
             };
             app.input(io, window_id, event);
         }
@@ -227,19 +223,12 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         2 => {
             // Random modifier state: any subset of Ctrl/Alt/Shift/Super.
             let bits = frng.u8_bounded(0, 0x0F)?;
-            let mut m = ModifiersState::empty();
-            if bits & 0b0001 != 0 {
-                m |= ModifiersState::CONTROL;
-            }
-            if bits & 0b0010 != 0 {
-                m |= ModifiersState::ALT;
-            }
-            if bits & 0b0100 != 0 {
-                m |= ModifiersState::SHIFT;
-            }
-            if bits & 0b1000 != 0 {
-                m |= ModifiersState::SUPER;
-            }
+            let m = ModifiersState {
+                control: bits & 0b0001 != 0,
+                alt: bits & 0b0010 != 0,
+                shift: bits & 0b0100 != 0,
+                super_: bits & 0b1000 != 0,
+            };
             app.input(io, window_id, InputEvent::ModifiersChanged(m));
         }
         3 => {

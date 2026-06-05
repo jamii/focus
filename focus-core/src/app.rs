@@ -4,14 +4,12 @@ use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 use fontdue::{Font, FontSettings};
-use winit::dpi::LogicalSize;
-use winit::event::ElementState;
-use winit::keyboard::{Key, ModifiersState};
 
 use crate::atlas::Atlas;
 use crate::document::Document;
 use crate::drawing::Drawing;
 use crate::editor::Editor;
+use crate::input::{ElementState, Key, ModifiersState};
 use crate::window::Window;
 
 pub struct App {
@@ -35,7 +33,13 @@ pub struct App {
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
-pub struct WindowId(pub winit::window::WindowId);
+pub struct WindowId(pub usize);
+
+#[derive(Clone, Copy, Debug)]
+pub struct WindowSize {
+    pub width: u32,
+    pub height: u32,
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct DocumentId(usize);
@@ -44,12 +48,12 @@ pub struct DocumentId(usize);
 pub struct EditorId(usize);
 
 #[derive(Clone, Debug)]
-pub enum InputEvent {
+pub enum InputEvent<'a> {
     CloseRequested,
     ModifiersChanged(ModifiersState),
     Key {
         state: ElementState,
-        logical_key: Key,
+        logical_key: Key<'a>,
     },
     MouseWheel {
         y_offset: f32,
@@ -64,14 +68,14 @@ pub enum InputEvent {
 }
 
 pub const INITIAL_TITLE: &str = "focus";
-pub const INITIAL_SIZE: LogicalSize<u32> = LogicalSize {
+pub const INITIAL_SIZE: WindowSize = WindowSize {
     width: 800,
     height: 600,
 };
 
 // External effects. Mocked for testing/fuzzing.
 pub trait IO {
-    fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId;
+    fn open_window(&mut self, title: String, size: WindowSize) -> WindowId;
     fn close_window(&mut self, window_id: WindowId);
     fn set_window_title(&mut self, window_id: WindowId, title: String);
     fn request_redraw(&mut self, window_id: WindowId);
@@ -139,7 +143,7 @@ impl App {
         app
     }
 
-    pub fn input(&mut self, io: &mut dyn IO, window_id: WindowId, event: InputEvent) {
+    pub fn input(&mut self, io: &mut dyn IO, window_id: WindowId, event: InputEvent<'_>) {
         match &event {
             InputEvent::CloseRequested => {
                 self.windows.remove(&window_id);
@@ -153,8 +157,8 @@ impl App {
             }
             InputEvent::Key {
                 state, logical_key, ..
-            } if *state == ElementState::Pressed && self.modifiers.control_key() => {
-                match logical_key.as_ref() {
+            } if *state == ElementState::Pressed && self.modifiers.control => {
+                match *logical_key {
                     Key::Character("+") => {
                         self.px_size += 1.0;
                         self.rebuild_atlas(io);

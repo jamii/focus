@@ -4,7 +4,6 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-winit = "0.30"
 fontdue = "0.9"
 bstr = "1"
 similar = { version = "3", features = ["bytes"] }

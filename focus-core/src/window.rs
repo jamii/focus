@@ -17,7 +17,7 @@ impl Window {
 impl WindowId {
     pub(crate) fn assert_invariants(self, _app: &App) {}
 
-    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent) {
+    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
         let editor_id = self.get(app).editor_id;
         editor_id.input(app, io, event);
     }

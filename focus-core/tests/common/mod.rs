@@ -8,8 +8,7 @@ use focus_core::app::{App, DocumentId, InputEvent, WindowId};
 use focus_core::drawing::{DrawCommand, Drawing};
 use focus_core::fuzz::MockIO;
 use focus_core::style::TEXT_COLOR;
-use winit::event::ElementState;
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
 
 pub fn sync_app_io(app: &mut App, io: &MockIO) {
     focus_core::fuzz::sync_app_io(app, io);
@@ -47,7 +46,7 @@ pub fn text(app: &App) -> String {
     String::from_utf8_lossy(&document.text).to_string()
 }
 
-pub fn key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key) {
+pub fn key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
     sync_app_io(app, io);
     app.input(
         io,
@@ -60,7 +59,8 @@ pub fn key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key) {
 }
 
 pub fn char_input(app: &mut App, io: &mut MockIO, window_id: WindowId, ch: char) {
-    key(app, io, window_id, Key::Character(ch.to_string().into()));
+    let mut buf = [0u8; 4];
+    key(app, io, window_id, Key::Character(ch.encode_utf8(&mut buf)));
 }
 
 pub fn text_input(app: &mut App, io: &mut MockIO, window_id: WindowId, text: &str) {
@@ -78,16 +78,16 @@ pub fn modifiers(app: &mut App, io: &mut MockIO, window_id: WindowId, modifiers:
     app.input(io, window_id, InputEvent::ModifiersChanged(modifiers));
 }
 
-pub fn control_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key) {
+pub fn control_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
     modifiers(app, io, window_id, ModifiersState::CONTROL);
     self::key(app, io, window_id, key);
-    modifiers(app, io, window_id, ModifiersState::empty());
+    modifiers(app, io, window_id, ModifiersState::default());
 }
 
-pub fn alt_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key) {
+pub fn alt_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
     modifiers(app, io, window_id, ModifiersState::ALT);
     self::key(app, io, window_id, key);
-    modifiers(app, io, window_id, ModifiersState::empty());
+    modifiers(app, io, window_id, ModifiersState::default());
 }
 
 pub fn mouse_button(
@@ -128,7 +128,7 @@ pub fn point_for_offset(app: &App, offset: usize, line: usize) -> [f32; 2] {
 
 pub fn open_same_document_window(app: &mut App, io: &mut MockIO, window_id: WindowId) -> WindowId {
     let before = io.open_windows.clone();
-    control_key(app, io, window_id, Key::Character("m".into()));
+    control_key(app, io, window_id, Key::Character("m"));
     *io.open_windows
         .iter()
         .find(|window_id| !before.contains(window_id))
