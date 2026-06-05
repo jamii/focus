@@ -28,7 +28,7 @@ pub struct Rect {
 }
 
 impl Rect {
-    pub fn from_corners(start: [f32; 2], end: [f32; 2]) -> Self {
+    pub(crate) fn from_corners(start: [f32; 2], end: [f32; 2]) -> Self {
         Rect {
             pos: start,
             size: [end[0] - start[0], end[1] - start[1]],

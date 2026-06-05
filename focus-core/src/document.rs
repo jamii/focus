@@ -7,7 +7,7 @@ use bstr::{BStr, BString, ByteSlice};
 use crate::app::{App, DocumentId, IO};
 
 pub struct Document {
-    pub text: BString,
+    text: BString,
     newlines: Vec<usize>,
     last_modified_time: Duration,
     source: Source,
@@ -108,7 +108,7 @@ impl Document {
 }
 
 impl DocumentId {
-    pub(crate) fn text(self, app: &App) -> &BStr {
+    pub fn text(self, app: &App) -> &BStr {
         return self.get(app).text.as_bstr();
     }
 
@@ -244,7 +244,7 @@ impl DocumentId {
         }
     }
 
-    pub fn grid_from_offset(self, app: &App, offset: usize) -> [usize; 2] {
+    pub(crate) fn grid_from_offset(self, app: &App, offset: usize) -> [usize; 2] {
         let document = self.get(app);
         let line = document.newlines.partition_point(|&nl| nl < offset);
         if line == 0 {
@@ -259,7 +259,7 @@ impl DocumentId {
         }
     }
 
-    pub fn line_range_from_offset(self, app: &App, offset: usize) -> std::ops::Range<usize> {
+    pub(crate) fn line_range_from_offset(self, app: &App, offset: usize) -> std::ops::Range<usize> {
         let line = self.grid_from_offset(app, offset)[1];
         let document = self.get(app);
         if line == 0 {
@@ -281,7 +281,7 @@ impl DocumentId {
         }
     }
 
-    pub fn char_next(self, app: &App, offset: usize) -> Option<usize> {
+    pub(crate) fn char_next(self, app: &App, offset: usize) -> Option<usize> {
         let document = self.get(app);
         if offset == document.text.len() {
             return None;
@@ -290,7 +290,7 @@ impl DocumentId {
         Some(offset + char_end)
     }
 
-    pub fn char_prev(self, app: &App, offset: usize) -> Option<usize> {
+    pub(crate) fn char_prev(self, app: &App, offset: usize) -> Option<usize> {
         let document = self.get(app);
         if offset == 0 {
             return None;

@@ -15,7 +15,7 @@ use crate::window::Window;
 pub struct App {
     font: Font,
     px_size: f32,
-    pub atlas: Atlas,
+    pub(crate) atlas: Atlas,
 
     pub windows: HashMap<WindowId, Window>,
 
