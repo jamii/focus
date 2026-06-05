@@ -333,14 +333,14 @@ fn dirty_file_document_does_not_reload_external_changes() {
 #[test]
 fn clean_external_replacement_updates_text_and_cursor_offsets() {
     let path = PathBuf::from("/tmp/focus-document-replacement-reload-test.txt");
-    let (mut app, mut io, window_id) = common::file_app(path.clone(), "abcdef");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "abcd ef");
     common::tick(&mut app, &mut io);
 
     common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
     io.files.insert(
         path,
         (
-            b"aXYef".to_vec(),
+            b"aXY ef".to_vec(),
             SystemTime::UNIX_EPOCH + Duration::from_secs(2),
         ),
     );
@@ -348,7 +348,7 @@ fn clean_external_replacement_updates_text_and_cursor_offsets() {
     common::tick(&mut app, &mut io);
     common::char_input(&mut app, &mut io, window_id, 'Q');
 
-    assert_eq!(common::text(&app), "aXYeQf");
+    assert_eq!(common::text(&app), "aXY eQf");
     app.assert_invariants();
 }
 
@@ -360,7 +360,11 @@ fn ignored_focus_gain_does_not_autosave() {
 
     io.frame_start += Duration::from_secs(1);
     common::text_input(&mut app, &mut io, window_id, " after");
-    app.input(&mut io, window_id, InputEvent::FocusChanged { focused: true });
+    app.input(
+        &mut io,
+        window_id,
+        InputEvent::FocusChanged { focused: true },
+    );
 
     assert_eq!(io.files.get(&path).unwrap().0, b"before");
     app.assert_invariants();
