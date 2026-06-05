@@ -134,7 +134,10 @@ pub fn tick(app: &mut App, io: &mut MockIO) {
 
 pub fn point_for_offset(cell_size: [u32; 2], offset: usize, line: usize) -> [f32; 2] {
     let [cell_w, cell_h] = [cell_size[0] as f32, cell_size[1] as f32];
-    [cell_w * (offset + 1) as f32, cell_h * line as f32 + cell_h / 2.0]
+    [
+        cell_w * (offset + 1) as f32,
+        cell_h * line as f32 + cell_h / 2.0,
+    ]
 }
 
 pub fn open_same_document_window(app: &mut App, io: &mut MockIO, window_id: WindowId) -> WindowId {

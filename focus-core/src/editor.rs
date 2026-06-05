@@ -262,14 +262,13 @@ impl EditorId {
         let translate_y = -editor.top_pixel as f32;
 
         // Compute the visible line range so we don't iterate the whole doc.
-        let line_first = (app.grid_from_screen([0.0, editor.top_pixel as f32])[1].max(0)
-            as usize)
+        let line_first = (app.grid_from_screen([0.0, editor.top_pixel as f32])[1].max(0) as usize)
             .min(editor.wraps.len());
-        let line_after = (app
-            .grid_from_screen([0.0, editor.top_pixel as f32 + viewport_size[1]])[1]
-            .max(0) as usize
-            + 1)
-        .min(editor.wraps.len());
+        let line_after =
+            (app.grid_from_screen([0.0, editor.top_pixel as f32 + viewport_size[1]])[1].max(0)
+                as usize
+                + 1)
+            .min(editor.wraps.len());
 
         let gutter_w = app.screen_from_grid([1, 0])[0];
 
@@ -297,8 +296,7 @@ impl EditorId {
                 size: [gutter_w, viewport_size[1]],
             });
             let viewport_h_f = viewport_size[1];
-            let total_h =
-                (app.screen_from_grid([0, editor.wraps.len()])[1]).max(viewport_h_f);
+            let total_h = (app.screen_from_grid([0, editor.wraps.len()])[1]).max(viewport_h_f);
             let top_y = ((-translate_y) / total_h * viewport_h_f).clamp(0.0, viewport_h_f);
             let bot_y =
                 (((-translate_y) + viewport_h_f) / total_h * viewport_h_f).clamp(0.0, viewport_h_f);
@@ -363,7 +361,12 @@ impl EditorId {
                     let [start, end] = editor.wraps[line_idx];
                     let mut screen = app.screen_from_grid([0, line_idx]);
                     screen[1] += translate_y;
-                    drawing.draw_text(app.cell_size(), &text.as_bstr()[start..end], screen, TEXT_COLOR);
+                    drawing.draw_text(
+                        app.cell_size(),
+                        &text.as_bstr()[start..end],
+                        screen,
+                        TEXT_COLOR,
+                    );
                 }
             }
 
@@ -385,10 +388,8 @@ impl EditorId {
                         let w = app.screen_from_grid([1, 0])[0] / 8.0;
                         screen_start[0] -= w / 2.0;
                         screen_end[0] += w / 2.0;
-                        drawing.draw_rect(
-                            Rect::from_corners(screen_start, screen_end),
-                            cursor_color,
-                        );
+                        drawing
+                            .draw_rect(Rect::from_corners(screen_start, screen_end), cursor_color);
                     }
                 }
             }

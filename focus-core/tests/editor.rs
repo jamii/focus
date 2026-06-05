@@ -822,7 +822,10 @@ fn short_line_stays_on_one_wrap() {
 
     let drawing = common::draw(&mut app, window_id, 10, 3);
 
-    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![3]);
+    assert_eq!(
+        common::text_line_lengths(app.cell_size(), &drawing),
+        vec![3]
+    );
     app.assert_invariants();
 }
 
@@ -833,7 +836,10 @@ fn newline_splits_into_two_wraps() {
 
     let drawing = common::draw(&mut app, window_id, 10, 4);
 
-    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![2, 2]);
+    assert_eq!(
+        common::text_line_lengths(app.cell_size(), &drawing),
+        vec![2, 2]
+    );
     app.assert_invariants();
 }
 
@@ -859,7 +865,10 @@ fn trailing_newline_leaves_empty_final_wrap() {
 
     let drawing = common::draw(&mut app, window_id, 10, 4);
 
-    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![2]);
+    assert_eq!(
+        common::text_line_lengths(app.cell_size(), &drawing),
+        vec![2]
+    );
     assert_eq!(common::cursor_lines(app.cell_size(), &drawing), vec![1]);
     app.assert_invariants();
 }
@@ -871,7 +880,10 @@ fn hard_wrap_when_no_space_available() {
 
     let drawing = common::draw(&mut app, window_id, 3, 4);
 
-    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![3, 2]);
+    assert_eq!(
+        common::text_line_lengths(app.cell_size(), &drawing),
+        vec![3, 2]
+    );
     app.assert_invariants();
 }
 
@@ -882,7 +894,10 @@ fn soft_wrap_breaks_after_last_space() {
 
     let drawing = common::draw(&mut app, window_id, 4, 4);
 
-    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![3, 4]);
+    assert_eq!(
+        common::text_line_lengths(app.cell_size(), &drawing),
+        vec![3, 4]
+    );
     app.assert_invariants();
 }
 
@@ -893,7 +908,10 @@ fn soft_wrap_does_not_reuse_earlier_space_after_overflow() {
 
     let drawing = common::draw(&mut app, window_id, 4, 5);
 
-    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![3, 4, 2]);
+    assert_eq!(
+        common::text_line_lengths(app.cell_size(), &drawing),
+        vec![3, 4, 2]
+    );
     app.assert_invariants();
 }
 
@@ -904,7 +922,10 @@ fn multi_byte_chars_count_as_one_grid_cell() {
 
     let drawing = common::draw(&mut app, window_id, 10, 3);
 
-    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![5]);
+    assert_eq!(
+        common::text_line_lengths(app.cell_size(), &drawing),
+        vec![5]
+    );
     app.assert_invariants();
 }
 
@@ -915,7 +936,10 @@ fn soft_wrap_before_multi_byte_char_keeps_it_intact() {
 
     let drawing = common::draw(&mut app, window_id, 3, 5);
 
-    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![2, 2, 3]);
+    assert_eq!(
+        common::text_line_lengths(app.cell_size(), &drawing),
+        vec![2, 2, 3]
+    );
     app.assert_invariants();
 }
 
@@ -933,7 +957,10 @@ fn tiny_viewport_draws_only_window_background() {
         common::text_line_lengths(app.cell_size(), &drawing),
         Vec::<usize>::new()
     );
-    assert_eq!(common::cursor_lines(app.cell_size(), &drawing), Vec::<usize>::new());
+    assert_eq!(
+        common::cursor_lines(app.cell_size(), &drawing),
+        Vec::<usize>::new()
+    );
     assert_eq!(
         solid_quads_with_color(&drawing, BACKGROUND_COLOR).count(),
         1
@@ -951,10 +978,7 @@ fn draw_emits_soft_wrap_gutter_selection_highlight_and_scrollbar() {
     select_right(&mut app, &mut io, window_id, 5);
     let drawing = common::draw(&mut app, window_id, 4, 4);
 
-    assert_eq!(
-        text_glyph_count_with_color(&drawing, HIGHLIGHT_COLOR),
-        1
-    );
+    assert_eq!(text_glyph_count_with_color(&drawing, HIGHLIGHT_COLOR), 1);
     assert!(solid_quads_with_color(&drawing, HIGHLIGHT_COLOR).count() >= 2);
     assert!(solid_quads_with_color(&drawing, BACKGROUND_COLOR).count() >= 2);
     app.assert_invariants();
@@ -983,7 +1007,10 @@ fn cursor_blinks_off_after_idle_time() {
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 10, 3);
 
-    assert_eq!(common::cursor_lines(app.cell_size(), &drawing), Vec::<usize>::new());
+    assert_eq!(
+        common::cursor_lines(app.cell_size(), &drawing),
+        Vec::<usize>::new()
+    );
     app.assert_invariants();
 }
 

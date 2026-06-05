@@ -200,7 +200,12 @@ fn renders_hello_world() {
             [255, 240, 170, 255],
         );
         // Non-ASCII '→' is not in the atlas and should render as a tofu box.
-        drawing.draw_text(cell_size, "hello → world".into(), [4.0, 4.0], [30, 30, 40, 255]);
+        drawing.draw_text(
+            cell_size,
+            "hello → world".into(),
+            [4.0, 4.0],
+            [30, 30, 40, 255],
+        );
     }
 
     unsafe { renderer.render(&drawing.commands, W as i32, H as i32) };
