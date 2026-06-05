@@ -2,13 +2,29 @@
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 
+use fontdue::{Font, FontSettings};
 use focus_core::app::{App, DocumentId, WindowId};
+use focus_core::atlas::Atlas;
 use focus_core::drawing::{DrawCommand, Drawing};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::style::TEXT_COLOR;
+
+/// A reference atlas built exactly the way `App` builds its internal one:
+/// the bundled font at the initial pixel size. `App`'s atlas is private, so
+/// tests reconstruct an identical one to reason about cell geometry and to
+/// tell glyph quads from solid-fill quads in a `Drawing`.
+pub fn atlas() -> &'static Atlas {
+    static ATLAS: OnceLock<Atlas> = OnceLock::new();
+    ATLAS.get_or_init(|| {
+        let font_bytes = std::fs::read("deps/FiraCode-Regular.ttf").unwrap();
+        let font = Font::from_bytes(font_bytes, FontSettings::default()).unwrap();
+        Atlas::build(&font, 32.0)
+    })
+}
 
 pub fn sync_app_io(app: &mut App, io: &MockIO) {
     focus_core::fuzz::sync_app_io(app, io);
@@ -42,8 +58,7 @@ pub fn document_id(app: &App) -> DocumentId {
 }
 
 pub fn text(app: &App) -> String {
-    let document = document_id(app).get(app);
-    String::from_utf8_lossy(&document.text).to_string()
+    document_id(app).text(app).to_string()
 }
 
 pub fn key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
@@ -133,9 +148,9 @@ pub fn tick(app: &mut App, io: &mut MockIO) {
     app.tick(io);
 }
 
-pub fn point_for_offset(app: &App, offset: usize, line: usize) -> [f32; 2] {
-    let cell_w = app.atlas.cell_size[0] as f32;
-    let cell_h = app.atlas.cell_size[1] as f32;
+pub fn point_for_offset(offset: usize, line: usize) -> [f32; 2] {
+    let cell_w = atlas().cell_size[0] as f32;
+    let cell_h = atlas().cell_size[1] as f32;
     [
         cell_w * (offset + 1) as f32,
         cell_h * line as f32 + cell_h / 2.0,
@@ -152,24 +167,24 @@ pub fn open_same_document_window(app: &mut App, io: &mut MockIO, window_id: Wind
 }
 
 pub fn draw(app: &mut App, window_id: WindowId, wrap_chars: usize, rows: usize) -> Drawing {
-    let cell_w = app.atlas.cell_size[0] as f32;
-    let cell_h = app.atlas.cell_size[1] as f32;
+    let cell_w = atlas().cell_size[0] as f32;
+    let cell_h = atlas().cell_size[1] as f32;
     let mut drawing = Drawing::new([cell_w * (wrap_chars + 2) as f32, cell_h * rows as f32]);
     app.draw(window_id, &mut drawing);
     drawing
 }
 
-pub fn text_line_lengths(app: &App, drawing: &Drawing) -> Vec<usize> {
+pub fn text_line_lengths(drawing: &Drawing) -> Vec<usize> {
     let mut lines = Vec::new();
-    let cell_h = app.atlas.cell_size[1] as f32;
+    let cell_h = atlas().cell_size[1] as f32;
     for command in &drawing.commands {
         let DrawCommand::Quad(quad) = command else {
             continue;
         };
-        if quad.color != TEXT_COLOR || quad.src_size != app.atlas.cell_size {
+        if quad.color != TEXT_COLOR || quad.src_size != atlas().cell_size {
             continue;
         }
-        if quad.src_pos == app.atlas.white_pos {
+        if quad.src_pos == atlas().white_pos {
             continue;
         }
         let row = (quad.dst_pos[1] / cell_h).round() as usize;
@@ -181,8 +196,8 @@ pub fn text_line_lengths(app: &App, drawing: &Drawing) -> Vec<usize> {
     lines
 }
 
-pub fn cursor_lines(app: &App, drawing: &Drawing) -> Vec<usize> {
-    let cell_h = app.atlas.cell_size[1] as f32;
+pub fn cursor_lines(drawing: &Drawing) -> Vec<usize> {
+    let cell_h = atlas().cell_size[1] as f32;
     drawing
         .commands
         .iter()
@@ -190,7 +205,7 @@ pub fn cursor_lines(app: &App, drawing: &Drawing) -> Vec<usize> {
             let DrawCommand::Quad(quad) = command else {
                 return None;
             };
-            if quad.color == TEXT_COLOR && quad.src_pos == app.atlas.white_pos {
+            if quad.color == TEXT_COLOR && quad.src_pos == atlas().white_pos {
                 Some((quad.dst_pos[1] / cell_h).round() as usize)
             } else {
                 None

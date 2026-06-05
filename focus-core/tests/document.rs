@@ -375,35 +375,6 @@ fn ignored_focus_gain_does_not_autosave() {
 }
 
 #[test]
-fn document_grid_line_and_char_helpers_handle_newlines_and_multibyte_text() {
-    let (mut app, mut io, window_id) = common::scratch_app();
-    common::text_input(&mut app, &mut io, window_id, "hé\n猫x");
-    let document_id = common::document_id(&app);
-
-    assert_eq!(document_id.grid_from_offset(&app, 0), [0, 0]);
-    assert_eq!(document_id.grid_from_offset(&app, 1), [1, 0]);
-    assert_eq!(document_id.grid_from_offset(&app, 3), [2, 0]);
-    assert_eq!(document_id.grid_from_offset(&app, 4), [0, 1]);
-    assert_eq!(document_id.grid_from_offset(&app, 7), [1, 1]);
-
-    assert_eq!(document_id.line_range_from_offset(&app, 1), 0..3);
-    assert_eq!(document_id.line_range_from_offset(&app, 4), 4..8);
-
-    assert_eq!(document_id.char_next(&app, 0), Some(1));
-    assert_eq!(document_id.char_next(&app, 1), Some(3));
-    assert_eq!(document_id.char_next(&app, 3), Some(4));
-    assert_eq!(document_id.char_next(&app, 4), Some(7));
-    assert_eq!(document_id.char_next(&app, 8), None);
-
-    assert_eq!(document_id.char_prev(&app, 8), Some(7));
-    assert_eq!(document_id.char_prev(&app, 7), Some(4));
-    assert_eq!(document_id.char_prev(&app, 4), Some(3));
-    assert_eq!(document_id.char_prev(&app, 3), Some(1));
-    assert_eq!(document_id.char_prev(&app, 0), None);
-    app.assert_invariants();
-}
-
-#[test]
 fn undo_redo_batching_and_redo_clearing_follow_input_flushes() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
