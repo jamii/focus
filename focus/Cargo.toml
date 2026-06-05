@@ -1,0 +1,19 @@
+[package]
+name = "focus"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+focus-core = { path = "../focus-core" }
+winit = "0.30"
+glutin = "0.32"
+glutin-winit = "0.5"
+raw-window-handle = "0.6"
+gl = "0.14"
+bstr = "1"
+arboard = { version = "3", features = ["wayland-data-control"] }
+
+[dev-dependencies]
+fontdue = "0.9"
+png = "0.17"
+khronos-egl = { version = "6", features = ["dynamic"] }

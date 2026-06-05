@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::BString;
-use focus::app::{App, IO, InputEvent, WindowId};
+use focus_core::app::{App, IO, InputEvent, WindowId};
 use winit::dpi::LogicalSize;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
@@ -10,7 +10,7 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 mod common;
 
 struct ErrorIO {
-    inner: focus::fuzz::MockIO,
+    inner: focus_core::fuzz::MockIO,
     file_mtime_error: Option<std::io::ErrorKind>,
     file_read_error: Option<std::io::ErrorKind>,
     file_write_error: Option<std::io::ErrorKind>,
@@ -19,7 +19,7 @@ struct ErrorIO {
 impl ErrorIO {
     fn new() -> Self {
         Self {
-            inner: focus::fuzz::MockIO::new(),
+            inner: focus_core::fuzz::MockIO::new(),
             file_mtime_error: None,
             file_read_error: None,
             file_write_error: None,

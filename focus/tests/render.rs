@@ -12,9 +12,9 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::ptr;
 
-use focus::atlas::Atlas;
-use focus::drawing::{Drawing, Rect};
 use focus::render::Renderer;
+use focus_core::atlas::Atlas;
+use focus_core::drawing::{Drawing, Rect};
 use fontdue::{Font, FontSettings};
 use khronos_egl::{self as egl, DynamicInstance};
 
@@ -165,7 +165,7 @@ impl Drop for EglHost {
 fn renders_hello_world() {
     let _egl = EglHost::new(W, H);
 
-    let font_bytes = fs::read("deps/FiraCode-Regular.ttf").unwrap();
+    let font_bytes = fs::read("../focus-core/deps/FiraCode-Regular.ttf").unwrap();
     let font = Font::from_bytes(font_bytes, FontSettings::default()).unwrap();
     let atlas = Atlas::build(&font, 32.0);
     assert!(atlas.glyphs.contains_key(&'H'));

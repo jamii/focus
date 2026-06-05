@@ -1,7 +1,7 @@
-use focus::app::{App, WindowId};
-use focus::drawing::{DrawCommand, Drawing};
-use focus::fuzz::MockIO;
-use focus::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
+use focus_core::app::{App, WindowId};
+use focus_core::drawing::{DrawCommand, Drawing};
+use focus_core::fuzz::MockIO;
+use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
 use winit::event::ElementState;
 use winit::keyboard::ModifiersState;
 use winit::keyboard::{Key, NamedKey};
@@ -35,7 +35,7 @@ fn solid_quads_with_color<'a>(
     app: &'a App,
     drawing: &'a Drawing,
     color: [u8; 4],
-) -> impl Iterator<Item = &'a focus::drawing::Quad> {
+) -> impl Iterator<Item = &'a focus_core::drawing::Quad> {
     drawing.commands.iter().filter_map(move |command| {
         let DrawCommand::Quad(quad) = command else {
             return None;
@@ -101,7 +101,7 @@ fn unhandled_keys_and_released_keys_do_not_edit_text() {
     app.input(
         &mut io,
         window_id,
-        focus::app::InputEvent::Key {
+        focus_core::app::InputEvent::Key {
             state: ElementState::Released,
             logical_key: Key::Named(NamedKey::Backspace),
         },

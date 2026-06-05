@@ -437,6 +437,7 @@ version = "0.0.0"
 dependencies = [
  "arboard",
  "bstr",
+ "focus-core",
  "fontdue",
  "gl",
  "glutin",
@@ -444,6 +445,15 @@ dependencies = [
  "khronos-egl",
  "png 0.17.16",
  "raw-window-handle",
+ "winit",
+]
+
+[[package]]
+name = "focus-core"
+version = "0.0.0"
+dependencies = [
+ "bstr",
+ "fontdue",
  "similar",
  "winit",
 ]
@@ -452,7 +462,7 @@ dependencies = [
 name = "focus-hfuzz"
 version = "0.0.0"
 dependencies = [
- "focus",
+ "focus-core",
  "honggfuzz",
 ]
 

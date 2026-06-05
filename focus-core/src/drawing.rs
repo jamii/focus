@@ -4,7 +4,8 @@
 //   * the "editor" side builds a Frame: a sequence of DrawCommands made of
 //     Quads (colored textured rectangles) interleaved with SetClip commands
 //     (axis-aligned scissor rects);
-//   * the renderer (see crate::render) walks the commands in order,
+//   * the renderer (the `render` module in the `focus` crate) walks the
+//     commands in order,
 //     batching consecutive Quads into a single draw call and switching
 //     scissor whenever it hits a SetClip.
 //

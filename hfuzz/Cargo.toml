@@ -9,5 +9,5 @@ name = "fuzz_hfuzz"
 path = "src/main.rs"
 
 [dependencies]
-focus = { path = ".." }
+focus-core = { path = "../focus-core" }
 honggfuzz = "0.5"

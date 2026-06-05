@@ -4,15 +4,15 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use focus::app::{App, DocumentId, InputEvent, WindowId};
-use focus::drawing::{DrawCommand, Drawing};
-use focus::fuzz::MockIO;
-use focus::style::TEXT_COLOR;
+use focus_core::app::{App, DocumentId, InputEvent, WindowId};
+use focus_core::drawing::{DrawCommand, Drawing};
+use focus_core::fuzz::MockIO;
+use focus_core::style::TEXT_COLOR;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 pub fn sync_app_io(app: &mut App, io: &MockIO) {
-    focus::fuzz::sync_app_io(app, io);
+    focus_core::fuzz::sync_app_io(app, io);
 }
 
 pub fn scratch_app() -> (App, MockIO, WindowId) {

@@ -28,6 +28,6 @@ fn main() {
         hex_decode(&s)
     };
     eprintln!("replaying {} bytes", bytes.len());
-    focus::fuzz::fuzz_one(&bytes);
+    focus_core::fuzz::fuzz_one(&bytes);
     eprintln!("no crash");
 }

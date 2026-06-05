@@ -1,4 +1,4 @@
-use focus::app::InputEvent;
+use focus_core::app::InputEvent;
 use winit::keyboard::Key;
 
 mod common;

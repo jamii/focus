@@ -63,8 +63,8 @@ pub enum InputEvent {
     },
 }
 
-pub(crate) const INITIAL_TITLE: &str = "focus";
-pub(crate) const INITIAL_SIZE: LogicalSize<u32> = LogicalSize {
+pub const INITIAL_TITLE: &str = "focus";
+pub const INITIAL_SIZE: LogicalSize<u32> = LogicalSize {
     width: 800,
     height: 600,
 };
