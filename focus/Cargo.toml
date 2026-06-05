@@ -11,9 +11,9 @@ glutin-winit = "0.5"
 raw-window-handle = "0.6"
 gl = "0.14"
 bstr = "1"
+fontdue = "0.9"
 arboard = { version = "3", features = ["wayland-data-control"] }
 
 [dev-dependencies]
-fontdue = "0.9"
 png = "0.17"
 khronos-egl = { version = "6", features = ["dynamic"] }

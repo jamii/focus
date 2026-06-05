@@ -1,13 +1,16 @@
 // Draw-command list for a single frame.
 //
 // The model is borrowed from rxi's microui:
-//   * the "editor" side builds a Frame: a sequence of DrawCommands made of
-//     Quads (colored textured rectangles) interleaved with SetClip commands
+//   * the "editor" side builds a Frame: a sequence of DrawCommands, each a
+//     Character (a colored glyph cell) interleaved with SetClip commands
 //     (axis-aligned scissor rects);
 //   * the renderer (the `render` module in the `focus` crate) walks the
-//     commands in order,
-//     batching consecutive Quads into a single draw call and switching
-//     scissor whenever it hits a SetClip.
+//     commands in order, batching consecutive Characters into a single
+//     draw call and switching scissor whenever it hits a SetClip.
+//
+// The core deals only in characters: text is the literal characters, and
+// flat-color fills are the Full Block '█' scaled to the fill rect. The
+// renderer owns the atlas and resolves each character to a glyph cell.
 //
 // Clipping itself is hybrid:
 //   * draw_rect intersects in software — trimming a rectangle to its clip
@@ -15,11 +18,12 @@
 //     change, and it lets the rect stay in the current batch;
 //   * draw_text emits a SetClip if (and only if) the text bounding box is
 //     partially outside the current clip, then a SetClip back to "no clip"
-//     after the glyph quads.
+//     after the glyphs.
 
 use bstr::{BStr, ByteSlice};
 
-use crate::atlas::Atlas;
+/// The character flat-color fills are drawn as U+2588 Full Block.
+pub const FULL_BLOCK: char = '█';
 
 #[derive(Clone, Copy, Debug)]
 pub struct Rect {
@@ -77,24 +81,22 @@ fn classify_clip(rect: Rect, clip: Rect) -> ClipState {
     ClipState::Partial
 }
 
-// A rectangle to draw: `dst_*` is screen-space (in pixels), `src_*` is
-// atlas-space (in texels), `color` is the per-vertex color modulated
-// into the sampled texel.
+// A character to draw: `dst` is the screen-space rect (in pixels) the
+// glyph cell is scaled into, `color` is the per-vertex color modulated
+// into the sampled coverage. The renderer resolves `ch` to a glyph cell.
 //
-//   text glyph  → src is a glyph cell,    color is text color
-//   solid fill  → src is the 1×1 white,   color is fill color
+//   text glyph  → ch is the character,  dst is one cell
+//   solid fill  → ch is FULL_BLOCK,     dst is the fill rect
 #[derive(Clone, Copy, Debug)]
-pub struct Quad {
-    pub dst_pos: [f32; 2],
-    pub dst_size: [f32; 2],
-    pub src_pos: [u32; 2],
-    pub src_size: [u32; 2],
+pub struct Character {
+    pub ch: char,
+    pub dst: Rect,
     pub color: [u8; 4],
 }
 
 #[derive(Clone, Debug)]
 pub enum DrawCommand {
-    Quad(Quad),
+    Character(Character),
     SetClip(Rect),
 }
 
@@ -138,9 +140,10 @@ impl Drawing {
         ClipScope { drawing: self }
     }
 
-    /// Solid rectangle. Trimmed against the current clip in software, so
-    /// it doesn't need to break the batch.
-    pub fn draw_rect(&mut self, atlas: &Atlas, rect: Rect, color: [u8; 4]) {
+    /// Solid rectangle, drawn as a Full Block scaled to the rect. Trimmed
+    /// against the current clip in software, so it doesn't need to break
+    /// the batch.
+    pub fn draw_rect(&mut self, rect: Rect, color: [u8; 4]) {
         let clip = self.current_clip();
         let abs_rect = Rect {
             pos: [clip.pos[0] + rect.pos[0], clip.pos[1] + rect.pos[1]],
@@ -148,11 +151,9 @@ impl Drawing {
         };
         let trimmed = intersect_rects(abs_rect, clip);
         if trimmed.size[0] > 0.0 && trimmed.size[1] > 0.0 {
-            self.commands.push(DrawCommand::Quad(Quad {
-                dst_pos: trimmed.pos,
-                dst_size: trimmed.size,
-                src_pos: atlas.white_pos,
-                src_size: [1, 1],
+            self.commands.push(DrawCommand::Character(Character {
+                ch: FULL_BLOCK,
+                dst: trimmed,
                 color,
             }));
         }
@@ -162,14 +163,14 @@ impl Drawing {
     /// of the line's bounding box.
     ///
     /// If the bounding box is fully inside the current clip, we just emit
-    /// glyph quads. If fully outside, we emit nothing. If partial, we
-    /// bracket the glyphs with SetClip(clip) / SetClip(screen) so the
+    /// characters. If fully outside, we emit nothing. If partial, we
+    /// bracket the characters with SetClip(clip) / SetClip(screen) so the
     /// scissor only kicks in for this draw.
-    pub fn draw_text(&mut self, atlas: &Atlas, text: &BStr, pos: [f32; 2], color: [u8; 4]) {
+    pub fn draw_text(&mut self, cell_size: [u32; 2], text: &BStr, pos: [f32; 2], color: [u8; 4]) {
         let clip = self.current_clip();
         let abs_pos = [clip.pos[0] + pos[0], clip.pos[1] + pos[1]];
-        let cell_w = atlas.cell_size[0] as f32;
-        let cell_h = atlas.cell_size[1] as f32;
+        let cell_w = cell_size[0] as f32;
+        let cell_h = cell_size[1] as f32;
         let bbox = Rect {
             pos: abs_pos,
             size: [cell_w * text.chars().count() as f32, cell_h],
@@ -183,15 +184,13 @@ impl Drawing {
             self.commands.push(DrawCommand::SetClip(clip));
         }
         let mut pen_x = abs_pos[0];
-        for char in text.chars() {
-            // Unknown chars fall back to the tofu (same role as TTF's
-            // glyph 0).
-            let g = atlas.glyphs.get(&char).unwrap_or(&atlas.notdef);
-            self.commands.push(DrawCommand::Quad(Quad {
-                dst_pos: [pen_x, abs_pos[1]],
-                dst_size: [cell_w, cell_h],
-                src_pos: g.atlas_pos,
-                src_size: atlas.cell_size,
+        for ch in text.chars() {
+            self.commands.push(DrawCommand::Character(Character {
+                ch,
+                dst: Rect {
+                    pos: [pen_x, abs_pos[1]],
+                    size: [cell_w, cell_h],
+                },
                 color,
             }));
             pen_x += cell_w;

@@ -83,7 +83,10 @@ impl IO for MockIO {
 
     fn request_redraw(&mut self, _window_id: WindowId) {}
 
-    fn reload_atlas(&mut self, _pixels: &[u8], _size: [u32; 2]) {}
+    fn rebuild_atlas(&mut self, font_size: f32) -> [u32; 2] {
+        // TODO not sure exactly how to calculate cell sizes
+        [(font_size / 2.0).floor() as u32, font_size as u32]
+    }
 
     fn exit(&mut self) {
         self.exited = true;

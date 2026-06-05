@@ -48,8 +48,8 @@ impl IO for ErrorIO {
         self.inner.request_redraw(window_id);
     }
 
-    fn reload_atlas(&mut self, pixels: &[u8], size: [u32; 2]) {
-        self.inner.reload_atlas(pixels, size);
+    fn rebuild_atlas(&mut self, px_size: f32) -> [u32; 2] {
+        self.inner.rebuild_atlas(px_size)
     }
 
     fn get_clipboard_text(&mut self) -> Option<BString> {

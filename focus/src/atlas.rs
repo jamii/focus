@@ -3,14 +3,21 @@
 // The atlas is R8 (single-channel alpha) with every glyph stored as
 // coverage alpha ∈ [0, 255]. Combined with the renderer's per-vertex
 // color modulation, one shader handles tinted glyphs and flat-color rects
-// (the latter sampling a single solid-white texel).
+// (the latter drawn as the Full Block '█', a cell painted fully opaque).
+//
+// Lives in the `focus` crate, not the core: the core only ever deals in
+// characters and the cell size. Turning a character into pixels — which
+// font, which atlas cell — is the renderer's job.
 
 use std::collections::HashMap;
 
 use fontdue::Font;
 
+use focus_core::drawing::FULL_BLOCK;
+
 // We only handle printable ASCII for now — code points 32 (' ') through
-// 126 ('~'). 95 characters total.
+// 126 ('~'). 95 characters total. Plus the Full Block '█', synthesized as
+// a fully-opaque cell so solid fills are exactly solid.
 const ASCII_FIRST: u32 = 32;
 const ASCII_LAST: u32 = 126;
 const NUM_GLYPHS: usize = (ASCII_LAST - ASCII_FIRST + 1) as usize;
@@ -27,20 +34,15 @@ pub struct Glyph {
 
 pub struct Atlas {
     // R8 texture, laid out row-major. Each texel stores coverage alpha
-    // ∈ [0, 255]; the fragment shader supplies the color. The white_pos
-    // texel is just 255 (= "fully opaque").
+    // ∈ [0, 255]; the fragment shader supplies the color.
     pub size: [u32; 2],
     pub pixels: Vec<u8>,
 
     pub glyphs: HashMap<char, Glyph>,
 
-    // Glyph 0 (.notdef) from the font.
+    // Glyph 0 (.notdef) from the font. Used for any character we didn't
+    // rasterize.
     pub notdef: Glyph,
-
-    // Coordinates of a single solid-white texel. Lives in its own
-    // dedicated cell that no glyph quad ever samples; draw_rect points
-    // at it for flat-colored fills.
-    pub white_pos: [u32; 2],
 
     // Cell dimensions, in texels = screen pixels (we draw 1:1).
     // cell_size[0] is the rounded-up advance width; cell_size[1] is the
@@ -50,8 +52,8 @@ pub struct Atlas {
 }
 
 impl Atlas {
-    pub fn build(font: &Font, px_size: f32) -> Self {
-        let line = font.horizontal_line_metrics(px_size).unwrap();
+    pub fn build(font: &Font, font_size: f32) -> Self {
+        let line = font.horizontal_line_metrics(font_size).unwrap();
         let ascent = line.ascent;
 
         // Rasterize all printable ASCII; collect bitmaps + metrics and
@@ -60,24 +62,24 @@ impl Atlas {
         let mut max_advance = 0.0_f32;
         for cp in ASCII_FIRST..=ASCII_LAST {
             let ch = char::from_u32(cp).unwrap();
-            let (m, bitmap) = font.rasterize(ch, px_size);
+            let (m, bitmap) = font.rasterize(ch, font_size);
             max_advance = max_advance.max(m.advance_width);
             raster.push((ch, m, bitmap));
         }
 
         // Rasterize glyph 0 (the font's .notdef).
-        let (notdef_m, notdef_bitmap) = font.rasterize_indexed(0, px_size);
+        let (notdef_m, notdef_bitmap) = font.rasterize_indexed(0, font_size);
         max_advance = max_advance.max(notdef_m.advance_width);
 
         let cell_w = max_advance.ceil() as u32;
         let cell_h = line.new_line_size.ceil() as u32;
 
-        // Layout: ASCII glyphs, then notdef, then white texel. Each lives
-        // in its own cell. 95 + 1 + 1 = 97 cells = 7 rows × 16 cols with
-        // 15 unused cells at the end.
+        // Layout: ASCII glyphs, then notdef, then the Full Block cell. Each
+        // lives in its own cell. 95 + 1 + 1 = 97 cells = 7 rows × 16 cols
+        // with 15 unused cells at the end.
         let notdef_idx = NUM_GLYPHS as u32;
-        let white_idx = notdef_idx + 1;
-        let rows = (white_idx + 1).div_ceil(ATLAS_COLS);
+        let block_idx = notdef_idx + 1;
+        let rows = (block_idx + 1).div_ceil(ATLAS_COLS);
         let atlas_w = ATLAS_COLS * cell_w;
         let atlas_h = rows * cell_h;
         let mut pixels = vec![0u8; (atlas_w * atlas_h) as usize];
@@ -93,25 +95,17 @@ impl Atlas {
         let mut glyphs = HashMap::with_capacity(NUM_GLYPHS);
         for (i, (ch, m, bitmap)) in raster.iter().enumerate() {
             let [cell_x, cell_y] = cell_origin(i as u32);
-            let bitmap_left = m.xmin;
-            let bitmap_top = ascent as i32 - (m.ymin + m.height as i32);
-            let gw = m.width as i32;
-            let gh = m.height as i32;
-
-            for j in 0..gh {
-                for k in 0..gw {
-                    let cx = bitmap_left + k;
-                    let cy = bitmap_top + j;
-                    // Clamp glyphs that overhang their cell (not
-                    // expected for printable ASCII, but defensive).
-                    if cx < 0 || cy < 0 || cx >= cell_w as i32 || cy >= cell_h as i32 {
-                        continue;
-                    }
-                    let dst = ((cell_y + cy as u32) * atlas_w + (cell_x + cx as u32)) as usize;
-                    pixels[dst] = bitmap[(j * gw + k) as usize];
-                }
-            }
-
+            blit(
+                &mut pixels,
+                atlas_w,
+                cell_x,
+                cell_y,
+                cell_w,
+                cell_h,
+                ascent,
+                m,
+                bitmap,
+            );
             glyphs.insert(
                 *ch,
                 Glyph {
@@ -122,54 +116,80 @@ impl Atlas {
 
         // Paint glyph 0 (.notdef) into the missing-glyph cell.
         let [tx, ty] = cell_origin(notdef_idx);
-        let bitmap_left = notdef_m.xmin;
-        let bitmap_top = ascent as i32 - (notdef_m.ymin + notdef_m.height as i32);
-        let gw = notdef_m.width as i32;
-        let gh = notdef_m.height as i32;
-        for j in 0..gh {
-            for k in 0..gw {
-                let cx = bitmap_left + k;
-                let cy = bitmap_top + j;
-                if cx < 0 || cy < 0 || cx >= cell_w as i32 || cy >= cell_h as i32 {
-                    continue;
-                }
-                let dst = ((ty + cy as u32) * atlas_w + (tx + cx as u32)) as usize;
-                pixels[dst] = notdef_bitmap[(j * gw + k) as usize];
-            }
-        }
+        blit(
+            &mut pixels,
+            atlas_w,
+            tx,
+            ty,
+            cell_w,
+            cell_h,
+            ascent,
+            &notdef_m,
+            &notdef_bitmap,
+        );
         let notdef = Glyph {
             atlas_pos: [tx, ty],
         };
 
-        // White texel in its own cell.
-        let white_pos = cell_origin(white_idx);
-        pixels[(white_pos[1] * atlas_w + white_pos[0]) as usize] = 255;
+        // Full Block: a cell painted fully opaque, so flat-color fills are
+        // exactly solid regardless of the font.
+        let [bx, by] = cell_origin(block_idx);
+        for j in 0..cell_h {
+            for k in 0..cell_w {
+                pixels[((by + j) * atlas_w + (bx + k)) as usize] = 255;
+            }
+        }
+        glyphs.insert(
+            FULL_BLOCK,
+            Glyph {
+                atlas_pos: [bx, by],
+            },
+        );
 
         Atlas {
             size: [atlas_w, atlas_h],
             pixels,
             glyphs,
             notdef,
-            white_pos,
             cell_size: [cell_w, cell_h],
         }
     }
 
-    /// Top-left screen position of the cell at the given grid coords.
-    pub(crate) fn screen_from_grid(&self, grid: [usize; 2]) -> [f32; 2] {
-        [
-            (grid[0] as f32) * (self.cell_size[0] as f32),
-            (grid[1] as f32) * (self.cell_size[1] as f32),
-        ]
+    /// The glyph for `ch`, falling back to the font's .notdef (tofu) for
+    /// any character we didn't rasterize.
+    pub fn glyph(&self, ch: char) -> Glyph {
+        self.glyphs.get(&ch).copied().unwrap_or(self.notdef)
     }
+}
 
-    /// Grid cell containing the given screen position. Floor-divides, so
-    /// a screen position on a cell boundary lands in the cell to its
-    /// right / below.
-    pub(crate) fn grid_from_screen(&self, screen: [f32; 2]) -> [i32; 2] {
-        [
-            (screen[0] / self.cell_size[0] as f32).floor() as i32,
-            (screen[1] / self.cell_size[1] as f32).floor() as i32,
-        ]
+// Paint a rasterized bitmap into one cell at its baseline-relative offset.
+// Glyphs that overhang their cell are clamped (not expected for printable
+// ASCII, but defensive).
+#[allow(clippy::too_many_arguments)]
+fn blit(
+    pixels: &mut [u8],
+    atlas_w: u32,
+    cell_x: u32,
+    cell_y: u32,
+    cell_w: u32,
+    cell_h: u32,
+    ascent: f32,
+    m: &fontdue::Metrics,
+    bitmap: &[u8],
+) {
+    let bitmap_left = m.xmin;
+    let bitmap_top = ascent as i32 - (m.ymin + m.height as i32);
+    let gw = m.width as i32;
+    let gh = m.height as i32;
+    for j in 0..gh {
+        for k in 0..gw {
+            let cx = bitmap_left + k;
+            let cy = bitmap_top + j;
+            if cx < 0 || cy < 0 || cx >= cell_w as i32 || cy >= cell_h as i32 {
+                continue;
+            }
+            let dst = ((cell_y + cy as u32) * atlas_w + (cell_x + cx as u32)) as usize;
+            pixels[dst] = bitmap[(j * gw + k) as usize];
+        }
     }
 }

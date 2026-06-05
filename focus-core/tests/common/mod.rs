@@ -2,29 +2,13 @@
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 
-use fontdue::{Font, FontSettings};
 use focus_core::app::{App, DocumentId, WindowId};
-use focus_core::atlas::Atlas;
-use focus_core::drawing::{DrawCommand, Drawing};
+use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::style::TEXT_COLOR;
-
-/// A reference atlas built exactly the way `App` builds its internal one:
-/// the bundled font at the initial pixel size. `App`'s atlas is private, so
-/// tests reconstruct an identical one to reason about cell geometry and to
-/// tell glyph quads from solid-fill quads in a `Drawing`.
-pub fn atlas() -> &'static Atlas {
-    static ATLAS: OnceLock<Atlas> = OnceLock::new();
-    ATLAS.get_or_init(|| {
-        let font_bytes = std::fs::read("deps/FiraCode-Regular.ttf").unwrap();
-        let font = Font::from_bytes(font_bytes, FontSettings::default()).unwrap();
-        Atlas::build(&font, 32.0)
-    })
-}
 
 pub fn sync_app_io(app: &mut App, io: &MockIO) {
     focus_core::fuzz::sync_app_io(app, io);
@@ -148,13 +132,9 @@ pub fn tick(app: &mut App, io: &mut MockIO) {
     app.tick(io);
 }
 
-pub fn point_for_offset(offset: usize, line: usize) -> [f32; 2] {
-    let cell_w = atlas().cell_size[0] as f32;
-    let cell_h = atlas().cell_size[1] as f32;
-    [
-        cell_w * (offset + 1) as f32,
-        cell_h * line as f32 + cell_h / 2.0,
-    ]
+pub fn point_for_offset(cell_size: [u32; 2], offset: usize, line: usize) -> [f32; 2] {
+    let [cell_w, cell_h] = [cell_size[0] as f32, cell_size[1] as f32];
+    [cell_w * (offset + 1) as f32, cell_h * line as f32 + cell_h / 2.0]
 }
 
 pub fn open_same_document_window(app: &mut App, io: &mut MockIO, window_id: WindowId) -> WindowId {
@@ -167,27 +147,24 @@ pub fn open_same_document_window(app: &mut App, io: &mut MockIO, window_id: Wind
 }
 
 pub fn draw(app: &mut App, window_id: WindowId, wrap_chars: usize, rows: usize) -> Drawing {
-    let cell_w = atlas().cell_size[0] as f32;
-    let cell_h = atlas().cell_size[1] as f32;
+    let [cell_w, cell_h] = [app.cell_size()[0] as f32, app.cell_size()[1] as f32];
     let mut drawing = Drawing::new([cell_w * (wrap_chars + 2) as f32, cell_h * rows as f32]);
     app.draw(window_id, &mut drawing);
     drawing
 }
 
-pub fn text_line_lengths(drawing: &Drawing) -> Vec<usize> {
+pub fn text_line_lengths(cell_size: [u32; 2], drawing: &Drawing) -> Vec<usize> {
+    let cell_h = cell_size[1] as f32;
     let mut lines = Vec::new();
-    let cell_h = atlas().cell_size[1] as f32;
     for command in &drawing.commands {
-        let DrawCommand::Quad(quad) = command else {
+        let DrawCommand::Character(c) = command else {
             continue;
         };
-        if quad.color != TEXT_COLOR || quad.src_size != atlas().cell_size {
+        // Text glyphs: text color, and not the Full Block used for fills.
+        if c.color != TEXT_COLOR || c.ch == FULL_BLOCK {
             continue;
         }
-        if quad.src_pos == atlas().white_pos {
-            continue;
-        }
-        let row = (quad.dst_pos[1] / cell_h).round() as usize;
+        let row = (c.dst.pos[1] / cell_h).round() as usize;
         if lines.len() <= row {
             lines.resize(row + 1, 0);
         }
@@ -196,17 +173,18 @@ pub fn text_line_lengths(drawing: &Drawing) -> Vec<usize> {
     lines
 }
 
-pub fn cursor_lines(drawing: &Drawing) -> Vec<usize> {
-    let cell_h = atlas().cell_size[1] as f32;
+pub fn cursor_lines(cell_size: [u32; 2], drawing: &Drawing) -> Vec<usize> {
+    let cell_h = cell_size[1] as f32;
     drawing
         .commands
         .iter()
         .filter_map(|command| {
-            let DrawCommand::Quad(quad) = command else {
+            let DrawCommand::Character(c) = command else {
                 return None;
             };
-            if quad.color == TEXT_COLOR && quad.src_pos == atlas().white_pos {
-                Some((quad.dst_pos[1] / cell_h).round() as usize)
+            // Cursors are Full Block fills in the text color.
+            if c.color == TEXT_COLOR && c.ch == FULL_BLOCK {
+                Some((c.dst.pos[1] / cell_h).round() as usize)
             } else {
                 None
             }

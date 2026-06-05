@@ -453,7 +453,6 @@ name = "focus-core"
 version = "0.0.0"
 dependencies = [
  "bstr",
- "fontdue",
  "similar",
 ]
 

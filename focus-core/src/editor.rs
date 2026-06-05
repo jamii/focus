@@ -227,7 +227,7 @@ impl EditorId {
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
         let viewport_size = drawing.size();
-        let grid_w = app.atlas.grid_from_screen(viewport_size)[0] as usize;
+        let grid_w = app.grid_from_screen(viewport_size)[0] as usize;
         if grid_w <= 2 {
             // The screen is too small to draw anything.
             return;
@@ -262,17 +262,16 @@ impl EditorId {
         let translate_y = -editor.top_pixel as f32;
 
         // Compute the visible line range so we don't iterate the whole doc.
-        let line_first = (app.atlas.grid_from_screen([0.0, editor.top_pixel as f32])[1].max(0)
+        let line_first = (app.grid_from_screen([0.0, editor.top_pixel as f32])[1].max(0)
             as usize)
             .min(editor.wraps.len());
         let line_after = (app
-            .atlas
             .grid_from_screen([0.0, editor.top_pixel as f32 + viewport_size[1]])[1]
             .max(0) as usize
             + 1)
         .min(editor.wraps.len());
 
-        let gutter_w = app.atlas.screen_from_grid([1, 0])[0];
+        let gutter_w = app.screen_from_grid([1, 0])[0];
 
         // Left gutter: soft-wrap continuation markers.
         {
@@ -284,9 +283,9 @@ impl EditorId {
             for line_idx in line_first..line_after {
                 let [start, _end] = editor.wraps[line_idx];
                 if start > 0 && text[start - 1] != b'\n' {
-                    let mut pos = app.atlas.screen_from_grid([0, line_idx]);
+                    let mut pos = app.screen_from_grid([0, line_idx]);
                     pos[1] += translate_y;
-                    drawing.draw_text(&app.atlas, BStr::new(b"\\"), pos, HIGHLIGHT_COLOR);
+                    drawing.draw_text(app.cell_size(), BStr::new(b"\\"), pos, HIGHLIGHT_COLOR);
                 }
             }
         }
@@ -299,14 +298,13 @@ impl EditorId {
             });
             let viewport_h_f = viewport_size[1];
             let total_h =
-                (app.atlas.screen_from_grid([0, editor.wraps.len()])[1]).max(viewport_h_f);
+                (app.screen_from_grid([0, editor.wraps.len()])[1]).max(viewport_h_f);
             let top_y = ((-translate_y) / total_h * viewport_h_f).clamp(0.0, viewport_h_f);
             let bot_y =
                 (((-translate_y) + viewport_h_f) / total_h * viewport_h_f).clamp(0.0, viewport_h_f);
             let h = (bot_y - top_y).max(1.0);
             let gutter_size = drawing.size();
             drawing.draw_rect(
-                &app.atlas,
                 Rect {
                     pos: [0.0, 0.0],
                     size: gutter_size,
@@ -314,7 +312,6 @@ impl EditorId {
                 HIGHLIGHT_COLOR,
             );
             drawing.draw_rect(
-                &app.atlas,
                 Rect {
                     pos: [0.0, top_y],
                     size: [gutter_w, h],
@@ -325,9 +322,9 @@ impl EditorId {
 
         // Text region: marks, text, cursors.
         {
-            let width = app.atlas.screen_from_grid([wrap_chars, 0])[0];
+            let width = app.screen_from_grid([wrap_chars, 0])[0];
             let mut drawing = drawing.push_clip_rect(Rect {
-                pos: app.atlas.screen_from_grid([1, 0]),
+                pos: app.screen_from_grid([1, 0]),
                 size: [width, viewport_size[1]],
             });
 
@@ -346,12 +343,11 @@ impl EditorId {
                             let grid_start = self.grid_from_offset(app, mark_start)[1];
                             let mut grid_end = self.grid_from_offset(app, mark_end)[0];
                             grid_end[1] += 1;
-                            let mut screen_start = app.atlas.screen_from_grid(grid_start);
-                            let mut screen_end = app.atlas.screen_from_grid(grid_end);
+                            let mut screen_start = app.screen_from_grid(grid_start);
+                            let mut screen_end = app.screen_from_grid(grid_end);
                             screen_start[1] += translate_y;
                             screen_end[1] += translate_y;
                             drawing.draw_rect(
-                                &app.atlas,
                                 Rect::from_corners(screen_start, screen_end),
                                 HIGHLIGHT_COLOR,
                             );
@@ -365,9 +361,9 @@ impl EditorId {
                 let text = &editor.document_id.text(app);
                 for line_idx in line_first..line_after {
                     let [start, end] = editor.wraps[line_idx];
-                    let mut screen = app.atlas.screen_from_grid([0, line_idx]);
+                    let mut screen = app.screen_from_grid([0, line_idx]);
                     screen[1] += translate_y;
-                    drawing.draw_text(&app.atlas, &text.as_bstr()[start..end], screen, TEXT_COLOR);
+                    drawing.draw_text(app.cell_size(), &text.as_bstr()[start..end], screen, TEXT_COLOR);
                 }
             }
 
@@ -382,15 +378,14 @@ impl EditorId {
                     for grid_start in self.grid_from_offset(app, cursor.head.offset) {
                         let mut grid_end = grid_start;
                         grid_end[1] += 1;
-                        let mut screen_start = app.atlas.screen_from_grid(grid_start);
-                        let mut screen_end = app.atlas.screen_from_grid(grid_end);
+                        let mut screen_start = app.screen_from_grid(grid_start);
+                        let mut screen_end = app.screen_from_grid(grid_end);
                         screen_start[1] += translate_y;
                         screen_end[1] += translate_y;
-                        let w = app.atlas.screen_from_grid([1, 0])[0] / 8.0;
+                        let w = app.screen_from_grid([1, 0])[0] / 8.0;
                         screen_start[0] -= w / 2.0;
                         screen_end[0] += w / 2.0;
                         drawing.draw_rect(
-                            &app.atlas,
                             Rect::from_corners(screen_start, screen_end),
                             cursor_color,
                         );
@@ -422,8 +417,8 @@ impl EditorId {
             return;
         }
         let line = self.grid_from_offset(app, offset)[1][1];
-        let y = app.atlas.screen_from_grid([0, line])[1] as isize;
-        let y_end = app.atlas.screen_from_grid([0, line + 1])[1] as isize;
+        let y = app.screen_from_grid([0, line])[1] as isize;
+        let y_end = app.screen_from_grid([0, line + 1])[1] as isize;
         let editor = self.get_mut(app);
         if y < editor.top_pixel {
             editor.top_pixel = y;
@@ -444,8 +439,8 @@ impl EditorId {
             return;
         }
         let line = self.grid_from_offset(app, offset)[1][1];
-        let y = app.atlas.screen_from_grid([0, line])[1] as isize;
-        let y_end = app.atlas.screen_from_grid([0, line + 1])[1] as isize;
+        let y = app.screen_from_grid([0, line])[1] as isize;
+        let y_end = app.screen_from_grid([0, line + 1])[1] as isize;
         self.get_mut(app).top_pixel = (y + y_end) / 2 - viewport_h / 2;
     }
 
@@ -453,7 +448,7 @@ impl EditorId {
         let editor = self.get(app);
         let viewport_h = editor.last_viewport_size[1] as isize;
         let center_y = editor.top_pixel + viewport_h / 2;
-        let line = app.atlas.grid_from_screen([0.0, center_y as f32])[1].max(0) as usize;
+        let line = app.grid_from_screen([0.0, center_y as f32])[1].max(0) as usize;
         let line = line.min(editor.wraps.len() - 1);
         editor.wraps[line][0]
     }
@@ -461,7 +456,7 @@ impl EditorId {
     fn clamp_top_pixel(self, app: &mut App) {
         let total_h = {
             let editor = self.get(app);
-            app.atlas.screen_from_grid([0, editor.wraps.len()])[1] as isize
+            app.screen_from_grid([0, editor.wraps.len()])[1] as isize
         };
         let editor = self.get_mut(app);
         let viewport_h = editor.last_viewport_size[1] as isize;
@@ -478,9 +473,9 @@ impl EditorId {
 
     fn offset_from_screen(self, app: &App, screen_pos: [f32; 2]) -> usize {
         let editor = self.get(app);
-        let cell_w = app.atlas.cell_size[0] as f32;
+        let cell_w = app.cell_size()[0] as f32;
         let doc_y = screen_pos[1] + editor.top_pixel as f32;
-        let grid = app.atlas.grid_from_screen([screen_pos[0], doc_y]);
+        let grid = app.grid_from_screen([screen_pos[0], doc_y]);
         if grid[1] < 0 {
             return 0;
         }

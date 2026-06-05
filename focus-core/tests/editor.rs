@@ -1,5 +1,5 @@
 use focus_core::app::{App, WindowId};
-use focus_core::drawing::{DrawCommand, Drawing};
+use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
 use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
@@ -32,28 +32,25 @@ fn move_down(app: &mut App, io: &mut MockIO, window_id: WindowId, count: usize) 
 fn solid_quads_with_color<'a>(
     drawing: &'a Drawing,
     color: [u8; 4],
-) -> impl Iterator<Item = &'a focus_core::drawing::Quad> {
-    let atlas = common::atlas();
+) -> impl Iterator<Item = &'a focus_core::drawing::Character> {
     drawing.commands.iter().filter_map(move |command| {
-        let DrawCommand::Quad(quad) = command else {
+        let DrawCommand::Character(c) = command else {
             return None;
         };
-        (quad.src_pos == atlas.white_pos && quad.color == color).then_some(quad)
+        // Solid fills are the Full Block in the given color.
+        (c.ch == FULL_BLOCK && c.color == color).then_some(c)
     })
 }
 
 fn text_glyph_count_with_color(drawing: &Drawing, color: [u8; 4]) -> usize {
-    let atlas = common::atlas();
     drawing
         .commands
         .iter()
         .filter(|command| {
-            let DrawCommand::Quad(quad) = command else {
+            let DrawCommand::Character(c) = command else {
                 return false;
             };
-            quad.src_size == atlas.cell_size
-                && quad.src_pos != atlas.white_pos
-                && quad.color == color
+            c.ch != FULL_BLOCK && c.color == color
         })
         .count()
 }
@@ -234,8 +231,8 @@ fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
     common::text_input(&mut app, &mut io, window_id, "abcdef");
     common::draw(&mut app, window_id, 10, 3);
 
-    let start = common::point_for_offset(1, 0);
-    let end = common::point_for_offset(4, 0);
+    let start = common::point_for_offset(app.cell_size(), 1, 0);
+    let end = common::point_for_offset(app.cell_size(), 4, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
     io.mouse_pos = end;
     common::tick(&mut app, &mut io);
@@ -250,8 +247,8 @@ fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
             ..Default::default()
         },
     );
-    let start = common::point_for_offset(2, 0);
-    let end = common::point_for_offset(5, 0);
+    let start = common::point_for_offset(app.cell_size(), 2, 0);
+    let end = common::point_for_offset(app.cell_size(), 5, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
     io.mouse_pos = end;
     common::tick(&mut app, &mut io);
@@ -355,8 +352,8 @@ fn paste_many_distributes_clipboard_lines_across_cursors() {
     common::text_input(&mut app, &mut io, window_id, "ab cd");
 
     move_left(&mut app, &mut io, window_id, 5);
-    let first = common::point_for_offset(0, 0);
-    let second = common::point_for_offset(3, 0);
+    let first = common::point_for_offset(app.cell_size(), 0, 0);
+    let second = common::point_for_offset(app.cell_size(), 3, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
     common::modifiers(
@@ -385,8 +382,8 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
     common::text_input(&mut app, &mut io, window_id, "ab cd");
     common::draw(&mut app, window_id, 10, 3);
 
-    let first = common::point_for_offset(0, 0);
-    let second = common::point_for_offset(3, 0);
+    let first = common::point_for_offset(app.cell_size(), 0, 0);
+    let second = common::point_for_offset(app.cell_size(), 3, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
     common::modifiers(
@@ -408,8 +405,8 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
 
     move_left(&mut app, &mut io, window_id, 6);
     common::draw(&mut app, window_id, 10, 3);
-    let first = common::point_for_offset(0, 0);
-    let second = common::point_for_offset(4, 0);
+    let first = common::point_for_offset(app.cell_size(), 0, 0);
+    let second = common::point_for_offset(app.cell_size(), 4, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
     common::modifiers(
@@ -487,7 +484,7 @@ fn click_places_cursor_at_text_offset() {
     common::text_input(&mut app, &mut io, window_id, "abcd");
     common::draw(&mut app, window_id, 10, 3);
 
-    let point = common::point_for_offset(2, 0);
+    let point = common::point_for_offset(app.cell_size(), 2, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, point);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, point);
     common::char_input(&mut app, &mut io, window_id, 'X');
@@ -520,7 +517,7 @@ fn click_hit_testing_handles_screen_edges_and_half_cells() {
     assert_eq!(common::text(&app), "Aabcd");
 
     common::draw(&mut app, window_id, 10, 3);
-    let left_gutter = [0.0, common::atlas().cell_size[1] as f32 / 2.0];
+    let left_gutter = [0.0, app.cell_size()[1] as f32 / 2.0];
     common::mouse_button(
         &mut app,
         &mut io,
@@ -539,8 +536,8 @@ fn click_hit_testing_handles_screen_edges_and_half_cells() {
     assert_eq!(common::text(&app), "BAabcd");
 
     common::draw(&mut app, window_id, 10, 3);
-    let cell_w = common::atlas().cell_size[0] as f32;
-    let cell_h = common::atlas().cell_size[1] as f32;
+    let cell_w = app.cell_size()[0] as f32;
+    let cell_h = app.cell_size()[1] as f32;
     let right_half_of_second_char = [cell_w * 3.75, cell_h / 2.0];
     common::mouse_button(
         &mut app,
@@ -587,7 +584,7 @@ fn ctrl_click_adds_another_cursor() {
     common::text_input(&mut app, &mut io, window_id, "abcd");
     common::draw(&mut app, window_id, 10, 3);
 
-    let first = common::point_for_offset(1, 0);
+    let first = common::point_for_offset(app.cell_size(), 1, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
     common::modifiers(
@@ -599,7 +596,7 @@ fn ctrl_click_adds_another_cursor() {
             ..Default::default()
         },
     );
-    let second = common::point_for_offset(3, 0);
+    let second = common::point_for_offset(app.cell_size(), 3, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
@@ -615,8 +612,8 @@ fn dragging_selects_text_for_replacement() {
     common::text_input(&mut app, &mut io, window_id, "abcd");
     common::draw(&mut app, window_id, 10, 3);
 
-    let start = common::point_for_offset(1, 0);
-    let end = common::point_for_offset(3, 0);
+    let start = common::point_for_offset(app.cell_size(), 1, 0);
+    let end = common::point_for_offset(app.cell_size(), 3, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
     io.mouse_pos = end;
     common::tick(&mut app, &mut io);
@@ -633,10 +630,10 @@ fn mouse_wheel_scrolls_visible_wraps() {
     common::text_input(&mut app, &mut io, window_id, "a\nbb\nccc\ndddd\neeeee");
 
     let drawing = common::draw(&mut app, window_id, 10, 3);
-    let before = common::text_line_lengths(&drawing);
+    let before = common::text_line_lengths(app.cell_size(), &drawing);
     common::mouse_wheel(&mut app, &mut io, window_id, -1.0);
     let drawing = common::draw(&mut app, window_id, 10, 3);
-    let after = common::text_line_lengths(&drawing);
+    let after = common::text_line_lengths(app.cell_size(), &drawing);
 
     assert_ne!(after, before);
     app.assert_invariants();
@@ -648,13 +645,13 @@ fn dragging_below_viewport_scrolls_visible_wraps() {
     common::text_input(&mut app, &mut io, window_id, "a\nbb\nccc\ndddd\neeeee");
 
     let drawing = common::draw(&mut app, window_id, 10, 3);
-    let before = common::text_line_lengths(&drawing);
-    let start = common::point_for_offset(0, 0);
+    let before = common::text_line_lengths(app.cell_size(), &drawing);
+    let start = common::point_for_offset(app.cell_size(), 0, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
-    io.mouse_pos = common::point_for_offset(0, 5);
+    io.mouse_pos = common::point_for_offset(app.cell_size(), 0, 5);
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 10, 3);
-    let after = common::text_line_lengths(&drawing);
+    let after = common::text_line_lengths(app.cell_size(), &drawing);
     let release = io.mouse_pos;
     common::mouse_button(
         &mut app,
@@ -675,13 +672,13 @@ fn dragging_above_viewport_scrolls_visible_wraps() {
 
     common::mouse_wheel(&mut app, &mut io, window_id, -10.0);
     let drawing = common::draw(&mut app, window_id, 10, 3);
-    let before = common::text_line_lengths(&drawing);
-    let start = common::point_for_offset(0, 2);
+    let before = common::text_line_lengths(app.cell_size(), &drawing);
+    let start = common::point_for_offset(app.cell_size(), 0, 2);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
     io.mouse_pos = [0.0, -20.0];
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 10, 3);
-    let after = common::text_line_lengths(&drawing);
+    let after = common::text_line_lengths(app.cell_size(), &drawing);
     let release = io.mouse_pos;
     common::mouse_button(
         &mut app,
@@ -811,10 +808,10 @@ fn empty_text_draws_cursor_on_first_wrap() {
     let drawing = common::draw(&mut app, window_id, 10, 3);
 
     assert_eq!(
-        common::text_line_lengths(&drawing),
+        common::text_line_lengths(app.cell_size(), &drawing),
         Vec::<usize>::new()
     );
-    assert_eq!(common::cursor_lines(&drawing), vec![0]);
+    assert_eq!(common::cursor_lines(app.cell_size(), &drawing), vec![0]);
     app.assert_invariants();
 }
 
@@ -825,7 +822,7 @@ fn short_line_stays_on_one_wrap() {
 
     let drawing = common::draw(&mut app, window_id, 10, 3);
 
-    assert_eq!(common::text_line_lengths(&drawing), vec![3]);
+    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![3]);
     app.assert_invariants();
 }
 
@@ -836,7 +833,7 @@ fn newline_splits_into_two_wraps() {
 
     let drawing = common::draw(&mut app, window_id, 10, 4);
 
-    assert_eq!(common::text_line_lengths(&drawing), vec![2, 2]);
+    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![2, 2]);
     app.assert_invariants();
 }
 
@@ -848,10 +845,10 @@ fn lone_newline_moves_cursor_to_empty_second_wrap() {
     let drawing = common::draw(&mut app, window_id, 10, 4);
 
     assert_eq!(
-        common::text_line_lengths(&drawing),
+        common::text_line_lengths(app.cell_size(), &drawing),
         Vec::<usize>::new()
     );
-    assert_eq!(common::cursor_lines(&drawing), vec![1]);
+    assert_eq!(common::cursor_lines(app.cell_size(), &drawing), vec![1]);
     app.assert_invariants();
 }
 
@@ -862,8 +859,8 @@ fn trailing_newline_leaves_empty_final_wrap() {
 
     let drawing = common::draw(&mut app, window_id, 10, 4);
 
-    assert_eq!(common::text_line_lengths(&drawing), vec![2]);
-    assert_eq!(common::cursor_lines(&drawing), vec![1]);
+    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![2]);
+    assert_eq!(common::cursor_lines(app.cell_size(), &drawing), vec![1]);
     app.assert_invariants();
 }
 
@@ -874,7 +871,7 @@ fn hard_wrap_when_no_space_available() {
 
     let drawing = common::draw(&mut app, window_id, 3, 4);
 
-    assert_eq!(common::text_line_lengths(&drawing), vec![3, 2]);
+    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![3, 2]);
     app.assert_invariants();
 }
 
@@ -885,7 +882,7 @@ fn soft_wrap_breaks_after_last_space() {
 
     let drawing = common::draw(&mut app, window_id, 4, 4);
 
-    assert_eq!(common::text_line_lengths(&drawing), vec![3, 4]);
+    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![3, 4]);
     app.assert_invariants();
 }
 
@@ -896,7 +893,7 @@ fn soft_wrap_does_not_reuse_earlier_space_after_overflow() {
 
     let drawing = common::draw(&mut app, window_id, 4, 5);
 
-    assert_eq!(common::text_line_lengths(&drawing), vec![3, 4, 2]);
+    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![3, 4, 2]);
     app.assert_invariants();
 }
 
@@ -907,7 +904,7 @@ fn multi_byte_chars_count_as_one_grid_cell() {
 
     let drawing = common::draw(&mut app, window_id, 10, 3);
 
-    assert_eq!(common::text_line_lengths(&drawing), vec![5]);
+    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![5]);
     app.assert_invariants();
 }
 
@@ -918,7 +915,7 @@ fn soft_wrap_before_multi_byte_char_keeps_it_intact() {
 
     let drawing = common::draw(&mut app, window_id, 3, 5);
 
-    assert_eq!(common::text_line_lengths(&drawing), vec![2, 2, 3]);
+    assert_eq!(common::text_line_lengths(app.cell_size(), &drawing), vec![2, 2, 3]);
     app.assert_invariants();
 }
 
@@ -927,16 +924,16 @@ fn tiny_viewport_draws_only_window_background() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abc");
 
-    let cell_w = common::atlas().cell_size[0] as f32;
-    let cell_h = common::atlas().cell_size[1] as f32;
+    let cell_w = app.cell_size()[0] as f32;
+    let cell_h = app.cell_size()[1] as f32;
     let mut drawing = Drawing::new([cell_w * 2.0, cell_h * 3.0]);
     app.draw(window_id, &mut drawing);
 
     assert_eq!(
-        common::text_line_lengths(&drawing),
+        common::text_line_lengths(app.cell_size(), &drawing),
         Vec::<usize>::new()
     );
-    assert_eq!(common::cursor_lines(&drawing), Vec::<usize>::new());
+    assert_eq!(common::cursor_lines(app.cell_size(), &drawing), Vec::<usize>::new());
     assert_eq!(
         solid_quads_with_color(&drawing, BACKGROUND_COLOR).count(),
         1
@@ -980,13 +977,13 @@ fn partially_clipped_text_uses_scissor_commands() {
 fn cursor_blinks_off_after_idle_time() {
     let (mut app, mut io, window_id) = common::scratch_app();
     let drawing = common::draw(&mut app, window_id, 10, 3);
-    assert_eq!(common::cursor_lines(&drawing), vec![0]);
+    assert_eq!(common::cursor_lines(app.cell_size(), &drawing), vec![0]);
 
     io.frame_start += std::time::Duration::from_millis(600);
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 10, 3);
 
-    assert_eq!(common::cursor_lines(&drawing), Vec::<usize>::new());
+    assert_eq!(common::cursor_lines(app.cell_size(), &drawing), Vec::<usize>::new());
     app.assert_invariants();
 }
 
@@ -1002,10 +999,10 @@ fn resizing_viewport_preserves_centered_content() {
 
     common::mouse_wheel(&mut app, &mut io, window_id, -3.0);
     let before = common::draw(&mut app, window_id, 10, 3);
-    let before_lines = common::text_line_lengths(&before);
+    let before_lines = common::text_line_lengths(app.cell_size(), &before);
 
     let after = common::draw(&mut app, window_id, 10, 6);
-    let after_lines = common::text_line_lengths(&after);
+    let after_lines = common::text_line_lengths(app.cell_size(), &after);
 
     assert!(before_lines.iter().any(|line| after_lines.contains(line)));
     app.assert_invariants();

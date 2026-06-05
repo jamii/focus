@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::BString;
-use fontdue::{Font, FontSettings};
 
-use crate::atlas::Atlas;
 use crate::document::Document;
 use crate::drawing::Drawing;
 use crate::editor::Editor;
@@ -13,9 +11,8 @@ use crate::input::{ElementState, InputEvent, Key, ModifiersState};
 use crate::window::Window;
 
 pub struct App {
-    font: Font,
-    px_size: f32,
-    pub(crate) atlas: Atlas,
+    font_size: f32,
+    cell_size: [u32; 2],
 
     pub windows: HashMap<WindowId, Window>,
 
@@ -59,7 +56,9 @@ pub trait IO {
     fn close_window(&mut self, window_id: WindowId);
     fn set_window_title(&mut self, window_id: WindowId, title: String);
     fn request_redraw(&mut self, window_id: WindowId);
-    fn reload_atlas(&mut self, pixels: &[u8], size: [u32; 2]);
+    /// Rebuild the glyph atlas at the given font size and return the
+    /// resulting character cell size in pixels `[width, height]`.
+    fn rebuild_atlas(&mut self, font_size: f32) -> [u32; 2];
     fn get_clipboard_text(&mut self) -> Option<BString>;
     fn set_clipboard_text(&mut self, text: BString);
     fn exit(&mut self);
@@ -77,14 +76,11 @@ pub trait IO {
     ) -> std::io::Result<SystemTime>;
 }
 
-const FONT: &[u8] = include_bytes!("../deps/FiraCode-Regular.ttf");
-const INITIAL_PX: f32 = 32.0;
-const MIN_PX: f32 = 4.0;
+const FONT_SIZE_INIT: f32 = 32.0;
+const FONT_SIZE_MIN: f32 = 4.0;
 
 impl App {
     pub fn assert_invariants(&self) {
-        // TODO What should we assert for font/atlas?
-
         for document_id in self.documents.keys() {
             document_id.assert_invariants(self);
         }
@@ -97,13 +93,10 @@ impl App {
     }
 
     pub fn new(initial_window_id: WindowId, io: &mut dyn IO, initial_path: Option<PathBuf>) -> App {
-        let font = Font::from_bytes(FONT, FontSettings::default()).unwrap();
-        let atlas = Atlas::build(&font, INITIAL_PX);
-        io.reload_atlas(&atlas.pixels, atlas.size);
+        let cell_size = io.rebuild_atlas(FONT_SIZE_INIT);
         let mut app = App {
-            font,
-            px_size: INITIAL_PX,
-            atlas,
+            font_size: FONT_SIZE_INIT,
+            cell_size,
             windows: HashMap::new(),
             next_editor_id: EditorId(0),
             editors: HashMap::new(),
@@ -139,11 +132,11 @@ impl App {
                 state, logical_key, ..
             } if *state == ElementState::Pressed && self.modifiers.control => match *logical_key {
                 Key::Character("+") => {
-                    self.px_size += 1.0;
+                    self.font_size += 1.0;
                     self.rebuild_atlas(io);
                 }
                 Key::Character("-") => {
-                    self.px_size = (self.px_size - 1.0).max(MIN_PX);
+                    self.font_size = (self.font_size - 1.0).max(FONT_SIZE_MIN);
                     self.rebuild_atlas(io);
                 }
                 Key::Character("n") => {
@@ -177,8 +170,29 @@ impl App {
     }
 
     fn rebuild_atlas(&mut self, io: &mut dyn IO) {
-        self.atlas = Atlas::build(&self.font, self.px_size);
-        io.reload_atlas(&self.atlas.pixels, self.atlas.size);
+        self.cell_size = io.rebuild_atlas(self.font_size);
+    }
+
+    pub fn cell_size(&self) -> [u32; 2] {
+        self.cell_size
+    }
+
+    /// Top-left screen position of the cell at the given grid coords.
+    pub(crate) fn screen_from_grid(&self, grid: [usize; 2]) -> [f32; 2] {
+        [
+            (grid[0] as f32) * (self.cell_size[0] as f32),
+            (grid[1] as f32) * (self.cell_size[1] as f32),
+        ]
+    }
+
+    /// Grid cell containing the given screen position. Floor-divides, so
+    /// a screen position on a cell boundary lands in the cell to its
+    /// right / below.
+    pub(crate) fn grid_from_screen(&self, screen: [f32; 2]) -> [i32; 2] {
+        [
+            (screen[0] / self.cell_size[0] as f32).floor() as i32,
+            (screen[1] / self.cell_size[1] as f32).floor() as i32,
+        ]
     }
 
     fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {

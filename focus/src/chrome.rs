@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use bstr::BString;
+use fontdue::{Font, FontSettings};
 use glutin::config::{Config, ConfigTemplateBuilder};
 use glutin::context::{ContextApi, ContextAttributesBuilder, PossiblyCurrentContext, Version};
 use glutin::display::GetGlDisplay;
@@ -26,7 +27,10 @@ use focus_core::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, WindowId, WindowSize
 use focus_core::drawing::Drawing;
 use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
 
+use crate::atlas::Atlas;
 use crate::render::Renderer;
+
+const FONT: &[u8] = include_bytes!("../deps/FiraCode-Regular.ttf");
 
 // Distinct title + app_id in debug builds so a niri window-rule can
 // match only the dev instance (e.g. `open-focused false`).
@@ -71,6 +75,7 @@ struct Backend {
     gl_config: Config,
     context: PossiblyCurrentContext,
     renderer: Renderer,
+    font: Font,
     last_mouse_pos: [f32; 2],
     clipboard: arboard::Clipboard,
 }
@@ -103,8 +108,11 @@ impl IO for IoReal<'_> {
         }
     }
 
-    fn reload_atlas(&mut self, pixels: &[u8], size: [u32; 2]) {
-        unsafe { self.backend.renderer.upload_atlas(pixels, size) };
+    fn rebuild_atlas(&mut self, font_size: f32) -> [u32; 2] {
+        let atlas = Atlas::build(&self.backend.font, font_size);
+        let cell_size = atlas.cell_size;
+        unsafe { self.backend.renderer.upload_atlas(atlas) };
+        cell_size
     }
 
     fn get_clipboard_text(&mut self) -> Option<BString> {
@@ -307,6 +315,7 @@ impl Backend {
             gl_display.get_proc_address(&cs) as *const _
         });
         let renderer = unsafe { Renderer::new() };
+        let font = Font::from_bytes(FONT, FontSettings::default()).unwrap();
 
         let clipboard = arboard::Clipboard::new()
             .expect("arboard::Clipboard::new() — is a wayland or x11 session running?");
@@ -317,6 +326,7 @@ impl Backend {
             gl_config,
             context,
             renderer,
+            font,
             last_mouse_pos: [0.0, 0.0],
             clipboard,
         };
@@ -339,8 +349,6 @@ impl Backend {
         self.register_window(window, surface)
     }
 
-    // Mint a fresh core `WindowId` for a winit window and record both
-    // directions of the id mapping.
     fn register_window(&mut self, window: Window, surface: Surface<WindowSurface>) -> WindowId {
         let winit_id = window.id();
         let id = self.next_window_id;
@@ -386,11 +394,6 @@ fn create_surface(gl_config: &Config, window: &Window) -> Surface<WindowSurface>
     }
 }
 
-// --- winit -> focus_core input translation ---
-
-// Map a winit window event to the core's `InputEvent`, or `None` for
-// events the core doesn't consume. Borrows `event` so the resulting
-// `Key` can point straight at winit's key string.
 fn translate_event(event: &WindowEvent, last_mouse_pos: [f32; 2]) -> Option<InputEvent<'_>> {
     match event {
         WindowEvent::CloseRequested => Some(InputEvent::CloseRequested),
@@ -432,15 +435,12 @@ fn translate_state(state: winit::event::ElementState) -> ElementState {
     }
 }
 
-// Text keys carry their string; named keys map to the subset the editor
-// understands. Anything else (dead keys, unidentified, unhandled named
-// keys) yields None and is dropped.
 fn translate_key(key: &WinitKey) -> Option<Key<'_>> {
-    match key {
-        WinitKey::Character(s) => Some(Key::Character(s.as_str())),
-        WinitKey::Named(named) => Some(Key::Named(translate_named(*named)?)),
-        _ => None,
-    }
+    Some(match key {
+        WinitKey::Character(s) => Key::Character(s.as_str()),
+        WinitKey::Named(named) => Key::Named(translate_named(*named)?),
+        _ => return None,
+    })
 }
 
 fn translate_named(named: WinitNamedKey) -> Option<NamedKey> {

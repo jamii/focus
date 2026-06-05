@@ -31,7 +31,6 @@ impl WindowId {
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
         let editor_id = self.get(app).editor_id;
         drawing.draw_rect(
-            &app.atlas,
             Rect {
                 pos: [0.0, 0.0],
                 size: [1e9, 1e9],

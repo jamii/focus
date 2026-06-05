@@ -12,6 +12,8 @@ use std::ptr;
 
 use focus_core::drawing::{DrawCommand, Rect};
 
+use crate::atlas::Atlas;
+
 // Two shaders, the minimum required: vertex (one invocation per vertex;
 // writes gl_Position in clip space) and fragment (one per pixel covered;
 // writes the final color).
@@ -137,10 +139,9 @@ pub struct Renderer {
     // Atlas texture. Also rebound (with new pixels) in `upload_atlas`
     // when the font size changes.
     tex: u32,
-    // Atlas dimensions cached from the most recent upload, so `render`
-    // can normalize uvs without being handed the atlas every frame.
-    atlas_w: u32,
-    atlas_h: u32,
+    // The atlas itself, so `render` can resolve each character to its
+    // glyph cell and normalize uvs. `None` until the first upload.
+    atlas: Option<Atlas>,
     // Uniform location for the `u_screen` (framebuffer size in pixels).
     // The vertex shader divides vertex positions by this to get NDC.
     u_screen: i32,
@@ -233,8 +234,7 @@ impl Renderer {
                 vao,
                 vbo,
                 tex,
-                atlas_w: 0,
-                atlas_h: 0,
+                atlas: None,
                 u_screen,
                 vertex_buf: Vec::new(),
                 batches: Vec::new(),
@@ -242,8 +242,9 @@ impl Renderer {
         }
     }
 
-    /// Replace the atlas pixels on the GPU. Texture handle is unchanged.
-    pub unsafe fn upload_atlas(&mut self, pixels: &[u8], size: [u32; 2]) {
+    /// Replace the atlas pixels on the GPU and keep the atlas for glyph
+    /// lookup. Texture handle is unchanged.
+    pub unsafe fn upload_atlas(&mut self, atlas: Atlas) {
         unsafe {
             gl::BindTexture(gl::TEXTURE_2D, self.tex);
             // R8 rows are 1 byte per pixel — set unpack alignment to 1
@@ -253,16 +254,15 @@ impl Renderer {
                 gl::TEXTURE_2D,
                 0,
                 gl::R8 as i32,
-                size[0] as i32,
-                size[1] as i32,
+                atlas.size[0] as i32,
+                atlas.size[1] as i32,
                 0,
                 gl::RED,
                 gl::UNSIGNED_BYTE,
-                pixels.as_ptr() as *const _,
+                atlas.pixels.as_ptr() as *const _,
             );
         }
-        self.atlas_w = size[0];
-        self.atlas_h = size[1];
+        self.atlas = Some(atlas);
     }
 
     /// Render a command list into whatever framebuffer is currently bound.
@@ -275,8 +275,12 @@ impl Renderer {
         self.vertex_buf.clear();
         self.batches.clear();
 
-        let inv_atlas_w = 1.0 / self.atlas_w as f32;
-        let inv_atlas_h = 1.0 / self.atlas_h as f32;
+        // Take the atlas out so we can borrow it while pushing into the
+        // (separately borrowed) vertex buffer; restored at the end.
+        let atlas = self.atlas.take().expect("atlas not uploaded before render");
+        let inv_atlas_w = 1.0 / atlas.size[0] as f32;
+        let inv_atlas_h = 1.0 / atlas.size[1] as f32;
+        let [cell_w, cell_h] = atlas.cell_size;
         let mut current_clip = Rect {
             pos: [0.0, 0.0],
             size: [fb_w as f32, fb_h as f32],
@@ -285,16 +289,20 @@ impl Renderer {
 
         for cmd in commands {
             match cmd {
-                DrawCommand::Quad(q) => {
-                    let x0 = q.dst_pos[0];
-                    let y0 = q.dst_pos[1];
-                    let x1 = x0 + q.dst_size[0];
-                    let y1 = y0 + q.dst_size[1];
-                    let u0 = q.src_pos[0] as f32 * inv_atlas_w;
-                    let v0 = q.src_pos[1] as f32 * inv_atlas_h;
-                    let u1 = (q.src_pos[0] + q.src_size[0]) as f32 * inv_atlas_w;
-                    let v1 = (q.src_pos[1] + q.src_size[1]) as f32 * inv_atlas_h;
-                    let c = q.color;
+                DrawCommand::Character(ch) => {
+                    // Scale the glyph's whole cell into the destination
+                    // rect. For text that's a 1:1 cell; for fills it's the
+                    // Full Block cell stretched over the rect.
+                    let src = atlas.glyph(ch.ch).atlas_pos;
+                    let x0 = ch.dst.pos[0];
+                    let y0 = ch.dst.pos[1];
+                    let x1 = x0 + ch.dst.size[0];
+                    let y1 = y0 + ch.dst.size[1];
+                    let u0 = src[0] as f32 * inv_atlas_w;
+                    let v0 = src[1] as f32 * inv_atlas_h;
+                    let u1 = (src[0] + cell_w) as f32 * inv_atlas_w;
+                    let v1 = (src[1] + cell_h) as f32 * inv_atlas_h;
+                    let c = ch.color;
                     // Two triangles per quad: (tl, tr, br) and (tl, br, bl).
                     self.vertex_buf.extend_from_slice(&[
                         Vertex {
@@ -370,6 +378,8 @@ impl Renderer {
                 gl::DrawArrays(gl::TRIANGLES, batch.offset as i32, batch.count as i32);
             }
         }
+
+        self.atlas = Some(atlas);
     }
 }
 

@@ -12,8 +12,8 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::ptr;
 
+use focus::atlas::Atlas;
 use focus::render::Renderer;
-use focus_core::atlas::Atlas;
 use focus_core::drawing::{Drawing, Rect};
 use fontdue::{Font, FontSettings};
 use khronos_egl::{self as egl, DynamicInstance};
@@ -165,7 +165,7 @@ impl Drop for EglHost {
 fn renders_hello_world() {
     let _egl = EglHost::new(W, H);
 
-    let font_bytes = fs::read("../focus-core/deps/FiraCode-Regular.ttf").unwrap();
+    let font_bytes = fs::read("deps/FiraCode-Regular.ttf").unwrap();
     let font = Font::from_bytes(font_bytes, FontSettings::default()).unwrap();
     let atlas = Atlas::build(&font, 32.0);
     assert!(atlas.glyphs.contains_key(&'H'));
@@ -182,17 +182,17 @@ fn renders_hello_world() {
     );
 
     let mut renderer = unsafe { Renderer::new() };
-    unsafe { renderer.upload_atlas(&atlas.pixels, atlas.size) };
+    let cell_size = atlas.cell_size;
+    unsafe { renderer.upload_atlas(atlas) };
 
     let mut drawing = Drawing::new([W as f32, H as f32]);
     let clip = Rect {
         pos: [16.0, 16.0],
-        size: [180.0, atlas.cell_size[1] as f32 + 8.0],
+        size: [180.0, cell_size[1] as f32 + 8.0],
     };
     {
         let mut drawing = drawing.push_clip_rect(clip);
         drawing.draw_rect(
-            &atlas,
             Rect {
                 pos: [0.0, 0.0],
                 size: clip.size,
@@ -200,12 +200,7 @@ fn renders_hello_world() {
             [255, 240, 170, 255],
         );
         // Non-ASCII '→' is not in the atlas and should render as a tofu box.
-        drawing.draw_text(
-            &atlas,
-            "hello → world".into(),
-            [4.0, 4.0],
-            [30, 30, 40, 255],
-        );
+        drawing.draw_text(cell_size, "hello → world".into(), [4.0, 4.0], [30, 30, 40, 255]);
     }
 
     unsafe { renderer.render(&drawing.commands, W as i32, H as i32) };
