@@ -1,11 +1,8 @@
 ## next
 
-* Read code and clean up slop.
-* Merge coalesce into apply_edits?
-* Should all 'things' be in one big id map?
-* Separate scrollable from editor.
-* Horizontal / vertical splits.
-  * Maybe want a split that renders one half completely, and the other in the remaining space?
+* Figure out scrollable vs unscrollable
+* Figure out splits
+* Status bar
 
 ## minimum viable editor
 
