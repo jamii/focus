@@ -26,7 +26,6 @@ pub struct Editor {
     last_input: Duration,
     top_pixel: isize,
     last_viewport_size: [f32; 2],
-    scroll_to_main_cursor: bool,
     dragging: Option<DragInfo>,
 }
 
@@ -80,7 +79,6 @@ impl Editor {
             last_input: Duration::ZERO,
             top_pixel: 0,
             last_viewport_size: [0.0, 0.0],
-            scroll_to_main_cursor: false,
             dragging: None,
         }
     }
@@ -315,7 +313,34 @@ impl EditorId {
         // Leave space for gutters
         let wrap_chars = grid_w - 2;
 
-        self.prepare_for_draw(app, viewport_size, wrap_chars);
+        let center_before = self.center_offset(app);
+        let (document_id, wrap_changed, viewport_changed) = {
+            let editor = self.get_mut(app);
+            let wrap_changed = editor.wrap_chars != wrap_chars;
+            if wrap_changed {
+                editor.wrap_chars = wrap_chars;
+            }
+
+            let viewport_changed = editor.last_viewport_size != viewport_size;
+            editor.last_viewport_size = viewport_size;
+
+            (editor.document_id, wrap_changed, viewport_changed)
+        };
+
+        if wrap_changed {
+            self.refresh_wraps(app);
+        }
+
+        if viewport_changed {
+            let center_before = center_before.min(document_id.get(app).text.len());
+            self.scroll_offset_into_center(app, center_before);
+        }
+
+        self.clamp_top_pixel(app);
+
+        let center_now = self.center_offset(app);
+        document_id.get_mut(app).last_center_offset = center_now;
+
         let editor = self.get(app);
         let translate_y = -editor.top_pixel as f32;
 
@@ -456,48 +481,6 @@ impl EditorId {
             }
         }
     }
-    fn prepare_for_draw(self, app: &mut App, viewport_size: [f32; 2], wrap_chars: usize) {
-        let center_before = self.center_offset(app);
-        let (document_id, wrap_changed, viewport_changed) = {
-            let editor = self.get_mut(app);
-            let wrap_changed = editor.wrap_chars != wrap_chars;
-            if wrap_changed {
-                editor.wrap_chars = wrap_chars;
-            }
-
-            let viewport_changed = editor.last_viewport_size != viewport_size;
-            editor.last_viewport_size = viewport_size;
-
-            (editor.document_id, wrap_changed, viewport_changed)
-        };
-
-        if wrap_changed {
-            self.refresh_wraps(app);
-        }
-
-        if viewport_changed {
-            let center_before = center_before.min(document_id.get(app).text.len());
-            self.scroll_offset_into_center(app, center_before);
-        }
-
-        self.clamp_top_pixel(app);
-
-        let center_now = self.center_offset(app);
-        document_id.get_mut(app).last_center_offset = center_now;
-
-        let scroll_offset = {
-            let editor = self.get_mut(app);
-            if editor.scroll_to_main_cursor {
-                editor.scroll_to_main_cursor = false;
-                editor.cursors.last().map(|cursor| cursor.head.offset)
-            } else {
-                None
-            }
-        };
-        if let Some(offset) = scroll_offset {
-            self.scroll_offset_into_view(app, offset);
-        }
-    }
 
     fn offset_line(self, app: &App, offset: usize) -> usize {
         self.grid_from_offset(app, offset)[1][1]
@@ -518,6 +501,11 @@ impl EditorId {
         if y_end > editor.top_pixel + viewport_h {
             editor.top_pixel = y_end - viewport_h;
         }
+    }
+
+    fn scroll_main_cursor_into_view(self, app: &mut App) {
+        let offset = self.get(app).cursors.last().unwrap().head.offset;
+        self.scroll_offset_into_view(app, offset);
     }
 
     fn scroll_offset_into_center(self, app: &mut App, offset: usize) {
@@ -616,7 +604,7 @@ impl EditorId {
         });
         editor.dragging = Some(DragInfo { cursor_index });
         editor.marked = false;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     pub fn handle_edits(self, app: &mut App, diff: &OffsetDiff) {
@@ -683,7 +671,7 @@ impl EditorId {
         document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     fn cursor_add_next_match(self, app: &mut App) {
@@ -753,7 +741,7 @@ impl EditorId {
         document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     fn cursor_delete_right(self, app: &mut App) {
@@ -780,7 +768,7 @@ impl EditorId {
         document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     fn cursor_copy(self, app: &App, io: &mut dyn IO) {
@@ -829,7 +817,7 @@ impl EditorId {
         document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     fn cursor_paste(self, app: &mut App, io: &mut dyn IO) {
@@ -865,7 +853,7 @@ impl EditorId {
         document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     fn cursor_paste_many(self, app: &mut App, io: &mut dyn IO) {
@@ -907,7 +895,7 @@ impl EditorId {
         document_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     fn refresh_wraps(self, app: &mut App) {
@@ -932,7 +920,7 @@ impl EditorId {
         }
         let editor = self.get_mut(app);
         editor.cursors = cursors;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     fn cursor_goto_line_end(self, app: &mut App) {
@@ -950,7 +938,7 @@ impl EditorId {
         }
         let editor = self.get_mut(app);
         editor.cursors = cursors;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     fn cursor_goto_doc_start(self, app: &mut App) {
@@ -1007,7 +995,7 @@ impl EditorId {
         }
         let editor = self.get_mut(app);
         editor.cursors = cursors;
-        editor.scroll_to_main_cursor = true;
+        self.scroll_main_cursor_into_view(app);
     }
 
     // Return the grid position for a byte offset within the doc.
