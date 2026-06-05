@@ -209,7 +209,7 @@ impl DocumentId {
                 absolute_path,
                 last_save_time,
                 ..
-            }) if *last_save_time > document.last_modified_time => absolute_path.clone(),
+            }) if document.last_modified_time > *last_save_time => absolute_path.clone(),
             _ => return,
         };
         let create = kind == SaveKind::Explicit;

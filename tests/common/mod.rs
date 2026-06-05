@@ -84,6 +84,48 @@ pub fn control_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key
     modifiers(app, io, window_id, ModifiersState::empty());
 }
 
+pub fn alt_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key) {
+    modifiers(app, io, window_id, ModifiersState::ALT);
+    self::key(app, io, window_id, key);
+    modifiers(app, io, window_id, ModifiersState::empty());
+}
+
+pub fn mouse_button(
+    app: &mut App,
+    io: &mut MockIO,
+    window_id: WindowId,
+    state: ElementState,
+    position: [f32; 2],
+) {
+    io.mouse_pos = position;
+    sync_app_io(app, io);
+    app.input(io, window_id, InputEvent::MouseButton { state, position });
+}
+
+pub fn mouse_wheel(app: &mut App, io: &mut MockIO, window_id: WindowId, y_offset: f32) {
+    sync_app_io(app, io);
+    app.input(io, window_id, InputEvent::MouseWheel { y_offset });
+}
+
+pub fn focus_changed(app: &mut App, io: &mut MockIO, window_id: WindowId, focused: bool) {
+    sync_app_io(app, io);
+    app.input(io, window_id, InputEvent::FocusChanged { focused });
+}
+
+pub fn tick(app: &mut App, io: &mut MockIO) {
+    sync_app_io(app, io);
+    app.tick(io);
+}
+
+pub fn point_for_offset(app: &App, offset: usize, line: usize) -> [f32; 2] {
+    let cell_w = app.atlas.cell_size[0] as f32;
+    let cell_h = app.atlas.cell_size[1] as f32;
+    [
+        cell_w * (offset + 1) as f32,
+        cell_h * line as f32 + cell_h / 2.0,
+    ]
+}
+
 pub fn open_same_document_window(app: &mut App, io: &mut MockIO, window_id: WindowId) -> WindowId {
     let before = io.open_windows.clone();
     control_key(app, io, window_id, Key::Character("m".into()));
