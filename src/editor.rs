@@ -555,22 +555,16 @@ impl EditorId {
     }
 
     fn cursor_add_next_match(self, app: &mut App) {
-        let (document_id, marked, cursor_main) = {
-            let editor = self.get(app);
-            (
-                editor.document_id,
-                editor.marked,
-                editor.cursors.last().unwrap().clone(),
-            )
-        };
-        let document = document_id.get(app);
+        let editor = self.get(app);
+        let text = editor.document_id.get(app).text.as_bstr();
+        let cursor_main = editor.cursors.last().unwrap();
         let range = cursor_main.range();
-        if !marked || range.start == range.end {
+        if !editor.marked || range.start == range.end {
             return;
         };
         let search_start = range.end;
-        let search_text = &document.text[range];
-        if let Some(offset) = document.text[search_start..].find(search_text.as_bstr()) {
+        let search_text = &text[range];
+        if let Some(offset) = text[search_start..].find(search_text.as_bstr()) {
             let start = search_start + offset;
             let end = start + search_text.len();
             let mut cursor_new = Cursor {
