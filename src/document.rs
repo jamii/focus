@@ -112,24 +112,20 @@ impl DocumentId {
 
     pub fn tick(self, app: &mut App, io: &mut dyn IO) {
         // Maybe flush doing.
-        {
-            let document = self.get(app);
-            if app.frame_start - document.last_modified_time > Duration::from_secs(1) {
-                self.flush_doing(app);
-            }
+        let document = self.get(app);
+        if app.frame_start - document.last_modified_time > Duration::from_secs(1) {
+            self.flush_doing(app);
         }
 
         // Maybe reload.
         let mut edits = vec![];
         let frame_start = app.frame_start;
-        {
-            let document = self.get_mut(app);
-            let last_modified_time = document.last_modified_time;
-            if let Source::File(source) = &mut document.source {
-                if !(last_modified_time > source.last_save_time) {
-                    if let Some(text) = source.load(io, frame_start) {
-                        edits = diff_text(document.text.as_bstr(), text.as_bstr());
-                    }
+        let document = self.get_mut(app);
+        let last_modified_time = document.last_modified_time;
+        if let Source::File(source) = &mut document.source {
+            if !(last_modified_time > source.last_save_time) {
+                if let Some(text) = source.load(io, frame_start) {
+                    edits = diff_text(document.text.as_bstr(), text.as_bstr());
                 }
             }
         }
@@ -289,23 +285,12 @@ impl DocumentId {
     }
 
     pub fn char_prev(self, app: &App, offset: usize) -> Option<usize> {
+        let document = self.get(app);
         if offset == 0 {
             return None;
         }
-        // We can't directly iter backwards through potentially invalid utf8, but we
-        // can go forwards from the start of the line.
-        let line_start = self.line_range_from_offset(app, offset).start;
-        let document = self.get(app);
-        if line_start == offset {
-            // Previous character is a \n
-            return Some(line_start - 1);
-        }
-        for (char_start, char_end, _) in document.text[line_start..].char_indices() {
-            if line_start + char_end == offset {
-                return Some(line_start + char_start);
-            }
-        }
-        unreachable!()
+        let (char_start, _, _) = document.text[..offset].char_indices().next_back().unwrap();
+        Some(char_start)
     }
 
     pub fn flush_doing(self, app: &mut App) {
@@ -463,13 +448,16 @@ impl OffsetDiff {
         assert_eq!(self.offsets_old.len() + 1, self.offsets_new.len());
         assert_eq!(self.offsets_new.len(), self.deleted.len());
         for pair in self.offsets_old.windows(2) {
-            assert!(pair[0] < pair[1]);
+            assert!(pair[0] <= pair[1]);
+        }
+        for pair in self.offsets_new.windows(2) {
+            assert!(pair[0] <= pair[1]);
         }
     }
 
     fn from_edits(edits: &[Edit], len_old: usize) -> Self {
         let mut offsets_old: Vec<usize> = Vec::new();
-        let mut offsets_new: Vec<usize> = vec![0]; // F(0) = 0
+        let mut offsets_new: Vec<usize> = vec![0];
         let mut deleted: Vec<bool> = vec![false];
         let mut cum_shift: isize = 0;
 
@@ -486,7 +474,7 @@ impl OffsetDiff {
                     offsets_old.push(edit.offset);
                     let start_new = ((edit.offset as isize) + cum_shift) as usize;
                     offsets_new.push(start_new);
-                    deleted.push(true); // offsets in (edit.offset, end) clamp to start_new
+                    deleted.push(true);
 
                     offsets_old.push(end);
                     cum_shift -= edit.text.len() as isize;
@@ -500,21 +488,6 @@ impl OffsetDiff {
         offsets_old.push(len_old);
         offsets_new.push(((len_old as isize) + cum_shift) as usize);
         deleted.push(false);
-
-        // TODO fix this slop.
-        // Dedup adjacent same offsets_old by removing the EARLIER occurrence.
-        // The later occurrence reflects the state after the later edit at that offset.
-        let mut i = 0;
-        while i + 1 < offsets_old.len() {
-            if offsets_old[i] == offsets_old[i + 1] {
-                offsets_old.remove(i);
-                offsets_new.remove(i + 1); // remove the segment STARTING at the duplicate
-                deleted.remove(i + 1);
-                // Don't increment i — re-check the new element at this offset
-            } else {
-                i += 1;
-            }
-        }
 
         let diff = OffsetDiff {
             offsets_old,
@@ -539,68 +512,64 @@ impl OffsetDiff {
     }
 }
 
-// Char-based diff via the `similar` crate. Produces edits that transform
-// `old` into `new`.
 fn diff_text(old: &BStr, new: &BStr) -> Vec<Edit> {
-    let diff = similar::TextDiff::from_chars(old.as_bytes(), new.as_bytes());
-    let mut edits = Vec::new();
-    let mut byte_offset: usize = 0;
-    let mut hunk_offset: Option<usize> = None;
-    let mut hunk_ins: Vec<u8> = Vec::new();
-    let mut hunk_del: Vec<u8> = Vec::new();
+    let diff = similar::TextDiff::configure()
+        .algorithm(similar::Algorithm::Histogram)
+        .diff_words(old.as_bytes(), new.as_bytes());
 
-    for change in diff.iter_all_changes() {
-        let value: &[u8] = change.value();
-        match change.tag() {
-            similar::ChangeTag::Equal => {
-                diff_text_flush(&mut edits, &mut hunk_offset, &mut hunk_ins, &mut hunk_del);
-                byte_offset += value.len();
+    // DiffOp ranges are token indices, not byte offsets. Build a prefix sum of
+    // token byte lengths so we can translate a token index into a byte offset.
+    let byte_offsets = |tokens: &mut dyn Iterator<Item = &[u8]>| {
+        let mut offsets = vec![0];
+        let mut acc = 0;
+        for token in tokens {
+            acc += token.len();
+            offsets.push(acc);
+        }
+        offsets
+    };
+    let old_offsets = byte_offsets(&mut diff.iter_old_slices());
+    let new_offsets = byte_offsets(&mut diff.iter_new_slices());
+
+    let mut edits = Vec::new();
+    for op in diff.ops() {
+        let (tag, old_range, new_range) = op.as_tag_tuple();
+        let old_start = old_offsets[old_range.start];
+        let old_end = old_offsets[old_range.end];
+        let new_start = new_offsets[new_range.start];
+        let new_end = new_offsets[new_range.end];
+        match tag {
+            similar::DiffTag::Equal => {}
+            similar::DiffTag::Delete => {
+                edits.push(Edit {
+                    kind: EditKind::Delete,
+                    offset: old_start,
+                    text: old[old_start..old_end].into(),
+                });
             }
-            similar::ChangeTag::Delete => {
-                if hunk_offset.is_none() {
-                    hunk_offset = Some(byte_offset);
-                }
-                hunk_del.extend_from_slice(value);
-                byte_offset += value.len();
+            similar::DiffTag::Insert => {
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: old_start,
+                    text: new[new_start..new_end].into(),
+                });
             }
-            similar::ChangeTag::Insert => {
-                if hunk_offset.is_none() {
-                    hunk_offset = Some(byte_offset);
-                }
-                hunk_ins.extend_from_slice(value);
+            similar::DiffTag::Replace => {
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: old_start,
+                    text: new[new_start..new_end].into(),
+                });
+                edits.push(Edit {
+                    kind: EditKind::Delete,
+                    offset: old_start,
+                    text: old[old_start..old_end].into(),
+                });
             }
         }
     }
-    diff_text_flush(&mut edits, &mut hunk_offset, &mut hunk_ins, &mut hunk_del);
-    edits
-}
 
-fn diff_text_flush(
-    edits: &mut Vec<Edit>,
-    hunk_offset: &mut Option<usize>,
-    hunk_ins: &mut Vec<u8>,
-    hunk_del: &mut Vec<u8>,
-) {
-    let Some(offset) = hunk_offset.take() else {
-        return;
-    };
-    // `similar` can emit adjacent per-char inserts/deletes for a single
-    // replacement. Keep hunk buffers so those changes coalesce into one insert
-    // and one delete at the same offset, which preserves Edit invariants.
-    if !hunk_ins.is_empty() {
-        edits.push(Edit {
-            kind: EditKind::Insert,
-            offset,
-            text: std::mem::take(hunk_ins).into(),
-        });
-    }
-    if !hunk_del.is_empty() {
-        edits.push(Edit {
-            kind: EditKind::Delete,
-            offset,
-            text: std::mem::take(hunk_del).into(),
-        });
-    }
+    edits
 }
 
 #[cfg(test)]
@@ -622,6 +591,43 @@ mod tests {
         }
         text_new.extend_from_slice(&text[offset..]);
         text_new
+    }
+
+    #[test]
+    fn diff_text_coalesces_multi_word_changes() {
+        let old = "the quick brown fox".as_bytes().as_bstr();
+        let new = "the slow fox".as_bytes().as_bstr();
+        let edits = diff_text(old, new);
+
+        // The whole changed region ("quick brown" -> "slow") is a single
+        // contiguous run of differing tokens, so it coalesces into one
+        // insert/delete pair rather than one edit per word.
+        assert_eq!(edits.len(), 2);
+        assert!(matches!(edits[0].kind, EditKind::Insert));
+        assert_eq!(edits[0].offset, 4);
+        assert_eq!(edits[0].text, "slow");
+        assert!(matches!(edits[1].kind, EditKind::Delete));
+        assert_eq!(edits[1].offset, 4);
+        assert_eq!(edits[1].text, "quick brown");
+        assert_eq!(apply_text(old, &edits), new);
+    }
+
+    #[test]
+    fn diff_text_uses_byte_offsets_for_multibyte_chars() {
+        // "café" is 5 bytes (é is 2 bytes), the space is byte 5, so the
+        // changed word "résumé" starts at byte 6 even though it is token 2.
+        let old = "café résumé".as_bytes().as_bstr();
+        let new = "café output".as_bytes().as_bstr();
+        let edits = diff_text(old, new);
+
+        assert_eq!(edits.len(), 2);
+        assert!(matches!(edits[0].kind, EditKind::Insert));
+        assert_eq!(edits[0].offset, 6);
+        assert_eq!(edits[0].text, "output");
+        assert!(matches!(edits[1].kind, EditKind::Delete));
+        assert_eq!(edits[1].offset, 6);
+        assert_eq!(edits[1].text, "résumé");
+        assert_eq!(apply_text(old, &edits), new);
     }
 
     #[test]
