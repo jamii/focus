@@ -4,10 +4,10 @@ use std::{mem::replace, ops::Range};
 
 use bstr::{BStr, ByteSlice};
 
-use crate::input::{ElementState, Key, NamedKey};
+use crate::input::{ElementState, InputEvent, Key, NamedKey};
 use crate::style::BACKGROUND_COLOR;
 use crate::{
-    app::{App, DocumentId, EditorId, IO, InputEvent},
+    app::{App, DocumentId, EditorId, IO},
     document::{Edit, EditKind, OffsetDiff, SaveKind},
     drawing::{Drawing, Rect},
     style::{HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR},
@@ -106,10 +106,7 @@ impl EditorId {
         match event {
             InputEvent::Key {
                 state, logical_key, ..
-            } if state == ElementState::Pressed
-                && app.modifiers.control
-                && !app.modifiers.alt =>
-            {
+            } if state == ElementState::Pressed && app.modifiers.control && !app.modifiers.alt => {
                 match logical_key {
                     Key::Character("i") => self.cursor_move(app, Direction::Up),
                     Key::Character("k") => self.cursor_move(app, Direction::Down),
@@ -132,10 +129,7 @@ impl EditorId {
             }
             InputEvent::Key {
                 state, logical_key, ..
-            } if state == ElementState::Pressed
-                && !app.modifiers.control
-                && app.modifiers.alt =>
-            {
+            } if state == ElementState::Pressed && !app.modifiers.control && app.modifiers.alt => {
                 match logical_key {
                     Key::Character("j") => self.cursor_goto_line_start(app),
                     Key::Character("l") => self.cursor_goto_line_end(app),
@@ -146,10 +140,7 @@ impl EditorId {
             }
             InputEvent::Key {
                 state, logical_key, ..
-            } if state == ElementState::Pressed
-                && !app.modifiers.control
-                && !app.modifiers.alt =>
-            {
+            } if state == ElementState::Pressed && !app.modifiers.control && !app.modifiers.alt => {
                 match logical_key {
                     Key::Character(char) => {
                         self.cursor_replace(app, char.into());

@@ -4,11 +4,11 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use focus_core::app::{App, DocumentId, InputEvent, WindowId};
+use focus_core::app::{App, DocumentId, WindowId};
 use focus_core::drawing::{DrawCommand, Drawing};
 use focus_core::fuzz::MockIO;
+use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::style::TEXT_COLOR;
-use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
 
 pub fn sync_app_io(app: &mut App, io: &MockIO) {
     focus_core::fuzz::sync_app_io(app, io);
@@ -79,13 +79,29 @@ pub fn modifiers(app: &mut App, io: &mut MockIO, window_id: WindowId, modifiers:
 }
 
 pub fn control_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
-    modifiers(app, io, window_id, ModifiersState::CONTROL);
+    modifiers(
+        app,
+        io,
+        window_id,
+        ModifiersState {
+            control: true,
+            ..Default::default()
+        },
+    );
     self::key(app, io, window_id, key);
     modifiers(app, io, window_id, ModifiersState::default());
 }
 
 pub fn alt_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
-    modifiers(app, io, window_id, ModifiersState::ALT);
+    modifiers(
+        app,
+        io,
+        window_id,
+        ModifiersState {
+            alt: true,
+            ..Default::default()
+        },
+    );
     self::key(app, io, window_id, key);
     modifiers(app, io, window_id, ModifiersState::default());
 }

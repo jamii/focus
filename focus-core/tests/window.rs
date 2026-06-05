@@ -1,5 +1,4 @@
-use focus_core::app::InputEvent;
-use focus_core::input::Key;
+use focus_core::input::{InputEvent, Key};
 
 mod common;
 

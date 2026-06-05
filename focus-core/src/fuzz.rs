@@ -13,10 +13,10 @@ use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 
-use crate::app::{App, IO, InputEvent, WindowId, WindowSize};
+use crate::app::{App, IO, WindowId, WindowSize};
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
-use crate::input::{ElementState, Key, ModifiersState, NamedKey};
+use crate::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
 
 // Mock IO: tracks open windows, fabricates fresh WindowIds, advances
 // `frame_start` by whatever the harness pushes via `advance`.

@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::BString;
-use focus_core::app::{App, IO, InputEvent, WindowId};
 use focus_core::app::WindowSize;
-use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
+use focus_core::app::{App, IO, WindowId};
+use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
 
 mod common;
 
@@ -136,7 +136,10 @@ fn error_control_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: 
     app.input(
         io,
         window_id,
-        InputEvent::ModifiersChanged(ModifiersState::CONTROL),
+        InputEvent::ModifiersChanged(ModifiersState {
+            control: true,
+            ..Default::default()
+        }),
     );
     error_key(app, io, window_id, key);
     io.sync_app_io(app);

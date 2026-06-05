@@ -1,8 +1,8 @@
 use focus_core::app::{App, WindowId};
 use focus_core::drawing::{DrawCommand, Drawing};
 use focus_core::fuzz::MockIO;
-use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
 use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
+use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
 
 mod common;
 
@@ -88,7 +88,15 @@ fn unhandled_keys_and_released_keys_do_not_edit_text() {
         window_id,
         Key::Named(NamedKey::ArrowLeft),
     );
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
+    common::modifiers(
+        &mut app,
+        &mut io,
+        window_id,
+        ModifiersState {
+            control: true,
+            ..Default::default()
+        },
+    );
     common::key(
         &mut app,
         &mut io,
@@ -99,7 +107,7 @@ fn unhandled_keys_and_released_keys_do_not_edit_text() {
     app.input(
         &mut io,
         window_id,
-        focus_core::app::InputEvent::Key {
+        focus_core::input::InputEvent::Key {
             state: ElementState::Released,
             logical_key: Key::Named(NamedKey::Backspace),
         },
@@ -119,12 +127,7 @@ fn backspace_and_delete_noop_at_document_boundaries() {
         window_id,
         Key::Named(NamedKey::Backspace),
     );
-    common::key(
-        &mut app,
-        &mut io,
-        window_id,
-        Key::Named(NamedKey::Delete),
-    );
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Delete));
     assert_eq!(common::text(&app), "");
 
     common::char_input(&mut app, &mut io, window_id, 'a');
@@ -136,12 +139,7 @@ fn backspace_and_delete_noop_at_document_boundaries() {
         Key::Named(NamedKey::Backspace),
     );
     move_right(&mut app, &mut io, window_id, 1);
-    common::key(
-        &mut app,
-        &mut io,
-        window_id,
-        Key::Named(NamedKey::Delete),
-    );
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Delete));
 
     assert_eq!(common::text(&app), "a");
     app.assert_invariants();
@@ -210,12 +208,7 @@ fn delete_removes_character_to_the_right() {
     common::text_input(&mut app, &mut io, window_id, "abcd");
 
     move_left(&mut app, &mut io, window_id, 2);
-    common::key(
-        &mut app,
-        &mut io,
-        window_id,
-        Key::Named(NamedKey::Delete),
-    );
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Delete));
 
     assert_eq!(common::text(&app), "abd");
     app.assert_invariants();
@@ -228,12 +221,7 @@ fn delete_removes_selection() {
 
     move_left(&mut app, &mut io, window_id, 3);
     select_right(&mut app, &mut io, window_id, 2);
-    common::key(
-        &mut app,
-        &mut io,
-        window_id,
-        Key::Named(NamedKey::Delete),
-    );
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Delete));
 
     assert_eq!(common::text(&app), "ad");
     app.assert_invariants();
@@ -252,7 +240,15 @@ fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
     common::tick(&mut app, &mut io);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, end);
 
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
+    common::modifiers(
+        &mut app,
+        &mut io,
+        window_id,
+        ModifiersState {
+            control: true,
+            ..Default::default()
+        },
+    );
     let start = common::point_for_offset(&app, 2, 0);
     let end = common::point_for_offset(&app, 5, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
@@ -284,12 +280,7 @@ fn delete_and_backspace_respect_multibyte_character_boundaries() {
         Key::Named(NamedKey::Backspace),
     );
     move_left(&mut app, &mut io, window_id, 1);
-    common::key(
-        &mut app,
-        &mut io,
-        window_id,
-        Key::Named(NamedKey::Delete),
-    );
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Delete));
 
     assert_eq!(common::text(&app), "h");
     app.assert_invariants();
@@ -365,35 +356,19 @@ fn paste_many_distributes_clipboard_lines_across_cursors() {
     move_left(&mut app, &mut io, window_id, 5);
     let first = common::point_for_offset(&app, 0, 0);
     let second = common::point_for_offset(&app, 3, 0);
-    common::mouse_button(
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
+    common::modifiers(
         &mut app,
         &mut io,
         window_id,
-        ElementState::Pressed,
-        first,
+        ModifiersState {
+            control: true,
+            ..Default::default()
+        },
     );
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Released,
-        first,
-    );
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Pressed,
-        second,
-    );
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Released,
-        second,
-    );
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     io.clipboard = Some("X\nY".into());
@@ -411,35 +386,19 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
 
     let first = common::point_for_offset(&app, 0, 0);
     let second = common::point_for_offset(&app, 3, 0);
-    common::mouse_button(
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
+    common::modifiers(
         &mut app,
         &mut io,
         window_id,
-        ElementState::Pressed,
-        first,
+        ModifiersState {
+            control: true,
+            ..Default::default()
+        },
     );
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Released,
-        first,
-    );
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Pressed,
-        second,
-    );
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Released,
-        second,
-    );
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     io.clipboard = Some("X".into());
@@ -450,35 +409,19 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
     common::draw(&mut app, window_id, 10, 3);
     let first = common::point_for_offset(&app, 0, 0);
     let second = common::point_for_offset(&app, 4, 0);
-    common::mouse_button(
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
+    common::modifiers(
         &mut app,
         &mut io,
         window_id,
-        ElementState::Pressed,
-        first,
+        ModifiersState {
+            control: true,
+            ..Default::default()
+        },
     );
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Released,
-        first,
-    );
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Pressed,
-        second,
-    );
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Released,
-        second,
-    );
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     io.clipboard = Some("1\n2\n3".into());
@@ -646,7 +589,15 @@ fn ctrl_click_adds_another_cursor() {
     let first = common::point_for_offset(&app, 1, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
-    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
+    common::modifiers(
+        &mut app,
+        &mut io,
+        window_id,
+        ModifiersState {
+            control: true,
+            ..Default::default()
+        },
+    );
     let second = common::point_for_offset(&app, 3, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
@@ -980,7 +931,10 @@ fn tiny_viewport_draws_only_window_background() {
     let mut drawing = Drawing::new([cell_w * 2.0, cell_h * 3.0]);
     app.draw(window_id, &mut drawing);
 
-    assert_eq!(common::text_line_lengths(&app, &drawing), Vec::<usize>::new());
+    assert_eq!(
+        common::text_line_lengths(&app, &drawing),
+        Vec::<usize>::new()
+    );
     assert_eq!(common::cursor_lines(&app, &drawing), Vec::<usize>::new());
     assert_eq!(
         solid_quads_with_color(&app, &drawing, BACKGROUND_COLOR).count(),
@@ -999,7 +953,10 @@ fn draw_emits_soft_wrap_gutter_selection_highlight_and_scrollbar() {
     select_right(&mut app, &mut io, window_id, 5);
     let drawing = common::draw(&mut app, window_id, 4, 4);
 
-    assert_eq!(text_glyph_count_with_color(&app, &drawing, HIGHLIGHT_COLOR), 1);
+    assert_eq!(
+        text_glyph_count_with_color(&app, &drawing, HIGHLIGHT_COLOR),
+        1
+    );
     assert!(solid_quads_with_color(&app, &drawing, HIGHLIGHT_COLOR).count() >= 2);
     assert!(solid_quads_with_color(&app, &drawing, BACKGROUND_COLOR).count() >= 2);
     app.assert_invariants();
@@ -1035,7 +992,12 @@ fn cursor_blinks_off_after_idle_time() {
 #[test]
 fn resizing_viewport_preserves_centered_content() {
     let (mut app, mut io, window_id) = common::scratch_app();
-    common::text_input(&mut app, &mut io, window_id, "a\nbb\nccc\ndddd\neeeee\nffffff");
+    common::text_input(
+        &mut app,
+        &mut io,
+        window_id,
+        "a\nbb\nccc\ndddd\neeeee\nffffff",
+    );
 
     common::mouse_wheel(&mut app, &mut io, window_id, -3.0);
     let before = common::draw(&mut app, window_id, 10, 3);

@@ -1,5 +1,6 @@
-use crate::app::{App, EditorId, IO, InputEvent, WindowId};
+use crate::app::{App, EditorId, IO, WindowId};
 use crate::drawing::{Drawing, Rect};
+use crate::input::InputEvent;
 use crate::style;
 
 pub struct Window {

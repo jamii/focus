@@ -9,7 +9,7 @@ use crate::atlas::Atlas;
 use crate::document::Document;
 use crate::drawing::Drawing;
 use crate::editor::Editor;
-use crate::input::{ElementState, Key, ModifiersState};
+use crate::input::{ElementState, InputEvent, Key, ModifiersState};
 use crate::window::Window;
 
 pub struct App {
@@ -46,26 +46,6 @@ pub struct DocumentId(usize);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct EditorId(usize);
-
-#[derive(Clone, Debug)]
-pub enum InputEvent<'a> {
-    CloseRequested,
-    ModifiersChanged(ModifiersState),
-    Key {
-        state: ElementState,
-        logical_key: Key<'a>,
-    },
-    MouseWheel {
-        y_offset: f32,
-    },
-    MouseButton {
-        state: ElementState,
-        position: [f32; 2],
-    },
-    FocusChanged {
-        focused: bool,
-    },
-}
 
 pub const INITIAL_TITLE: &str = "focus";
 pub const INITIAL_SIZE: WindowSize = WindowSize {
@@ -157,29 +137,27 @@ impl App {
             }
             InputEvent::Key {
                 state, logical_key, ..
-            } if *state == ElementState::Pressed && self.modifiers.control => {
-                match *logical_key {
-                    Key::Character("+") => {
-                        self.px_size += 1.0;
-                        self.rebuild_atlas(io);
-                    }
-                    Key::Character("-") => {
-                        self.px_size = (self.px_size - 1.0).max(MIN_PX);
-                        self.rebuild_atlas(io);
-                    }
-                    Key::Character("n") => {
-                        self.insert_window_empty(io);
-                    }
-                    Key::Character("m") => {
-                        let document_id = window_id.get(self).editor_id.get(self).document_id;
-                        let editor_id_new = self.insert_editor(Editor::new(self, document_id));
-                        self.insert_window(io, Window::new(editor_id_new));
-                    }
-                    _ => {
-                        window_id.input(self, io, event);
-                    }
+            } if *state == ElementState::Pressed && self.modifiers.control => match *logical_key {
+                Key::Character("+") => {
+                    self.px_size += 1.0;
+                    self.rebuild_atlas(io);
                 }
-            }
+                Key::Character("-") => {
+                    self.px_size = (self.px_size - 1.0).max(MIN_PX);
+                    self.rebuild_atlas(io);
+                }
+                Key::Character("n") => {
+                    self.insert_window_empty(io);
+                }
+                Key::Character("m") => {
+                    let document_id = window_id.get(self).editor_id.get(self).document_id;
+                    let editor_id_new = self.insert_editor(Editor::new(self, document_id));
+                    self.insert_window(io, Window::new(editor_id_new));
+                }
+                _ => {
+                    window_id.input(self, io, event);
+                }
+            },
             _ => {
                 window_id.input(self, io, event);
             }
