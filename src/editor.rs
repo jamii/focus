@@ -593,10 +593,20 @@ impl EditorId {
     }
 
     fn cursor_replace(self, app: &mut App, insert: &BStr) {
+        self.cursor_replace_each(app, &|_| Some(insert))
+    }
+
+    fn cursor_replace_each<'a, F>(self, app: &mut App, insert_for_ix: &'a F)
+    where
+        F: Fn(usize) -> Option<&'a BStr>,
+    {
         let mut cursors = take(&mut self.get_mut(app).cursors);
         let text = self.get(app).document_id.get(app).text.as_bstr();
         let mut edits = Vec::with_capacity(cursors.len() * 2);
-        for cursor in &mut cursors {
+        for (i, cursor) in cursors.iter_mut().enumerate() {
+            let Some(insert) = insert_for_ix(i) else {
+                continue;
+            };
             if self.get(app).marked {
                 let range = cursor.range();
                 edits.push(Edit {
@@ -724,43 +734,7 @@ impl EditorId {
             .split(|c| *c == b'\n')
             .map(|bs| bs.as_bstr())
             .collect();
-        let (document_id, _marked, mut cursors) = {
-            let editor = self.get(app);
-            (editor.document_id, editor.marked, editor.cursors.clone())
-        };
-        let document = document_id.get(app);
-        let mut edits = Vec::new();
-        for (cursor, line) in cursors.iter_mut().zip(lines) {
-            // TODO this is fishy
-            if self.get(app).marked {
-                let range = cursor.range();
-                // Replace selection with this line.
-                edits.push(Edit {
-                    kind: EditKind::Insert,
-                    offset: range.start,
-                    text: line.into(),
-                });
-                edits.push(Edit {
-                    kind: EditKind::Delete,
-                    offset: range.start,
-                    text: document.text[range.start..range.end].into(),
-                });
-                cursor.head.offset = range.start;
-                cursor.tail.offset = range.start;
-            } else {
-                edits.push(Edit {
-                    kind: EditKind::Insert,
-                    offset: cursor.head.offset,
-                    text: line.into(),
-                });
-            }
-        }
-        Edit::coalesce(&mut edits);
-        self.get_mut(app).cursors = cursors;
-        document_id.apply_edits(app, &edits);
-        let editor = self.get_mut(app);
-        editor.marked = false;
-        self.scroll_main_cursor_into_view(app);
+        self.cursor_replace_each(app, &|i| lines.get(i).map(|s| *s))
     }
 
     fn refresh_wraps(self, app: &mut App) {
