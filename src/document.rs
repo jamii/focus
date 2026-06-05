@@ -49,9 +49,9 @@ pub enum EditKind {
 }
 
 pub struct OffsetDiff {
-    offsets_old: Vec<usize>, // boundaries in old-document space
-    offsets_new: Vec<usize>, // new offset at each segment start (len = offsets_old.len() + 1)
-    deleted: Vec<bool>, // true → clamp to offsets_new[i]; false → shift by offsets_new[i] - old_start
+    offsets_old: Vec<usize>,
+    offsets_new: Vec<usize>,
+    deleted: Vec<bool>,
 }
 
 impl Document {
