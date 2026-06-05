@@ -510,3 +510,109 @@ fn reload_read_error_keeps_old_text_and_retries_later() {
     assert_eq!(common::text(&app), "after");
     app.assert_invariants();
 }
+
+#[test]
+fn explicit_save_clean_file_is_a_noop() {
+    let path = PathBuf::from("/tmp/focus-document-clean-save-noop-test.txt");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "before");
+    common::tick(&mut app, &mut io);
+    let before = io.files.get(&path).unwrap().clone();
+
+    io.frame_start += Duration::from_secs(1);
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+
+    assert_eq!(io.files.get(&path).unwrap(), &before);
+    app.assert_invariants();
+}
+
+#[test]
+fn reload_skips_file_when_mtime_has_not_advanced() {
+    let path = PathBuf::from("/tmp/focus-document-same-mtime-reload-test.txt");
+    let (mut app, mut io, _) = common::file_app(path.clone(), "before");
+    common::tick(&mut app, &mut io);
+
+    io.files.insert(
+        path,
+        (
+            b"after".to_vec(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(1),
+        ),
+    );
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(common::text(&app), "before");
+    app.assert_invariants();
+}
+
+#[test]
+fn clean_external_insert_reloads_text() {
+    let path = PathBuf::from("/tmp/focus-document-insert-reload-test.txt");
+    let (mut app, mut io, _) = common::file_app(path.clone(), "abef");
+    common::tick(&mut app, &mut io);
+
+    io.files.insert(
+        path,
+        (
+            b"abcdef".to_vec(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(2),
+        ),
+    );
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(common::text(&app), "abcdef");
+    app.assert_invariants();
+}
+
+#[test]
+fn clean_external_delete_reloads_text() {
+    let path = PathBuf::from("/tmp/focus-document-delete-reload-test.txt");
+    let (mut app, mut io, _) = common::file_app(path.clone(), "abcdef");
+    common::tick(&mut app, &mut io);
+
+    io.files.insert(
+        path,
+        (
+            b"abef".to_vec(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(2),
+        ),
+    );
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(common::text(&app), "abef");
+    app.assert_invariants();
+}
+
+#[test]
+fn clean_external_multi_hunk_change_reloads_text() {
+    let path = PathBuf::from("/tmp/focus-document-multi-hunk-reload-test.txt");
+    let (mut app, mut io, _) = common::file_app(path.clone(), "abcdefghi");
+    common::tick(&mut app, &mut io);
+
+    io.files.insert(
+        path,
+        (
+            b"aXcdefYhi".to_vec(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(2),
+        ),
+    );
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(common::text(&app), "aXcdefYhi");
+    app.assert_invariants();
+}
+
+#[test]
+fn undo_and_redo_empty_stacks_are_noops() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("Z".into()));
+    common::char_input(&mut app, &mut io, window_id, 'X');
+
+    assert_eq!(common::text(&app), "X");
+    app.assert_invariants();
+}

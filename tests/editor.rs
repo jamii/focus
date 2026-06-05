@@ -1049,3 +1049,77 @@ fn resizing_viewport_preserves_centered_content() {
     assert!(before_lines.iter().any(|line| after_lines.contains(line)));
     app.assert_invariants();
 }
+
+#[test]
+fn ctrl_d_noops_when_selection_has_no_later_match() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abc abc");
+
+    move_left(&mut app, &mut io, window_id, 3);
+    select_right(&mut app, &mut io, window_id, 3);
+    common::control_key(&mut app, &mut io, window_id, Key::Character("d".into()));
+    common::char_input(&mut app, &mut io, window_id, 'X');
+
+    assert_eq!(common::text(&app), "abc X");
+    app.assert_invariants();
+}
+
+#[test]
+fn ctrl_shift_d_noops_with_one_cursor() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abc");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("D".into()));
+    common::char_input(&mut app, &mut io, window_id, 'X');
+
+    assert_eq!(common::text(&app), "abcX");
+    app.assert_invariants();
+}
+
+#[test]
+fn ctrl_space_toggles_selection_off() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abcd");
+
+    move_left(&mut app, &mut io, window_id, 4);
+    select_right(&mut app, &mut io, window_id, 2);
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
+    common::char_input(&mut app, &mut io, window_id, 'X');
+
+    assert_eq!(common::text(&app), "abXcd");
+    app.assert_invariants();
+}
+
+#[test]
+fn copy_joins_multiple_selections_with_newlines() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abc abc");
+
+    move_left(&mut app, &mut io, window_id, 7);
+    select_right(&mut app, &mut io, window_id, 3);
+    common::control_key(&mut app, &mut io, window_id, Key::Character("d".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("c".into()));
+
+    assert_eq!(io.clipboard, Some("abc\nabc".into()));
+    assert_eq!(common::text(&app), "abc abc");
+    app.assert_invariants();
+}
+
+#[test]
+fn keys_with_control_and_alt_do_not_trigger_editor_shortcuts() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "ab");
+
+    common::modifiers(
+        &mut app,
+        &mut io,
+        window_id,
+        ModifiersState::CONTROL | ModifiersState::ALT,
+    );
+    common::key(&mut app, &mut io, window_id, Key::Character("l".into()));
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+    common::char_input(&mut app, &mut io, window_id, 'X');
+
+    assert_eq!(common::text(&app), "abX");
+    app.assert_invariants();
+}
