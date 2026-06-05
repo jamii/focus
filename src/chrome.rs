@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
+use bstr::BString;
 use glutin::config::{Config, ConfigTemplateBuilder};
 use glutin::context::{ContextApi, ContextAttributesBuilder, PossiblyCurrentContext, Version};
 use glutin::display::GetGlDisplay;
@@ -102,12 +103,13 @@ impl IO for IoReal<'_> {
         unsafe { self.backend.renderer.upload_atlas(atlas) };
     }
 
-    fn get_clipboard_text(&mut self) -> Option<String> {
-        self.backend.clipboard.get_text().ok()
+    fn get_clipboard_text(&mut self) -> Option<BString> {
+        self.backend.clipboard.get_text().ok().map(|s| s.into())
     }
 
-    fn set_clipboard_text(&mut self, text: String) {
-        let _ = self.backend.clipboard.set_text(text);
+    fn set_clipboard_text(&mut self, text: BString) {
+        // TODO Do the OS apis really not allow non-utf8 copy/paste?
+        let _ = self.backend.clipboard.set_text(text.to_string());
     }
 
     fn exit(&mut self) {

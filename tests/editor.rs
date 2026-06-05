@@ -48,7 +48,7 @@ fn copy_and_paste_use_mock_clipboard() {
     common::control_key(&mut app, &mut io, window_id, Key::Character("l".into()));
     common::control_key(&mut app, &mut io, window_id, Key::Character("v".into()));
 
-    assert_eq!(io.clipboard, Some("el".to_string()));
+    assert_eq!(io.clipboard, Some("el".into()));
     assert_eq!(common::text(&app), "helello");
     app.assert_invariants();
 }
@@ -65,7 +65,7 @@ fn cut_deletes_selection_and_updates_clipboard() {
     common::control_key(&mut app, &mut io, window_id, Key::Character("j".into()));
     common::control_key(&mut app, &mut io, window_id, Key::Character("x".into()));
 
-    assert_eq!(io.clipboard, Some("el".to_string()));
+    assert_eq!(io.clipboard, Some("el".into()));
     assert_eq!(common::text(&app), "hlo");
     app.assert_invariants();
 }

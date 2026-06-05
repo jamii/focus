@@ -11,11 +11,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use bstr::BString;
 use winit::dpi::LogicalSize;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
-use crate::app::{App, InputEvent, WindowId, IO};
+use crate::app::{App, IO, InputEvent, WindowId};
 use crate::atlas::Atlas;
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
@@ -29,7 +30,7 @@ pub struct MockIO {
     pub exited: bool,
     pub screen_size: [f32; 2],
     pub mouse_pos: [f32; 2],
-    pub clipboard: Option<String>,
+    pub clipboard: Option<BString>,
     pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
 }
 
@@ -70,11 +71,11 @@ impl IO for MockIO {
 
     fn set_window_title(&mut self, _window_id: WindowId, _title: String) {}
 
-    fn get_clipboard_text(&mut self) -> Option<String> {
+    fn get_clipboard_text(&mut self) -> Option<BString> {
         self.clipboard.clone()
     }
 
-    fn set_clipboard_text(&mut self, text: String) {
+    fn set_clipboard_text(&mut self, text: BString) {
         self.clipboard = Some(text);
     }
 

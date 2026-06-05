@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use bstr::BString;
 use fontdue::{Font, FontSettings};
 use winit::dpi::LogicalSize;
 use winit::event::ElementState;
@@ -67,8 +68,8 @@ pub trait IO {
     fn set_window_title(&mut self, window_id: WindowId, title: String);
     fn request_redraw(&mut self, window_id: WindowId);
     fn reload_atlas(&mut self, atlas: &Atlas);
-    fn get_clipboard_text(&mut self) -> Option<String>;
-    fn set_clipboard_text(&mut self, text: String);
+    fn get_clipboard_text(&mut self) -> Option<BString>;
+    fn set_clipboard_text(&mut self, text: BString);
     fn exit(&mut self);
 
     fn file_mtime(&mut self, path: &Path) -> std::io::Result<SystemTime>;
