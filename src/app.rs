@@ -27,8 +27,10 @@ pub struct App {
     next_document_id: DocumentId,
     pub documents: HashMap<DocumentId, Document>,
 
+    pub(crate) modifiers: ModifiersState,
+
+    // These can be set by Chrome.
     pub frame_start: Duration,
-    pub modifiers: ModifiersState,
     pub mouse_position: [f32; 2],
 }
 
@@ -61,13 +63,19 @@ pub enum InputEvent {
     },
 }
 
+pub(crate) const INITIAL_TITLE: &str = "focus";
+pub(crate) const INITIAL_SIZE: LogicalSize<u32> = LogicalSize {
+    width: 800,
+    height: 600,
+};
+
 // External effects. Mocked for testing/fuzzing.
 pub trait IO {
     fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId;
     fn close_window(&mut self, window_id: WindowId);
     fn set_window_title(&mut self, window_id: WindowId, title: String);
     fn request_redraw(&mut self, window_id: WindowId);
-    fn reload_atlas(&mut self, atlas: &Atlas);
+    fn reload_atlas(&mut self, pixels: &[u8], size: [u32; 2]);
     fn get_clipboard_text(&mut self) -> Option<BString>;
     fn set_clipboard_text(&mut self, text: BString);
     fn exit(&mut self);
@@ -88,11 +96,6 @@ pub trait IO {
 const FONT: &[u8] = include_bytes!("../deps/FiraCode-Regular.ttf");
 const INITIAL_PX: f32 = 32.0;
 const MIN_PX: f32 = 4.0;
-pub const INITIAL_TITLE: &str = "focus";
-pub const INITIAL_SIZE: LogicalSize<u32> = LogicalSize {
-    width: 800,
-    height: 600,
-};
 
 impl App {
     pub fn assert_invariants(&self) {
@@ -112,7 +115,7 @@ impl App {
     pub fn new(initial_window_id: WindowId, io: &mut dyn IO, initial_path: Option<PathBuf>) -> App {
         let font = Font::from_bytes(FONT, FontSettings::default()).unwrap();
         let atlas = Atlas::build(&font, INITIAL_PX);
-        io.reload_atlas(&atlas);
+        io.reload_atlas(&atlas.pixels, atlas.size);
         let mut app = App {
             font,
             px_size: INITIAL_PX,
@@ -193,7 +196,7 @@ impl App {
 
     fn rebuild_atlas(&mut self, io: &mut dyn IO) {
         self.atlas = Atlas::build(&self.font, self.px_size);
-        io.reload_atlas(&self.atlas);
+        io.reload_atlas(&self.atlas.pixels, self.atlas.size);
     }
 
     fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
@@ -207,23 +210,23 @@ impl App {
         window_id
     }
 
-    pub fn insert_editor_empty(&mut self) -> EditorId {
+    pub(crate) fn insert_editor_empty(&mut self) -> EditorId {
         let document_id = self.insert_document_empty();
         self.insert_editor(Editor::new(self, document_id))
     }
 
-    pub fn insert_editor(&mut self, editor: Editor) -> EditorId {
+    pub(crate) fn insert_editor(&mut self, editor: Editor) -> EditorId {
         let editor_id = self.next_editor_id;
         self.next_editor_id.0 += 1;
         self.editors.insert(editor_id, editor);
         editor_id
     }
 
-    pub fn insert_document_empty(&mut self) -> DocumentId {
+    pub(crate) fn insert_document_empty(&mut self) -> DocumentId {
         self.insert_document(Document::scratch())
     }
 
-    pub fn insert_document(&mut self, document: Document) -> DocumentId {
+    pub(crate) fn insert_document(&mut self, document: Document) -> DocumentId {
         let document_id = self.next_document_id;
         self.next_document_id.0 += 1;
         self.documents.insert(document_id, document);
@@ -232,21 +235,17 @@ impl App {
 }
 
 impl WindowId {
-    pub fn get<'a>(self, app: &'a App) -> &'a Window {
+    pub(crate) fn get<'a>(self, app: &'a App) -> &'a Window {
         app.windows.get(&self).unwrap()
-    }
-
-    pub fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Window {
-        app.windows.get_mut(&self).unwrap()
     }
 }
 
 impl EditorId {
-    pub fn get<'a>(self, app: &'a App) -> &'a Editor {
+    pub(crate) fn get<'a>(self, app: &'a App) -> &'a Editor {
         app.editors.get(&self).unwrap()
     }
 
-    pub fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Editor {
+    pub(crate) fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Editor {
         app.editors.get_mut(&self).unwrap()
     }
 }
@@ -256,7 +255,7 @@ impl DocumentId {
         app.documents.get(&self).unwrap()
     }
 
-    pub fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Document {
+    pub(crate) fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Document {
         app.documents.get_mut(&self).unwrap()
     }
 }

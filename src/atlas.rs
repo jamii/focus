@@ -156,7 +156,7 @@ impl Atlas {
     }
 
     /// Top-left screen position of the cell at the given grid coords.
-    pub fn screen_from_grid(&self, grid: [usize; 2]) -> [f32; 2] {
+    pub(crate) fn screen_from_grid(&self, grid: [usize; 2]) -> [f32; 2] {
         [
             (grid[0] as f32) * (self.cell_size[0] as f32),
             (grid[1] as f32) * (self.cell_size[1] as f32),
@@ -166,7 +166,7 @@ impl Atlas {
     /// Grid cell containing the given screen position. Floor-divides, so
     /// a screen position on a cell boundary lands in the cell to its
     /// right / below.
-    pub fn grid_from_screen(&self, screen: [f32; 2]) -> [i32; 2] {
+    pub(crate) fn grid_from_screen(&self, screen: [f32; 2]) -> [i32; 2] {
         [
             (screen[0] / self.cell_size[0] as f32).floor() as i32,
             (screen[1] / self.cell_size[1] as f32).floor() as i32,

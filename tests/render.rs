@@ -182,7 +182,7 @@ fn renders_hello_world() {
     );
 
     let mut renderer = unsafe { Renderer::new() };
-    unsafe { renderer.upload_atlas(&atlas) };
+    unsafe { renderer.upload_atlas(&atlas.pixels, atlas.size) };
 
     let mut drawing = Drawing::new([W as f32, H as f32]);
     let clip = Rect {

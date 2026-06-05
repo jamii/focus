@@ -1,20 +1,18 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
-
 pub const BACKGROUND_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.2, 1.0);
-pub const FADE_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.2, 0.4);
-pub const STATUS_BACKGROUND_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.1, 1.0);
+// pub const FADE_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.2, 0.4);
+// pub const STATUS_BACKGROUND_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.1, 1.0);
 pub const TEXT_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.9, 1.0);
 pub const HIGHLIGHT_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.9, 0.3);
-pub const KEYWORD_COLOR: [u8; 4] = TEXT_COLOR;
-pub const COMMENT_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.6, 1.0);
+// pub const KEYWORD_COLOR: [u8; 4] = TEXT_COLOR;
+// pub const COMMENT_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.6, 1.0);
 pub const MULTI_CURSOR_COLOR: [u8; 4] = hsla(150.0, 1.0, 0.5, 1.0);
-pub const PAREN_MATCH_COLOR: [u8; 4] = hsla(150.0, 1.0, 0.5, 0.3);
+// pub const PAREN_MATCH_COLOR: [u8; 4] = hsla(150.0, 1.0, 0.5, 0.3);
 
-pub const EMPHASIS_RED: [u8; 4] = hsla(0.0, 1.0, 0.5, 1.0);
-pub const EMPHASIS_ORANGE: [u8; 4] = hsla(30.0, 1.0, 0.5, 1.0);
-pub const EMPHASIS_GREEN: [u8; 4] = hsla(120.0, 1.0, 0.5, 1.0);
+// pub const EMPHASIS_RED: [u8; 4] = hsla(0.0, 1.0, 0.5, 1.0);
+// pub const EMPHASIS_ORANGE: [u8; 4] = hsla(30.0, 1.0, 0.5, 1.0);
+// pub const EMPHASIS_GREEN: [u8; 4] = hsla(120.0, 1.0, 0.5, 1.0);
 
-pub const fn hsla(h: f64, s: f64, l: f64, a: f64) -> [u8; 4] {
+const fn hsla(h: f64, s: f64, l: f64, a: f64) -> [u8; 4] {
     assert!(h >= 0.0 && h < 360.0);
     assert!(s >= 0.0 && s <= 1.0);
     assert!(l >= 0.0 && l <= 1.0);
@@ -41,16 +39,16 @@ pub const fn hsla(h: f64, s: f64, l: f64, a: f64) -> [u8; 4] {
     ]
 }
 
-pub fn ident_color(ident: &[u8]) -> [u8; 4] {
-    let mut hasher = DefaultHasher::new();
-    ident.hash(&mut hasher);
-    let hash = hasher.finish().reverse_bits();
-    hsla((hash % 360) as f64, 1.0, 0.8, 1.0)
-}
+// fn ident_color(ident: &[u8]) -> [u8; 4] {
+//     let mut hasher = DefaultHasher::new();
+//     ident.hash(&mut hasher);
+//     let hash = hasher.finish().reverse_bits();
+//     hsla((hash % 360) as f64, 1.0, 0.8, 1.0)
+// }
 
-pub fn paren_color(level: usize) -> [u8; 4] {
-    let mut hasher = DefaultHasher::new();
-    level.hash(&mut hasher);
-    let hash = hasher.finish().reverse_bits();
-    hsla((hash % 360) as f64, 1.0, 0.8, 1.0)
-}
+// fn paren_color(level: usize) -> [u8; 4] {
+//     let mut hasher = DefaultHasher::new();
+//     level.hash(&mut hasher);
+//     let hash = hasher.finish().reverse_bits();
+//     hsla((hash % 360) as f64, 1.0, 0.8, 1.0)
+// }

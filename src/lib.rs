@@ -5,7 +5,7 @@ pub mod document;
 pub mod drawing;
 pub mod editor;
 pub mod fuzz;
-pub mod fuzz_gen;
+mod fuzz_gen;
 pub mod render;
 pub mod style;
 pub mod window;

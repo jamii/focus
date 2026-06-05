@@ -6,8 +6,6 @@
 
 use std::io::Read;
 
-use focus::fuzz::fuzz_one;
-
 fn hex_decode(s: &str) -> Vec<u8> {
     let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
     assert!(s.len() % 2 == 0, "hex string must have even length");
@@ -30,6 +28,6 @@ fn main() {
         hex_decode(&s)
     };
     eprintln!("replaying {} bytes", bytes.len());
-    fuzz_one(&bytes);
+    focus::fuzz::fuzz_one(&bytes);
     eprintln!("no crash");
 }

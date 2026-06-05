@@ -10,7 +10,6 @@ use std::ffi::CString;
 use std::mem::{self, offset_of};
 use std::ptr;
 
-use crate::atlas::Atlas;
 use crate::drawing::{DrawCommand, Rect};
 
 // Two shaders, the minimum required: vertex (one invocation per vertex;
@@ -244,7 +243,7 @@ impl Renderer {
     }
 
     /// Replace the atlas pixels on the GPU. Texture handle is unchanged.
-    pub unsafe fn upload_atlas(&mut self, atlas: &Atlas) {
+    pub unsafe fn upload_atlas(&mut self, pixels: &[u8], size: [u32; 2]) {
         unsafe {
             gl::BindTexture(gl::TEXTURE_2D, self.tex);
             // R8 rows are 1 byte per pixel — set unpack alignment to 1
@@ -254,16 +253,16 @@ impl Renderer {
                 gl::TEXTURE_2D,
                 0,
                 gl::R8 as i32,
-                atlas.size[0] as i32,
-                atlas.size[1] as i32,
+                size[0] as i32,
+                size[1] as i32,
                 0,
                 gl::RED,
                 gl::UNSIGNED_BYTE,
-                atlas.pixels.as_ptr() as *const _,
+                pixels.as_ptr() as *const _,
             );
         }
-        self.atlas_w = atlas.size[0];
-        self.atlas_h = atlas.size[1];
+        self.atlas_w = size[0];
+        self.atlas_h = size[1];
     }
 
     /// Render a command list into whatever framebuffer is currently bound.

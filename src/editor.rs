@@ -17,7 +17,7 @@ use crate::{
 };
 
 pub struct Editor {
-    pub document_id: DocumentId,
+    pub(crate) document_id: DocumentId,
     cursors: Vec<Cursor>,
     marked: bool,
     show_cursor: bool,
@@ -54,7 +54,7 @@ enum Direction {
 impl Editor {
     pub(crate) fn new(app: &App, document_id: DocumentId) -> Self {
         let wrap_chars = 80;
-        let wraps = wraps_from_text(document_id.get(app).text.as_bstr(), wrap_chars);
+        let wraps = wraps_from_text(document_id.text(app).as_bstr(), wrap_chars);
         Editor {
             document_id: document_id,
             cursors: vec![Cursor {
@@ -74,36 +74,36 @@ impl Editor {
 }
 
 impl EditorId {
-    pub fn assert_invariants(self, app: &App) {
+    pub(crate) fn assert_invariants(self, app: &App) {
         let editor = self.get(app);
-        let document = editor.document_id.get(app);
+        let text = editor.document_id.text(app);
 
         // Cursors
         assert!(editor.cursors.len() > 0);
         for cursor in &editor.cursors {
             for point in [&cursor.head, &cursor.tail] {
-                assert!(point.offset <= document.text.len());
+                assert!(point.offset <= text.len());
             }
         }
 
         // Wraps
         assert!(!editor.wraps.is_empty());
         assert_eq!(editor.wraps[0][0], 0);
-        assert_eq!(editor.wraps.last().unwrap()[1], document.text.len());
+        assert_eq!(editor.wraps.last().unwrap()[1], text.len());
         for wrap in &editor.wraps {
             assert!(wrap[0] <= wrap[1]);
-            assert!(document.text[wrap[0]..wrap[1]].chars().count() <= editor.wrap_chars)
+            assert!(text[wrap[0]..wrap[1]].chars().count() <= editor.wrap_chars)
         }
         for pair in editor.wraps.windows(2) {
             let gap = pair[1][0] - pair[0][1];
             assert!(gap <= 1);
             if gap == 1 {
-                assert!(document.text[pair[0][1]..].chars().next().unwrap() == '\n')
+                assert!(text[pair[0][1]..].chars().next().unwrap() == '\n')
             }
         }
     }
 
-    pub fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent) {
+    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent) {
         let mut flush_doing = true;
 
         match event {
@@ -198,7 +198,7 @@ impl EditorId {
         }
     }
 
-    pub fn tick(self, app: &mut App, io: &mut dyn IO) {
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         let document_id = self.get(app).document_id;
         document_id.tick(app, io);
 
@@ -237,7 +237,7 @@ impl EditorId {
         editor.show_cursor = (((frame_start - editor.last_input).as_millis() / 500) % 2) == 0;
     }
 
-    pub fn draw(self, app: &mut App, drawing: &mut Drawing) {
+    pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
         let viewport_size = drawing.size();
         let grid_w = app.atlas.grid_from_screen(viewport_size)[0] as usize;
         if grid_w <= 2 {
@@ -261,7 +261,7 @@ impl EditorId {
             let editor = self.get_mut(app);
             if editor.last_viewport_size != viewport_size {
                 editor.last_viewport_size = viewport_size;
-                let center_before = center_before.min(editor.document_id.get(app).text.len());
+                let center_before = center_before.min(editor.document_id.text(app).len());
                 self.scroll_offset_into_center(app, center_before);
             }
         }
@@ -292,7 +292,7 @@ impl EditorId {
                 pos: [0.0, 0.0],
                 size: [gutter_w, viewport_size[1]],
             });
-            let text = &editor.document_id.get(app).text;
+            let text = &editor.document_id.text(app);
             for line_idx in line_first..line_after {
                 let [start, _end] = editor.wraps[line_idx];
                 if start > 0 && text[start - 1] != b'\n' {
@@ -374,7 +374,7 @@ impl EditorId {
 
             // Draw text.
             {
-                let text = &editor.document_id.get(app).text;
+                let text = &editor.document_id.text(app);
                 for line_idx in line_first..line_after {
                     let [start, end] = editor.wraps[line_idx];
                     let mut screen = app.atlas.screen_from_grid([0, line_idx]);
@@ -412,7 +412,7 @@ impl EditorId {
         }
     }
 
-    pub fn handle_edits(self, app: &mut App, diff: &OffsetDiff) {
+    pub(crate) fn handle_edits(self, app: &mut App, diff: &OffsetDiff) {
         let center_before = self.center_offset(app);
         let editor = self.get_mut(app);
 
@@ -498,7 +498,7 @@ impl EditorId {
         }
         let line = grid[1] as usize;
         if line >= editor.wraps.len() {
-            return editor.document_id.get(app).text.len();
+            return editor.document_id.text(app).len();
         }
         let screen_col = grid[0].max(0) as usize;
         if screen_col == 0 {
@@ -510,7 +510,7 @@ impl EditorId {
         let col = if sub_x >= cell_w / 2.0 { col + 1 } else { col };
 
         let [wrap_start, wrap_end] = editor.wraps[line];
-        let text = &editor.document_id.get(app).text;
+        let text = &editor.document_id.text(app);
         let text_span = &text[wrap_start..wrap_end];
         let mut char_idx = 0;
         for (char_start, _char_end, _) in text_span.char_indices() {
@@ -556,7 +556,7 @@ impl EditorId {
 
     fn cursor_add_next_match(self, app: &mut App) {
         let editor = self.get(app);
-        let text = editor.document_id.get(app).text.as_bstr();
+        let text = editor.document_id.text(app).as_bstr();
         let cursor_main = editor.cursors.last().unwrap();
         let range = cursor_main.range();
         if !editor.marked || range.start == range.end {
@@ -595,7 +595,7 @@ impl EditorId {
         F: Fn(usize) -> Option<&'a BStr>,
     {
         let mut cursors = take(&mut self.get_mut(app).cursors);
-        let text = self.get(app).document_id.get(app).text.as_bstr();
+        let text = self.get(app).document_id.text(app).as_bstr();
         let mut edits = Vec::with_capacity(cursors.len() * 2);
         for (i, cursor) in cursors.iter_mut().enumerate() {
             let Some(insert) = insert_for_ix(i) else {
@@ -633,7 +633,7 @@ impl EditorId {
     fn cursor_delete_left(self, app: &mut App) {
         let editor = self.get(app);
         let document_id = editor.document_id;
-        let document = document_id.get(app);
+        let text = document_id.text(app);
         let mut edits = Vec::with_capacity(editor.cursors.len());
         for cursor in &editor.cursors {
             if editor.marked {
@@ -641,13 +641,13 @@ impl EditorId {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: range.start,
-                    text: document.text[range.start..range.end].into(),
+                    text: text[range.start..range.end].into(),
                 });
             } else if let Some(start) = document_id.char_prev(app, cursor.head.offset) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: start,
-                    text: document.text[start..cursor.head.offset].into(),
+                    text: text[start..cursor.head.offset].into(),
                 });
             }
         }
@@ -661,7 +661,7 @@ impl EditorId {
     fn cursor_delete_right(self, app: &mut App) {
         let editor = self.get(app);
         let document_id = editor.document_id;
-        let document = document_id.get(app);
+        let text = document_id.text(app);
         let mut edits = Vec::with_capacity(editor.cursors.len());
         for cursor in &editor.cursors {
             if editor.marked {
@@ -669,13 +669,13 @@ impl EditorId {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: range.start,
-                    text: document.text[range.start..range.end].into(),
+                    text: text[range.start..range.end].into(),
                 });
             } else if let Some(end) = document_id.char_next(app, cursor.head.offset) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: cursor.head.offset,
-                    text: document.text[cursor.head.offset..end].into(),
+                    text: text[cursor.head.offset..end].into(),
                 });
             }
         }
@@ -691,13 +691,10 @@ impl EditorId {
         if !editor.marked {
             return;
         }
-        let document = editor.document_id.get(app);
+        let text = editor.document_id.text(app);
         let text = bstr::join(
             "\n",
-            editor
-                .cursors
-                .iter()
-                .map(|cursor| &document.text[cursor.range()]),
+            editor.cursors.iter().map(|cursor| &text[cursor.range()]),
         );
         io.set_clipboard_text(text.into());
     }
@@ -733,10 +730,8 @@ impl EditorId {
 
     fn refresh_wraps(self, app: &mut App) {
         let editor = self.get(app);
-        self.get_mut(app).wraps = wraps_from_text(
-            editor.document_id.get(app).text.as_bstr(),
-            editor.wrap_chars,
-        );
+        self.get_mut(app).wraps =
+            wraps_from_text(editor.document_id.text(app).as_bstr(), editor.wrap_chars);
     }
 
     fn cursor_goto_line_start(self, app: &mut App) {
@@ -776,7 +771,7 @@ impl EditorId {
     }
 
     fn cursor_goto_doc_end(self, app: &mut App) {
-        let end = self.get(app).document_id.get(app).text.len();
+        let end = self.get(app).document_id.text(app).len();
         let editor = self.get_mut(app);
         for cursor in &mut editor.cursors {
             cursor.head = CursorPoint::new(end);
@@ -823,7 +818,7 @@ impl EditorId {
     // If the position is not ambiguous then both returned positions are equal.
     fn grid_from_offset(self, app: &App, offset: usize) -> [[usize; 2]; 2] {
         let editor = self.get(app);
-        let text = editor.document_id.get(app).text.as_bstr();
+        let text = editor.document_id.text(app).as_bstr();
         let line = editor
             .wraps
             .partition_point(|&[start, _end]| start <= offset)
@@ -847,7 +842,7 @@ impl EditorId {
 
     fn line_up(self, app: &App, point: CursorPoint) -> Option<CursorPoint> {
         let editor = self.get(app);
-        let text = editor.document_id.get(app).text.as_bstr();
+        let text = editor.document_id.text(app).as_bstr();
         let line = self.grid_from_offset(app, point.offset)[0][1];
         if line == 0 {
             return None;
@@ -872,7 +867,7 @@ impl EditorId {
 
     fn line_down(self, app: &App, point: CursorPoint) -> Option<CursorPoint> {
         let editor = self.get(app);
-        let text = editor.document_id.get(app).text.as_bstr();
+        let text = editor.document_id.text(app).as_bstr();
         let line = self.grid_from_offset(app, point.offset)[0][1];
         if line == editor.wraps.len() - 1 {
             return None;

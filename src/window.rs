@@ -3,7 +3,7 @@ use crate::drawing::{Drawing, Rect};
 use crate::style;
 
 pub struct Window {
-    pub editor_id: EditorId,
+    pub(crate) editor_id: EditorId,
 }
 
 impl Window {
@@ -15,19 +15,19 @@ impl Window {
 }
 
 impl WindowId {
-    pub fn assert_invariants(self, _app: &App) {}
+    pub(crate) fn assert_invariants(self, _app: &App) {}
 
-    pub fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent) {
+    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent) {
         let editor_id = self.get(app).editor_id;
         editor_id.input(app, io, event);
     }
 
-    pub fn tick(self, app: &mut App, io: &mut dyn IO) {
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         let editor_id = self.get(app).editor_id;
         editor_id.tick(app, io);
     }
 
-    pub fn draw(self, app: &mut App, drawing: &mut Drawing) {
+    pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
         let editor_id = self.get(app).editor_id;
         drawing.draw_rect(
             &app.atlas,

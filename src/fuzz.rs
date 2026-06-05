@@ -17,7 +17,6 @@ use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use crate::app::{App, IO, InputEvent, WindowId};
-use crate::atlas::Atlas;
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
 
@@ -25,13 +24,14 @@ use crate::fuzz_gen::Frng;
 // `frame_start` by whatever the harness pushes via `advance`.
 pub struct MockIO {
     next_winit_id: u64,
-    pub frame_start: Duration,
     pub open_windows: Vec<WindowId>,
     pub exited: bool,
     pub screen_size: [f32; 2],
+    pub frame_start: Duration,
     pub mouse_pos: [f32; 2],
     pub clipboard: Option<BString>,
     pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
+    pub system_time: SystemTime,
 }
 
 impl MockIO {
@@ -41,13 +41,14 @@ impl MockIO {
             // backends and we don't want to collide with a real id we
             // pretend to mint.
             next_winit_id: 1,
-            frame_start: Duration::ZERO,
             open_windows: Vec::new(),
             exited: false,
             screen_size: [0.0, 0.0],
+            frame_start: Duration::ZERO,
             mouse_pos: [0.0, 0.0],
             clipboard: None,
             files: HashMap::new(),
+            system_time: SystemTime::UNIX_EPOCH,
         }
     }
 
@@ -56,6 +57,11 @@ impl MockIO {
         self.next_winit_id += 1;
         id
     }
+}
+
+pub fn sync_app_io(app: &mut App, io: &MockIO) {
+    app.frame_start = io.frame_start;
+    app.mouse_position = io.mouse_pos;
 }
 
 impl IO for MockIO {
@@ -81,7 +87,7 @@ impl IO for MockIO {
 
     fn request_redraw(&mut self, _window_id: WindowId) {}
 
-    fn reload_atlas(&mut self, _atlas: &Atlas) {}
+    fn reload_atlas(&mut self, _pixels: &[u8], _size: [u32; 2]) {}
 
     fn exit(&mut self) {
         self.exited = true;
@@ -110,7 +116,7 @@ impl IO for MockIO {
         if !create && !self.files.contains_key(path) {
             return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
         }
-        let mtime = SystemTime::UNIX_EPOCH + self.frame_start + Duration::from_nanos(1);
+        let mtime = self.system_time + Duration::from_nanos(1);
         self.files
             .insert(path.to_path_buf(), (contents.to_vec(), mtime));
         Ok(mtime)
@@ -147,7 +153,6 @@ fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> 
 // chosen action. Returns Some(()) if more entropy is available; None
 // when the buffer is exhausted (Frng signals end-of-stream as None).
 fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
-    sync_app_io(app, io);
     if io.open_windows.is_empty() {
         return None;
     }
@@ -243,8 +248,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         4 => {
             // Advance time by a fuzzer-chosen delta in [0, ~1s].
             let delta_us = frng.u32_bounded(0, 1_000_000)?;
-            io.frame_start += Duration::from_micros(delta_us as u64);
-            sync_app_io(app, io);
+            app.frame_start += Duration::from_micros(delta_us as u64);
             app.tick(io);
         }
         5 => {
@@ -269,17 +273,15 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         7 => {
             // Cursor movement is not an InputEvent in the real app; winit
             // updates the last cursor position, then App samples it on tick.
-            io.mouse_pos = random_mouse_pos(frng, io.screen_size)?;
-            sync_app_io(app, io);
+            app.mouse_position = random_mouse_pos(frng, io.screen_size)?;
         }
         8 => {
+            // TODO exponenti delta from mouse_position instead
             let position = if frng.boolean()? {
-                io.mouse_pos
-            } else {
                 random_mouse_pos(frng, io.screen_size)?
+            } else {
+                app.mouse_position
             };
-            io.mouse_pos = position;
-            sync_app_io(app, io);
             let state = if frng.boolean()? {
                 ElementState::Pressed
             } else {
@@ -326,11 +328,6 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         _ => unreachable!(),
     }
     Some(())
-}
-
-pub fn sync_app_io(app: &mut App, io: &MockIO) {
-    app.frame_start = io.frame_start;
-    app.mouse_position = io.mouse_pos;
 }
 
 pub fn fuzz_one(bytes: &[u8]) {

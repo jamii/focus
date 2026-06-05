@@ -8,21 +8,23 @@ use crate::app::{App, DocumentId, IO};
 
 pub struct Document {
     pub text: BString,
-    pub newlines: Vec<usize>,
-    pub last_modified_time: Duration,
-    pub last_center_offset: usize,
-    pub source: Source,
-    pub undos: Vec<Vec<Vec<Edit>>>,
-    pub doing: Vec<Vec<Edit>>,
-    pub redos: Vec<Vec<Vec<Edit>>>,
+    newlines: Vec<usize>,
+    last_modified_time: Duration,
+    source: Source,
+    undos: Vec<Vec<Vec<Edit>>>,
+    doing: Vec<Vec<Edit>>,
+    redos: Vec<Vec<Vec<Edit>>>,
+
+    // Can be set by editor.
+    pub(crate) last_center_offset: usize,
 }
 
-pub enum Source {
+enum Source {
     Scratch,
     File(SourceFile),
 }
 
-pub struct SourceFile {
+struct SourceFile {
     absolute_path: PathBuf,
     last_load_mtime: SystemTime,
     last_save_time: Duration,
@@ -30,32 +32,32 @@ pub struct SourceFile {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SaveKind {
+pub(crate) enum SaveKind {
     Explicit,
     Auto,
 }
 
 #[derive(Clone, Debug)]
-pub struct Edit {
-    pub kind: EditKind,
-    pub offset: usize,
-    pub text: BString,
+pub(crate) struct Edit {
+    pub(crate) kind: EditKind,
+    pub(crate) offset: usize,
+    pub(crate) text: BString,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum EditKind {
+pub(crate) enum EditKind {
     Insert,
     Delete,
 }
 
-pub struct OffsetDiff {
+pub(crate) struct OffsetDiff {
     offsets_old: Vec<usize>,
     offsets_new: Vec<usize>,
     deleted: Vec<bool>,
 }
 
 impl Document {
-    pub fn assert_invariants(&self) {
+    fn assert_invariants(&self) {
         assert_eq!(
             self.text.chars().filter(|c| *c == '\n').count(),
             self.newlines.len(),
@@ -106,11 +108,15 @@ impl Document {
 }
 
 impl DocumentId {
-    pub fn assert_invariants(self, app: &App) {
+    pub(crate) fn text(self, app: &App) -> &BStr {
+        return self.get(app).text.as_bstr();
+    }
+
+    pub(crate) fn assert_invariants(self, app: &App) {
         self.get(app).assert_invariants();
     }
 
-    pub fn tick(self, app: &mut App, io: &mut dyn IO) {
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         // Maybe flush doing.
         let document = self.get(app);
         if app.frame_start - document.last_modified_time > Duration::from_secs(1) {
@@ -132,7 +138,7 @@ impl DocumentId {
         self.apply_edits(app, &edits);
     }
 
-    pub fn apply_edits(self, app: &mut App, edits: &[Edit]) {
+    pub(crate) fn apply_edits(self, app: &mut App, edits: &[Edit]) {
         if edits.is_empty() {
             return;
         }
@@ -197,7 +203,7 @@ impl DocumentId {
     /// Save to disk. Explicit saves create the file if missing; autosaves
     /// treat NotFound as an external deletion.
     /// No-op for Scratch sources or when not modified since last save.
-    pub fn save(self, app: &mut App, io: &mut dyn IO, kind: SaveKind) {
+    pub(crate) fn save(self, app: &mut App, io: &mut dyn IO, kind: SaveKind) {
         let frame_start = app.frame_start;
         let document = self.get_mut(app);
         let absolute_path = match &document.source {
@@ -293,7 +299,7 @@ impl DocumentId {
         Some(char_start)
     }
 
-    pub fn flush_doing(self, app: &mut App) {
+    pub(crate) fn flush_doing(self, app: &mut App) {
         let document = self.get_mut(app);
         if document.doing.is_empty() {
             return;
@@ -302,7 +308,7 @@ impl DocumentId {
         document.undos.push(doing);
     }
 
-    pub fn undo(self, app: &mut App) -> Option<usize> {
+    pub(crate) fn undo(self, app: &mut App) -> Option<usize> {
         self.flush_doing(app);
         let undo = self.get_mut(app).undos.pop()?;
         let offset = undo.first().unwrap().last().unwrap().offset;
@@ -316,7 +322,7 @@ impl DocumentId {
         Some(offset)
     }
 
-    pub fn redo(self, app: &mut App) -> Option<usize> {
+    pub(crate) fn redo(self, app: &mut App) -> Option<usize> {
         self.flush_doing(app);
         let redo = self.get_mut(app).redos.pop()?;
         let offset = redo.first().unwrap().last().unwrap().offset;
@@ -393,7 +399,7 @@ impl Edit {
     /// Sort by offset and truncate overlapping deletions. Inserts whose
     /// offset falls inside a previously deleted region are moved forward
     /// past that region.
-    pub fn coalesce(edits: &mut Vec<Edit>) {
+    pub(crate) fn coalesce(edits: &mut Vec<Edit>) {
         edits.sort_by_key(|e| e.offset);
 
         let mut consumed_up_to: usize = 0;
@@ -424,7 +430,7 @@ impl Edit {
         }
     }
 
-    pub fn undo(edits: &mut Vec<Edit>) {
+    pub(crate) fn undo(edits: &mut Vec<Edit>) {
         let mut shift: isize = 0;
         for edit in edits {
             let len = edit.text.len() as isize;
@@ -498,7 +504,7 @@ impl OffsetDiff {
         diff
     }
 
-    pub fn apply(&self, offset: usize) -> usize {
+    pub(crate) fn apply(&self, offset: usize) -> usize {
         if self.offsets_new.is_empty() {
             return offset;
         }

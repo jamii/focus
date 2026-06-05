@@ -3,7 +3,6 @@ use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 use focus::app::{App, IO, InputEvent, WindowId};
-use focus::atlas::Atlas;
 use winit::dpi::LogicalSize;
 use winit::event::ElementState;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
@@ -50,8 +49,8 @@ impl IO for ErrorIO {
         self.inner.request_redraw(window_id);
     }
 
-    fn reload_atlas(&mut self, atlas: &Atlas) {
-        self.inner.reload_atlas(atlas);
+    fn reload_atlas(&mut self, pixels: &[u8], size: [u32; 2]) {
+        self.inner.reload_atlas(pixels, size);
     }
 
     fn get_clipboard_text(&mut self) -> Option<BString> {

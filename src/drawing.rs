@@ -37,7 +37,7 @@ impl Rect {
 
 // Axis-aligned intersection. Returns a rect with non-positive size when the
 // inputs don't overlap; callers check size[0] > 0 && size[1] > 0 before drawing.
-pub fn intersect_rects(a: Rect, b: Rect) -> Rect {
+fn intersect_rects(a: Rect, b: Rect) -> Rect {
     let x0 = a.pos[0].max(b.pos[0]);
     let y0 = a.pos[1].max(b.pos[1]);
     let x1 = (a.pos[0] + a.size[0]).min(b.pos[0] + b.size[0]);
@@ -106,7 +106,7 @@ pub enum DrawCommand {
 // release the scissor.
 pub struct Drawing {
     pub commands: Vec<DrawCommand>,
-    pub clip_stack: Vec<Rect>,
+    clip_stack: Vec<Rect>,
 }
 
 impl Drawing {
@@ -124,7 +124,7 @@ impl Drawing {
         *self.clip_stack.last().unwrap()
     }
 
-    pub fn size(&self) -> [f32; 2] {
+    pub(crate) fn size(&self) -> [f32; 2] {
         self.current_clip().size
     }
 

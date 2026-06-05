@@ -22,7 +22,6 @@ use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
 
 use crate::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, InputEvent, WindowId};
-use crate::atlas::Atlas;
 use crate::drawing::Drawing;
 use crate::render::Renderer;
 
@@ -99,8 +98,8 @@ impl IO for IoReal<'_> {
         }
     }
 
-    fn reload_atlas(&mut self, atlas: &Atlas) {
-        unsafe { self.backend.renderer.upload_atlas(atlas) };
+    fn reload_atlas(&mut self, pixels: &[u8], size: [u32; 2]) {
+        unsafe { self.backend.renderer.upload_atlas(pixels, size) };
     }
 
     fn get_clipboard_text(&mut self) -> Option<BString> {
