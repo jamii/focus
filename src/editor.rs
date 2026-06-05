@@ -346,7 +346,8 @@ impl EditorId {
             // Draw mark.
             if editor.marked {
                 for cursor in &editor.cursors {
-                    if let Some(range) = cursor.marked_range(editor.marked) {
+                    if editor.marked {
+                        let range = cursor.range();
                         for line_idx in line_first..line_after {
                             let [wrap_start, wrap_end] = editor.wraps[line_idx];
                             if range.end <= wrap_start || range.start > wrap_end {
@@ -553,43 +554,6 @@ impl EditorId {
         self.scroll_main_cursor_into_view(app);
     }
 
-    fn cursor_replace(self, app: &mut App, insert: &BStr) {
-        let (document_id, marked, mut cursors) = {
-            let editor = self.get(app);
-            (editor.document_id, editor.marked, editor.cursors.clone())
-        };
-        let document = document_id.get(app);
-        let mut edits = Vec::with_capacity(cursors.len() * 2);
-        for cursor in &mut cursors {
-            if let Some(range) = cursor.marked_range(marked) {
-                edits.push(Edit {
-                    kind: EditKind::Insert,
-                    offset: range.start,
-                    text: insert.into(),
-                });
-                edits.push(Edit {
-                    kind: EditKind::Delete,
-                    offset: range.start,
-                    text: document.text[range.start..range.end].into(),
-                });
-                cursor.head.offset = range.start;
-                cursor.tail.offset = range.start;
-            } else {
-                edits.push(Edit {
-                    kind: EditKind::Insert,
-                    offset: cursor.head.offset,
-                    text: insert.into(),
-                });
-            }
-        }
-        Edit::coalesce(&mut edits);
-        self.get_mut(app).cursors = cursors;
-        document_id.apply_edits(app, &edits);
-        let editor = self.get_mut(app);
-        editor.marked = false;
-        self.scroll_main_cursor_into_view(app);
-    }
-
     fn cursor_add_next_match(self, app: &mut App) {
         let (document_id, marked, cursor_main) = {
             let editor = self.get(app);
@@ -600,7 +564,8 @@ impl EditorId {
             )
         };
         let document = document_id.get(app);
-        let Some(range) = cursor_main.marked_range(marked) else {
+        let range = cursor_main.range();
+        if !marked || range.start == range.end {
             return;
         };
         let search_start = range.end;
@@ -627,13 +592,48 @@ impl EditorId {
         }
     }
 
+    fn cursor_replace(self, app: &mut App, insert: &BStr) {
+        let mut cursors = take(&mut self.get_mut(app).cursors);
+        let text = self.get(app).document_id.get(app).text.as_bstr();
+        let mut edits = Vec::with_capacity(cursors.len() * 2);
+        for cursor in &mut cursors {
+            if self.get(app).marked {
+                let range = cursor.range();
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: range.start,
+                    text: insert.into(),
+                });
+                edits.push(Edit {
+                    kind: EditKind::Delete,
+                    offset: range.start,
+                    text: text[range.start..range.end].into(),
+                });
+                cursor.head.offset = range.start;
+                cursor.tail.offset = range.start;
+            } else {
+                edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: cursor.head.offset,
+                    text: insert.into(),
+                });
+            }
+        }
+        Edit::coalesce(&mut edits);
+        self.get_mut(app).cursors = cursors;
+        self.get(app).document_id.apply_edits(app, &edits);
+        self.get_mut(app).marked = false;
+        self.scroll_main_cursor_into_view(app);
+    }
+
     fn cursor_delete_left(self, app: &mut App) {
         let editor = self.get(app);
         let document_id = editor.document_id;
         let document = document_id.get(app);
         let mut edits = Vec::with_capacity(editor.cursors.len());
         for cursor in &editor.cursors {
-            if let Some(range) = cursor.marked_range(editor.marked) {
+            if editor.marked {
+                let range = cursor.range();
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: range.start,
@@ -660,7 +660,8 @@ impl EditorId {
         let document = document_id.get(app);
         let mut edits = Vec::with_capacity(editor.cursors.len());
         for cursor in &editor.cursors {
-            if let Some(range) = cursor.marked_range(editor.marked) {
+            if editor.marked {
+                let range = cursor.range();
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: range.start,
@@ -692,8 +693,7 @@ impl EditorId {
             editor
                 .cursors
                 .iter()
-                .filter_map(|cursor| cursor.marked_range(editor.marked))
-                .map(|range| &document.text[range]),
+                .map(|cursor| &document.text[cursor.range()]),
         );
         io.set_clipboard_text(text.into());
     }
@@ -724,7 +724,7 @@ impl EditorId {
             .split(|c| *c == b'\n')
             .map(|bs| bs.as_bstr())
             .collect();
-        let (document_id, marked, mut cursors) = {
+        let (document_id, _marked, mut cursors) = {
             let editor = self.get(app);
             (editor.document_id, editor.marked, editor.cursors.clone())
         };
@@ -732,7 +732,8 @@ impl EditorId {
         let mut edits = Vec::new();
         for (cursor, line) in cursors.iter_mut().zip(lines) {
             // TODO this is fishy
-            if let Some(range) = cursor.marked_range(marked) {
+            if self.get(app).marked {
+                let range = cursor.range();
                 // Replace selection with this line.
                 edits.push(Edit {
                     kind: EditKind::Insert,
@@ -942,11 +943,11 @@ impl EditorId {
 }
 
 impl Cursor {
-    fn marked_range(&self, marked: bool) -> Option<Range<usize>> {
-        if marked && self.head.offset != self.tail.offset {
-            Some(self.head.offset.min(self.tail.offset)..self.head.offset.max(self.tail.offset))
+    fn range(&self) -> Range<usize> {
+        if self.head.offset < self.tail.offset {
+            self.head.offset..self.tail.offset
         } else {
-            None
+            self.tail.offset..self.head.offset
         }
     }
 }
