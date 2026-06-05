@@ -1,10 +1,160 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use focus::app::InputEvent;
-use winit::keyboard::{Key, NamedKey};
+use bstr::BString;
+use focus::app::{App, IO, InputEvent, WindowId};
+use focus::atlas::Atlas;
+use winit::dpi::LogicalSize;
+use winit::event::ElementState;
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 mod common;
+
+struct ErrorIO {
+    inner: focus::fuzz::MockIO,
+    file_mtime_error: Option<std::io::ErrorKind>,
+    file_read_error: Option<std::io::ErrorKind>,
+    file_write_error: Option<std::io::ErrorKind>,
+}
+
+impl ErrorIO {
+    fn new() -> Self {
+        Self {
+            inner: focus::fuzz::MockIO::new(),
+            file_mtime_error: None,
+            file_read_error: None,
+            file_write_error: None,
+        }
+    }
+
+    fn sync_app_io(&self, app: &mut App) {
+        app.frame_start = self.inner.frame_start;
+        app.mouse_position = self.inner.mouse_pos;
+    }
+}
+
+impl IO for ErrorIO {
+    fn open_window(&mut self, title: String, size: LogicalSize<u32>) -> WindowId {
+        self.inner.open_window(title, size)
+    }
+
+    fn close_window(&mut self, window_id: WindowId) {
+        self.inner.close_window(window_id);
+    }
+
+    fn set_window_title(&mut self, window_id: WindowId, title: String) {
+        self.inner.set_window_title(window_id, title);
+    }
+
+    fn request_redraw(&mut self, window_id: WindowId) {
+        self.inner.request_redraw(window_id);
+    }
+
+    fn reload_atlas(&mut self, atlas: &Atlas) {
+        self.inner.reload_atlas(atlas);
+    }
+
+    fn get_clipboard_text(&mut self) -> Option<BString> {
+        self.inner.get_clipboard_text()
+    }
+
+    fn set_clipboard_text(&mut self, text: BString) {
+        self.inner.set_clipboard_text(text);
+    }
+
+    fn exit(&mut self) {
+        self.inner.exit();
+    }
+
+    fn file_mtime(&mut self, path: &Path) -> std::io::Result<SystemTime> {
+        if let Some(kind) = self.file_mtime_error {
+            return Err(std::io::Error::from(kind));
+        }
+        self.inner.file_mtime(path)
+    }
+
+    fn file_read(&mut self, path: &Path) -> std::io::Result<Vec<u8>> {
+        if let Some(kind) = self.file_read_error {
+            return Err(std::io::Error::from(kind));
+        }
+        self.inner.file_read(path)
+    }
+
+    fn file_write(
+        &mut self,
+        path: &Path,
+        contents: &[u8],
+        create: bool,
+    ) -> std::io::Result<SystemTime> {
+        if let Some(kind) = self.file_write_error {
+            return Err(std::io::Error::from(kind));
+        }
+        self.inner.file_write(path, contents, create)
+    }
+}
+
+fn error_file_app(path: PathBuf, text: &str) -> (App, ErrorIO, WindowId) {
+    let mut io = ErrorIO::new();
+    io.inner.files.insert(
+        path.clone(),
+        (
+            text.as_bytes().to_vec(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(1),
+        ),
+    );
+    let window_id = io.inner.fresh_window_id();
+    io.inner.open_windows.push(window_id);
+    let app = App::new(window_id, &mut io, Some(path));
+    (app, io, window_id)
+}
+
+fn error_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: Key) {
+    io.sync_app_io(app);
+    app.input(
+        io,
+        window_id,
+        InputEvent::Key {
+            state: ElementState::Pressed,
+            logical_key: key,
+        },
+    );
+}
+
+fn error_text_input(app: &mut App, io: &mut ErrorIO, window_id: WindowId, text: &str) {
+    for ch in text.chars() {
+        match ch {
+            '\n' => error_key(app, io, window_id, Key::Named(NamedKey::Enter)),
+            ' ' => error_key(app, io, window_id, Key::Named(NamedKey::Space)),
+            ch => error_key(app, io, window_id, Key::Character(ch.to_string().into())),
+        }
+    }
+}
+
+fn error_control_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: Key) {
+    io.sync_app_io(app);
+    app.input(
+        io,
+        window_id,
+        InputEvent::ModifiersChanged(ModifiersState::CONTROL),
+    );
+    error_key(app, io, window_id, key);
+    io.sync_app_io(app);
+    app.input(
+        io,
+        window_id,
+        InputEvent::ModifiersChanged(ModifiersState::empty()),
+    );
+}
+
+fn error_focus_changed(app: &mut App, io: &mut ErrorIO, window_id: WindowId, focused: bool) {
+    io.sync_app_io(app);
+    app.input(io, window_id, InputEvent::FocusChanged { focused });
+}
+
+fn error_tick(app: &mut App, io: &mut ErrorIO) {
+    io.sync_app_io(app);
+    app.tick(io);
+}
 
 #[test]
 fn text_input_builds_scratch_document() {
@@ -213,5 +363,150 @@ fn ignored_focus_gain_does_not_autosave() {
     app.input(&mut io, window_id, InputEvent::FocusChanged { focused: true });
 
     assert_eq!(io.files.get(&path).unwrap().0, b"before");
+    app.assert_invariants();
+}
+
+#[test]
+fn document_grid_line_and_char_helpers_handle_newlines_and_multibyte_text() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "hé\n猫x");
+    let document_id = common::document_id(&app);
+
+    assert_eq!(document_id.grid_from_offset(&app, 0), [0, 0]);
+    assert_eq!(document_id.grid_from_offset(&app, 1), [1, 0]);
+    assert_eq!(document_id.grid_from_offset(&app, 3), [2, 0]);
+    assert_eq!(document_id.grid_from_offset(&app, 4), [0, 1]);
+    assert_eq!(document_id.grid_from_offset(&app, 7), [1, 1]);
+
+    assert_eq!(document_id.line_range_from_offset(&app, 1), 0..3);
+    assert_eq!(document_id.line_range_from_offset(&app, 4), 4..8);
+
+    assert_eq!(document_id.char_next(&app, 0), Some(1));
+    assert_eq!(document_id.char_next(&app, 1), Some(3));
+    assert_eq!(document_id.char_next(&app, 3), Some(4));
+    assert_eq!(document_id.char_next(&app, 4), Some(7));
+    assert_eq!(document_id.char_next(&app, 8), None);
+
+    assert_eq!(document_id.char_prev(&app, 8), Some(7));
+    assert_eq!(document_id.char_prev(&app, 7), Some(4));
+    assert_eq!(document_id.char_prev(&app, 4), Some(3));
+    assert_eq!(document_id.char_prev(&app, 3), Some(1));
+    assert_eq!(document_id.char_prev(&app, 0), None);
+    app.assert_invariants();
+}
+
+#[test]
+fn undo_redo_batching_and_redo_clearing_follow_input_flushes() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+
+    common::text_input(&mut app, &mut io, window_id, "ab");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z".into()));
+    assert_eq!(common::text(&app), "");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("Z".into()));
+    assert_eq!(common::text(&app), "ab");
+
+    common::char_input(&mut app, &mut io, window_id, 'c');
+    common::control_key(&mut app, &mut io, window_id, Key::Character("Z".into()));
+
+    assert_eq!(common::text(&app), "abc");
+    app.assert_invariants();
+}
+
+#[test]
+fn tick_flushes_idle_edit_batch_for_undo() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+
+    common::text_input(&mut app, &mut io, window_id, "a");
+    io.frame_start += Duration::from_millis(1500);
+    common::tick(&mut app, &mut io);
+    common::text_input(&mut app, &mut io, window_id, "b");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z".into()));
+
+    assert_eq!(common::text(&app), "a");
+    app.assert_invariants();
+}
+
+#[test]
+fn explicit_save_error_leaves_file_dirty_until_next_successful_save() {
+    let path = PathBuf::from("/tmp/focus-document-explicit-save-error-test.txt");
+    let (mut app, mut io, window_id) = error_file_app(path.clone(), "before");
+    error_tick(&mut app, &mut io);
+
+    io.inner.frame_start += Duration::from_secs(1);
+    error_text_input(&mut app, &mut io, window_id, " after");
+    io.file_write_error = Some(std::io::ErrorKind::PermissionDenied);
+    error_control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    assert_eq!(io.inner.files.get(&path).unwrap().0, b"before");
+
+    io.file_write_error = None;
+    io.inner.frame_start += Duration::from_secs(1);
+    error_control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    assert_eq!(io.inner.files.get(&path).unwrap().0, b"before after");
+    app.assert_invariants();
+}
+
+#[test]
+fn autosave_non_notfound_error_leaves_file_dirty_until_explicit_save() {
+    let path = PathBuf::from("/tmp/focus-document-autosave-error-test.txt");
+    let (mut app, mut io, window_id) = error_file_app(path.clone(), "before");
+    error_tick(&mut app, &mut io);
+
+    io.inner.frame_start += Duration::from_secs(1);
+    error_text_input(&mut app, &mut io, window_id, " after");
+    io.file_write_error = Some(std::io::ErrorKind::PermissionDenied);
+    error_focus_changed(&mut app, &mut io, window_id, false);
+    assert_eq!(io.inner.files.get(&path).unwrap().0, b"before");
+
+    io.file_write_error = None;
+    io.inner.frame_start += Duration::from_secs(1);
+    error_control_key(&mut app, &mut io, window_id, Key::Character("s".into()));
+    assert_eq!(io.inner.files.get(&path).unwrap().0, b"before after");
+    app.assert_invariants();
+}
+
+#[test]
+fn reload_mtime_error_keeps_clean_document_unchanged() {
+    let path = PathBuf::from("/tmp/focus-document-mtime-error-test.txt");
+    let (mut app, mut io, _) = error_file_app(path.clone(), "before");
+    error_tick(&mut app, &mut io);
+
+    io.inner.files.insert(
+        path,
+        (
+            b"after".to_vec(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(2),
+        ),
+    );
+    io.file_mtime_error = Some(std::io::ErrorKind::PermissionDenied);
+    io.inner.frame_start += Duration::from_secs(1);
+    error_tick(&mut app, &mut io);
+
+    assert_eq!(common::text(&app), "before");
+    app.assert_invariants();
+}
+
+#[test]
+fn reload_read_error_keeps_old_text_and_retries_later() {
+    let path = PathBuf::from("/tmp/focus-document-read-error-test.txt");
+    let (mut app, mut io, _) = error_file_app(path.clone(), "before");
+    error_tick(&mut app, &mut io);
+
+    io.inner.files.insert(
+        path,
+        (
+            b"after".to_vec(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(2),
+        ),
+    );
+    io.file_read_error = Some(std::io::ErrorKind::PermissionDenied);
+    io.inner.frame_start += Duration::from_secs(1);
+    error_tick(&mut app, &mut io);
+    assert_eq!(common::text(&app), "before");
+
+    io.file_read_error = None;
+    io.inner.frame_start += Duration::from_secs(1);
+    error_tick(&mut app, &mut io);
+    assert_eq!(common::text(&app), "after");
     app.assert_invariants();
 }

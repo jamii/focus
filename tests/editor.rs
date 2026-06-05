@@ -1,5 +1,7 @@
 use focus::app::{App, WindowId};
+use focus::drawing::{DrawCommand, Drawing};
 use focus::fuzz::MockIO;
+use focus::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
 use winit::event::ElementState;
 use winit::keyboard::ModifiersState;
 use winit::keyboard::{Key, NamedKey};
@@ -29,6 +31,42 @@ fn move_down(app: &mut App, io: &mut MockIO, window_id: WindowId, count: usize) 
     }
 }
 
+fn solid_quads_with_color<'a>(
+    app: &'a App,
+    drawing: &'a Drawing,
+    color: [u8; 4],
+) -> impl Iterator<Item = &'a focus::drawing::Quad> {
+    drawing.commands.iter().filter_map(move |command| {
+        let DrawCommand::Quad(quad) = command else {
+            return None;
+        };
+        (quad.src_pos == app.atlas.white_pos && quad.color == color).then_some(quad)
+    })
+}
+
+fn text_glyph_count_with_color(app: &App, drawing: &Drawing, color: [u8; 4]) -> usize {
+    drawing
+        .commands
+        .iter()
+        .filter(|command| {
+            let DrawCommand::Quad(quad) = command else {
+                return false;
+            };
+            quad.src_size == app.atlas.cell_size
+                && quad.src_pos != app.atlas.white_pos
+                && quad.color == color
+        })
+        .count()
+}
+
+fn clip_count(drawing: &Drawing) -> usize {
+    drawing
+        .commands
+        .iter()
+        .filter(|command| matches!(command, DrawCommand::SetClip(_)))
+        .count()
+}
+
 #[test]
 fn typing_and_cursor_movement_insert_at_the_cursor() {
     let (mut app, mut io, window_id) = common::scratch_app();
@@ -38,6 +76,96 @@ fn typing_and_cursor_movement_insert_at_the_cursor() {
     common::char_input(&mut app, &mut io, window_id, 'l');
 
     assert_eq!(common::text(&app), "hello");
+    app.assert_invariants();
+}
+
+#[test]
+fn unhandled_keys_and_released_keys_do_not_edit_text() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "ab");
+
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::ArrowLeft),
+    );
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::ArrowRight),
+    );
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+    app.input(
+        &mut io,
+        window_id,
+        focus::app::InputEvent::Key {
+            state: ElementState::Released,
+            logical_key: Key::Named(NamedKey::Backspace),
+        },
+    );
+
+    assert_eq!(common::text(&app), "ab");
+    app.assert_invariants();
+}
+
+#[test]
+fn backspace_and_delete_noop_at_document_boundaries() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::Backspace),
+    );
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::Delete),
+    );
+    assert_eq!(common::text(&app), "");
+
+    common::char_input(&mut app, &mut io, window_id, 'a');
+    move_left(&mut app, &mut io, window_id, 1);
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::Backspace),
+    );
+    move_right(&mut app, &mut io, window_id, 1);
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::Delete),
+    );
+
+    assert_eq!(common::text(&app), "a");
+    app.assert_invariants();
+}
+
+#[test]
+fn clipboard_commands_noop_without_selection_or_clipboard_text() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abc");
+
+    io.clipboard = Some("old".into());
+    common::control_key(&mut app, &mut io, window_id, Key::Character("c".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("x".into()));
+
+    assert_eq!(common::text(&app), "abc");
+    assert_eq!(io.clipboard, Some("old".into()));
+
+    io.clipboard = None;
+    common::control_key(&mut app, &mut io, window_id, Key::Character("v".into()));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("V".into()));
+
+    assert_eq!(common::text(&app), "abc");
     app.assert_invariants();
 }
 
@@ -110,6 +238,39 @@ fn delete_removes_selection() {
     );
 
     assert_eq!(common::text(&app), "ad");
+    app.assert_invariants();
+}
+
+#[test]
+fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abcdef");
+    common::draw(&mut app, window_id, 10, 3);
+
+    let start = common::point_for_offset(&app, 1, 0);
+    let end = common::point_for_offset(&app, 4, 0);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
+    io.mouse_pos = end;
+    common::tick(&mut app, &mut io);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, end);
+
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
+    let start = common::point_for_offset(&app, 2, 0);
+    let end = common::point_for_offset(&app, 5, 0);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
+    io.mouse_pos = end;
+    common::tick(&mut app, &mut io);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, end);
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::Backspace),
+    );
+
+    assert_eq!(common::text(&app), "af");
     app.assert_invariants();
 }
 
@@ -245,6 +406,91 @@ fn paste_many_distributes_clipboard_lines_across_cursors() {
 }
 
 #[test]
+fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "ab cd");
+    common::draw(&mut app, window_id, 10, 3);
+
+    let first = common::point_for_offset(&app, 0, 0);
+    let second = common::point_for_offset(&app, 3, 0);
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Pressed,
+        first,
+    );
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Released,
+        first,
+    );
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Pressed,
+        second,
+    );
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Released,
+        second,
+    );
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+
+    io.clipboard = Some("X".into());
+    common::control_key(&mut app, &mut io, window_id, Key::Character("V".into()));
+    assert_eq!(common::text(&app), "Xab cd");
+
+    move_left(&mut app, &mut io, window_id, 6);
+    common::draw(&mut app, window_id, 10, 3);
+    let first = common::point_for_offset(&app, 0, 0);
+    let second = common::point_for_offset(&app, 4, 0);
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Pressed,
+        first,
+    );
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Released,
+        first,
+    );
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::CONTROL);
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Pressed,
+        second,
+    );
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Released,
+        second,
+    );
+    common::modifiers(&mut app, &mut io, window_id, ModifiersState::empty());
+
+    io.clipboard = Some("1\n2\n3".into());
+    common::control_key(&mut app, &mut io, window_id, Key::Character("V".into()));
+
+    assert_eq!(common::text(&app), "1Xab 2cd");
+    app.assert_invariants();
+}
+
+#[test]
 fn vertical_movement_preserves_wanted_column() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcd\nef\nwxyz");
@@ -305,6 +551,91 @@ fn click_places_cursor_at_text_offset() {
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "abXcd");
+    app.assert_invariants();
+}
+
+#[test]
+fn click_hit_testing_handles_screen_edges_and_half_cells() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abcd");
+    common::draw(&mut app, window_id, 10, 3);
+
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Pressed,
+        [0.0, -10.0],
+    );
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Released,
+        [0.0, -10.0],
+    );
+    common::char_input(&mut app, &mut io, window_id, 'A');
+    assert_eq!(common::text(&app), "Aabcd");
+
+    common::draw(&mut app, window_id, 10, 3);
+    let left_gutter = [0.0, app.atlas.cell_size[1] as f32 / 2.0];
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Pressed,
+        left_gutter,
+    );
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Released,
+        left_gutter,
+    );
+    common::char_input(&mut app, &mut io, window_id, 'B');
+    assert_eq!(common::text(&app), "BAabcd");
+
+    common::draw(&mut app, window_id, 10, 3);
+    let cell_w = app.atlas.cell_size[0] as f32;
+    let cell_h = app.atlas.cell_size[1] as f32;
+    let right_half_of_second_char = [cell_w * 3.75, cell_h / 2.0];
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Pressed,
+        right_half_of_second_char,
+    );
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Released,
+        right_half_of_second_char,
+    );
+    common::char_input(&mut app, &mut io, window_id, 'C');
+    assert_eq!(common::text(&app), "BAaCbcd");
+
+    common::draw(&mut app, window_id, 10, 3);
+    let below_document = [cell_w, cell_h * 10.0];
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Pressed,
+        below_document,
+    );
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Released,
+        below_document,
+    );
+    common::char_input(&mut app, &mut io, window_id, 'D');
+
+    assert_eq!(common::text(&app), "BAaCbcdD");
     app.assert_invariants();
 }
 
@@ -371,6 +702,33 @@ fn dragging_below_viewport_scrolls_visible_wraps() {
     let start = common::point_for_offset(&app, 0, 0);
     common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
     io.mouse_pos = common::point_for_offset(&app, 0, 5);
+    common::tick(&mut app, &mut io);
+    let drawing = common::draw(&mut app, window_id, 10, 3);
+    let after = common::text_line_lengths(&app, &drawing);
+    let release = io.mouse_pos;
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ElementState::Released,
+        release,
+    );
+
+    assert_ne!(after, before);
+    app.assert_invariants();
+}
+
+#[test]
+fn dragging_above_viewport_scrolls_visible_wraps() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "a\nbb\nccc\ndddd\neeeee");
+
+    common::mouse_wheel(&mut app, &mut io, window_id, -10.0);
+    let drawing = common::draw(&mut app, window_id, 10, 3);
+    let before = common::text_line_lengths(&app, &drawing);
+    let start = common::point_for_offset(&app, 0, 2);
+    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
+    io.mouse_pos = [0.0, -20.0];
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 10, 3);
     let after = common::text_line_lengths(&app, &drawing);
@@ -611,5 +969,83 @@ fn soft_wrap_before_multi_byte_char_keeps_it_intact() {
     let drawing = common::draw(&mut app, window_id, 3, 5);
 
     assert_eq!(common::text_line_lengths(&app, &drawing), vec![2, 2, 3]);
+    app.assert_invariants();
+}
+
+#[test]
+fn tiny_viewport_draws_only_window_background() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abc");
+
+    let cell_w = app.atlas.cell_size[0] as f32;
+    let cell_h = app.atlas.cell_size[1] as f32;
+    let mut drawing = Drawing::new([cell_w * 2.0, cell_h * 3.0]);
+    app.draw(window_id, &mut drawing);
+
+    assert_eq!(common::text_line_lengths(&app, &drawing), Vec::<usize>::new());
+    assert_eq!(common::cursor_lines(&app, &drawing), Vec::<usize>::new());
+    assert_eq!(
+        solid_quads_with_color(&app, &drawing, BACKGROUND_COLOR).count(),
+        1
+    );
+    app.assert_invariants();
+}
+
+#[test]
+fn draw_emits_soft_wrap_gutter_selection_highlight_and_scrollbar() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "ab cdef");
+    common::draw(&mut app, window_id, 4, 4);
+
+    move_left(&mut app, &mut io, window_id, 6);
+    select_right(&mut app, &mut io, window_id, 5);
+    let drawing = common::draw(&mut app, window_id, 4, 4);
+
+    assert_eq!(text_glyph_count_with_color(&app, &drawing, HIGHLIGHT_COLOR), 1);
+    assert!(solid_quads_with_color(&app, &drawing, HIGHLIGHT_COLOR).count() >= 2);
+    assert!(solid_quads_with_color(&app, &drawing, BACKGROUND_COLOR).count() >= 2);
+    app.assert_invariants();
+}
+
+#[test]
+fn partially_clipped_text_uses_scissor_commands() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "a\nbb\nccc\ndddd\neeeee");
+
+    common::draw(&mut app, window_id, 10, 3);
+    common::mouse_wheel(&mut app, &mut io, window_id, -0.1);
+    let drawing = common::draw(&mut app, window_id, 10, 3);
+
+    assert!(clip_count(&drawing) > 0);
+    app.assert_invariants();
+}
+
+#[test]
+fn cursor_blinks_off_after_idle_time() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    let drawing = common::draw(&mut app, window_id, 10, 3);
+    assert_eq!(common::cursor_lines(&app, &drawing), vec![0]);
+
+    io.frame_start += std::time::Duration::from_millis(600);
+    common::tick(&mut app, &mut io);
+    let drawing = common::draw(&mut app, window_id, 10, 3);
+
+    assert_eq!(common::cursor_lines(&app, &drawing), Vec::<usize>::new());
+    app.assert_invariants();
+}
+
+#[test]
+fn resizing_viewport_preserves_centered_content() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "a\nbb\nccc\ndddd\neeeee\nffffff");
+
+    common::mouse_wheel(&mut app, &mut io, window_id, -3.0);
+    let before = common::draw(&mut app, window_id, 10, 3);
+    let before_lines = common::text_line_lengths(&app, &before);
+
+    let after = common::draw(&mut app, window_id, 10, 6);
+    let after_lines = common::text_line_lengths(&app, &after);
+
+    assert!(before_lines.iter().any(|line| after_lines.contains(line)));
     app.assert_invariants();
 }
