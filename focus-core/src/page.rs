@@ -1,4 +1,4 @@
-use bstr::{BStr, BString};
+use bstr::BStr;
 use std::os::unix::ffi::OsStrExt;
 
 use crate::{

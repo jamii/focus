@@ -185,6 +185,16 @@ pub fn text_line_lengths(cell_size: [u32; 2], drawing: &Drawing) -> Vec<usize> {
 
 pub fn cursor_lines(cell_size: [u32; 2], drawing: &Drawing) -> Vec<usize> {
     let cell_h = cell_size[1] as f32;
+    let bottom_row = drawing
+        .commands
+        .iter()
+        .filter_map(|command| {
+            let DrawCommand::Character(c) = command else {
+                return None;
+            };
+            Some(((c.dst.pos[1] + c.dst.size[1] - 1.0) / cell_h).floor() as usize)
+        })
+        .max();
     drawing
         .commands
         .iter()
@@ -193,7 +203,8 @@ pub fn cursor_lines(cell_size: [u32; 2], drawing: &Drawing) -> Vec<usize> {
                 return None;
             };
             // Cursors are Full Block fills in the text color.
-            if c.color == TEXT_COLOR && c.ch == FULL_BLOCK {
+            let row = (c.dst.pos[1] / cell_h).round() as usize;
+            if c.color == TEXT_COLOR && c.ch == FULL_BLOCK && Some(row) != bottom_row {
                 Some((c.dst.pos[1] / cell_h).round() as usize)
             } else {
                 None
