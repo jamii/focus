@@ -3,14 +3,14 @@ pub enum InputEvent<'a> {
     CloseRequested,
     ModifiersChanged(ModifiersState),
     Key {
-        state: ElementState,
+        state: ButtonState,
         logical_key: Key<'a>,
     },
     MouseWheel {
         y_offset: f32,
     },
     MouseButton {
-        state: ElementState,
+        state: ButtonState,
         position: [f32; 2],
     },
     FocusChanged {
@@ -19,7 +19,7 @@ pub enum InputEvent<'a> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ElementState {
+pub enum ButtonState {
     Pressed,
     Released,
 }

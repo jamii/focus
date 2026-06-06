@@ -1,7 +1,7 @@
 use focus_core::app::App;
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
-use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
+use focus_core::input::{ButtonState, Key, ModifiersState, NamedKey};
 use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
 use focus_core::window::WindowId;
 
@@ -107,7 +107,7 @@ fn unhandled_keys_and_released_keys_do_not_edit_text() {
         &mut io,
         window_id,
         focus_core::input::InputEvent::Key {
-            state: ElementState::Released,
+            state: ButtonState::Released,
             logical_key: Key::Named(NamedKey::Backspace),
         },
     );
@@ -234,10 +234,10 @@ fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
 
     let start = common::point_for_offset(app.cell_size(), 1, 0);
     let end = common::point_for_offset(app.cell_size(), 4, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
     io.mouse_pos = end;
     common::tick(&mut app, &mut io);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, end);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, end);
 
     common::modifiers(
         &mut app,
@@ -250,10 +250,10 @@ fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
     );
     let start = common::point_for_offset(app.cell_size(), 2, 0);
     let end = common::point_for_offset(app.cell_size(), 5, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
     io.mouse_pos = end;
     common::tick(&mut app, &mut io);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, end);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, end);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     common::key(
@@ -355,8 +355,8 @@ fn paste_many_distributes_clipboard_lines_across_cursors() {
     move_left(&mut app, &mut io, window_id, 5);
     let first = common::point_for_offset(app.cell_size(), 0, 0);
     let second = common::point_for_offset(app.cell_size(), 3, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, first);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, first);
     common::modifiers(
         &mut app,
         &mut io,
@@ -366,8 +366,8 @@ fn paste_many_distributes_clipboard_lines_across_cursors() {
             ..Default::default()
         },
     );
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, second);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, second);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     io.clipboard = Some("X\nY".into());
@@ -385,8 +385,8 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
 
     let first = common::point_for_offset(app.cell_size(), 0, 0);
     let second = common::point_for_offset(app.cell_size(), 3, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, first);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, first);
     common::modifiers(
         &mut app,
         &mut io,
@@ -396,8 +396,8 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
             ..Default::default()
         },
     );
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, second);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, second);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     io.clipboard = Some("X".into());
@@ -408,8 +408,8 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
     common::draw(&mut app, window_id, 10, 3);
     let first = common::point_for_offset(app.cell_size(), 0, 0);
     let second = common::point_for_offset(app.cell_size(), 4, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, first);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, first);
     common::modifiers(
         &mut app,
         &mut io,
@@ -419,8 +419,8 @@ fn paste_many_uses_available_clipboard_lines_and_ignores_extra_lines() {
             ..Default::default()
         },
     );
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, second);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, second);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
 
     io.clipboard = Some("1\n2\n3".into());
@@ -486,8 +486,8 @@ fn click_places_cursor_at_text_offset() {
     common::draw(&mut app, window_id, 10, 3);
 
     let point = common::point_for_offset(app.cell_size(), 2, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, point);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, point);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, point);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, point);
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "abXcd");
@@ -504,14 +504,14 @@ fn click_hit_testing_handles_screen_edges_and_half_cells() {
         &mut app,
         &mut io,
         window_id,
-        ElementState::Pressed,
+        ButtonState::Pressed,
         [0.0, -10.0],
     );
     common::mouse_button(
         &mut app,
         &mut io,
         window_id,
-        ElementState::Released,
+        ButtonState::Released,
         [0.0, -10.0],
     );
     common::char_input(&mut app, &mut io, window_id, 'A');
@@ -523,14 +523,14 @@ fn click_hit_testing_handles_screen_edges_and_half_cells() {
         &mut app,
         &mut io,
         window_id,
-        ElementState::Pressed,
+        ButtonState::Pressed,
         left_gutter,
     );
     common::mouse_button(
         &mut app,
         &mut io,
         window_id,
-        ElementState::Released,
+        ButtonState::Released,
         left_gutter,
     );
     common::char_input(&mut app, &mut io, window_id, 'B');
@@ -544,14 +544,14 @@ fn click_hit_testing_handles_screen_edges_and_half_cells() {
         &mut app,
         &mut io,
         window_id,
-        ElementState::Pressed,
+        ButtonState::Pressed,
         right_half_of_second_char,
     );
     common::mouse_button(
         &mut app,
         &mut io,
         window_id,
-        ElementState::Released,
+        ButtonState::Released,
         right_half_of_second_char,
     );
     common::char_input(&mut app, &mut io, window_id, 'C');
@@ -563,14 +563,14 @@ fn click_hit_testing_handles_screen_edges_and_half_cells() {
         &mut app,
         &mut io,
         window_id,
-        ElementState::Pressed,
+        ButtonState::Pressed,
         below_document,
     );
     common::mouse_button(
         &mut app,
         &mut io,
         window_id,
-        ElementState::Released,
+        ButtonState::Released,
         below_document,
     );
     common::char_input(&mut app, &mut io, window_id, 'D');
@@ -586,8 +586,8 @@ fn ctrl_click_adds_another_cursor() {
     common::draw(&mut app, window_id, 10, 3);
 
     let first = common::point_for_offset(app.cell_size(), 1, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, first);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, first);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, first);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, first);
     common::modifiers(
         &mut app,
         &mut io,
@@ -598,8 +598,8 @@ fn ctrl_click_adds_another_cursor() {
         },
     );
     let second = common::point_for_offset(app.cell_size(), 3, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, second);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, second);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, second);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, second);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
     common::char_input(&mut app, &mut io, window_id, 'X');
 
@@ -615,10 +615,10 @@ fn dragging_selects_text_for_replacement() {
 
     let start = common::point_for_offset(app.cell_size(), 1, 0);
     let end = common::point_for_offset(app.cell_size(), 3, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
     io.mouse_pos = end;
     common::tick(&mut app, &mut io);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Released, end);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, end);
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "aXd");
@@ -648,19 +648,13 @@ fn dragging_below_viewport_scrolls_visible_wraps() {
     let drawing = common::draw(&mut app, window_id, 10, 3);
     let before = common::text_line_lengths(app.cell_size(), &drawing);
     let start = common::point_for_offset(app.cell_size(), 0, 0);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
     io.mouse_pos = common::point_for_offset(app.cell_size(), 0, 5);
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 10, 3);
     let after = common::text_line_lengths(app.cell_size(), &drawing);
     let release = io.mouse_pos;
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Released,
-        release,
-    );
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, release);
 
     assert_ne!(after, before);
     app.assert_invariants();
@@ -675,19 +669,13 @@ fn dragging_above_viewport_scrolls_visible_wraps() {
     let drawing = common::draw(&mut app, window_id, 10, 3);
     let before = common::text_line_lengths(app.cell_size(), &drawing);
     let start = common::point_for_offset(app.cell_size(), 0, 2);
-    common::mouse_button(&mut app, &mut io, window_id, ElementState::Pressed, start);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
     io.mouse_pos = [0.0, -20.0];
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 10, 3);
     let after = common::text_line_lengths(app.cell_size(), &drawing);
     let release = io.mouse_pos;
-    common::mouse_button(
-        &mut app,
-        &mut io,
-        window_id,
-        ElementState::Released,
-        release,
-    );
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, release);
 
     assert_ne!(after, before);
     app.assert_invariants();

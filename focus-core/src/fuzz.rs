@@ -16,7 +16,7 @@ use bstr::BString;
 use crate::app::{App, IO, WindowSize};
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
-use crate::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
+use crate::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use crate::window::WindowId;
 
 // Mock IO: tracks open windows, fabricates fresh WindowIds, advances
@@ -193,7 +193,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             let mut buf = [0u8; 4];
             let s = ch.encode_utf8(&mut buf);
             let event = InputEvent::Key {
-                state: ElementState::Pressed,
+                state: ButtonState::Pressed,
                 logical_key: Key::Character(s),
             };
             app.input(io, window_id, event);
@@ -212,9 +212,9 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                 _ => NamedKey::ArrowDown,
             };
             let state = if frng.boolean()? {
-                ElementState::Pressed
+                ButtonState::Pressed
             } else {
-                ElementState::Released
+                ButtonState::Released
             };
             app.input(
                 io,
@@ -277,9 +277,9 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                 app.mouse_position
             };
             let state = if frng.boolean()? {
-                ElementState::Pressed
+                ButtonState::Pressed
             } else {
-                ElementState::Released
+                ButtonState::Released
             };
             app.input(io, window_id, InputEvent::MouseButton { state, position });
         }

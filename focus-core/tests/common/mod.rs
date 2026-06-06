@@ -8,7 +8,7 @@ use focus_core::app::App;
 use focus_core::document::DocumentId;
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
-use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
+use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::style::TEXT_COLOR;
 use focus_core::window::WindowId;
 
@@ -58,7 +58,7 @@ pub fn key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
         io,
         window_id,
         InputEvent::Key {
-            state: ElementState::Pressed,
+            state: ButtonState::Pressed,
             logical_key: key,
         },
     );
@@ -116,7 +116,7 @@ pub fn mouse_button(
     app: &mut App,
     io: &mut MockIO,
     window_id: WindowId,
-    state: ElementState,
+    state: ButtonState,
     position: [f32; 2],
 ) {
     io.mouse_pos = position;

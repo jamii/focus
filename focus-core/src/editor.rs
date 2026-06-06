@@ -4,7 +4,7 @@ use std::{mem::replace, ops::Range};
 
 use bstr::{BStr, ByteSlice};
 
-use crate::input::{ElementState, InputEvent, Key, NamedKey};
+use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::style::BACKGROUND_COLOR;
 use crate::{
     app::{App, IO},
@@ -156,7 +156,7 @@ impl EditorId {
         match event {
             InputEvent::Key {
                 state, logical_key, ..
-            } if state == ElementState::Pressed && app.modifiers.control && !app.modifiers.alt => {
+            } if state == ButtonState::Pressed && app.modifiers.control && !app.modifiers.alt => {
                 match logical_key {
                     Key::Character("i") => self.cursor_move(app, Direction::Up),
                     Key::Character("k") => self.cursor_move(app, Direction::Down),
@@ -179,7 +179,7 @@ impl EditorId {
             }
             InputEvent::Key {
                 state, logical_key, ..
-            } if state == ElementState::Pressed && !app.modifiers.control && app.modifiers.alt => {
+            } if state == ButtonState::Pressed && !app.modifiers.control && app.modifiers.alt => {
                 match logical_key {
                     Key::Character("j") => self.cursor_goto_line_start(app),
                     Key::Character("l") => self.cursor_goto_line_end(app),
@@ -190,7 +190,7 @@ impl EditorId {
             }
             InputEvent::Key {
                 state, logical_key, ..
-            } if state == ElementState::Pressed && !app.modifiers.control && !app.modifiers.alt => {
+            } if state == ButtonState::Pressed && !app.modifiers.control && !app.modifiers.alt => {
                 match logical_key {
                     Key::Character(char) => {
                         self.cursor_replace(app, char.into());
@@ -216,8 +216,8 @@ impl EditorId {
                 }
             }
             InputEvent::MouseButton { state, position } => match state {
-                ElementState::Pressed => self.cursor_begin_drag(app, position),
-                ElementState::Released => self.get_mut(app).is_dragging = false,
+                ButtonState::Pressed => self.cursor_begin_drag(app, position),
+                ButtonState::Released => self.get_mut(app).is_dragging = false,
             },
             InputEvent::MouseWheel { y_offset } => {
                 self.get_mut(app).top_pixel -= (SCROLL_AMOUNT * y_offset) as isize;

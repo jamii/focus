@@ -7,7 +7,7 @@ use bstr::BString;
 use crate::document::{Document, DocumentId};
 use crate::drawing::Drawing;
 use crate::editor::{Editor, EditorId};
-use crate::input::{ElementState, InputEvent, Key, ModifiersState};
+use crate::input::{ButtonState, InputEvent, Key, ModifiersState};
 use crate::page::{Page, PageId};
 use crate::window::{Window, WindowId};
 
@@ -138,7 +138,7 @@ impl App {
             }
             InputEvent::Key {
                 state, logical_key, ..
-            } if *state == ElementState::Pressed && self.modifiers.control => match *logical_key {
+            } if *state == ButtonState::Pressed && self.modifiers.control => match *logical_key {
                 Key::Character("+") => {
                     self.font_size += 1.0;
                     self.rebuild_atlas(io);
@@ -215,10 +215,7 @@ impl App {
     pub(crate) fn insert_page_single(&mut self, editor_id: EditorId) -> PageId {
         let status_bar_document_id = self.insert_document(Document::scratch());
         let status_bar_id = self.insert_editor(Editor::new(self, status_bar_document_id));
-        self.insert_page(Page::Single {
-            editor_id,
-            status_bar_id,
-        })
+        self.insert_page(Page::new_single(editor_id, status_bar_id))
     }
 
     pub(crate) fn insert_page(&mut self, page: Page) -> PageId {

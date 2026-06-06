@@ -25,7 +25,7 @@ use winit::window::Window;
 
 use focus_core::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, WindowSize};
 use focus_core::drawing::Drawing;
-use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
+use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::window::WindowId;
 
 use crate::atlas::Atlas;
@@ -429,10 +429,10 @@ fn translate_event(event: &WindowEvent, last_mouse_pos: [f32; 2]) -> Option<Inpu
     }
 }
 
-fn translate_state(state: winit::event::ElementState) -> ElementState {
+fn translate_state(state: winit::event::ElementState) -> ButtonState {
     match state {
-        winit::event::ElementState::Pressed => ElementState::Pressed,
-        winit::event::ElementState::Released => ElementState::Released,
+        winit::event::ElementState::Pressed => ButtonState::Pressed,
+        winit::event::ElementState::Released => ButtonState::Released,
     }
 }
 

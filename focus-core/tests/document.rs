@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 use focus_core::app::{App, IO, WindowSize};
-use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
+use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::window::WindowId;
 
 mod common;
@@ -112,7 +112,7 @@ fn error_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: Key<'_>)
         io,
         window_id,
         InputEvent::Key {
-            state: ElementState::Pressed,
+            state: ButtonState::Pressed,
             logical_key: key,
         },
     );

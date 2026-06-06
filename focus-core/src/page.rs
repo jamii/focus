@@ -6,17 +6,33 @@ use crate::{
     document::{DocumentId, Source, SourceFile},
     drawing::{Drawing, Rect},
     editor::EditorId,
-    input::InputEvent,
+    input::{ButtonState, InputEvent},
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct PageId(pub(crate) usize);
 
-pub enum Page {
+pub struct Page {
+    content: PageContent,
+    dragging: bool,
+}
+pub enum PageContent {
     Single {
         editor_id: EditorId,
         status_bar_id: EditorId,
     },
+}
+
+impl Page {
+    pub(crate) fn new_single(editor_id: EditorId, status_bar_id: EditorId) -> Page {
+        Page {
+            content: PageContent::Single {
+                editor_id,
+                status_bar_id,
+            },
+            dragging: false,
+        }
+    }
 }
 
 impl PageId {
@@ -32,16 +48,17 @@ impl PageId {
     pub(crate) fn assert_invariants(self, _app: &App) {}
 
     pub(crate) fn document_id(self, app: &App) -> DocumentId {
-        match self.get(app) {
-            Page::Single { editor_id, .. } => editor_id.get(app).document_id,
+        match self.get(app).content {
+            PageContent::Single { editor_id, .. } => editor_id.get(app).document_id,
         }
     }
 
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
-        match self.get(app) {
-            &Page::Single {
+        match self.get(app).content {
+            PageContent::Single {
                 editor_id,
                 status_bar_id,
+                ..
             } => {
                 editor_id.tick(app, io);
 
@@ -63,16 +80,23 @@ impl PageId {
     }
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
-        match self.get(app) {
-            Page::Single { editor_id, .. } => editor_id.input(app, io, event),
+        match event {
+            InputEvent::MouseButton { state, .. } => {
+                self.get_mut(app).dragging = state == ButtonState::Pressed;
+            }
+            _ => {}
+        }
+        match self.get(app).content {
+            PageContent::Single { editor_id, .. } => editor_id.input(app, io, event),
         }
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
-        match self.get(app) {
-            &Page::Single {
+        match self.get(app).content {
+            PageContent::Single {
                 editor_id,
                 status_bar_id,
+                ..
             } => {
                 let status_bar_size = [drawing.size()[0], app.cell_size()[1] as f32];
                 let mut editor_size = drawing.size();
