@@ -135,8 +135,12 @@ impl Drawing {
     /// Subsequent draws will be clipped to this rectangle. The returned
     /// `ClipScope` pops the clip when it is dropped.
     pub fn push_clip_rect(&mut self, rect: Rect) -> ClipScope<'_> {
-        let top = self.current_clip();
-        self.clip_stack.push(intersect_rects(rect, top));
+        let clip = self.current_clip();
+        let abs_rect = Rect {
+            pos: [clip.pos[0] + rect.pos[0], clip.pos[1] + rect.pos[1]],
+            size: rect.size,
+        };
+        self.clip_stack.push(intersect_rects(abs_rect, clip));
         ClipScope { drawing: self }
     }
 

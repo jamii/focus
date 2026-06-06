@@ -26,6 +26,11 @@ pub fn scratch_app() -> (App, MockIO, WindowId) {
 
 pub fn file_app(path: PathBuf, text: &str) -> (App, MockIO, WindowId) {
     let mut io = MockIO::new();
+    let path = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir().unwrap().join(path)
+    };
     io.files.insert(
         path.clone(),
         (
@@ -40,7 +45,7 @@ pub fn file_app(path: PathBuf, text: &str) -> (App, MockIO, WindowId) {
 }
 
 pub fn document_id(app: &App) -> DocumentId {
-    *app.documents.keys().next().unwrap()
+    *app.documents.keys().min().unwrap()
 }
 
 pub fn text(app: &App) -> String {

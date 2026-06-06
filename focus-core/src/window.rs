@@ -35,7 +35,6 @@ impl WindowId {
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
-        let page_id = self.get(app).page_id;
         drawing.draw_rect(
             Rect {
                 pos: [0.0, 0.0],
@@ -43,6 +42,6 @@ impl WindowId {
             },
             style::BACKGROUND_COLOR,
         );
-        page_id.draw(app, drawing);
+        self.get(app).page_id.draw(app, drawing);
     }
 }

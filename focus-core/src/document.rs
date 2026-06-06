@@ -1,6 +1,6 @@
 use std::mem::take;
-use std::time::SystemTime;
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
 use bstr::{BStr, BString, ByteSlice};
 
@@ -10,10 +10,10 @@ use crate::app::{App, IO};
 pub struct DocumentId(pub(crate) usize);
 
 pub struct Document {
+    source: Source,
     text: BString,
     newlines: Vec<usize>,
     last_modified_time: Duration,
-    source: Source,
     undos: Vec<Vec<Vec<Edit>>>,
     doing: Vec<Vec<Edit>>,
     redos: Vec<Vec<Vec<Edit>>>,
@@ -22,13 +22,13 @@ pub struct Document {
     pub(crate) last_center_offset: usize,
 }
 
-enum Source {
+pub(crate) enum Source {
     Scratch,
     File(SourceFile),
 }
 
-struct SourceFile {
-    absolute_path: PathBuf,
+pub(crate) struct SourceFile {
+    pub(crate) absolute_path: PathBuf,
     last_load_mtime: SystemTime,
     last_save_time: Duration,
     deleted_since_last_save: bool,
@@ -61,6 +61,7 @@ pub(crate) struct OffsetDiff {
 
 impl Document {
     fn assert_invariants(&self) {
+        self.source.assert_invariants();
         assert_eq!(
             self.text.chars().filter(|c| *c == '\n').count(),
             self.newlines.len(),
@@ -87,11 +88,11 @@ impl Document {
 
     pub(crate) fn scratch() -> Document {
         Document {
+            source: Source::Scratch,
             text: "".into(),
             newlines: vec![],
             last_modified_time: Duration::ZERO,
             last_center_offset: 0,
-            source: Source::Scratch,
             undos: vec![],
             doing: vec![],
             redos: vec![],
@@ -123,6 +124,10 @@ impl DocumentId {
         return self.get(app).text.as_bstr();
     }
 
+    pub(crate) fn source(self, app: &App) -> &Source {
+        return &self.get(app).source;
+    }
+
     pub(crate) fn assert_invariants(self, app: &App) {
         self.get(app).assert_invariants();
     }
@@ -135,17 +140,20 @@ impl DocumentId {
         }
 
         // Maybe reload.
-        let mut edits = vec![];
         let frame_start = app.frame_start;
         let document = self.get_mut(app);
         let last_modified_time = document.last_modified_time;
         if let Source::File(source) = &mut document.source {
             if !(last_modified_time > source.last_save_time) {
                 if let Some(text) = source.load(io, frame_start) {
-                    edits = diff_text(document.text.as_bstr(), text.as_bstr());
+                    self.replace(app, text.as_bstr());
                 }
             }
         }
+    }
+
+    pub(crate) fn replace(self, app: &mut App, text: &BStr) {
+        let edits = diff_text(self.text(app).as_bstr(), text);
         self.apply_edits(app, &edits);
     }
 
@@ -348,7 +356,20 @@ impl DocumentId {
     }
 }
 
+impl Source {
+    pub fn assert_invariants(&self) {
+        match self {
+            Source::Scratch => {}
+            Source::File(file) => file.assert_invariants(),
+        }
+    }
+}
+
 impl SourceFile {
+    pub fn assert_invariants(&self) {
+        assert!(self.absolute_path.is_absolute());
+    }
+
     /// If the file's mtime has advanced past `last_load_mtime` and the doc is
     /// not modified, reload its contents.
     fn load(&mut self, io: &mut dyn IO, frame_start: Duration) -> Option<BString> {

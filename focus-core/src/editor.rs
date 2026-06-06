@@ -18,7 +18,7 @@ pub struct EditorId(pub(crate) usize);
 
 pub struct Editor {
     pub(crate) document_id: DocumentId,
-    cursors: Vec<Cursor>,
+    pub(crate) cursors: Vec<Cursor>,
     marked: bool,
     show_cursor: bool,
     wrap_chars: usize,
@@ -32,16 +32,16 @@ pub struct Editor {
 const SCROLL_AMOUNT: f32 = 32.0;
 
 #[derive(Clone)]
-struct Cursor {
-    head: CursorPoint,
-    tail: CursorPoint,
+pub(crate) struct Cursor {
+    pub(crate) head: CursorPoint,
+    pub(crate) tail: CursorPoint,
 }
 
 #[derive(Copy, Clone)]
-struct CursorPoint {
-    offset: usize,
+pub(crate) struct CursorPoint {
+    pub(crate) offset: usize,
     // The column the cursor 'wants' to be at when moving up/down, if any.
-    col_wanted: Option<usize>,
+    pub(crate) col_wanted: Option<usize>,
 }
 
 enum Direction {
@@ -811,7 +811,7 @@ impl EditorId {
     // * at the start of the next soft-wrapped line
     // This function returns both.
     // If the position is not ambiguous then both returned positions are equal.
-    fn grid_from_offset(self, app: &App, offset: usize) -> [[usize; 2]; 2] {
+    pub(crate) fn grid_from_offset(self, app: &App, offset: usize) -> [[usize; 2]; 2] {
         let editor = self.get(app);
         let text = editor.document_id.text(app).as_bstr();
         let line = editor

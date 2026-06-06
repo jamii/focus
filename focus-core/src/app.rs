@@ -111,7 +111,7 @@ impl App {
             None => app.insert_document(Document::scratch()),
         };
         let editor_id = app.insert_editor(Editor::new(&app, document_id));
-        let page_id = app.insert_page(Page::Single { editor_id });
+        let page_id = app.insert_page_single(editor_id);
         app.windows.insert(initial_window_id, Window::new(page_id));
         app
     }
@@ -153,9 +153,7 @@ impl App {
                 Key::Character("m") => {
                     let document_id = window_id.get(self).page_id.document_id(self);
                     let editor_id_new = self.insert_editor(Editor::new(self, document_id));
-                    let page_id_new = self.insert_page(Page::Single {
-                        editor_id: editor_id_new,
-                    });
+                    let page_id_new = self.insert_page_single(editor_id_new);
                     self.insert_window(io, Window::new(page_id_new));
                 }
                 _ => {
@@ -199,7 +197,7 @@ impl App {
     }
 
     fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
-        let page_id = self.insert_page_empty();
+        let page_id = self.insert_page_single_empty();
         self.insert_window(io, Window::new(page_id))
     }
 
@@ -209,9 +207,18 @@ impl App {
         window_id
     }
 
-    pub(crate) fn insert_page_empty(&mut self) -> PageId {
+    pub(crate) fn insert_page_single_empty(&mut self) -> PageId {
         let editor_id = self.insert_editor_empty();
-        self.insert_page(Page::Single { editor_id })
+        self.insert_page_single(editor_id)
+    }
+
+    pub(crate) fn insert_page_single(&mut self, editor_id: EditorId) -> PageId {
+        let status_bar_document_id = self.insert_document(Document::scratch());
+        let status_bar_id = self.insert_editor(Editor::new(self, status_bar_document_id));
+        self.insert_page(Page::Single {
+            editor_id,
+            status_bar_id,
+        })
     }
 
     pub(crate) fn insert_page(&mut self, page: Page) -> PageId {
