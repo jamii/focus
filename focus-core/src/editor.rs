@@ -111,6 +111,45 @@ impl EditorId {
         }
     }
 
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
+        let document_id = self.get(app).document_id;
+        document_id.tick(app, io);
+
+        // During drag, poll mouse position and update cursor head.
+        if self.get(app).is_dragging {
+            // Scroll when mouse is off-screen vertically.
+            let mouse_position = app.mouse_position;
+            {
+                let editor = self.get_mut(app);
+                if mouse_position[1] < 0.0 {
+                    editor.top_pixel -= SCROLL_AMOUNT as isize;
+                } else if mouse_position[1] > editor.last_viewport_size[1] {
+                    editor.top_pixel += SCROLL_AMOUNT as isize;
+                }
+            }
+            self.clamp_top_pixel(app);
+
+            let frame_start = app.frame_start;
+
+            // Drag main cursor.
+            let offset = self.offset_from_screen(app, mouse_position);
+            let editor = self.get_mut(app);
+            let cursor = editor.cursors.last_mut().unwrap();
+            let moved = cursor.head.offset != offset;
+            cursor.head = CursorPoint::new(offset);
+            if moved {
+                editor.marked = true;
+            }
+
+            editor.last_input = frame_start;
+        }
+
+        // Animate cursor.
+        let frame_start = app.frame_start;
+        let editor = self.get_mut(app);
+        editor.show_cursor = (((frame_start - editor.last_input).as_millis() / 500) % 2) == 0;
+    }
+
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
         let mut flush_doing = true;
 
@@ -195,45 +234,6 @@ impl EditorId {
         if flush_doing {
             editor.document_id.flush_doing(app);
         }
-    }
-
-    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
-        let document_id = self.get(app).document_id;
-        document_id.tick(app, io);
-
-        // During drag, poll mouse position and update cursor head.
-        if self.get(app).is_dragging {
-            // Scroll when mouse is off-screen vertically.
-            let mouse_position = app.mouse_position;
-            {
-                let editor = self.get_mut(app);
-                if mouse_position[1] < 0.0 {
-                    editor.top_pixel -= SCROLL_AMOUNT as isize;
-                } else if mouse_position[1] > editor.last_viewport_size[1] {
-                    editor.top_pixel += SCROLL_AMOUNT as isize;
-                }
-            }
-            self.clamp_top_pixel(app);
-
-            let frame_start = app.frame_start;
-
-            // Drag main cursor.
-            let offset = self.offset_from_screen(app, mouse_position);
-            let editor = self.get_mut(app);
-            let cursor = editor.cursors.last_mut().unwrap();
-            let moved = cursor.head.offset != offset;
-            cursor.head = CursorPoint::new(offset);
-            if moved {
-                editor.marked = true;
-            }
-
-            editor.last_input = frame_start;
-        }
-
-        // Animate cursor.
-        let frame_start = app.frame_start;
-        let editor = self.get_mut(app);
-        editor.show_cursor = (((frame_start - editor.last_input).as_millis() / 500) % 2) == 0;
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {

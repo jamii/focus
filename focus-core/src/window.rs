@@ -1,21 +1,19 @@
 use crate::app::{App, IO};
 use crate::drawing::{Drawing, Rect};
-use crate::editor::EditorId;
 use crate::input::InputEvent;
+use crate::page::PageId;
 use crate::style;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub struct WindowId(pub usize);
 
 pub struct Window {
-    pub(crate) editor_id: EditorId,
+    pub(crate) page_id: PageId,
 }
 
 impl Window {
-    pub(crate) fn new(editor_id: EditorId) -> Window {
-        Window {
-            editor_id: editor_id,
-        }
+    pub(crate) fn new(page_id: PageId) -> Window {
+        Window { page_id }
     }
 }
 
@@ -26,18 +24,18 @@ impl WindowId {
 
     pub(crate) fn assert_invariants(self, _app: &App) {}
 
-    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
-        let editor_id = self.get(app).editor_id;
-        editor_id.input(app, io, event);
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
+        let page_id = self.get(app).page_id;
+        page_id.tick(app, io);
     }
 
-    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
-        let editor_id = self.get(app).editor_id;
-        editor_id.tick(app, io);
+    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
+        let page_id = self.get(app).page_id;
+        page_id.input(app, io, event);
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
-        let editor_id = self.get(app).editor_id;
+        let page_id = self.get(app).page_id;
         drawing.draw_rect(
             Rect {
                 pos: [0.0, 0.0],
@@ -45,6 +43,6 @@ impl WindowId {
             },
             style::BACKGROUND_COLOR,
         );
-        editor_id.draw(app, drawing);
+        page_id.draw(app, drawing);
     }
 }

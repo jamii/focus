@@ -8,6 +8,7 @@ use crate::document::{Document, DocumentId};
 use crate::drawing::Drawing;
 use crate::editor::{Editor, EditorId};
 use crate::input::{ElementState, InputEvent, Key, ModifiersState};
+use crate::page::{Page, PageId};
 use crate::window::{Window, WindowId};
 
 pub struct App {
@@ -15,6 +16,9 @@ pub struct App {
     cell_size: [u32; 2],
 
     pub windows: HashMap<WindowId, Window>,
+
+    next_page_id: PageId,
+    pub pages: HashMap<PageId, Page>,
 
     next_editor_id: EditorId,
     pub editors: HashMap<EditorId, Editor>,
@@ -75,6 +79,9 @@ impl App {
         for document_id in self.documents.keys() {
             document_id.assert_invariants(self);
         }
+        for page_id in self.pages.keys() {
+            page_id.assert_invariants(self);
+        }
         for editor_id in self.editors.keys() {
             editor_id.assert_invariants(self);
         }
@@ -89,6 +96,8 @@ impl App {
             font_size: FONT_SIZE_INIT,
             cell_size,
             windows: HashMap::new(),
+            next_page_id: PageId(0),
+            pages: HashMap::new(),
             next_editor_id: EditorId(0),
             editors: HashMap::new(),
             next_document_id: DocumentId(0),
@@ -102,9 +111,17 @@ impl App {
             None => app.insert_document(Document::scratch()),
         };
         let editor_id = app.insert_editor(Editor::new(&app, document_id));
-        app.windows
-            .insert(initial_window_id, Window::new(editor_id));
+        let page_id = app.insert_page(Page::Single { editor_id });
+        app.windows.insert(initial_window_id, Window::new(page_id));
         app
+    }
+
+    pub fn tick(&mut self, io: &mut dyn IO) {
+        let window_ids: Vec<_> = self.windows.keys().copied().collect();
+        for window_id in window_ids {
+            window_id.tick(self, io);
+            io.request_redraw(window_id);
+        }
     }
 
     pub fn input(&mut self, io: &mut dyn IO, window_id: WindowId, event: InputEvent<'_>) {
@@ -134,9 +151,12 @@ impl App {
                     self.insert_window_empty(io);
                 }
                 Key::Character("m") => {
-                    let document_id = window_id.get(self).editor_id.get(self).document_id;
+                    let document_id = window_id.get(self).page_id.document_id(self);
                     let editor_id_new = self.insert_editor(Editor::new(self, document_id));
-                    self.insert_window(io, Window::new(editor_id_new));
+                    let page_id_new = self.insert_page(Page::Single {
+                        editor_id: editor_id_new,
+                    });
+                    self.insert_window(io, Window::new(page_id_new));
                 }
                 _ => {
                     window_id.input(self, io, event);
@@ -145,14 +165,6 @@ impl App {
             _ => {
                 window_id.input(self, io, event);
             }
-        }
-    }
-
-    pub fn tick(&mut self, io: &mut dyn IO) {
-        let window_ids: Vec<_> = self.windows.keys().copied().collect();
-        for window_id in window_ids {
-            window_id.tick(self, io);
-            io.request_redraw(window_id);
         }
     }
 
@@ -187,14 +199,26 @@ impl App {
     }
 
     fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
-        let editor_id = self.insert_editor_empty();
-        self.insert_window(io, Window::new(editor_id))
+        let page_id = self.insert_page_empty();
+        self.insert_window(io, Window::new(page_id))
     }
 
     fn insert_window(&mut self, io: &mut dyn IO, window: Window) -> WindowId {
         let window_id = io.open_window(INITIAL_TITLE.to_string(), INITIAL_SIZE);
         self.windows.insert(window_id, window);
         window_id
+    }
+
+    pub(crate) fn insert_page_empty(&mut self) -> PageId {
+        let editor_id = self.insert_editor_empty();
+        self.insert_page(Page::Single { editor_id })
+    }
+
+    pub(crate) fn insert_page(&mut self, page: Page) -> PageId {
+        let page_id = self.next_page_id;
+        self.next_page_id.0 += 1;
+        self.pages.insert(page_id, page);
+        page_id
     }
 
     pub(crate) fn insert_editor_empty(&mut self) -> EditorId {

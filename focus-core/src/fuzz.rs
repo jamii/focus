@@ -56,6 +56,7 @@ impl MockIO {
     }
 }
 
+// TODO This is pointless - just mutate app directly.
 pub fn sync_app_io(app: &mut App, io: &MockIO) {
     app.frame_start = io.frame_start;
     app.mouse_position = io.mouse_pos;
