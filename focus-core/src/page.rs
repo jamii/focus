@@ -15,7 +15,7 @@ pub struct PageId(pub(crate) usize);
 pub struct Page {
     content: PageContent,
     dragging: bool,
-    last_size: [f32; 2],
+    last_draw_size: [f32; 2],
 }
 pub enum PageContent {
     Single {
@@ -41,7 +41,7 @@ impl Page {
                 focus: PageSingleFocus::Editor,
             },
             dragging: false,
-            last_size: [0.0, 0.0],
+            last_draw_size: [0.0, 0.0],
         }
     }
 }
@@ -76,7 +76,7 @@ impl PageId {
                 let status_bar_document_id = status_bar_id.get(app).document_id;
                 let cursor_main_offset = editor_id.get(app).cursors.last().unwrap().head.offset;
                 let grid = editor_id.grid_from_offset(app, cursor_main_offset);
-                let source = match status_bar_document_id.source(app) {
+                let source = match editor_id.get(app).document_id.source(app) {
                     Source::Scratch => BStr::new("scratch"),
                     Source::File(SourceFile { absolute_path, .. }) => {
                         BStr::new(absolute_path.as_os_str().as_bytes())
@@ -108,31 +108,34 @@ impl PageId {
                         ref mut focus,
                         ..
                     },
-                last_size,
+                dragging,
+                last_draw_size: last_size,
                 ..
             } => match event {
                 InputEvent::MouseMoved { position } => {
-                    let focus_new = if position[1] > last_size[1] - (cell_size[1] as f32) {
-                        PageSingleFocus::StatusBar
-                    } else {
-                        PageSingleFocus::Editor
-                    };
-                    if *focus != focus_new {
-                        *focus = focus_new;
-                        editor_id.input(
-                            app,
-                            io,
-                            InputEvent::FocusChanged {
-                                focused: focus_new == PageSingleFocus::Editor,
-                            },
-                        );
-                        status_bar_id.input(
-                            app,
-                            io,
-                            InputEvent::FocusChanged {
-                                focused: focus_new == PageSingleFocus::StatusBar,
-                            },
-                        );
+                    if !dragging {
+                        let focus_new = if position[1] > last_size[1] - (cell_size[1] as f32) {
+                            PageSingleFocus::StatusBar
+                        } else {
+                            PageSingleFocus::Editor
+                        };
+                        if *focus != focus_new {
+                            *focus = focus_new;
+                            editor_id.input(
+                                app,
+                                io,
+                                InputEvent::FocusChanged {
+                                    focused: focus_new == PageSingleFocus::Editor,
+                                },
+                            );
+                            status_bar_id.input(
+                                app,
+                                io,
+                                InputEvent::FocusChanged {
+                                    focused: focus_new == PageSingleFocus::StatusBar,
+                                },
+                            );
+                        }
                     }
                 }
                 _ => {}
@@ -142,7 +145,7 @@ impl PageId {
         match self.get_mut(app) {
             &mut Page {
                 content: PageContent::Single { focus, .. },
-                last_size,
+                last_draw_size: last_size,
                 ..
             } => match &mut event {
                 InputEvent::MouseMoved { position } | InputEvent::MouseButton { position, .. } => {
@@ -178,7 +181,7 @@ impl PageId {
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
-        self.get_mut(app).last_size = drawing.size();
+        self.get_mut(app).last_draw_size = drawing.size();
 
         match self.get(app).content {
             PageContent::Single {

@@ -25,7 +25,8 @@ pub struct Editor {
     wraps: Vec<[usize; 2]>,
     last_input: Duration,
     top_pixel: isize,
-    last_viewport_size: [f32; 2],
+    last_draw_size: [f32; 2],
+    last_mouse_position: [f32; 2],
     is_dragging: bool,
 }
 
@@ -67,7 +68,8 @@ impl Editor {
             wraps,
             last_input: Duration::ZERO,
             top_pixel: 0,
-            last_viewport_size: [0.0, 0.0],
+            last_draw_size: [0.0, 0.0],
+            last_mouse_position: [0.0, 0.0],
             is_dragging: false,
         }
     }
@@ -114,6 +116,35 @@ impl EditorId {
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         let document_id = self.get(app).document_id;
         document_id.tick(app, io);
+
+        // During drag, poll mouse position and update cursor head.
+        if self.get(app).is_dragging {
+            let position = self.get(app).last_mouse_position;
+            // Scroll when mouse is off-screen vertically.
+            {
+                let editor = self.get_mut(app);
+                if position[1] <= 0.0 {
+                    editor.top_pixel -= SCROLL_AMOUNT as isize;
+                } else if position[1] >= editor.last_draw_size[1] {
+                    editor.top_pixel += SCROLL_AMOUNT as isize;
+                }
+            }
+            self.clamp_top_pixel(app);
+
+            let frame_start = app.frame_start;
+
+            // Drag main cursor.
+            let offset = self.offset_from_screen(app, position);
+            let editor = self.get_mut(app);
+            let cursor = editor.cursors.last_mut().unwrap();
+            let moved = cursor.head.offset != offset;
+            cursor.head = CursorPoint::new(offset);
+            if moved {
+                editor.marked = true;
+            }
+
+            editor.last_input = frame_start;
+        }
 
         // Animate cursor.
         let frame_start = app.frame_start;
@@ -194,33 +225,7 @@ impl EditorId {
                 self.get_mut(app).top_pixel -= (SCROLL_AMOUNT * y_offset) as isize;
             }
             InputEvent::MouseMoved { position } => {
-                // During drag, poll mouse position and update cursor head.
-                if self.get(app).is_dragging {
-                    // Scroll when mouse is off-screen vertically.
-                    {
-                        let editor = self.get_mut(app);
-                        if position[1] < 0.0 {
-                            editor.top_pixel -= SCROLL_AMOUNT as isize;
-                        } else if position[1] > editor.last_viewport_size[1] {
-                            editor.top_pixel += SCROLL_AMOUNT as isize;
-                        }
-                    }
-                    self.clamp_top_pixel(app);
-
-                    let frame_start = app.frame_start;
-
-                    // Drag main cursor.
-                    let offset = self.offset_from_screen(app, position);
-                    let editor = self.get_mut(app);
-                    let cursor = editor.cursors.last_mut().unwrap();
-                    let moved = cursor.head.offset != offset;
-                    cursor.head = CursorPoint::new(offset);
-                    if moved {
-                        editor.marked = true;
-                    }
-
-                    editor.last_input = frame_start;
-                }
+                self.get_mut(app).last_mouse_position = position;
             }
             InputEvent::FocusChanged { focused: false } => {
                 self.get(app).document_id.save(app, io, SaveKind::Auto)
@@ -258,8 +263,8 @@ impl EditorId {
 
         {
             let editor = self.get_mut(app);
-            if editor.last_viewport_size != viewport_size {
-                editor.last_viewport_size = viewport_size;
+            if editor.last_draw_size != viewport_size {
+                editor.last_draw_size = viewport_size;
                 let center_before = center_before.min(editor.document_id.text(app).len());
                 self.scroll_offset_into_center(app, center_before);
             }
@@ -424,7 +429,7 @@ impl EditorId {
     }
 
     fn scroll_offset_into_view(self, app: &mut App, offset: usize) {
-        let viewport_h = self.get(app).last_viewport_size[1] as isize;
+        let viewport_h = self.get(app).last_draw_size[1] as isize;
         if viewport_h <= 0 {
             return;
         }
@@ -446,7 +451,7 @@ impl EditorId {
     }
 
     fn scroll_offset_into_center(self, app: &mut App, offset: usize) {
-        let viewport_h = self.get(app).last_viewport_size[1] as isize;
+        let viewport_h = self.get(app).last_draw_size[1] as isize;
         if viewport_h <= 0 {
             return;
         }
@@ -458,7 +463,7 @@ impl EditorId {
 
     fn center_offset(self, app: &App) -> usize {
         let editor = self.get(app);
-        let viewport_h = editor.last_viewport_size[1] as isize;
+        let viewport_h = editor.last_draw_size[1] as isize;
         let center_y = editor.top_pixel + viewport_h / 2;
         let line = app.grid_from_screen([0.0, center_y as f32])[1].max(0) as usize;
         let line = line.min(editor.wraps.len() - 1);
@@ -471,7 +476,7 @@ impl EditorId {
             app.screen_from_grid([0, editor.wraps.len()])[1] as isize
         };
         let editor = self.get_mut(app);
-        let viewport_h = editor.last_viewport_size[1] as isize;
+        let viewport_h = editor.last_draw_size[1] as isize;
         if viewport_h > 0 {
             let max_top = (total_h - viewport_h / 2).max(0);
             if editor.top_pixel > max_top {
