@@ -13,6 +13,9 @@ pub enum InputEvent<'a> {
         state: ButtonState,
         position: [f32; 2],
     },
+    MouseMoved {
+        position: [f32; 2],
+    },
     FocusChanged {
         focused: bool,
     },

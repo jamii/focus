@@ -12,10 +12,6 @@ use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::style::TEXT_COLOR;
 use focus_core::window::WindowId;
 
-pub fn sync_app_io(app: &mut App, io: &MockIO) {
-    focus_core::fuzz::sync_app_io(app, io);
-}
-
 pub fn scratch_app() -> (App, MockIO, WindowId) {
     let mut io = MockIO::new();
     let window_id = io.fresh_window_id();
@@ -53,7 +49,6 @@ pub fn text(app: &App) -> String {
 }
 
 pub fn key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
-    sync_app_io(app, io);
     app.input(
         io,
         window_id,
@@ -80,7 +75,6 @@ pub fn text_input(app: &mut App, io: &mut MockIO, window_id: WindowId, text: &st
 }
 
 pub fn modifiers(app: &mut App, io: &mut MockIO, window_id: WindowId, modifiers: ModifiersState) {
-    sync_app_io(app, io);
     app.input(io, window_id, InputEvent::ModifiersChanged(modifiers));
 }
 
@@ -119,23 +113,19 @@ pub fn mouse_button(
     state: ButtonState,
     position: [f32; 2],
 ) {
-    io.mouse_pos = position;
-    sync_app_io(app, io);
-    app.input(io, window_id, InputEvent::MouseButton { state, position });
+    io.mouse_position = position;
+    app.input(io, window_id, InputEvent::MouseButton { state });
 }
 
 pub fn mouse_wheel(app: &mut App, io: &mut MockIO, window_id: WindowId, y_offset: f32) {
-    sync_app_io(app, io);
     app.input(io, window_id, InputEvent::MouseWheel { y_offset });
 }
 
 pub fn focus_changed(app: &mut App, io: &mut MockIO, window_id: WindowId, focused: bool) {
-    sync_app_io(app, io);
     app.input(io, window_id, InputEvent::FocusChanged { focused });
 }
 
 pub fn tick(app: &mut App, io: &mut MockIO) {
-    sync_app_io(app, io);
     app.tick(io);
 }
 

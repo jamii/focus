@@ -15,22 +15,33 @@ pub struct PageId(pub(crate) usize);
 pub struct Page {
     content: PageContent,
     dragging: bool,
+    last_size: [f32; 2],
 }
 pub enum PageContent {
     Single {
         editor_id: EditorId,
         status_bar_id: EditorId,
+        focus: PageSingleFocus,
     },
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum PageSingleFocus {
+    Editor,
+    StatusBar,
+}
+
 impl Page {
-    pub(crate) fn new_single(editor_id: EditorId, status_bar_id: EditorId) -> Page {
+    pub(crate) fn new_single(editor_id: EditorId, app: &mut App) -> Page {
+        let status_bar_id = app.insert_editor_empty();
         Page {
             content: PageContent::Single {
                 editor_id,
                 status_bar_id,
+                focus: PageSingleFocus::Editor,
             },
             dragging: false,
+            last_size: [0.0, 0.0],
         }
     }
 }
@@ -79,24 +90,101 @@ impl PageId {
         }
     }
 
-    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
+    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, mut event: InputEvent<'_>) {
         match event {
             InputEvent::MouseButton { state, .. } => {
                 self.get_mut(app).dragging = state == ButtonState::Pressed;
             }
             _ => {}
         }
-        match self.get(app).content {
-            PageContent::Single { editor_id, .. } => editor_id.input(app, io, event),
+
+        let cell_size = app.cell_size();
+        match self.get_mut(app) {
+            &mut Page {
+                content:
+                    PageContent::Single {
+                        editor_id,
+                        status_bar_id,
+                        ref mut focus,
+                        ..
+                    },
+                last_size,
+                ..
+            } => match event {
+                InputEvent::MouseMoved { position } => {
+                    let focus_new = if position[1] > last_size[1] - (cell_size[1] as f32) {
+                        PageSingleFocus::StatusBar
+                    } else {
+                        PageSingleFocus::Editor
+                    };
+                    if *focus != focus_new {
+                        *focus = focus_new;
+                        editor_id.input(
+                            app,
+                            io,
+                            InputEvent::FocusChanged {
+                                focused: focus_new == PageSingleFocus::Editor,
+                            },
+                        );
+                        status_bar_id.input(
+                            app,
+                            io,
+                            InputEvent::FocusChanged {
+                                focused: focus_new == PageSingleFocus::StatusBar,
+                            },
+                        );
+                    }
+                }
+                _ => {}
+            },
+        }
+
+        match self.get_mut(app) {
+            &mut Page {
+                content: PageContent::Single { focus, .. },
+                last_size,
+                ..
+            } => match &mut event {
+                InputEvent::MouseMoved { position } | InputEvent::MouseButton { position, .. } => {
+                    match focus {
+                        PageSingleFocus::Editor => {}
+                        PageSingleFocus::StatusBar => {
+                            position[1] -= last_size[1] - (cell_size[1] as f32)
+                        }
+                    }
+                }
+                _ => {}
+            },
+        }
+
+        match self.get_mut(app) {
+            Page {
+                content:
+                    PageContent::Single {
+                        editor_id,
+                        status_bar_id,
+                        focus,
+                        ..
+                    },
+                ..
+            } => {
+                let id = match focus {
+                    PageSingleFocus::Editor => editor_id,
+                    PageSingleFocus::StatusBar => status_bar_id,
+                };
+                id.input(app, io, event);
+            }
         }
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
+        self.get_mut(app).last_size = drawing.size();
+
         match self.get(app).content {
             PageContent::Single {
                 editor_id,
                 status_bar_id,
-                ..
+                focus,
             } => {
                 let status_bar_size = [drawing.size()[0], app.cell_size()[1] as f32];
                 let mut editor_size = drawing.size();
@@ -107,7 +195,7 @@ impl PageId {
                         pos: [0.0, 0.0],
                         size: editor_size,
                     });
-                    editor_id.draw(app, &mut drawing);
+                    editor_id.draw(app, &mut drawing, focus == PageSingleFocus::Editor);
                 }
 
                 {
@@ -115,7 +203,7 @@ impl PageId {
                         pos: [0.0, editor_size[1]],
                         size: status_bar_size,
                     });
-                    status_bar_id.draw(app, &mut drawing);
+                    status_bar_id.draw(app, &mut drawing, focus == PageSingleFocus::StatusBar);
                 }
             }
         }

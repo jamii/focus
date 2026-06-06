@@ -16,7 +16,7 @@ use glutin::surface::{Surface, SwapInterval, WindowSurface};
 use glutin_winit::{DisplayBuilder, GlWindow};
 use raw_window_handle::HasWindowHandle;
 use winit::application::ApplicationHandler;
-use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamedKey};
@@ -77,8 +77,8 @@ struct Backend {
     context: PossiblyCurrentContext,
     renderer: Renderer,
     font: Font,
-    last_mouse_pos: [f32; 2],
     clipboard: arboard::Clipboard,
+    last_mouse_position: PhysicalPosition<f64>,
 }
 
 // Held only across an app callback; carries the live `ActiveEventLoop`
@@ -209,14 +209,11 @@ impl Running {
     fn new_events(&mut self, event_loop: &ActiveEventLoop) {
         let frame_start = Instant::now();
         self.last_frame = frame_start;
-        self.app.frame_start = self.last_frame - self.first_frame;
-        self.app.mouse_position = self.backend.last_mouse_pos;
-
         let mut io = IoReal {
             backend: &mut self.backend,
             event_loop,
         };
-        self.app.tick(&mut io);
+        self.app.tick(&mut io, self.last_frame - self.first_frame);
     }
 
     fn window_event(
@@ -230,16 +227,16 @@ impl Running {
             self.draw(window_id);
             return;
         }
-        if let WindowEvent::CursorMoved { position, .. } = &event {
-            self.backend.last_mouse_pos = [position.x as f32, position.y as f32];
-        }
         if let WindowEvent::Resized(size) = &event {
             self.backend.resize_surface(window_id, *size);
+        }
+        if let WindowEvent::CursorMoved { position, .. } = &event {
+            self.backend.last_mouse_position = *position;
         }
         if !self.backend.windows.contains_key(&window_id) {
             return;
         }
-        let Some(translated) = translate_event(&event, self.backend.last_mouse_pos) else {
+        let Some(translated) = translate_event(&event, self.backend.last_mouse_position) else {
             return;
         };
         let mut io = IoReal {
@@ -328,8 +325,8 @@ impl Backend {
             context,
             renderer,
             font,
-            last_mouse_pos: [0.0, 0.0],
             clipboard,
+            last_mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
         };
         let id = backend.register_window(window, surface);
         (backend, id)
@@ -395,7 +392,10 @@ fn create_surface(gl_config: &Config, window: &Window) -> Surface<WindowSurface>
     }
 }
 
-fn translate_event(event: &WindowEvent, last_mouse_pos: [f32; 2]) -> Option<InputEvent<'_>> {
+fn translate_event(
+    event: &WindowEvent,
+    last_mouse_position: PhysicalPosition<f64>,
+) -> Option<InputEvent<'_>> {
     match event {
         WindowEvent::CloseRequested => Some(InputEvent::CloseRequested),
         WindowEvent::Focused(focused) => Some(InputEvent::FocusChanged { focused: *focused }),
@@ -419,12 +419,15 @@ fn translate_event(event: &WindowEvent, last_mouse_pos: [f32; 2]) -> Option<Inpu
             if *button == winit::event::MouseButton::Left {
                 Some(InputEvent::MouseButton {
                     state: translate_state(*state),
-                    position: last_mouse_pos,
+                    position: [last_mouse_position.x as f32, last_mouse_position.y as f32],
                 })
             } else {
                 None
             }
         }
+        WindowEvent::CursorMoved { position, .. } => Some(InputEvent::MouseMoved {
+            position: [position.x as f32, position.y as f32],
+        }),
         _ => None,
     }
 }

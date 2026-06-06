@@ -27,10 +27,7 @@ pub struct App {
     pub documents: HashMap<DocumentId, Document>,
 
     pub(crate) modifiers: ModifiersState,
-
-    // These can be set by Chrome.
-    pub frame_start: Duration,
-    pub mouse_position: [f32; 2],
+    pub(crate) frame_start: Duration,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -104,7 +101,6 @@ impl App {
             documents: HashMap::new(),
             frame_start: Duration::ZERO,
             modifiers: ModifiersState::default(),
-            mouse_position: [0.0, 0.0],
         };
         let document_id = match initial_path {
             Some(path) => app.insert_document(Document::from_file(path)),
@@ -116,7 +112,8 @@ impl App {
         app
     }
 
-    pub fn tick(&mut self, io: &mut dyn IO) {
+    pub fn tick(&mut self, io: &mut dyn IO, frame_start: Duration) {
+        self.frame_start = frame_start;
         let window_ids: Vec<_> = self.windows.keys().copied().collect();
         for window_id in window_ids {
             window_id.tick(self, io);
@@ -213,9 +210,8 @@ impl App {
     }
 
     pub(crate) fn insert_page_single(&mut self, editor_id: EditorId) -> PageId {
-        let status_bar_document_id = self.insert_document(Document::scratch());
-        let status_bar_id = self.insert_editor(Editor::new(self, status_bar_document_id));
-        self.insert_page(Page::new_single(editor_id, status_bar_id))
+        let page = Page::new_single(editor_id, self);
+        self.insert_page(page)
     }
 
     pub(crate) fn insert_page(&mut self, page: Page) -> PageId {
