@@ -7,11 +7,14 @@ use bstr::{BStr, ByteSlice};
 use crate::input::{ElementState, InputEvent, Key, NamedKey};
 use crate::style::BACKGROUND_COLOR;
 use crate::{
-    app::{App, DocumentId, EditorId, IO},
-    document::{Edit, EditKind, OffsetDiff, SaveKind},
+    app::{App, IO},
+    document::{DocumentId, Edit, EditKind, OffsetDiff, SaveKind},
     drawing::{Drawing, Rect},
     style::{HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR},
 };
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct EditorId(pub(crate) usize);
 
 pub struct Editor {
     pub(crate) document_id: DocumentId,
@@ -71,6 +74,14 @@ impl Editor {
 }
 
 impl EditorId {
+    pub(crate) fn get<'a>(self, app: &'a App) -> &'a Editor {
+        app.editors.get(&self).unwrap()
+    }
+
+    pub(crate) fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Editor {
+        app.editors.get_mut(&self).unwrap()
+    }
+
     pub(crate) fn assert_invariants(self, app: &App) {
         let editor = self.get(app);
         let text = editor.document_id.text(app);

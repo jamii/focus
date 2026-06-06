@@ -1,7 +1,11 @@
-use crate::app::{App, EditorId, IO, WindowId};
+use crate::app::{App, IO};
 use crate::drawing::{Drawing, Rect};
+use crate::editor::EditorId;
 use crate::input::InputEvent;
 use crate::style;
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+pub struct WindowId(pub usize);
 
 pub struct Window {
     pub(crate) editor_id: EditorId,
@@ -16,6 +20,10 @@ impl Window {
 }
 
 impl WindowId {
+    pub(crate) fn get<'a>(self, app: &'a App) -> &'a Window {
+        app.windows.get(&self).unwrap()
+    }
+
     pub(crate) fn assert_invariants(self, _app: &App) {}
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {

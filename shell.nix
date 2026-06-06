@@ -38,6 +38,8 @@ pkgs.mkShell {
     # Coverage reports for tests and fuzz corpus replay.
     pkgs.cargo-llvm-cov
     pkgs.llvm
+    # Formatter used by `cargo fmt`.
+    pkgs.rustfmt
     # The `cargo hfuzz` subcommand, built above (avoids `cargo install`).
     cargo-hfuzz
   ];

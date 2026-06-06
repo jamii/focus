@@ -1,8 +1,9 @@
-use focus_core::app::{App, WindowId};
+use focus_core::app::App;
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{ElementState, Key, ModifiersState, NamedKey};
 use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
+use focus_core::window::WindowId;
 
 mod common;
 

@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::BString;
-use focus_core::app::WindowSize;
-use focus_core::app::{App, IO, WindowId};
+use focus_core::app::{App, IO, WindowSize};
 use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
+use focus_core::window::WindowId;
 
 mod common;
 

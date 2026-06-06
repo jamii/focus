@@ -4,11 +4,11 @@ use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 
-use crate::document::Document;
+use crate::document::{Document, DocumentId};
 use crate::drawing::Drawing;
-use crate::editor::Editor;
+use crate::editor::{Editor, EditorId};
 use crate::input::{ElementState, InputEvent, Key, ModifiersState};
-use crate::window::Window;
+use crate::window::{Window, WindowId};
 
 pub struct App {
     font_size: f32,
@@ -29,20 +29,11 @@ pub struct App {
     pub mouse_position: [f32; 2],
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
-pub struct WindowId(pub usize);
-
 #[derive(Clone, Copy, Debug)]
 pub struct WindowSize {
     pub width: u32,
     pub height: u32,
 }
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
-pub struct DocumentId(usize);
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
-pub struct EditorId(usize);
 
 pub const INITIAL_TITLE: &str = "focus";
 pub const INITIAL_SIZE: WindowSize = WindowSize {
@@ -227,31 +218,5 @@ impl App {
         self.next_document_id.0 += 1;
         self.documents.insert(document_id, document);
         document_id
-    }
-}
-
-impl WindowId {
-    pub(crate) fn get<'a>(self, app: &'a App) -> &'a Window {
-        app.windows.get(&self).unwrap()
-    }
-}
-
-impl EditorId {
-    pub(crate) fn get<'a>(self, app: &'a App) -> &'a Editor {
-        app.editors.get(&self).unwrap()
-    }
-
-    pub(crate) fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Editor {
-        app.editors.get_mut(&self).unwrap()
-    }
-}
-
-impl DocumentId {
-    pub fn get<'a>(self, app: &'a App) -> &'a Document {
-        app.documents.get(&self).unwrap()
-    }
-
-    pub(crate) fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Document {
-        app.documents.get_mut(&self).unwrap()
     }
 }

@@ -4,7 +4,10 @@ use std::{path::PathBuf, time::Duration};
 
 use bstr::{BStr, BString, ByteSlice};
 
-use crate::app::{App, DocumentId, IO};
+use crate::app::{App, IO};
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct DocumentId(pub(crate) usize);
 
 pub struct Document {
     text: BString,
@@ -108,6 +111,14 @@ impl Document {
 }
 
 impl DocumentId {
+    pub fn get<'a>(self, app: &'a App) -> &'a Document {
+        app.documents.get(&self).unwrap()
+    }
+
+    pub(crate) fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Document {
+        app.documents.get_mut(&self).unwrap()
+    }
+
     pub fn text(self, app: &App) -> &BStr {
         return self.get(app).text.as_bstr();
     }

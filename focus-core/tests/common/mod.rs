@@ -4,11 +4,13 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use focus_core::app::{App, DocumentId, WindowId};
+use focus_core::app::App;
+use focus_core::document::DocumentId;
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::style::TEXT_COLOR;
+use focus_core::window::WindowId;
 
 pub fn sync_app_io(app: &mut App, io: &MockIO) {
     focus_core::fuzz::sync_app_io(app, io);

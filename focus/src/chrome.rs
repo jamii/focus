@@ -23,9 +23,10 @@ use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamedKey};
 use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
 
-use focus_core::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, WindowId, WindowSize};
+use focus_core::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, WindowSize};
 use focus_core::drawing::Drawing;
 use focus_core::input::{ElementState, InputEvent, Key, ModifiersState, NamedKey};
+use focus_core::window::WindowId;
 
 use crate::atlas::Atlas;
 use crate::render::Renderer;
