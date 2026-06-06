@@ -114,7 +114,17 @@ pub fn mouse_button(
     position: [f32; 2],
 ) {
     io.mouse_position = position;
-    app.input(io, window_id, InputEvent::MouseButton { state });
+    app.input(io, window_id, InputEvent::MouseButton { state, position });
+}
+
+pub fn mouse_moved(
+    app: &mut App,
+    io: &mut MockIO,
+    window_id: WindowId,
+    position: [f32; 2],
+) {
+    io.mouse_position = position;
+    app.input(io, window_id, InputEvent::MouseMoved { position });
 }
 
 pub fn mouse_wheel(app: &mut App, io: &mut MockIO, window_id: WindowId, y_offset: f32) {
@@ -126,7 +136,8 @@ pub fn focus_changed(app: &mut App, io: &mut MockIO, window_id: WindowId, focuse
 }
 
 pub fn tick(app: &mut App, io: &mut MockIO) {
-    app.tick(io);
+    let frame_start = io.frame_start;
+    app.tick(io, frame_start);
 }
 
 pub fn point_for_offset(cell_size: [u32; 2], offset: usize, line: usize) -> [f32; 2] {

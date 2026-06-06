@@ -260,9 +260,9 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             app.input(io, window_id, InputEvent::MouseWheel { y_offset });
         }
         7 => {
-            // Cursor movement is not an InputEvent in the real app; winit
-            // updates the last cursor position, then App samples it on tick.
-            io.mouse_position = random_mouse_pos(frng, io.screen_size)?;
+            let position = random_mouse_pos(frng, io.screen_size)?;
+            io.mouse_position = position;
+            app.input(io, window_id, InputEvent::MouseMoved { position });
         }
         8 => {
             let state = if frng.boolean()? {

@@ -235,7 +235,7 @@ fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
     let start = common::point_for_offset(app.cell_size(), 1, 0);
     let end = common::point_for_offset(app.cell_size(), 4, 0);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
-    io.mouse_pos = end;
+    common::mouse_moved(&mut app, &mut io, window_id, end);
     common::tick(&mut app, &mut io);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, end);
 
@@ -251,7 +251,7 @@ fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
     let start = common::point_for_offset(app.cell_size(), 2, 0);
     let end = common::point_for_offset(app.cell_size(), 5, 0);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
-    io.mouse_pos = end;
+    common::mouse_moved(&mut app, &mut io, window_id, end);
     common::tick(&mut app, &mut io);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, end);
     common::modifiers(&mut app, &mut io, window_id, ModifiersState::default());
@@ -616,7 +616,7 @@ fn dragging_selects_text_for_replacement() {
     let start = common::point_for_offset(app.cell_size(), 1, 0);
     let end = common::point_for_offset(app.cell_size(), 3, 0);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
-    io.mouse_pos = end;
+    common::mouse_moved(&mut app, &mut io, window_id, end);
     common::tick(&mut app, &mut io);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, end);
     common::char_input(&mut app, &mut io, window_id, 'X');
@@ -649,11 +649,11 @@ fn dragging_below_viewport_scrolls_visible_wraps() {
     let before = common::text_line_lengths(app.cell_size(), &drawing);
     let start = common::point_for_offset(app.cell_size(), 0, 0);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
-    io.mouse_pos = common::point_for_offset(app.cell_size(), 0, 5);
+    let release = common::point_for_offset(app.cell_size(), 0, 5);
+    common::mouse_moved(&mut app, &mut io, window_id, release);
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 10, 3);
     let after = common::text_line_lengths(app.cell_size(), &drawing);
-    let release = io.mouse_pos;
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, release);
 
     assert_ne!(after, before);
@@ -670,11 +670,11 @@ fn dragging_above_viewport_scrolls_visible_wraps() {
     let before = common::text_line_lengths(app.cell_size(), &drawing);
     let start = common::point_for_offset(app.cell_size(), 0, 2);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
-    io.mouse_pos = [0.0, -20.0];
+    let release = [0.0, -20.0];
+    common::mouse_moved(&mut app, &mut io, window_id, release);
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 10, 3);
     let after = common::text_line_lengths(app.cell_size(), &drawing);
-    let release = io.mouse_pos;
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, release);
 
     assert_ne!(after, before);
