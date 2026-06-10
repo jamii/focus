@@ -319,7 +319,7 @@ pub fn fuzz_one(bytes: &[u8]) {
     let mut io = MockIO::new();
     let initial = io.fresh_window_id();
     io.open_windows.push(initial);
-    let initial_path = PathBuf::from("fuzz.txt");
+    let initial_path = PathBuf::from("/fuzz.txt");
     io.files
         .insert(initial_path.clone(), (Vec::new(), SystemTime::UNIX_EPOCH));
     let mut app = App::new(initial, &mut io, Some(initial_path));
