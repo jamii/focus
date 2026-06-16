@@ -19,7 +19,7 @@ Editor:
 * [x] Soft wrap
 * [x] Scrolling
 * [x] Undo/redo
-* [ ] Status bar
+* [x] Status bar
 
 Tools:
 * [ ] Open file
