@@ -3,10 +3,11 @@ use std::os::unix::ffi::OsStrExt;
 
 use crate::{
     app::{App, IO},
-    document::{DocumentId, Source, SourceFile},
+    document::{Source, SourceFile},
     drawing::{Drawing, Rect},
     editor::EditorId,
     input::{ButtonState, InputEvent},
+    style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR},
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
@@ -14,15 +15,14 @@ pub struct PageId(pub(crate) usize);
 
 pub struct Page {
     content: PageContent,
+    editor_ids: Vec<EditorId>,
+    editor_rects: Vec<Rect>,
+    focus: usize, // index into editor_ids
     dragging: bool,
     last_draw_size: [f32; 2],
 }
 pub enum PageContent {
-    Single {
-        editor_id: EditorId,
-        status_bar_id: EditorId,
-        focus: PageSingleFocus,
-    },
+    Single,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -31,18 +31,44 @@ pub enum PageSingleFocus {
     StatusBar,
 }
 
+pub(crate) const GAP: f32 = 1.0;
+
 impl Page {
     pub(crate) fn new_single(editor_id: EditorId, app: &mut App) -> Page {
         let status_bar_id = app.insert_editor_empty();
         Page {
-            content: PageContent::Single {
-                editor_id,
-                status_bar_id,
-                focus: PageSingleFocus::Editor,
-            },
+            content: PageContent::Single,
+            editor_ids: vec![editor_id, status_bar_id],
+            editor_rects: vec![
+                Rect {
+                    pos: [0.0, 0.0],
+                    size: [0.0, 0.0]
+                };
+                2
+            ],
+            focus: 0,
             dragging: false,
             last_draw_size: [0.0, 0.0],
         }
+    }
+
+    pub fn assert_invariants(&self) {
+        match self.content {
+            PageContent::Single => assert!(self.editor_ids.len() == 2),
+        }
+        assert!(self.editor_rects.len() == self.editor_ids.len());
+        for rect in &self.editor_rects {
+            assert!(rect.pos[0] + rect.size[0] <= self.last_draw_size[0]);
+            assert!(rect.pos[1] + rect.size[1] <= self.last_draw_size[1]);
+        }
+        for (ix0, rect0) in self.editor_rects.iter().enumerate() {
+            for (ix1, rect1) in self.editor_rects.iter().enumerate() {
+                if ix0 != ix1 {
+                    assert!(Rect::intersect(*rect0, *rect1).size == [0.0, 0.0]);
+                }
+            }
+        }
+        assert!(self.focus < self.editor_ids.len());
     }
 }
 
@@ -56,23 +82,16 @@ impl PageId {
         app.pages.get_mut(&self).unwrap()
     }
 
-    pub(crate) fn assert_invariants(self, _app: &App) {}
-
-    pub(crate) fn document_id(self, app: &App) -> DocumentId {
-        match self.get(app).content {
-            PageContent::Single { editor_id, .. } => editor_id.get(app).document_id,
-        }
-    }
-
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         match self.get(app).content {
-            PageContent::Single {
-                editor_id,
-                status_bar_id,
-                ..
-            } => {
+            PageContent::Single => {
+                let &[editor_id, status_bar_id] = &*self.get(app).editor_ids else {
+                    unreachable!()
+                };
+
                 editor_id.tick(app, io);
 
+                // Update status bar text.
                 let status_bar_document_id = status_bar_id.get(app).document_id;
                 let cursor_main_offset = editor_id.get(app).cursors.last().unwrap().head.offset;
                 let grid = editor_id.grid_from_offset(app, cursor_main_offset);
@@ -91,124 +110,101 @@ impl PageId {
     }
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, mut event: InputEvent<'_>) {
+        let page = self.get_mut(app);
+
+        // Update drag state.
         match event {
             InputEvent::MouseButton { state, .. } => {
-                self.get_mut(app).dragging = state == ButtonState::Pressed;
+                page.dragging = state == ButtonState::Pressed;
             }
             _ => {}
         }
 
-        let cell_size = app.cell_size();
-        match self.get_mut(app) {
-            &mut Page {
-                content:
-                    PageContent::Single {
-                        editor_id,
-                        status_bar_id,
-                        ref mut focus,
-                        ..
-                    },
-                dragging,
-                last_draw_size: last_size,
-                ..
-            } => match event {
-                InputEvent::MouseMoved { position } => {
-                    if !dragging {
-                        let focus_new = if position[1] > last_size[1] - (cell_size[1] as f32) {
-                            PageSingleFocus::StatusBar
-                        } else {
-                            PageSingleFocus::Editor
-                        };
-                        if *focus != focus_new {
-                            *focus = focus_new;
+        // Check if focus changed.
+        match event {
+            InputEvent::MouseMoved { position } => {
+                if !page.dragging {
+                    let focus_new = (0..page.editor_rects.len())
+                        .into_iter()
+                        .filter(|i| page.editor_rects[*i].contains(position))
+                        .next()
+                        .unwrap_or(page.focus);
+                    if page.focus != focus_new {
+                        page.focus = focus_new;
+                        let editor_ids = page.editor_ids.clone();
+                        for (i, editor_id) in editor_ids.iter().enumerate() {
                             editor_id.input(
                                 app,
                                 io,
                                 InputEvent::FocusChanged {
-                                    focused: focus_new == PageSingleFocus::Editor,
-                                },
-                            );
-                            status_bar_id.input(
-                                app,
-                                io,
-                                InputEvent::FocusChanged {
-                                    focused: focus_new == PageSingleFocus::StatusBar,
+                                    focused: focus_new == i,
                                 },
                             );
                         }
                     }
                 }
-                _ => {}
-            },
-        }
-
-        match self.get_mut(app) {
-            &mut Page {
-                content: PageContent::Single { focus, .. },
-                last_draw_size: last_size,
-                ..
-            } => match &mut event {
-                InputEvent::MouseMoved { position } | InputEvent::MouseButton { position, .. } => {
-                    match focus {
-                        PageSingleFocus::Editor => {}
-                        PageSingleFocus::StatusBar => {
-                            position[1] -= last_size[1] - (cell_size[1] as f32)
-                        }
-                    }
-                }
-                _ => {}
-            },
-        }
-
-        match self.get_mut(app) {
-            Page {
-                content:
-                    PageContent::Single {
-                        editor_id,
-                        status_bar_id,
-                        focus,
-                        ..
-                    },
-                ..
-            } => {
-                let id = match focus {
-                    PageSingleFocus::Editor => editor_id,
-                    PageSingleFocus::StatusBar => status_bar_id,
-                };
-                id.input(app, io, event);
             }
+            _ => {}
         }
+
+        let page = self.get(app);
+
+        // Adjust mouse event positions to be relative to the focused editor.
+        match &mut event {
+            InputEvent::MouseMoved { position } | InputEvent::MouseButton { position, .. } => {
+                position[0] -= page.editor_rects[page.focus].pos[0];
+                position[1] -= page.editor_rects[page.focus].pos[1];
+            }
+            _ => {}
+        }
+
+        // Dispatch event to focused editor.
+        page.editor_ids[page.focus].input(app, io, event);
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
-        self.get_mut(app).last_draw_size = drawing.size();
+        let cell_size = app.cell_size();
+        let page = self.get_mut(app);
 
-        match self.get(app).content {
-            PageContent::Single {
-                editor_id,
-                status_bar_id,
-                focus,
-            } => {
-                let status_bar_size = [drawing.size()[0], app.cell_size()[1] as f32];
-                let mut editor_size = drawing.size();
-                editor_size[1] -= status_bar_size[1];
-
-                {
-                    let mut drawing = drawing.push_clip_rect(Rect {
-                        pos: [0.0, 0.0],
-                        size: editor_size,
-                    });
-                    editor_id.draw(app, &mut drawing, focus == PageSingleFocus::Editor);
-                }
-
-                {
-                    let mut drawing = drawing.push_clip_rect(Rect {
-                        pos: [0.0, editor_size[1]],
-                        size: status_bar_size,
-                    });
-                    status_bar_id.draw(app, &mut drawing, focus == PageSingleFocus::StatusBar);
+        // Resize if necessary.
+        if page.last_draw_size != drawing.size() {
+            page.last_draw_size = drawing.size();
+            let page_rect = Rect {
+                pos: [0.0, 0.0],
+                size: page.last_draw_size,
+            };
+            match page.content {
+                PageContent::Single => {
+                    page.editor_rects =
+                        page_rect.split_from_bottom(cell_size[1] as f32, GAP).into();
                 }
             }
+        }
+
+        // Draw gaps.
+        drawing.draw_rect(
+            Rect {
+                pos: [0.0, 0.0],
+                size: page.last_draw_size,
+            },
+            BACKGROUND_COLOR,
+        );
+        drawing.draw_rect(
+            Rect {
+                pos: [0.0, 0.0],
+                size: page.last_draw_size,
+            },
+            HIGHLIGHT_COLOR,
+        );
+
+        // Draw each editor.
+        let editor_ids = page.editor_ids.clone();
+        let editor_rects = page.editor_rects.clone();
+        let focus = page.focus;
+        for (i, (editor_id, editor_rect)) in editor_ids.iter().zip(editor_rects.iter()).enumerate()
+        {
+            let mut drawing = drawing.push_clip_rect(*editor_rect);
+            editor_id.draw(app, &mut drawing, focus == i);
         }
     }
 }

@@ -1,8 +1,7 @@
 use crate::app::{App, IO};
-use crate::drawing::{Drawing, Rect};
+use crate::drawing::Drawing;
 use crate::input::InputEvent;
 use crate::page::PageId;
-use crate::style;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub struct WindowId(pub usize);
@@ -15,14 +14,14 @@ impl Window {
     pub(crate) fn new(page_id: PageId) -> Window {
         Window { page_id }
     }
+
+    pub(crate) fn assert_invariants(&self) {}
 }
 
 impl WindowId {
     pub(crate) fn get<'a>(self, app: &'a App) -> &'a Window {
         app.windows.get(&self).unwrap()
     }
-
-    pub(crate) fn assert_invariants(self, _app: &App) {}
 
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         let page_id = self.get(app).page_id;
@@ -35,13 +34,6 @@ impl WindowId {
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
-        drawing.draw_rect(
-            Rect {
-                pos: [0.0, 0.0],
-                size: [1e9, 1e9],
-            },
-            style::BACKGROUND_COLOR,
-        );
         self.get(app).page_id.draw(app, drawing);
     }
 }

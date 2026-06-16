@@ -38,18 +38,39 @@ impl Rect {
             size: [end[0] - start[0], end[1] - start[1]],
         }
     }
-}
 
-// Axis-aligned intersection. Returns a rect with non-positive size when the
-// inputs don't overlap; callers check size[0] > 0 && size[1] > 0 before drawing.
-fn intersect_rects(a: Rect, b: Rect) -> Rect {
-    let x0 = a.pos[0].max(b.pos[0]);
-    let y0 = a.pos[1].max(b.pos[1]);
-    let x1 = (a.pos[0] + a.size[0]).min(b.pos[0] + b.size[0]);
-    let y1 = (a.pos[1] + a.size[1]).min(b.pos[1] + b.size[1]);
-    Rect {
-        pos: [x0, y0],
-        size: [(x1 - x0).max(0.0), (y1 - y0).max(0.0)],
+    // Axis-aligned intersection. Returns a rect with non-positive size when the
+    // inputs don't overlap; callers check size[0] > 0 && size[1] > 0 before drawing.
+    pub(crate) fn intersect(self, b: Rect) -> Rect {
+        let a = self;
+        let x0 = a.pos[0].max(b.pos[0]);
+        let y0 = a.pos[1].max(b.pos[1]);
+        let x1 = (a.pos[0] + a.size[0]).min(b.pos[0] + b.size[0]);
+        let y1 = (a.pos[1] + a.size[1]).min(b.pos[1] + b.size[1]);
+        Rect {
+            pos: [x0, y0],
+            size: [(x1 - x0).max(0.0), (y1 - y0).max(0.0)],
+        }
+    }
+
+    pub(crate) fn contains(&self, pos: [f32; 2]) -> bool {
+        (self.pos[0] <= pos[0])
+            && (pos[0] <= self.pos[0] + self.size[0])
+            && (self.pos[1] <= pos[1])
+            && (pos[1] <= self.pos[1] + self.size[1])
+    }
+
+    pub(crate) fn split_from_bottom(&self, h: f32, gap: f32) -> [Rect; 2] {
+        [
+            Rect {
+                pos: self.pos,
+                size: [self.size[0], self.size[1] - h - gap],
+            },
+            Rect {
+                pos: [self.pos[0], self.size[1] - h + gap],
+                size: [self.size[0], h],
+            },
+        ]
     }
 }
 
@@ -140,7 +161,7 @@ impl Drawing {
             pos: [clip.pos[0] + rect.pos[0], clip.pos[1] + rect.pos[1]],
             size: rect.size,
         };
-        self.clip_stack.push(intersect_rects(abs_rect, clip));
+        self.clip_stack.push(Rect::intersect(abs_rect, clip));
         ClipScope { drawing: self }
     }
 
@@ -153,7 +174,7 @@ impl Drawing {
             pos: [clip.pos[0] + rect.pos[0], clip.pos[1] + rect.pos[1]],
             size: rect.size,
         };
-        let trimmed = intersect_rects(abs_rect, clip);
+        let trimmed = Rect::intersect(abs_rect, clip);
         if trimmed.size[0] > 0.0 && trimmed.size[1] > 0.0 {
             self.commands.push(DrawCommand::Character(Character {
                 ch: FULL_BLOCK,

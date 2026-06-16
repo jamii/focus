@@ -1,6 +1,5 @@
 pub const BACKGROUND_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.2, 1.0);
 // pub const FADE_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.2, 0.4);
-// pub const STATUS_BACKGROUND_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.1, 1.0);
 pub const TEXT_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.9, 1.0);
 pub const HIGHLIGHT_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.9, 0.3);
 // pub const KEYWORD_COLOR: [u8; 4] = TEXT_COLOR;

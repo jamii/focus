@@ -29,6 +29,7 @@ Tools:
 * [ ] Search within project files
 * [ ] Search errors
 * [ ] Runner
+* [ ] Navigation stack
 
 Language specific:
 * [ ] Rust
@@ -55,6 +56,9 @@ Testing:
 
 Arch:
 * [ ] Daemonize
+
+Perf:
+* [ ] Don't store undo for readonly documents
 
 ## wishlist
 

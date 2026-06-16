@@ -74,16 +74,16 @@ const FONT_SIZE_MIN: f32 = 4.0;
 impl App {
     pub fn assert_invariants(&self) {
         for document_id in self.documents.keys() {
-            document_id.assert_invariants(self);
+            document_id.get(self).assert_invariants();
         }
         for page_id in self.pages.keys() {
-            page_id.assert_invariants(self);
+            page_id.get(self).assert_invariants();
         }
         for editor_id in self.editors.keys() {
-            editor_id.assert_invariants(self);
+            editor_id.get(self).assert_invariants(self);
         }
         for window_id in self.windows.keys() {
-            window_id.assert_invariants(self);
+            window_id.get(self).assert_invariants();
         }
     }
 
@@ -146,12 +146,6 @@ impl App {
                 }
                 Key::Character("n") => {
                     self.insert_window_empty(io);
-                }
-                Key::Character("m") => {
-                    let document_id = window_id.get(self).page_id.document_id(self);
-                    let editor_id_new = self.insert_editor(Editor::new(self, document_id));
-                    let page_id_new = self.insert_page_single(editor_id_new);
-                    self.insert_window(io, Window::new(page_id_new));
                 }
                 _ => {
                     window_id.input(self, io, event);

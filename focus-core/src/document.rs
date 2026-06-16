@@ -60,7 +60,7 @@ pub(crate) struct OffsetDiff {
 }
 
 impl Document {
-    fn assert_invariants(&self) {
+    pub fn assert_invariants(&self) {
         self.source.assert_invariants();
         assert_eq!(
             self.text.chars().filter(|c| *c == '\n').count(),
@@ -126,10 +126,6 @@ impl DocumentId {
 
     pub(crate) fn source(self, app: &App) -> &Source {
         return &self.get(app).source;
-    }
-
-    pub(crate) fn assert_invariants(self, app: &App) {
-        self.get(app).assert_invariants();
     }
 
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {

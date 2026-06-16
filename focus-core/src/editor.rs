@@ -73,6 +73,34 @@ impl Editor {
             is_dragging: false,
         }
     }
+
+    pub(crate) fn assert_invariants(&self, app: &App) {
+        let text = self.document_id.text(app);
+
+        // Cursors
+        assert!(self.cursors.len() > 0);
+        for cursor in &self.cursors {
+            for point in [&cursor.head, &cursor.tail] {
+                assert!(point.offset <= text.len());
+            }
+        }
+
+        // Wraps
+        assert!(!self.wraps.is_empty());
+        assert_eq!(self.wraps[0][0], 0);
+        assert_eq!(self.wraps.last().unwrap()[1], text.len());
+        for wrap in &self.wraps {
+            assert!(wrap[0] <= wrap[1]);
+            assert!(text[wrap[0]..wrap[1]].chars().count() <= self.wrap_chars)
+        }
+        for pair in self.wraps.windows(2) {
+            let gap = pair[1][0] - pair[0][1];
+            assert!(gap <= 1);
+            if gap == 1 {
+                assert!(text[pair[0][1]..].chars().next().unwrap() == '\n')
+            }
+        }
+    }
 }
 
 impl EditorId {
@@ -82,35 +110,6 @@ impl EditorId {
 
     pub(crate) fn get_mut<'a>(self, app: &'a mut App) -> &'a mut Editor {
         app.editors.get_mut(&self).unwrap()
-    }
-
-    pub(crate) fn assert_invariants(self, app: &App) {
-        let editor = self.get(app);
-        let text = editor.document_id.text(app);
-
-        // Cursors
-        assert!(editor.cursors.len() > 0);
-        for cursor in &editor.cursors {
-            for point in [&cursor.head, &cursor.tail] {
-                assert!(point.offset <= text.len());
-            }
-        }
-
-        // Wraps
-        assert!(!editor.wraps.is_empty());
-        assert_eq!(editor.wraps[0][0], 0);
-        assert_eq!(editor.wraps.last().unwrap()[1], text.len());
-        for wrap in &editor.wraps {
-            assert!(wrap[0] <= wrap[1]);
-            assert!(text[wrap[0]..wrap[1]].chars().count() <= editor.wrap_chars)
-        }
-        for pair in editor.wraps.windows(2) {
-            let gap = pair[1][0] - pair[0][1];
-            assert!(gap <= 1);
-            if gap == 1 {
-                assert!(text[pair[0][1]..].chars().next().unwrap() == '\n')
-            }
-        }
     }
 
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
@@ -288,6 +287,15 @@ impl EditorId {
 
         let gutter_w = app.screen_from_grid([1, 0])[0];
 
+        // Draw background.
+        drawing.draw_rect(
+            Rect {
+                pos: [0.0, 0.0],
+                size: drawing.size(),
+            },
+            BACKGROUND_COLOR,
+        );
+
         // Left gutter: soft-wrap continuation markers.
         {
             let mut drawing = drawing.push_clip_rect(Rect {
@@ -316,21 +324,19 @@ impl EditorId {
             let top_y = ((-translate_y) / total_h * viewport_h_f).clamp(0.0, viewport_h_f);
             let bot_y =
                 (((-translate_y) + viewport_h_f) / total_h * viewport_h_f).clamp(0.0, viewport_h_f);
-            let h = (bot_y - top_y).max(1.0);
-            let gutter_size = drawing.size();
             drawing.draw_rect(
                 Rect {
                     pos: [0.0, 0.0],
-                    size: gutter_size,
+                    size: [gutter_w, top_y],
                 },
                 HIGHLIGHT_COLOR,
             );
             drawing.draw_rect(
                 Rect {
-                    pos: [0.0, top_y],
-                    size: [gutter_w, h],
+                    pos: [0.0, bot_y],
+                    size: [gutter_w, viewport_size[1] - bot_y],
                 },
-                BACKGROUND_COLOR,
+                HIGHLIGHT_COLOR,
             );
         }
 
