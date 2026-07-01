@@ -107,7 +107,7 @@ impl App {
             None => app.insert_document(Document::scratch()),
         };
         let editor_id = app.insert_editor(Editor::new(&app, document_id));
-        let page = Page::new_single(&mut app, editor_id);
+        let page = Page::new_edit(&mut app, editor_id);
         let page_id = app.insert_page(page);
         app.windows.insert(initial_window_id, Window::new(page_id));
         app
@@ -191,7 +191,7 @@ impl App {
 
     pub(crate) fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
         let editor_id = self.insert_editor_empty();
-        let page = Page::new_single(self, editor_id);
+        let page = Page::new_edit(self, editor_id);
         let page_id = self.insert_page(page);
         self.insert_window(io, Window::new(page_id))
     }

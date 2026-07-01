@@ -43,7 +43,7 @@ impl WindowId {
                         true
                     }
                     Key::Character("o") => {
-                        let page = Page::new_file_opener(app);
+                        let page = Page::new_open_file(app);
                         self.get_mut(app).page_id = app.insert_page(page);
                         true
                     }

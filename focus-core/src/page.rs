@@ -22,23 +22,17 @@ pub struct Page {
     last_draw_size: [f32; 2],
 }
 pub enum PageContent {
-    Single,
-    FileOpener,
-}
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum PageSingleFocus {
-    Editor,
-    StatusBar,
+    Edit,
+    OpenFile,
 }
 
 pub(crate) const GAP: f32 = 1.0;
 
 impl Page {
-    pub(crate) fn new_single(app: &mut App, editor_id: EditorId) -> Page {
+    pub(crate) fn new_edit(app: &mut App, editor_id: EditorId) -> Page {
         let status_bar_id = app.insert_editor_empty();
         Page {
-            content: PageContent::Single,
+            content: PageContent::Edit,
             editor_ids: vec![editor_id, status_bar_id],
             editor_rects: vec![
                 Rect {
@@ -53,12 +47,12 @@ impl Page {
         }
     }
 
-    pub(crate) fn new_file_opener(app: &mut App) -> Page {
+    pub(crate) fn new_open_file(app: &mut App) -> Page {
         let preview_id = app.insert_editor_empty();
         let path_id = app.insert_editor_empty();
         let list_id = app.insert_editor_empty();
         Page {
-            content: PageContent::FileOpener,
+            content: PageContent::OpenFile,
             editor_ids: vec![preview_id, path_id, list_id],
             editor_rects: vec![
                 Rect {
@@ -75,8 +69,8 @@ impl Page {
 
     pub fn assert_invariants(&self) {
         match self.content {
-            PageContent::Single => assert!(self.editor_ids.len() == 2),
-            PageContent::FileOpener => assert!(self.editor_ids.len() == 3),
+            PageContent::Edit => assert!(self.editor_ids.len() == 2),
+            PageContent::OpenFile => assert!(self.editor_ids.len() == 3),
         }
         assert!(self.editor_rects.len() == self.editor_ids.len());
         for rect in &self.editor_rects {
@@ -106,7 +100,7 @@ impl PageId {
 
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         match self.get(app).content {
-            PageContent::Single => {
+            PageContent::Edit => {
                 let &[editor_id, status_bar_id] = &*self.get(app).editor_ids else {
                     unreachable!()
                 };
@@ -128,7 +122,7 @@ impl PageId {
 
                 status_bar_id.tick(app, io);
             }
-            PageContent::FileOpener => {
+            PageContent::OpenFile => {
                 // TODO
             }
         }
@@ -199,12 +193,12 @@ impl PageId {
                 size: page.last_draw_size,
             };
             page.editor_rects = match page.content {
-                PageContent::Single => {
+                PageContent::Edit => {
                     let [editor_rect, status_bar_rect] =
                         page_rect.split_from_bottom(cell_size[1] as f32, GAP);
                     vec![editor_rect, status_bar_rect]
                 }
-                PageContent::FileOpener => {
+                PageContent::OpenFile => {
                     let [preview_rect, rest] =
                         page_rect.split_from_bottom(page_rect.size[1] as f32 / 2.0, GAP);
                     let [path_rect, list_rect] = rest.split_from_top(cell_size[1] as f32, GAP);
