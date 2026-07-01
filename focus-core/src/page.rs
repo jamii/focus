@@ -23,6 +23,7 @@ pub struct Page {
 }
 pub enum PageContent {
     Single,
+    FileOpener,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -34,7 +35,7 @@ pub enum PageSingleFocus {
 pub(crate) const GAP: f32 = 1.0;
 
 impl Page {
-    pub(crate) fn new_single(editor_id: EditorId, app: &mut App) -> Page {
+    pub(crate) fn new_single(app: &mut App, editor_id: EditorId) -> Page {
         let status_bar_id = app.insert_editor_empty();
         Page {
             content: PageContent::Single,
@@ -52,9 +53,30 @@ impl Page {
         }
     }
 
+    pub(crate) fn new_file_opener(app: &mut App) -> Page {
+        let preview_id = app.insert_editor_empty();
+        let path_id = app.insert_editor_empty();
+        let list_id = app.insert_editor_empty();
+        Page {
+            content: PageContent::FileOpener,
+            editor_ids: vec![preview_id, path_id, list_id],
+            editor_rects: vec![
+                Rect {
+                    pos: [0.0, 0.0],
+                    size: [0.0, 0.0]
+                };
+                3
+            ],
+            focus: 1,
+            dragging: false,
+            last_draw_size: [0.0, 0.0],
+        }
+    }
+
     pub fn assert_invariants(&self) {
         match self.content {
             PageContent::Single => assert!(self.editor_ids.len() == 2),
+            PageContent::FileOpener => assert!(self.editor_ids.len() == 3),
         }
         assert!(self.editor_rects.len() == self.editor_ids.len());
         for rect in &self.editor_rects {
@@ -105,6 +127,9 @@ impl PageId {
                 status_bar_document_id.replace(app, BStr::new(status_text.as_bytes()));
 
                 status_bar_id.tick(app, io);
+            }
+            PageContent::FileOpener => {
+                // TODO
             }
         }
     }
@@ -173,10 +198,17 @@ impl PageId {
                 pos: [0.0, 0.0],
                 size: page.last_draw_size,
             };
-            match page.content {
+            page.editor_rects = match page.content {
                 PageContent::Single => {
-                    page.editor_rects =
-                        page_rect.split_from_bottom(cell_size[1] as f32, GAP).into();
+                    let [editor_rect, status_bar_rect] =
+                        page_rect.split_from_bottom(cell_size[1] as f32, GAP);
+                    vec![editor_rect, status_bar_rect]
+                }
+                PageContent::FileOpener => {
+                    let [preview_rect, rest] =
+                        page_rect.split_from_bottom(page_rect.size[1] as f32 / 2.0, GAP);
+                    let [path_rect, list_rect] = rest.split_from_top(cell_size[1] as f32, GAP);
+                    vec![preview_rect, path_rect, list_rect]
                 }
             }
         }

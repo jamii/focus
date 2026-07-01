@@ -107,7 +107,8 @@ impl App {
             None => app.insert_document(Document::scratch()),
         };
         let editor_id = app.insert_editor(Editor::new(&app, document_id));
-        let page_id = app.insert_page_single(editor_id);
+        let page = Page::new_single(&mut app, editor_id);
+        let page_id = app.insert_page(page);
         app.windows.insert(initial_window_id, Window::new(page_id));
         app
     }
@@ -122,16 +123,18 @@ impl App {
     }
 
     pub fn input(&mut self, io: &mut dyn IO, window_id: WindowId, event: InputEvent<'_>) {
-        match &event {
+        let handled = match &event {
             InputEvent::CloseRequested => {
                 self.windows.remove(&window_id);
                 io.close_window(window_id);
                 if self.windows.is_empty() {
                     io.exit();
                 }
+                true
             }
             InputEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = *modifiers;
+                true
             }
             InputEvent::Key {
                 state, logical_key, ..
@@ -139,21 +142,20 @@ impl App {
                 Key::Character("+") => {
                     self.font_size += 1.0;
                     self.rebuild_atlas(io);
+                    true
                 }
                 Key::Character("-") => {
                     self.font_size = (self.font_size - 1.0).max(FONT_SIZE_MIN);
                     self.rebuild_atlas(io);
+                    true
                 }
-                Key::Character("n") => {
-                    self.insert_window_empty(io);
-                }
-                _ => {
-                    window_id.input(self, io, event);
-                }
+                _ => false,
             },
-            _ => {
-                window_id.input(self, io, event);
-            }
+            _ => false,
+        };
+
+        if !handled {
+            window_id.input(self, io, event);
         }
     }
 
@@ -187,8 +189,10 @@ impl App {
         ]
     }
 
-    fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
-        let page_id = self.insert_page_single_empty();
+    pub(crate) fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
+        let editor_id = self.insert_editor_empty();
+        let page = Page::new_single(self, editor_id);
+        let page_id = self.insert_page(page);
         self.insert_window(io, Window::new(page_id))
     }
 
@@ -196,16 +200,6 @@ impl App {
         let window_id = io.open_window(INITIAL_TITLE.to_string(), INITIAL_SIZE);
         self.windows.insert(window_id, window);
         window_id
-    }
-
-    pub(crate) fn insert_page_single_empty(&mut self) -> PageId {
-        let editor_id = self.insert_editor_empty();
-        self.insert_page_single(editor_id)
-    }
-
-    pub(crate) fn insert_page_single(&mut self, editor_id: EditorId) -> PageId {
-        let page = Page::new_single(editor_id, self);
-        self.insert_page(page)
     }
 
     pub(crate) fn insert_page(&mut self, page: Page) -> PageId {

@@ -117,12 +117,7 @@ pub fn mouse_button(
     app.input(io, window_id, InputEvent::MouseButton { state, position });
 }
 
-pub fn mouse_moved(
-    app: &mut App,
-    io: &mut MockIO,
-    window_id: WindowId,
-    position: [f32; 2],
-) {
+pub fn mouse_moved(app: &mut App, io: &mut MockIO, window_id: WindowId, position: [f32; 2]) {
     io.mouse_position = position;
     app.input(io, window_id, InputEvent::MouseMoved { position });
 }

@@ -24,7 +24,6 @@ impl ErrorIO {
             file_write_error: None,
         }
     }
-
 }
 
 impl IO for ErrorIO {

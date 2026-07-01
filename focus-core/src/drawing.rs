@@ -67,10 +67,14 @@ impl Rect {
                 size: [self.size[0], self.size[1] - h - gap],
             },
             Rect {
-                pos: [self.pos[0], self.size[1] - h + gap],
+                pos: [self.pos[0], self.pos[1] + self.size[1] - h + gap],
                 size: [self.size[0], h],
             },
         ]
+    }
+
+    pub(crate) fn split_from_top(&self, h: f32, gap: f32) -> [Rect; 2] {
+        self.split_from_bottom(self.size[1] - h - gap, gap)
     }
 }
 
