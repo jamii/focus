@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::mem::take;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -205,13 +206,31 @@ impl BufferId {
 
         buffer.last_modified_time = frame_start;
 
-        let editor_ids: Vec<_> = app
+        let editor_ids: HashSet<_> = app
             .editors
             .iter()
-            .filter_map(|(editor_id, editor)| (editor.buffer_id == self).then_some(*editor_id))
+            .filter_map(|(editor_id, editor)| {
+                if editor.buffer_id == self {
+                    Some(*editor_id)
+                } else {
+                    None
+                }
+            })
             .collect();
-        for editor_id in editor_ids {
+        for editor_id in &editor_ids {
             editor_id.handle_edits(app, &diff);
+        }
+
+        let mut page_ids = HashSet::new();
+        for (page_id, page) in &app.pages {
+            for (editor_ix, editor_id) in page.editor_ids().iter().enumerate() {
+                if editor_ids.contains(editor_id) {
+                    page_ids.insert((*page_id, editor_ix));
+                }
+            }
+        }
+        for (page_id, editor_ix) in &page_ids {
+            page_id.handle_edits(app, *editor_ix, &diff);
         }
     }
 

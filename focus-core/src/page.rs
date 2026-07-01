@@ -3,7 +3,7 @@ use std::os::unix::ffi::OsStrExt;
 
 use crate::{
     app::{App, IO},
-    buffer::{Source, SourceFile},
+    buffer::{OffsetDiff, Source, SourceFile},
     drawing::{Drawing, Rect},
     editor::EditorId,
     input::{ButtonState, InputEvent},
@@ -85,6 +85,10 @@ impl Page {
             }
         }
         assert!(self.focus < self.editor_ids.len());
+    }
+
+    pub(crate) fn editor_ids(&self) -> &[EditorId] {
+        &*self.editor_ids
     }
 }
 
@@ -231,6 +235,17 @@ impl PageId {
         {
             let mut drawing = drawing.push_clip_rect(*editor_rect);
             editor_id.draw(app, &mut drawing, focus == i);
+        }
+    }
+
+    pub(crate) fn handle_edits(self, app: &mut App, editor_ix: usize, diff: &OffsetDiff) {
+        match self.get(app).content {
+            PageContent::Edit => {}
+            PageContent::OpenFile => {
+                if editor_ix == 1 {
+                    // TODO selection changed, reload lister
+                }
+            }
         }
     }
 }
