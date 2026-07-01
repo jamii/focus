@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use focus_core::app::App;
-use focus_core::document::DocumentId;
+use focus_core::buffer::BufferId;
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
@@ -40,12 +40,12 @@ pub fn file_app(path: PathBuf, text: &str) -> (App, MockIO, WindowId) {
     (app, io, window_id)
 }
 
-pub fn document_id(app: &App) -> DocumentId {
-    *app.documents.keys().min().unwrap()
+pub fn buffer_id(app: &App) -> BufferId {
+    *app.buffers.keys().min().unwrap()
 }
 
 pub fn text(app: &App) -> String {
-    document_id(app).text(app).to_string()
+    buffer_id(app).text(app).to_string()
 }
 
 pub fn key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
@@ -143,7 +143,7 @@ pub fn point_for_offset(cell_size: [u32; 2], offset: usize, line: usize) -> [f32
     ]
 }
 
-pub fn open_same_document_window(app: &mut App, io: &mut MockIO, window_id: WindowId) -> WindowId {
+pub fn open_same_buffer_window(app: &mut App, io: &mut MockIO, window_id: WindowId) -> WindowId {
     let before = io.open_windows.clone();
     control_key(app, io, window_id, Key::Character("m"));
     *io.open_windows

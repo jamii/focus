@@ -5,7 +5,7 @@ use focus_core::style::TEXT_COLOR;
 mod common;
 
 #[test]
-fn ctrl_n_opens_a_new_window_with_a_new_document() {
+fn ctrl_n_opens_a_new_window_with_a_new_buffer() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
     common::control_key(&mut app, &mut io, window_id, Key::Character("n"));
@@ -13,13 +13,13 @@ fn ctrl_n_opens_a_new_window_with_a_new_document() {
     assert_eq!(app.windows.len(), 2);
     assert_eq!(app.pages.len(), 2);
     assert_eq!(app.editors.len(), 4);
-    assert_eq!(app.documents.len(), 4);
+    assert_eq!(app.buffers.len(), 4);
     assert_eq!(io.open_windows.len(), 2);
     app.assert_invariants();
 }
 
 #[test]
-fn ctrl_m_opens_a_new_window_on_the_same_document() {
+fn ctrl_m_opens_a_new_window_on_the_same_buffer() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
     common::control_key(&mut app, &mut io, window_id, Key::Character("m"));
@@ -27,7 +27,7 @@ fn ctrl_m_opens_a_new_window_on_the_same_document() {
     assert_eq!(app.windows.len(), 2);
     assert_eq!(app.pages.len(), 2);
     assert_eq!(app.editors.len(), 4);
-    assert_eq!(app.documents.len(), 3);
+    assert_eq!(app.buffers.len(), 3);
     assert_eq!(io.open_windows.len(), 2);
     app.assert_invariants();
 }
@@ -71,9 +71,9 @@ fn status_bar_shows_scratch_cursor_position() {
 
     common::tick(&mut app, &mut io);
     let status_text = app
-        .documents
+        .buffers
         .keys()
-        .map(|document_id| document_id.text(&app).to_string())
+        .map(|buffer_id| buffer_id.text(&app).to_string())
         .find(|text| text.starts_with("scratch"))
         .unwrap();
 
@@ -90,9 +90,9 @@ fn status_bar_updates_cursor_position_after_movement() {
     common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     common::tick(&mut app, &mut io);
     let status_text = app
-        .documents
+        .buffers
         .keys()
-        .map(|document_id| document_id.text(&app).to_string())
+        .map(|buffer_id| buffer_id.text(&app).to_string())
         .find(|text| text.starts_with("scratch"))
         .unwrap();
 
@@ -101,15 +101,15 @@ fn status_bar_updates_cursor_position_after_movement() {
 }
 
 #[test]
-fn status_bar_uses_file_path_for_file_documents() {
+fn status_bar_uses_file_path_for_file_buffers() {
     let path = std::path::PathBuf::from("/tmp/focus-status-path-test.txt");
     let (mut app, mut io, _window_id) = common::file_app(path.clone(), "abc");
 
     common::tick(&mut app, &mut io);
     let status_text = app
-        .documents
+        .buffers
         .keys()
-        .map(|document_id| document_id.text(&app).to_string())
+        .map(|buffer_id| buffer_id.text(&app).to_string())
         .find(|text| text.starts_with(path.to_str().unwrap()))
         .unwrap();
 
@@ -125,9 +125,9 @@ fn status_bar_tracks_soft_wrap_cursor_grid() {
     common::draw(&mut app, window_id, 3, 4);
     common::tick(&mut app, &mut io);
     let status_text = app
-        .documents
+        .buffers
         .keys()
-        .map(|document_id| document_id.text(&app).to_string())
+        .map(|buffer_id| buffer_id.text(&app).to_string())
         .find(|text| text.starts_with("scratch"))
         .unwrap();
 

@@ -117,7 +117,7 @@ fn unhandled_keys_and_released_keys_do_not_edit_text() {
 }
 
 #[test]
-fn backspace_and_delete_noop_at_document_boundaries() {
+fn backspace_and_delete_noop_at_buffer_boundaries() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
     common::key(
@@ -461,7 +461,7 @@ fn vertical_movement_across_soft_wraps() {
 }
 
 #[test]
-fn alt_navigation_moves_to_line_and_document_boundaries() {
+fn alt_navigation_moves_to_line_and_buffer_boundaries() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abc\ndef");
 
@@ -558,20 +558,20 @@ fn click_hit_testing_handles_screen_edges_and_half_cells() {
     assert_eq!(common::text(&app), "BAaCbcd");
 
     common::draw(&mut app, window_id, 10, 3);
-    let below_document = [cell_w, cell_h * 10.0];
+    let below_buffer = [cell_w, cell_h * 10.0];
     common::mouse_button(
         &mut app,
         &mut io,
         window_id,
         ButtonState::Pressed,
-        below_document,
+        below_buffer,
     );
     common::mouse_button(
         &mut app,
         &mut io,
         window_id,
         ButtonState::Released,
-        below_document,
+        below_buffer,
     );
     common::char_input(&mut app, &mut io, window_id, 'D');
 
@@ -686,7 +686,7 @@ fn cursor_shifts_through_earlier_delete_from_another_editor() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcdefghijk");
     move_left(&mut app, &mut io, window_id, 1);
-    let other_window_id = common::open_same_document_window(&mut app, &mut io, window_id);
+    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
 
     move_right(&mut app, &mut io, other_window_id, 4);
     common::key(
@@ -706,7 +706,7 @@ fn cursor_ignores_later_insert_from_another_editor() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcdefghijk");
     move_left(&mut app, &mut io, window_id, 6);
-    let other_window_id = common::open_same_document_window(&mut app, &mut io, window_id);
+    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
 
     move_right(&mut app, &mut io, other_window_id, 10);
     common::char_input(&mut app, &mut io, other_window_id, 'X');
@@ -721,7 +721,7 @@ fn cursor_inside_delete_from_another_editor_clamps_to_delete_start() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcdefghij");
     move_left(&mut app, &mut io, window_id, 5);
-    let other_window_id = common::open_same_document_window(&mut app, &mut io, window_id);
+    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
 
     move_right(&mut app, &mut io, other_window_id, 3);
     select_right(&mut app, &mut io, other_window_id, 4);
@@ -742,7 +742,7 @@ fn cursor_shifts_through_earlier_insert_from_another_editor() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcdefghijklmnop");
     move_left(&mut app, &mut io, window_id, 6);
-    let other_window_id = common::open_same_document_window(&mut app, &mut io, window_id);
+    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
 
     move_right(&mut app, &mut io, other_window_id, 2);
     common::text_input(&mut app, &mut io, other_window_id, "XYZ");
@@ -758,7 +758,7 @@ fn selection_shifts_through_earlier_insert_from_another_editor() {
     common::text_input(&mut app, &mut io, window_id, "abcdefghijklmnop");
     move_left(&mut app, &mut io, window_id, 10);
     select_right(&mut app, &mut io, window_id, 4);
-    let other_window_id = common::open_same_document_window(&mut app, &mut io, window_id);
+    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
 
     move_right(&mut app, &mut io, other_window_id, 2);
     common::text_input(&mut app, &mut io, other_window_id, "XYZ");
@@ -774,7 +774,7 @@ fn selection_inside_delete_from_another_editor_collapses_to_delete_start() {
     common::text_input(&mut app, &mut io, window_id, "abcdefghij");
     move_left(&mut app, &mut io, window_id, 5);
     select_right(&mut app, &mut io, window_id, 2);
-    let other_window_id = common::open_same_document_window(&mut app, &mut io, window_id);
+    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
 
     move_right(&mut app, &mut io, other_window_id, 3);
     select_right(&mut app, &mut io, other_window_id, 6);

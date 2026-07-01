@@ -8,7 +8,7 @@ use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::style::BACKGROUND_COLOR;
 use crate::{
     app::{App, IO},
-    document::{DocumentId, Edit, EditKind, OffsetDiff, SaveKind},
+    buffer::{BufferId, Edit, EditKind, OffsetDiff, SaveKind},
     drawing::{Drawing, Rect},
     style::{HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR},
 };
@@ -17,7 +17,7 @@ use crate::{
 pub struct EditorId(pub(crate) usize);
 
 pub struct Editor {
-    pub(crate) document_id: DocumentId,
+    pub(crate) buffer_id: BufferId,
     pub(crate) cursors: Vec<Cursor>,
     marked: bool,
     show_cursor: bool,
@@ -53,11 +53,11 @@ enum Direction {
 }
 
 impl Editor {
-    pub(crate) fn new(app: &App, document_id: DocumentId) -> Self {
+    pub(crate) fn new(app: &App, buffer_id: BufferId) -> Self {
         let wrap_chars = 80;
-        let wraps = wraps_from_text(document_id.text(app).as_bstr(), wrap_chars);
+        let wraps = wraps_from_text(buffer_id.text(app).as_bstr(), wrap_chars);
         Editor {
-            document_id: document_id,
+            buffer_id: buffer_id,
             cursors: vec![Cursor {
                 head: CursorPoint::new(0),
                 tail: CursorPoint::new(0),
@@ -75,7 +75,7 @@ impl Editor {
     }
 
     pub(crate) fn assert_invariants(&self, app: &App) {
-        let text = self.document_id.text(app);
+        let text = self.buffer_id.text(app);
 
         // Cursors
         assert!(self.cursors.len() > 0);
@@ -113,8 +113,8 @@ impl EditorId {
     }
 
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
-        let document_id = self.get(app).document_id;
-        document_id.tick(app, io);
+        let buffer_id = self.get(app).buffer_id;
+        buffer_id.tick(app, io);
 
         // During drag, poll mouse position and update cursor head.
         if self.get(app).is_dragging {
@@ -171,7 +171,7 @@ impl EditorId {
                     Key::Character("v") => self.cursor_paste(app, io),
                     Key::Character("V") => self.cursor_paste_many(app, io),
                     Key::Character("s") => {
-                        self.get(app).document_id.save(app, io, SaveKind::Explicit)
+                        self.get(app).buffer_id.save(app, io, SaveKind::Explicit)
                     }
                     Key::Character("z") => self.undo(app),
                     Key::Character("Z") => self.redo(app),
@@ -184,8 +184,8 @@ impl EditorId {
                 match logical_key {
                     Key::Character("j") => self.cursor_goto_line_start(app),
                     Key::Character("l") => self.cursor_goto_line_end(app),
-                    Key::Character("i") => self.cursor_goto_doc_start(app),
-                    Key::Character("k") => self.cursor_goto_doc_end(app),
+                    Key::Character("i") => self.cursor_goto_buffer_start(app),
+                    Key::Character("k") => self.cursor_goto_buffer_end(app),
                     _ => flush_doing = false,
                 }
             }
@@ -227,7 +227,7 @@ impl EditorId {
                 self.get_mut(app).last_mouse_position = position;
             }
             InputEvent::FocusChanged { focused: false } => {
-                self.get(app).document_id.save(app, io, SaveKind::Auto)
+                self.get(app).buffer_id.save(app, io, SaveKind::Auto)
             }
             _ => flush_doing = false,
         }
@@ -236,7 +236,7 @@ impl EditorId {
         let editor = self.get_mut(app);
         editor.last_input = frame_start;
         if flush_doing {
-            editor.document_id.flush_doing(app);
+            editor.buffer_id.flush_doing(app);
         }
     }
 
@@ -264,19 +264,19 @@ impl EditorId {
             let editor = self.get_mut(app);
             if editor.last_draw_size != viewport_size {
                 editor.last_draw_size = viewport_size;
-                let center_before = center_before.min(editor.document_id.text(app).len());
+                let center_before = center_before.min(editor.buffer_id.text(app).len());
                 self.scroll_offset_into_center(app, center_before);
             }
         }
 
         self.clamp_top_pixel(app);
 
-        self.get(app).document_id.get_mut(app).last_center_offset = self.center_offset(app);
+        self.get(app).buffer_id.get_mut(app).last_center_offset = self.center_offset(app);
 
         let editor = self.get(app);
         let translate_y = -editor.top_pixel as f32;
 
-        // Compute the visible line range so we don't iterate the whole doc.
+        // Compute the visible line range so we don't iterate the whole buffer.
         let line_first = (app.grid_from_screen([0.0, editor.top_pixel as f32])[1].max(0) as usize)
             .min(editor.wraps.len());
         let line_after =
@@ -302,7 +302,7 @@ impl EditorId {
                 pos: [0.0, 0.0],
                 size: [gutter_w, viewport_size[1]],
             });
-            let text = &editor.document_id.text(app);
+            let text = &editor.buffer_id.text(app);
             for line_idx in line_first..line_after {
                 let [start, _end] = editor.wraps[line_idx];
                 if start > 0 && text[start - 1] != b'\n' {
@@ -378,7 +378,7 @@ impl EditorId {
 
             // Draw text.
             {
-                let text = &editor.document_id.text(app);
+                let text = &editor.buffer_id.text(app);
                 for line_idx in line_first..line_after {
                     let [start, end] = editor.wraps[line_idx];
                     let mut screen = app.screen_from_grid([0, line_idx]);
@@ -504,7 +504,7 @@ impl EditorId {
         }
         let line = grid[1] as usize;
         if line >= editor.wraps.len() {
-            return editor.document_id.text(app).len();
+            return editor.buffer_id.text(app).len();
         }
         let screen_col = grid[0].max(0) as usize;
         if screen_col == 0 {
@@ -516,7 +516,7 @@ impl EditorId {
         let col = if sub_x >= cell_w / 2.0 { col + 1 } else { col };
 
         let [wrap_start, wrap_end] = editor.wraps[line];
-        let text = &editor.document_id.text(app);
+        let text = &editor.buffer_id.text(app);
         let text_span = &text[wrap_start..wrap_end];
         let mut char_idx = 0;
         for (char_start, _char_end, _) in text_span.char_indices() {
@@ -562,7 +562,7 @@ impl EditorId {
 
     fn cursor_add_next_match(self, app: &mut App) {
         let editor = self.get(app);
-        let text = editor.document_id.text(app).as_bstr();
+        let text = editor.buffer_id.text(app).as_bstr();
         let cursor_main = editor.cursors.last().unwrap();
         let range = cursor_main.range();
         if !editor.marked || range.start == range.end {
@@ -601,7 +601,7 @@ impl EditorId {
         F: Fn(usize) -> Option<&'a BStr>,
     {
         let mut cursors = take(&mut self.get_mut(app).cursors);
-        let text = self.get(app).document_id.text(app).as_bstr();
+        let text = self.get(app).buffer_id.text(app).as_bstr();
         let mut edits = Vec::with_capacity(cursors.len() * 2);
         for (i, cursor) in cursors.iter_mut().enumerate() {
             let Some(insert) = insert_for_ix(i) else {
@@ -631,15 +631,15 @@ impl EditorId {
         }
         Edit::coalesce(&mut edits);
         self.get_mut(app).cursors = cursors;
-        self.get(app).document_id.apply_edits(app, &edits);
+        self.get(app).buffer_id.apply_edits(app, &edits);
         self.get_mut(app).marked = false;
         self.scroll_main_cursor_into_view(app);
     }
 
     fn cursor_delete_left(self, app: &mut App) {
         let editor = self.get(app);
-        let document_id = editor.document_id;
-        let text = document_id.text(app);
+        let buffer_id = editor.buffer_id;
+        let text = buffer_id.text(app);
         let mut edits = Vec::with_capacity(editor.cursors.len());
         for cursor in &editor.cursors {
             if editor.marked {
@@ -649,7 +649,7 @@ impl EditorId {
                     offset: range.start,
                     text: text[range.start..range.end].into(),
                 });
-            } else if let Some(start) = document_id.char_prev(app, cursor.head.offset) {
+            } else if let Some(start) = buffer_id.char_prev(app, cursor.head.offset) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: start,
@@ -658,7 +658,7 @@ impl EditorId {
             }
         }
         Edit::coalesce(&mut edits);
-        document_id.apply_edits(app, &edits);
+        buffer_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
         self.scroll_main_cursor_into_view(app);
@@ -666,8 +666,8 @@ impl EditorId {
 
     fn cursor_delete_right(self, app: &mut App) {
         let editor = self.get(app);
-        let document_id = editor.document_id;
-        let text = document_id.text(app);
+        let buffer_id = editor.buffer_id;
+        let text = buffer_id.text(app);
         let mut edits = Vec::with_capacity(editor.cursors.len());
         for cursor in &editor.cursors {
             if editor.marked {
@@ -677,7 +677,7 @@ impl EditorId {
                     offset: range.start,
                     text: text[range.start..range.end].into(),
                 });
-            } else if let Some(end) = document_id.char_next(app, cursor.head.offset) {
+            } else if let Some(end) = buffer_id.char_next(app, cursor.head.offset) {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: cursor.head.offset,
@@ -686,7 +686,7 @@ impl EditorId {
             }
         }
         Edit::coalesce(&mut edits);
-        document_id.apply_edits(app, &edits);
+        buffer_id.apply_edits(app, &edits);
         let editor = self.get_mut(app);
         editor.marked = false;
         self.scroll_main_cursor_into_view(app);
@@ -697,7 +697,7 @@ impl EditorId {
         if !editor.marked {
             return;
         }
-        let text = editor.document_id.text(app);
+        let text = editor.buffer_id.text(app);
         let text = bstr::join(
             "\n",
             editor.cursors.iter().map(|cursor| &text[cursor.range()]),
@@ -737,15 +737,15 @@ impl EditorId {
     fn refresh_wraps(self, app: &mut App) {
         let editor = self.get(app);
         self.get_mut(app).wraps =
-            wraps_from_text(editor.document_id.text(app).as_bstr(), editor.wrap_chars);
+            wraps_from_text(editor.buffer_id.text(app).as_bstr(), editor.wrap_chars);
     }
 
     fn cursor_goto_line_start(self, app: &mut App) {
-        let document_id = self.get(app).document_id;
+        let buffer_id = self.get(app).buffer_id;
         let mut cursors = take(&mut self.get_mut(app).cursors);
         for cursor in &mut cursors {
             cursor.head = CursorPoint::new(
-                document_id
+                buffer_id
                     .line_range_from_offset(app, cursor.head.offset)
                     .start,
             );
@@ -755,11 +755,11 @@ impl EditorId {
     }
 
     fn cursor_goto_line_end(self, app: &mut App) {
-        let document_id = self.get(app).document_id;
+        let buffer_id = self.get(app).buffer_id;
         let mut cursors = take(&mut self.get_mut(app).cursors);
         for cursor in &mut cursors {
             cursor.head = CursorPoint::new(
-                document_id
+                buffer_id
                     .line_range_from_offset(app, cursor.head.offset)
                     .end,
             );
@@ -768,7 +768,7 @@ impl EditorId {
         self.scroll_main_cursor_into_view(app);
     }
 
-    fn cursor_goto_doc_start(self, app: &mut App) {
+    fn cursor_goto_buffer_start(self, app: &mut App) {
         let editor = self.get_mut(app);
         for cursor in &mut editor.cursors {
             cursor.head = CursorPoint::new(0);
@@ -776,8 +776,8 @@ impl EditorId {
         self.scroll_offset_into_view(app, 0);
     }
 
-    fn cursor_goto_doc_end(self, app: &mut App) {
-        let end = self.get(app).document_id.text(app).len();
+    fn cursor_goto_buffer_end(self, app: &mut App) {
+        let end = self.get(app).buffer_id.text(app).len();
         let editor = self.get_mut(app);
         for cursor in &mut editor.cursors {
             cursor.head = CursorPoint::new(end);
@@ -786,20 +786,20 @@ impl EditorId {
     }
 
     fn cursor_move(self, app: &mut App, direction: Direction) {
-        let document_id = self.get(app).document_id;
+        let buffer_id = self.get(app).buffer_id;
         let mut cursors = take(&mut self.get_mut(app).cursors);
         for cursor in &mut cursors {
             match direction {
                 Direction::Left => {
                     cursor.head = CursorPoint::new(
-                        document_id
+                        buffer_id
                             .char_prev(app, cursor.head.offset)
                             .unwrap_or(cursor.head.offset),
                     );
                 }
                 Direction::Right => {
                     cursor.head = CursorPoint::new(
-                        document_id
+                        buffer_id
                             .char_next(app, cursor.head.offset)
                             .unwrap_or(cursor.head.offset),
                     );
@@ -816,7 +816,7 @@ impl EditorId {
         self.scroll_main_cursor_into_view(app);
     }
 
-    // Return the grid position for a byte offset within the doc.
+    // Return the grid position for a byte offset within the buffer.
     // When the cursor is at a soft-wrap position there are two possible grid positions:
     // * at the end of one soft-wrapped line
     // * at the start of the next soft-wrapped line
@@ -824,7 +824,7 @@ impl EditorId {
     // If the position is not ambiguous then both returned positions are equal.
     pub(crate) fn grid_from_offset(self, app: &App, offset: usize) -> [[usize; 2]; 2] {
         let editor = self.get(app);
-        let text = editor.document_id.text(app).as_bstr();
+        let text = editor.buffer_id.text(app).as_bstr();
         let line = editor
             .wraps
             .partition_point(|&[start, _end]| start <= offset)
@@ -848,7 +848,7 @@ impl EditorId {
 
     fn line_up(self, app: &App, point: CursorPoint) -> Option<CursorPoint> {
         let editor = self.get(app);
-        let text = editor.document_id.text(app).as_bstr();
+        let text = editor.buffer_id.text(app).as_bstr();
         let line = self.grid_from_offset(app, point.offset)[0][1];
         if line == 0 {
             return None;
@@ -873,7 +873,7 @@ impl EditorId {
 
     fn line_down(self, app: &App, point: CursorPoint) -> Option<CursorPoint> {
         let editor = self.get(app);
-        let text = editor.document_id.text(app).as_bstr();
+        let text = editor.buffer_id.text(app).as_bstr();
         let line = self.grid_from_offset(app, point.offset)[0][1];
         if line == editor.wraps.len() - 1 {
             return None;
@@ -897,15 +897,15 @@ impl EditorId {
     }
 
     fn undo(self, app: &mut App) {
-        let document_id = self.get(app).document_id;
-        if let Some(offset) = document_id.undo(app) {
+        let buffer_id = self.get(app).buffer_id;
+        if let Some(offset) = buffer_id.undo(app) {
             self.scroll_offset_into_center(app, offset);
         }
     }
 
     fn redo(self, app: &mut App) {
-        let document_id = self.get(app).document_id;
-        if let Some(offset) = document_id.redo(app) {
+        let buffer_id = self.get(app).buffer_id;
+        if let Some(offset) = buffer_id.redo(app) {
             self.scroll_offset_into_center(app, offset);
         }
     }

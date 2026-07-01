@@ -1,5 +1,5 @@
 pub mod app;
-pub mod document;
+pub mod buffer;
 pub mod drawing;
 pub mod editor;
 pub mod fuzz;

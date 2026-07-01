@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 
-use crate::document::{Document, DocumentId};
+use crate::buffer::{Buffer, BufferId};
 use crate::drawing::Drawing;
 use crate::editor::{Editor, EditorId};
 use crate::input::{ButtonState, InputEvent, Key, ModifiersState};
@@ -23,8 +23,8 @@ pub struct App {
     next_editor_id: EditorId,
     pub editors: HashMap<EditorId, Editor>,
 
-    next_document_id: DocumentId,
-    pub documents: HashMap<DocumentId, Document>,
+    next_buffer_id: BufferId,
+    pub buffers: HashMap<BufferId, Buffer>,
 
     pub(crate) modifiers: ModifiersState,
     pub(crate) frame_start: Duration,
@@ -73,8 +73,8 @@ const FONT_SIZE_MIN: f32 = 4.0;
 
 impl App {
     pub fn assert_invariants(&self) {
-        for document_id in self.documents.keys() {
-            document_id.get(self).assert_invariants();
+        for buffer_id in self.buffers.keys() {
+            buffer_id.get(self).assert_invariants();
         }
         for page_id in self.pages.keys() {
             page_id.get(self).assert_invariants();
@@ -97,16 +97,16 @@ impl App {
             pages: HashMap::new(),
             next_editor_id: EditorId(0),
             editors: HashMap::new(),
-            next_document_id: DocumentId(0),
-            documents: HashMap::new(),
+            next_buffer_id: BufferId(0),
+            buffers: HashMap::new(),
             frame_start: Duration::ZERO,
             modifiers: ModifiersState::default(),
         };
-        let document_id = match initial_path {
-            Some(path) => app.insert_document(Document::from_file(path)),
-            None => app.insert_document(Document::scratch()),
+        let buffer_id = match initial_path {
+            Some(path) => app.insert_buffer(Buffer::from_file(path)),
+            None => app.insert_buffer(Buffer::scratch()),
         };
-        let editor_id = app.insert_editor(Editor::new(&app, document_id));
+        let editor_id = app.insert_editor(Editor::new(&app, buffer_id));
         let page = Page::new_edit(&mut app, editor_id);
         let page_id = app.insert_page(page);
         app.windows.insert(initial_window_id, Window::new(page_id));
@@ -210,8 +210,8 @@ impl App {
     }
 
     pub(crate) fn insert_editor_empty(&mut self) -> EditorId {
-        let document_id = self.insert_document_empty();
-        self.insert_editor(Editor::new(self, document_id))
+        let buffer_id = self.insert_buffer_empty();
+        self.insert_editor(Editor::new(self, buffer_id))
     }
 
     pub(crate) fn insert_editor(&mut self, editor: Editor) -> EditorId {
@@ -221,14 +221,14 @@ impl App {
         editor_id
     }
 
-    pub(crate) fn insert_document_empty(&mut self) -> DocumentId {
-        self.insert_document(Document::scratch())
+    pub(crate) fn insert_buffer_empty(&mut self) -> BufferId {
+        self.insert_buffer(Buffer::scratch())
     }
 
-    pub(crate) fn insert_document(&mut self, document: Document) -> DocumentId {
-        let document_id = self.next_document_id;
-        self.next_document_id.0 += 1;
-        self.documents.insert(document_id, document);
-        document_id
+    pub(crate) fn insert_buffer(&mut self, buffer: Buffer) -> BufferId {
+        let buffer_id = self.next_buffer_id;
+        self.next_buffer_id.0 += 1;
+        self.buffers.insert(buffer_id, buffer);
+        buffer_id
     }
 }

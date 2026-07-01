@@ -152,7 +152,7 @@ fn error_tick(app: &mut App, io: &mut ErrorIO) {
 }
 
 #[test]
-fn text_input_builds_scratch_document() {
+fn text_input_builds_scratch_buffer() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
     common::text_input(&mut app, &mut io, window_id, "hello\nworld");
@@ -162,7 +162,7 @@ fn text_input_builds_scratch_document() {
 }
 
 #[test]
-fn backspace_updates_document_through_editor() {
+fn backspace_updates_buffer_through_editor() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcd");
 
@@ -184,7 +184,7 @@ fn backspace_updates_document_through_editor() {
 }
 
 #[test]
-fn selection_replacement_updates_document() {
+fn selection_replacement_updates_buffer() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "hello");
 
@@ -214,8 +214,8 @@ fn undo_and_redo_restore_text() {
 }
 
 #[test]
-fn tick_loads_file_document_from_mock_io() {
-    let path = PathBuf::from("/tmp/focus-document-test.txt");
+fn tick_loads_file_buffer_from_mock_io() {
+    let path = PathBuf::from("/tmp/focus-buffer-test.txt");
     let (mut app, mut io, _) = common::file_app(path, "from disk\n");
 
     let frame_start = io.frame_start;
@@ -227,7 +227,7 @@ fn tick_loads_file_document_from_mock_io() {
 
 #[test]
 fn tick_reloads_clean_file_after_external_change() {
-    let path = PathBuf::from("/tmp/focus-document-reload-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-reload-test.txt");
     let (mut app, mut io, _) = common::file_app(path.clone(), "before\n");
     let frame_start = io.frame_start;
     app.tick(&mut io, frame_start);
@@ -249,7 +249,7 @@ fn tick_reloads_clean_file_after_external_change() {
 
 #[test]
 fn explicit_save_writes_modified_file() {
-    let path = PathBuf::from("/tmp/focus-document-explicit-save-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-explicit-save-test.txt");
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "before");
     common::tick(&mut app, &mut io);
 
@@ -264,7 +264,7 @@ fn explicit_save_writes_modified_file() {
 
 #[test]
 fn focus_loss_autosaves_existing_modified_file() {
-    let path = PathBuf::from("/tmp/focus-document-autosave-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-autosave-test.txt");
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "before");
     common::tick(&mut app, &mut io);
 
@@ -279,7 +279,7 @@ fn focus_loss_autosaves_existing_modified_file() {
 
 #[test]
 fn autosave_does_not_recreate_deleted_file_but_explicit_save_does() {
-    let path = PathBuf::from("/tmp/focus-document-deleted-save-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-deleted-save-test.txt");
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "before");
     common::tick(&mut app, &mut io);
 
@@ -296,7 +296,7 @@ fn autosave_does_not_recreate_deleted_file_but_explicit_save_does() {
 }
 
 #[test]
-fn saving_scratch_document_is_a_noop() {
+fn saving_scratch_buffer_is_a_noop() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
     common::text_input(&mut app, &mut io, window_id, "scratch");
@@ -307,8 +307,8 @@ fn saving_scratch_document_is_a_noop() {
 }
 
 #[test]
-fn dirty_file_document_does_not_reload_external_changes() {
-    let path = PathBuf::from("/tmp/focus-document-dirty-reload-test.txt");
+fn dirty_file_buffer_does_not_reload_external_changes() {
+    let path = PathBuf::from("/tmp/focus-buffer-dirty-reload-test.txt");
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "before");
     common::tick(&mut app, &mut io);
 
@@ -331,7 +331,7 @@ fn dirty_file_document_does_not_reload_external_changes() {
 
 #[test]
 fn clean_external_replacement_updates_text_and_cursor_offsets() {
-    let path = PathBuf::from("/tmp/focus-document-replacement-reload-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-replacement-reload-test.txt");
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "abcd ef");
     common::tick(&mut app, &mut io);
 
@@ -353,7 +353,7 @@ fn clean_external_replacement_updates_text_and_cursor_offsets() {
 
 #[test]
 fn ignored_focus_gain_does_not_autosave() {
-    let path = PathBuf::from("/tmp/focus-document-focus-gain-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-focus-gain-test.txt");
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "before");
     common::tick(&mut app, &mut io);
 
@@ -404,7 +404,7 @@ fn tick_flushes_idle_edit_batch_for_undo() {
 
 #[test]
 fn explicit_save_error_leaves_file_dirty_until_next_successful_save() {
-    let path = PathBuf::from("/tmp/focus-document-explicit-save-error-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-explicit-save-error-test.txt");
     let (mut app, mut io, window_id) = error_file_app(path.clone(), "before");
     error_tick(&mut app, &mut io);
 
@@ -425,7 +425,7 @@ fn explicit_save_error_leaves_file_dirty_until_next_successful_save() {
 
 #[test]
 fn autosave_non_notfound_error_leaves_file_dirty_until_explicit_save() {
-    let path = PathBuf::from("/tmp/focus-document-autosave-error-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-autosave-error-test.txt");
     let (mut app, mut io, window_id) = error_file_app(path.clone(), "before");
     error_tick(&mut app, &mut io);
 
@@ -445,8 +445,8 @@ fn autosave_non_notfound_error_leaves_file_dirty_until_explicit_save() {
 }
 
 #[test]
-fn reload_mtime_error_keeps_clean_document_unchanged() {
-    let path = PathBuf::from("/tmp/focus-document-mtime-error-test.txt");
+fn reload_mtime_error_keeps_clean_buffer_unchanged() {
+    let path = PathBuf::from("/tmp/focus-buffer-mtime-error-test.txt");
     let (mut app, mut io, _) = error_file_app(path.clone(), "before");
     error_tick(&mut app, &mut io);
 
@@ -467,7 +467,7 @@ fn reload_mtime_error_keeps_clean_document_unchanged() {
 
 #[test]
 fn reload_read_error_keeps_old_text_and_retries_later() {
-    let path = PathBuf::from("/tmp/focus-document-read-error-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-read-error-test.txt");
     let (mut app, mut io, _) = error_file_app(path.clone(), "before");
     error_tick(&mut app, &mut io);
 
@@ -492,7 +492,7 @@ fn reload_read_error_keeps_old_text_and_retries_later() {
 
 #[test]
 fn explicit_save_clean_file_is_a_noop() {
-    let path = PathBuf::from("/tmp/focus-document-clean-save-noop-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-clean-save-noop-test.txt");
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "before");
     common::tick(&mut app, &mut io);
     let before = io.files.get(&path).unwrap().clone();
@@ -506,7 +506,7 @@ fn explicit_save_clean_file_is_a_noop() {
 
 #[test]
 fn reload_skips_file_when_mtime_has_not_advanced() {
-    let path = PathBuf::from("/tmp/focus-document-same-mtime-reload-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-same-mtime-reload-test.txt");
     let (mut app, mut io, _) = common::file_app(path.clone(), "before");
     common::tick(&mut app, &mut io);
 
@@ -526,7 +526,7 @@ fn reload_skips_file_when_mtime_has_not_advanced() {
 
 #[test]
 fn clean_external_insert_reloads_text() {
-    let path = PathBuf::from("/tmp/focus-document-insert-reload-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-insert-reload-test.txt");
     let (mut app, mut io, _) = common::file_app(path.clone(), "abef");
     common::tick(&mut app, &mut io);
 
@@ -546,7 +546,7 @@ fn clean_external_insert_reloads_text() {
 
 #[test]
 fn clean_external_delete_reloads_text() {
-    let path = PathBuf::from("/tmp/focus-document-delete-reload-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-delete-reload-test.txt");
     let (mut app, mut io, _) = common::file_app(path.clone(), "abcdef");
     common::tick(&mut app, &mut io);
 
@@ -566,7 +566,7 @@ fn clean_external_delete_reloads_text() {
 
 #[test]
 fn clean_external_multi_hunk_change_reloads_text() {
-    let path = PathBuf::from("/tmp/focus-document-multi-hunk-reload-test.txt");
+    let path = PathBuf::from("/tmp/focus-buffer-multi-hunk-reload-test.txt");
     let (mut app, mut io, _) = common::file_app(path.clone(), "abcdefghi");
     common::tick(&mut app, &mut io);
 

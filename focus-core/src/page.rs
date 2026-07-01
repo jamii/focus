@@ -3,7 +3,7 @@ use std::os::unix::ffi::OsStrExt;
 
 use crate::{
     app::{App, IO},
-    document::{Source, SourceFile},
+    buffer::{Source, SourceFile},
     drawing::{Drawing, Rect},
     editor::EditorId,
     input::{ButtonState, InputEvent},
@@ -108,17 +108,17 @@ impl PageId {
                 editor_id.tick(app, io);
 
                 // Update status bar text.
-                let status_bar_document_id = status_bar_id.get(app).document_id;
+                let status_bar_buffer_id = status_bar_id.get(app).buffer_id;
                 let cursor_main_offset = editor_id.get(app).cursors.last().unwrap().head.offset;
                 let grid = editor_id.grid_from_offset(app, cursor_main_offset);
-                let source = match editor_id.get(app).document_id.source(app) {
+                let source = match editor_id.get(app).buffer_id.source(app) {
                     Source::Scratch => BStr::new("scratch"),
                     Source::File(SourceFile { absolute_path, .. }) => {
                         BStr::new(absolute_path.as_os_str().as_bytes())
                     }
                 };
                 let status_text = format!("{} {}:{}", source, grid[0][1] + 1, grid[0][0] + 1);
-                status_bar_document_id.replace(app, BStr::new(status_text.as_bytes()));
+                status_bar_buffer_id.replace(app, BStr::new(status_text.as_bytes()));
 
                 status_bar_id.tick(app, io);
             }
