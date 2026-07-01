@@ -117,7 +117,7 @@ impl PageId {
                         BStr::new(absolute_path.as_os_str().as_bytes())
                     }
                 };
-                let status_text = format!("{} {}:{}", source, grid[0][1] + 1, grid[0][0] + 1);
+                let status_text = format!("{}:{}:{}", source, grid[0][1] + 1, grid[0][0] + 1);
                 status_bar_buffer_id.replace(app, BStr::new(status_text.as_bytes()));
 
                 status_bar_id.tick(app, io);
