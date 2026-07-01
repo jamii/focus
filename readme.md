@@ -1,9 +1,3 @@
-## next
-
-* Figure out scrollable vs unscrollable
-* Figure out splits
-* Status bar
-
 ## minimum viable editor
 
 Editor:
