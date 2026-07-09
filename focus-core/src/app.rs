@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -115,10 +115,30 @@ impl App {
 
     pub fn tick(&mut self, io: &mut dyn IO, frame_start: Duration) {
         self.frame_start = frame_start;
+
+        // Tick each buffer that is reachable from some page, once.
+        let buffer_ids: BTreeSet<BufferId> = self
+            .pages
+            .values()
+            .flat_map(|page| page.editor_ids())
+            .map(|editor_id| editor_id.get(self).buffer_id)
+            .collect();
+        for buffer_id in buffer_ids {
+            buffer_id.tick(self, io);
+        }
+
         let window_ids: Vec<_> = self.windows.keys().copied().collect();
         for window_id in window_ids {
-            window_id.tick(self, io);
+            window_id.tick(self);
             io.request_redraw(window_id);
+        }
+
+        // Trim diff logs. Every editor reachable from a window caught up
+        // during its tick above, and editors on pages that aren't attached
+        // to any window never call catch_up at all, so nobody can observe
+        // the trimmed log (catch_up panics if this doesn't hold).
+        for buffer in self.buffers.values_mut() {
+            buffer.diff_log.clear();
         }
     }
 
@@ -191,6 +211,17 @@ impl App {
 
     pub(crate) fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
         let editor_id = self.insert_editor_empty();
+        let page = Page::new_edit(self, editor_id);
+        let page_id = self.insert_page(page);
+        self.insert_window(io, Window::new(page_id))
+    }
+
+    pub(crate) fn insert_window_on_buffer(
+        &mut self,
+        io: &mut dyn IO,
+        buffer_id: BufferId,
+    ) -> WindowId {
+        let editor_id = self.insert_editor(Editor::new(self, buffer_id));
         let page = Page::new_edit(self, editor_id);
         let page_id = self.insert_page(page);
         self.insert_window(io, Window::new(page_id))

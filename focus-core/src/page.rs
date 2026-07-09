@@ -3,7 +3,7 @@ use std::os::unix::ffi::OsStrExt;
 
 use crate::{
     app::{App, IO},
-    buffer::{OffsetDiff, Source, SourceFile},
+    buffer::{Source, SourceFile},
     drawing::{Drawing, Rect},
     editor::EditorId,
     input::{ButtonState, InputEvent},
@@ -22,7 +22,7 @@ pub struct Page {
     last_draw_size: [f32; 2],
 }
 pub enum PageContent {
-    Edit,
+    Edit { cursor_main_grid: [usize; 2] },
     OpenFile,
 }
 
@@ -32,7 +32,10 @@ impl Page {
     pub(crate) fn new_edit(app: &mut App, editor_id: EditorId) -> Page {
         let status_bar_id = app.insert_editor_empty();
         Page {
-            content: PageContent::Edit,
+            content: PageContent::Edit {
+                // Impossible grid, so the first tick always updates the status bar.
+                cursor_main_grid: [usize::MAX, usize::MAX],
+            },
             editor_ids: vec![editor_id, status_bar_id],
             editor_rects: vec![
                 Rect {
@@ -69,7 +72,7 @@ impl Page {
 
     pub fn assert_invariants(&self) {
         match self.content {
-            PageContent::Edit => assert!(self.editor_ids.len() == 2),
+            PageContent::Edit { .. } => assert!(self.editor_ids.len() == 2),
             PageContent::OpenFile => assert!(self.editor_ids.len() == 3),
         }
         assert!(self.editor_rects.len() == self.editor_ids.len());
@@ -80,7 +83,8 @@ impl Page {
         for (ix0, rect0) in self.editor_rects.iter().enumerate() {
             for (ix1, rect1) in self.editor_rects.iter().enumerate() {
                 if ix0 != ix1 {
-                    assert!(Rect::intersect(*rect0, *rect1).size == [0.0, 0.0]);
+                    let overlap = Rect::intersect(*rect0, *rect1).size;
+                    assert!(overlap[0] == 0.0 || overlap[1] == 0.0);
                 }
             }
         }
@@ -102,32 +106,54 @@ impl PageId {
         app.pages.get_mut(&self).unwrap()
     }
 
-    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
+    pub(crate) fn tick(self, app: &mut App) {
+        let editor_ids = self.get(app).editor_ids.clone();
+        for editor_id in &editor_ids {
+            editor_id.tick(app);
+        }
+
         match self.get(app).content {
-            PageContent::Edit => {
+            PageContent::Edit { cursor_main_grid } => {
                 let &[editor_id, status_bar_id] = &*self.get(app).editor_ids else {
                     unreachable!()
                 };
 
-                editor_id.tick(app, io);
-
-                // Update status bar text.
-                let status_bar_buffer_id = status_bar_id.get(app).buffer_id;
+                // If cursor has moved, update status bar text.
                 let cursor_main_offset = editor_id.get(app).cursors.last().unwrap().head.offset;
-                let grid = editor_id.grid_from_offset(app, cursor_main_offset);
-                let source = match editor_id.get(app).buffer_id.source(app) {
-                    Source::Scratch => BStr::new("scratch"),
-                    Source::File(SourceFile { absolute_path, .. }) => {
-                        BStr::new(absolute_path.as_os_str().as_bytes())
-                    }
-                };
-                let status_text = format!("{}:{}:{}", source, grid[0][1] + 1, grid[0][0] + 1);
-                status_bar_buffer_id.replace(app, BStr::new(status_text.as_bytes()));
+                let cursor_main_grid_new = editor_id
+                    .get(app)
+                    .buffer_id
+                    .grid_from_offset(app, cursor_main_offset);
+                if cursor_main_grid_new != cursor_main_grid {
+                    let PageContent::Edit { cursor_main_grid } = &mut self.get_mut(app).content
+                    else {
+                        unreachable!()
+                    };
+                    *cursor_main_grid = cursor_main_grid_new;
 
-                status_bar_id.tick(app, io);
+                    let status_bar_buffer_id = status_bar_id.get(app).buffer_id;
+                    let source = match editor_id.get(app).buffer_id.source(app) {
+                        Source::Scratch => BStr::new("scratch"),
+                        Source::File(SourceFile { absolute_path, .. }) => {
+                            BStr::new(absolute_path.as_os_str().as_bytes())
+                        }
+                    };
+                    let status_text = format!(
+                        "{}:{}:{}",
+                        source,
+                        cursor_main_grid_new[1] + 1,
+                        cursor_main_grid_new[0] + 1
+                    );
+                    status_bar_buffer_id.replace(app, BStr::new(status_text.as_bytes()));
+                    // The status bar editor already ticked this frame, so catch
+                    // it up now rather than leaving it stale when App::tick
+                    // trims the diff log.
+                    status_bar_id.catch_up(app);
+                }
             }
             PageContent::OpenFile => {
-                // TODO
+                // TODO Cache the path buffer's version and reload the lister
+                // when it changes.
             }
         }
     }
@@ -196,8 +222,8 @@ impl PageId {
                 pos: [0.0, 0.0],
                 size: page.last_draw_size,
             };
-            page.editor_rects = match page.content {
-                PageContent::Edit => {
+            let editor_rects = match page.content {
+                PageContent::Edit { .. } => {
                     let [editor_rect, status_bar_rect] =
                         page_rect.split_from_bottom(cell_size[1] as f32, GAP);
                     vec![editor_rect, status_bar_rect]
@@ -208,7 +234,22 @@ impl PageId {
                     let [path_rect, list_rect] = rest.split_from_top(cell_size[1] as f32, GAP);
                     vec![preview_rect, path_rect, list_rect]
                 }
+            };
+            // The splits saturate, so the layout can never stick out of the
+            // page, even when the page is smaller than the layout wants.
+            for rect in &editor_rects {
+                for i in 0..2 {
+                    assert!(
+                        rect.size[i] >= 0.0
+                            && rect.pos[i] >= 0.0
+                            && rect.pos[i] + rect.size[i] <= page_rect.size[i],
+                        "editor rect {:?} sticks out of page {:?}",
+                        rect,
+                        page_rect,
+                    );
+                }
             }
+            page.editor_rects = editor_rects;
         }
 
         // Draw gaps.
@@ -235,17 +276,6 @@ impl PageId {
         {
             let mut drawing = drawing.push_clip_rect(*editor_rect);
             editor_id.draw(app, &mut drawing, focus == i);
-        }
-    }
-
-    pub(crate) fn handle_edits(self, app: &mut App, editor_ix: usize, diff: &OffsetDiff) {
-        match self.get(app).content {
-            PageContent::Edit => {}
-            PageContent::OpenFile => {
-                if editor_ix == 1 {
-                    // TODO selection changed, reload lister
-                }
-            }
         }
     }
 }

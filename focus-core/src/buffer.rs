@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::mem::take;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -18,6 +17,10 @@ pub struct Buffer {
     undos: Vec<Vec<Vec<Edit>>>,
     doing: Vec<Vec<Edit>>,
     redos: Vec<Vec<Vec<Edit>>>,
+    // Bumped once per apply_edits_raw. Editors record the last version they
+    // caught up to and replay diff_log entries to remap their offsets.
+    pub(crate) version: u64,
+    pub(crate) diff_log: Vec<(u64, OffsetDiff)>,
 
     // Can be set by editor.
     pub(crate) last_center_offset: usize,
@@ -85,6 +88,13 @@ impl Buffer {
                 Edit::assert_invariants(edits, None);
             }
         }
+        // Log versions are strictly ascending, contiguous, and end at `version`.
+        if let Some((version_last, _)) = self.diff_log.last() {
+            assert_eq!(*version_last, self.version);
+        }
+        for pair in self.diff_log.windows(2) {
+            assert_eq!(pair[0].0 + 1, pair[1].0);
+        }
     }
 
     pub(crate) fn scratch() -> Buffer {
@@ -97,6 +107,8 @@ impl Buffer {
             undos: vec![],
             doing: vec![],
             redos: vec![],
+            version: 0,
+            diff_log: vec![],
         }
     }
 
@@ -205,33 +217,9 @@ impl BufferId {
         let diff = OffsetDiff::from_edits(&edits, len_old);
 
         buffer.last_modified_time = frame_start;
-
-        let editor_ids: HashSet<_> = app
-            .editors
-            .iter()
-            .filter_map(|(editor_id, editor)| {
-                if editor.buffer_id == self {
-                    Some(*editor_id)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for editor_id in &editor_ids {
-            editor_id.handle_edits(app, &diff);
-        }
-
-        let mut page_ids = HashSet::new();
-        for (page_id, page) in &app.pages {
-            for (editor_ix, editor_id) in page.editor_ids().iter().enumerate() {
-                if editor_ids.contains(editor_id) {
-                    page_ids.insert((*page_id, editor_ix));
-                }
-            }
-        }
-        for (page_id, editor_ix) in &page_ids {
-            page_id.handle_edits(app, *editor_ix, &diff);
-        }
+        buffer.version += 1;
+        let version = buffer.version;
+        buffer.diff_log.push((version, diff));
     }
 
     /// Save to disk. Explicit saves create the file if missing; autosaves

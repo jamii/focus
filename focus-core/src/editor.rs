@@ -8,7 +8,7 @@ use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::style::BACKGROUND_COLOR;
 use crate::{
     app::{App, IO},
-    buffer::{BufferId, Edit, EditKind, OffsetDiff, SaveKind},
+    buffer::{BufferId, Edit, EditKind, SaveKind},
     drawing::{Drawing, Rect},
     style::{HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR},
 };
@@ -18,6 +18,8 @@ pub struct EditorId(pub(crate) usize);
 
 pub struct Editor {
     pub(crate) buffer_id: BufferId,
+    // The buffer version this editor last caught up to (see catch_up).
+    buffer_version_seen: u64,
     pub(crate) cursors: Vec<Cursor>,
     marked: bool,
     show_cursor: bool,
@@ -58,6 +60,7 @@ impl Editor {
         let wraps = wraps_from_text(buffer_id.text(app).as_bstr(), wrap_chars);
         Editor {
             buffer_id: buffer_id,
+            buffer_version_seen: buffer_id.get(app).version,
             cursors: vec![Cursor {
                 head: CursorPoint::new(0),
                 tail: CursorPoint::new(0),
@@ -77,27 +80,35 @@ impl Editor {
     pub(crate) fn assert_invariants(&self, app: &App) {
         let text = self.buffer_id.text(app);
 
-        // Cursors
-        assert!(self.cursors.len() > 0);
-        for cursor in &self.cursors {
-            for point in [&cursor.head, &cursor.tail] {
-                assert!(point.offset <= text.len());
-            }
-        }
+        assert!(self.buffer_version_seen <= self.buffer_id.get(app).version);
 
-        // Wraps
-        assert!(!self.wraps.is_empty());
-        assert_eq!(self.wraps[0][0], 0);
-        assert_eq!(self.wraps.last().unwrap()[1], text.len());
-        for wrap in &self.wraps {
-            assert!(wrap[0] <= wrap[1]);
-            assert!(text[wrap[0]..wrap[1]].chars().count() <= self.wrap_chars)
-        }
-        for pair in self.wraps.windows(2) {
-            let gap = pair[1][0] - pair[0][1];
-            assert!(gap <= 1);
-            if gap == 1 {
-                assert!(text[pair[0][1]..].chars().next().unwrap() == '\n')
+        assert!(self.cursors.len() > 0);
+
+        // Between an edit and this editor's next catch_up, cursor offsets and
+        // wraps are legitimately stale, so only check them against the text
+        // when the editor is caught up.
+        if self.buffer_version_seen == self.buffer_id.get(app).version {
+            // Cursors
+            for cursor in &self.cursors {
+                for point in [&cursor.head, &cursor.tail] {
+                    assert!(point.offset <= text.len());
+                }
+            }
+
+            // Wraps
+            assert!(!self.wraps.is_empty());
+            assert_eq!(self.wraps[0][0], 0);
+            assert_eq!(self.wraps.last().unwrap()[1], text.len());
+            for wrap in &self.wraps {
+                assert!(wrap[0] <= wrap[1]);
+                assert!(text[wrap[0]..wrap[1]].chars().count() <= self.wrap_chars)
+            }
+            for pair in self.wraps.windows(2) {
+                let gap = pair[1][0] - pair[0][1];
+                assert!(gap <= 1);
+                if gap == 1 {
+                    assert!(text[pair[0][1]..].chars().next().unwrap() == '\n')
+                }
             }
         }
     }
@@ -112,9 +123,8 @@ impl EditorId {
         app.editors.get_mut(&self).unwrap()
     }
 
-    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
-        let buffer_id = self.get(app).buffer_id;
-        buffer_id.tick(app, io);
+    pub(crate) fn tick(self, app: &mut App) {
+        self.catch_up(app);
 
         // During drag, poll mouse position and update cursor head.
         if self.get(app).is_dragging {
@@ -152,6 +162,8 @@ impl EditorId {
     }
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
+        self.catch_up(app);
+
         let mut flush_doing = true;
 
         match event {
@@ -241,6 +253,8 @@ impl EditorId {
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing, focused: bool) {
+        self.catch_up(app);
+
         let viewport_size = drawing.size();
         let grid_w = app.grid_from_screen(viewport_size)[0] as usize;
         if grid_w <= 2 {
@@ -418,20 +432,50 @@ impl EditorId {
         }
     }
 
-    pub(crate) fn handle_edits(self, app: &mut App, diff: &OffsetDiff) {
-        let center_before = self.center_offset(app);
-        let editor = self.get_mut(app);
-
-        let mut cursors = replace(&mut editor.cursors, vec![]);
-        for cursor in &mut cursors {
-            for point in [&mut cursor.head, &mut cursor.tail] {
-                *point = CursorPoint::new(diff.apply(point.offset));
-            }
+    /// Remap cursors and viewport past any buffer edits made since this
+    /// editor last caught up, then refresh wraps. Called at every entry
+    /// point that reads cursors or wraps after the buffer may have changed.
+    pub(crate) fn catch_up(self, app: &mut App) {
+        let buffer_id = self.get(app).buffer_id;
+        let seen_version = self.get(app).buffer_version_seen;
+        let version = buffer_id.get(app).version;
+        if seen_version == version {
+            return;
         }
+
+        // Deliberately computed against the stale wraps, so it's in
+        // old-text coordinates, like the cursors.
+        let mut center = self.center_offset(app);
+        let mut cursors = replace(&mut self.get_mut(app).cursors, vec![]);
+
+        let buffer = buffer_id.get(app);
+        let log_start = buffer.diff_log.first().map(|(v, _)| *v);
+        assert!(
+            log_start.is_some_and(|v| v <= seen_version + 1),
+            "buffer {:?} diff log starts at {:?} but editor {:?} last saw version {} - the log was trimmed while this editor was stale",
+            buffer_id,
+            log_start,
+            self,
+            seen_version,
+        );
+        for (v, diff) in &buffer.diff_log {
+            if *v <= seen_version {
+                continue;
+            }
+            for cursor in &mut cursors {
+                for point in [&mut cursor.head, &mut cursor.tail] {
+                    *point = CursorPoint::new(diff.apply(point.offset));
+                }
+            }
+            center = diff.apply(center);
+        }
+
+        let editor = self.get_mut(app);
         editor.cursors = cursors;
+        editor.buffer_version_seen = version;
         self.refresh_wraps(app);
 
-        self.scroll_offset_into_center(app, diff.apply(center_before));
+        self.scroll_offset_into_center(app, center);
     }
 
     fn scroll_offset_into_view(self, app: &mut App, offset: usize) {
@@ -632,6 +676,7 @@ impl EditorId {
         Edit::coalesce(&mut edits);
         self.get_mut(app).cursors = cursors;
         self.get(app).buffer_id.apply_edits(app, &edits);
+        self.catch_up(app);
         self.get_mut(app).marked = false;
         self.scroll_main_cursor_into_view(app);
     }
@@ -659,6 +704,7 @@ impl EditorId {
         }
         Edit::coalesce(&mut edits);
         buffer_id.apply_edits(app, &edits);
+        self.catch_up(app);
         let editor = self.get_mut(app);
         editor.marked = false;
         self.scroll_main_cursor_into_view(app);
@@ -687,6 +733,7 @@ impl EditorId {
         }
         Edit::coalesce(&mut edits);
         buffer_id.apply_edits(app, &edits);
+        self.catch_up(app);
         let editor = self.get_mut(app);
         editor.marked = false;
         self.scroll_main_cursor_into_view(app);
@@ -899,6 +946,7 @@ impl EditorId {
     fn undo(self, app: &mut App) {
         let buffer_id = self.get(app).buffer_id;
         if let Some(offset) = buffer_id.undo(app) {
+            self.catch_up(app);
             self.scroll_offset_into_center(app, offset);
         }
     }
@@ -906,6 +954,7 @@ impl EditorId {
     fn redo(self, app: &mut App) {
         let buffer_id = self.get(app).buffer_id;
         if let Some(offset) = buffer_id.redo(app) {
+            self.catch_up(app);
             self.scroll_offset_into_center(app, offset);
         }
     }

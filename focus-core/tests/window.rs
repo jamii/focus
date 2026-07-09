@@ -77,7 +77,7 @@ fn status_bar_shows_scratch_cursor_position() {
         .find(|text| text.starts_with("scratch"))
         .unwrap();
 
-    assert_eq!(status_text, "scratch 1:1");
+    assert_eq!(status_text, "scratch:1:1");
     app.assert_invariants();
 }
 
@@ -96,7 +96,7 @@ fn status_bar_updates_cursor_position_after_movement() {
         .find(|text| text.starts_with("scratch"))
         .unwrap();
 
-    assert_eq!(status_text, "scratch 2:2");
+    assert_eq!(status_text, "scratch:2:2");
     app.assert_invariants();
 }
 
@@ -113,12 +113,12 @@ fn status_bar_uses_file_path_for_file_buffers() {
         .find(|text| text.starts_with(path.to_str().unwrap()))
         .unwrap();
 
-    assert_eq!(status_text, format!("{} 1:4", path.display()));
+    assert_eq!(status_text, format!("{}:1:4", path.display()));
     app.assert_invariants();
 }
 
 #[test]
-fn status_bar_tracks_soft_wrap_cursor_grid() {
+fn status_bar_uses_buffer_grid_across_soft_wraps() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcdef");
 
@@ -131,7 +131,7 @@ fn status_bar_tracks_soft_wrap_cursor_grid() {
         .find(|text| text.starts_with("scratch"))
         .unwrap();
 
-    assert_eq!(status_text, "scratch 2:4");
+    assert_eq!(status_text, "scratch:1:7");
     app.assert_invariants();
 }
 
