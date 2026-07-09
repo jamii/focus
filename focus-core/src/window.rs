@@ -27,9 +27,9 @@ impl WindowId {
         app.windows.get_mut(&self).unwrap()
     }
 
-    pub(crate) fn tick(self, app: &mut App) {
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         let page_id = self.get(app).page_id;
-        page_id.tick(app);
+        page_id.tick(app, io);
     }
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
@@ -40,12 +40,6 @@ impl WindowId {
                 match *logical_key {
                     Key::Character("n") => {
                         app.insert_window_empty(io);
-                        true
-                    }
-                    Key::Character("m") => {
-                        let page_id = self.get(app).page_id;
-                        let buffer_id = page_id.get(app).editor_ids()[0].get(app).buffer_id;
-                        app.insert_window_on_buffer(io, buffer_id);
                         true
                     }
                     Key::Character("o") => {

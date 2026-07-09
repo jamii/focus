@@ -60,20 +60,15 @@ impl Rect {
             && (pos[1] <= self.pos[1] + self.size[1])
     }
 
-    /// Split into a top rect and a bottom rect of height `h`, separated by
-    /// `gap`. Saturates when `self` is too small for `h + gap`, so both
-    /// results always lie within `self`.
     pub(crate) fn split_from_bottom(&self, h: f32, gap: f32) -> [Rect; 2] {
-        let h_bottom = h.min(self.size[1]).max(0.0);
-        let h_top = (self.size[1] - h_bottom - gap).max(0.0);
         [
             Rect {
                 pos: self.pos,
-                size: [self.size[0], h_top],
+                size: [self.size[0], self.size[1] - h - gap],
             },
             Rect {
-                pos: [self.pos[0], self.pos[1] + self.size[1] - h_bottom],
-                size: [self.size[0], h_bottom],
+                pos: [self.pos[0], self.pos[1] + self.size[1] - h + gap],
+                size: [self.size[0], h],
             },
         ]
     }
