@@ -5,6 +5,7 @@ pub mod editor;
 pub mod fuzz;
 mod fuzz_gen;
 pub mod input;
+pub(crate) mod map;
 pub mod page;
 pub mod style;
 pub mod window;

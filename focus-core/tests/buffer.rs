@@ -3,8 +3,9 @@ use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 use focus_core::app::{App, IO, WindowSize};
+use focus_core::buffer;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
-use focus_core::window::WindowId;
+use focus_core::window::{self, WindowId};
 
 mod common;
 
@@ -27,8 +28,8 @@ impl ErrorIO {
 }
 
 impl IO for ErrorIO {
-    fn open_window(&mut self, title: String, size: WindowSize) -> WindowId {
-        self.inner.open_window(title, size)
+    fn open_window(&mut self, window_id: WindowId, title: String, size: WindowSize) {
+        self.inner.open_window(window_id, title, size);
     }
 
     fn close_window(&mut self, window_id: WindowId) {
@@ -95,9 +96,9 @@ fn error_file_app(path: PathBuf, text: &str) -> (App, ErrorIO, WindowId) {
             SystemTime::UNIX_EPOCH + Duration::from_secs(1),
         ),
     );
-    let window_id = io.inner.fresh_window_id();
-    io.inner.open_windows.push(window_id);
-    let app = App::new(window_id, &mut io, Some(path));
+    let mut app = App::new(&mut io);
+    let buffer_id = buffer::from_file(&mut app, path);
+    let window_id = window::open_edit(&mut app, &mut io, buffer_id);
     (app, io, window_id)
 }
 

@@ -1,30 +1,23 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 
-use crate::buffer::{Buffer, BufferId};
+use crate::buffer::{self, Buffers};
 use crate::drawing::Drawing;
-use crate::editor::{Editor, EditorId};
+use crate::editor::{self, Editors};
 use crate::input::{ButtonState, InputEvent, Key, ModifiersState};
-use crate::page::{Page, PageId};
-use crate::window::{Window, WindowId};
+use crate::page::{self, Pages};
+use crate::window::{self, WindowId, Windows};
 
 pub struct App {
     font_size: f32,
     cell_size: [u32; 2],
 
-    pub windows: HashMap<WindowId, Window>,
-
-    next_page_id: PageId,
-    pub pages: HashMap<PageId, Page>,
-
-    next_editor_id: EditorId,
-    pub editors: HashMap<EditorId, Editor>,
-
-    next_buffer_id: BufferId,
-    pub buffers: HashMap<BufferId, Buffer>,
+    pub windows: Windows,
+    pub pages: Pages,
+    pub editors: Editors,
+    pub buffers: Buffers,
 
     pub(crate) modifiers: ModifiersState,
     pub(crate) frame_start: Duration,
@@ -44,7 +37,7 @@ pub const INITIAL_SIZE: WindowSize = WindowSize {
 
 // External effects. Mocked for testing/fuzzing.
 pub trait IO {
-    fn open_window(&mut self, title: String, size: WindowSize) -> WindowId;
+    fn open_window(&mut self, window_id: WindowId, title: String, size: WindowSize);
     fn close_window(&mut self, window_id: WindowId);
     fn set_window_title(&mut self, window_id: WindowId, title: String);
     fn request_redraw(&mut self, window_id: WindowId);
@@ -73,49 +66,34 @@ const FONT_SIZE_MIN: f32 = 4.0;
 
 impl App {
     pub fn assert_invariants(&self) {
-        for buffer_id in self.buffers.keys() {
-            buffer_id.get(self).assert_invariants();
-        }
-        for page_id in self.pages.keys() {
-            page_id.get(self).assert_invariants();
-        }
-        for editor_id in self.editors.keys() {
-            editor_id.get(self).assert_invariants(self);
-        }
-        for window_id in self.windows.keys() {
-            window_id.get(self).assert_invariants();
-        }
+        buffer::assert_invariants(self);
+        editor::assert_invariants(self);
+        page::assert_invariants(self);
+        window::assert_invariants(self);
     }
 
-    pub fn new(initial_window_id: WindowId, io: &mut dyn IO, initial_path: Option<PathBuf>) -> App {
+    pub fn new(io: &mut dyn IO) -> App {
         let cell_size = io.rebuild_atlas(FONT_SIZE_INIT);
-        let mut app = App {
+        App {
             font_size: FONT_SIZE_INIT,
             cell_size,
-            windows: HashMap::new(),
-            next_page_id: PageId(0),
-            pages: HashMap::new(),
-            next_editor_id: EditorId(0),
-            editors: HashMap::new(),
-            next_buffer_id: BufferId(0),
-            buffers: HashMap::new(),
+            windows: Windows::new(),
+            pages: Pages::new(),
+            editors: Editors::new(),
+            buffers: Buffers::new(),
             frame_start: Duration::ZERO,
             modifiers: ModifiersState::default(),
-        };
-        let buffer_id = match initial_path {
-            Some(path) => app.insert_buffer(Buffer::from_file(path)),
-            None => app.insert_buffer(Buffer::scratch()),
-        };
-        let editor_id = app.insert_editor(Editor::new(&app, buffer_id));
-        let page = Page::new_edit(&mut app, editor_id);
-        let page_id = app.insert_page(page);
-        app.windows.insert(initial_window_id, Window::new(page_id));
-        app
+        }
     }
 
     pub fn tick(&mut self, io: &mut dyn IO, frame_start: Duration) {
         self.frame_start = frame_start;
-        let window_ids: Vec<_> = self.windows.keys().copied().collect();
+        let window_ids: Vec<_> = self
+            .windows
+            .open
+            .iter()
+            .filter_map(|(window_id, open)| open.then_some(window_id))
+            .collect();
         for window_id in window_ids {
             window_id.tick(self, io);
             io.request_redraw(window_id);
@@ -125,9 +103,9 @@ impl App {
     pub fn input(&mut self, io: &mut dyn IO, window_id: WindowId, event: InputEvent<'_>) {
         let handled = match &event {
             InputEvent::CloseRequested => {
-                self.windows.remove(&window_id);
+                window::close(self, window_id);
                 io.close_window(window_id);
-                if self.windows.is_empty() {
+                if self.windows.open_count == 0 {
                     io.exit();
                 }
                 true
@@ -187,48 +165,5 @@ impl App {
             (screen[0] / self.cell_size[0] as f32).floor() as i32,
             (screen[1] / self.cell_size[1] as f32).floor() as i32,
         ]
-    }
-
-    pub(crate) fn insert_window_empty(&mut self, io: &mut dyn IO) -> WindowId {
-        let editor_id = self.insert_editor_empty();
-        let page = Page::new_edit(self, editor_id);
-        let page_id = self.insert_page(page);
-        self.insert_window(io, Window::new(page_id))
-    }
-
-    fn insert_window(&mut self, io: &mut dyn IO, window: Window) -> WindowId {
-        let window_id = io.open_window(INITIAL_TITLE.to_string(), INITIAL_SIZE);
-        self.windows.insert(window_id, window);
-        window_id
-    }
-
-    pub(crate) fn insert_page(&mut self, page: Page) -> PageId {
-        let page_id = self.next_page_id;
-        self.next_page_id.0 += 1;
-        self.pages.insert(page_id, page);
-        page_id
-    }
-
-    pub(crate) fn insert_editor_empty(&mut self) -> EditorId {
-        let buffer_id = self.insert_buffer_empty();
-        self.insert_editor(Editor::new(self, buffer_id))
-    }
-
-    pub(crate) fn insert_editor(&mut self, editor: Editor) -> EditorId {
-        let editor_id = self.next_editor_id;
-        self.next_editor_id.0 += 1;
-        self.editors.insert(editor_id, editor);
-        editor_id
-    }
-
-    pub(crate) fn insert_buffer_empty(&mut self) -> BufferId {
-        self.insert_buffer(Buffer::scratch())
-    }
-
-    pub(crate) fn insert_buffer(&mut self, buffer: Buffer) -> BufferId {
-        let buffer_id = self.next_buffer_id;
-        self.next_buffer_id.0 += 1;
-        self.buffers.insert(buffer_id, buffer);
-        buffer_id
     }
 }

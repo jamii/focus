@@ -24,6 +24,7 @@ use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
 
 use focus_core::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, WindowSize};
+use focus_core::buffer;
 use focus_core::drawing::Drawing;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::window::WindowId;
@@ -72,7 +73,6 @@ struct WindowState {
 struct Backend {
     windows: HashMap<WindowId, WindowState>,
     winit_to_window: HashMap<winit::window::WindowId, WindowId>,
-    next_window_id: WindowId,
     gl_config: Config,
     context: PossiblyCurrentContext,
     renderer: Renderer,
@@ -89,8 +89,9 @@ struct IoReal<'a> {
 }
 
 impl IO for IoReal<'_> {
-    fn open_window(&mut self, title: String, size: WindowSize) -> WindowId {
-        self.backend.open_window(self.event_loop, &title, size)
+    fn open_window(&mut self, window_id: WindowId, title: String, size: WindowSize) {
+        self.backend
+            .open_window(self.event_loop, window_id, &title, size);
     }
 
     fn close_window(&mut self, window_id: WindowId) {
@@ -157,15 +158,28 @@ impl ApplicationHandler for Chrome {
             Chrome::Init { initial_path } => initial_path.take(),
             Chrome::Running(_) => return,
         };
-        let (mut backend, initial_window_id) =
+        let (mut backend, _initial_window_id) =
             Backend::bootstrap(event_loop, INITIAL_TITLE, INITIAL_SIZE);
-        let app = {
+        let mut app = {
             let mut io = IoReal {
                 backend: &mut backend,
                 event_loop,
             };
-            App::new(initial_window_id, &mut io, initial_path)
+            App::new(&mut io)
         };
+        let mut io = IoReal {
+            backend: &mut backend,
+            event_loop,
+        };
+        match initial_path {
+            Some(path) => {
+                let buffer_id = buffer::from_file(&mut app, path);
+                focus_core::window::open_edit(&mut app, &mut io, buffer_id);
+            }
+            None => {
+                focus_core::window::open_scratch(&mut app, &mut io);
+            }
+        }
         let now = Instant::now();
         *self = Chrome::Running(Running {
             app,
@@ -320,7 +334,6 @@ impl Backend {
         let mut backend = Backend {
             windows: HashMap::new(),
             winit_to_window: HashMap::new(),
-            next_window_id: WindowId(0),
             gl_config,
             context,
             renderer,
@@ -328,32 +341,42 @@ impl Backend {
             clipboard,
             last_mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
         };
-        let id = backend.register_window(window, surface);
+        let id = WindowId(0);
+        backend.register_window(id, window, surface);
         (backend, id)
     }
 
     fn open_window(
         &mut self,
         event_loop: &ActiveEventLoop,
+        window_id: WindowId,
         title: &str,
         size: WindowSize,
-    ) -> WindowId {
+    ) {
+        if let Some(state) = self.windows.get(&window_id) {
+            state.window.set_title(title);
+            return;
+        }
+
         let window = event_loop
             .create_window(window_attrs(title, size))
             .expect("create_window");
         let surface = create_surface(&self.gl_config, &window);
         self.context.make_current(&surface).expect("make_current");
         let _ = surface.set_swap_interval(&self.context, SwapInterval::DontWait);
-        self.register_window(window, surface)
+        self.register_window(window_id, window, surface);
     }
 
-    fn register_window(&mut self, window: Window, surface: Surface<WindowSurface>) -> WindowId {
+    fn register_window(&mut self, id: WindowId, window: Window, surface: Surface<WindowSurface>) {
         let winit_id = window.id();
-        let id = self.next_window_id;
-        self.next_window_id.0 += 1;
-        self.windows.insert(id, WindowState { window, surface });
+        assert!(
+            self.windows
+                .insert(id, WindowState { window, surface })
+                .is_none(),
+            "duplicate window id {:?}",
+            id,
+        );
         self.winit_to_window.insert(winit_id, id);
-        id
     }
 
     fn close_window(&mut self, window_id: WindowId) {

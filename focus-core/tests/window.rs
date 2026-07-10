@@ -8,13 +8,17 @@ mod common;
 fn ctrl_n_opens_a_new_window_with_a_new_buffer() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
+    let before = io.open_windows.clone();
     common::control_key(&mut app, &mut io, window_id, Key::Character("n"));
+    let window_id_new = *io
+        .open_windows
+        .iter()
+        .find(|window_id| !before.contains(window_id))
+        .unwrap();
+    common::char_input(&mut app, &mut io, window_id_new, 'X');
 
-    assert_eq!(app.windows.len(), 2);
-    assert_eq!(app.pages.len(), 2);
-    assert_eq!(app.editors.len(), 4);
-    assert_eq!(app.buffers.len(), 4);
     assert_eq!(io.open_windows.len(), 2);
+    assert_eq!(common::text(&app), "");
     app.assert_invariants();
 }
 
@@ -22,13 +26,11 @@ fn ctrl_n_opens_a_new_window_with_a_new_buffer() {
 fn ctrl_m_opens_a_new_window_on_the_same_buffer() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
-    common::control_key(&mut app, &mut io, window_id, Key::Character("m"));
+    let window_id_new = common::open_same_buffer_window(&mut app, &mut io, window_id);
+    common::char_input(&mut app, &mut io, window_id_new, 'X');
 
-    assert_eq!(app.windows.len(), 2);
-    assert_eq!(app.pages.len(), 2);
-    assert_eq!(app.editors.len(), 4);
-    assert_eq!(app.buffers.len(), 3);
     assert_eq!(io.open_windows.len(), 2);
+    assert_eq!(common::text(&app), "X");
     app.assert_invariants();
 }
 
@@ -38,7 +40,6 @@ fn closing_last_window_exits() {
 
     app.input(&mut io, window_id, InputEvent::CloseRequested);
 
-    assert!(app.windows.is_empty());
     assert!(io.open_windows.is_empty());
     assert!(io.exited);
 }

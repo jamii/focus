@@ -5,18 +5,17 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use focus_core::app::App;
-use focus_core::buffer::BufferId;
+use focus_core::buffer::{self, BufferId};
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::style::TEXT_COLOR;
-use focus_core::window::WindowId;
+use focus_core::window::{self, WindowId};
 
 pub fn scratch_app() -> (App, MockIO, WindowId) {
     let mut io = MockIO::new();
-    let window_id = io.fresh_window_id();
-    io.open_windows.push(window_id);
-    let app = App::new(window_id, &mut io, None);
+    let mut app = App::new(&mut io);
+    let window_id = window::open_scratch(&mut app, &mut io);
     (app, io, window_id)
 }
 
@@ -34,14 +33,14 @@ pub fn file_app(path: PathBuf, text: &str) -> (App, MockIO, WindowId) {
             SystemTime::UNIX_EPOCH + Duration::from_secs(1),
         ),
     );
-    let window_id = io.fresh_window_id();
-    io.open_windows.push(window_id);
-    let app = App::new(window_id, &mut io, Some(path));
+    let mut app = App::new(&mut io);
+    let buffer_id = buffer::from_file(&mut app, path);
+    let window_id = window::open_edit(&mut app, &mut io, buffer_id);
     (app, io, window_id)
 }
 
 pub fn buffer_id(app: &App) -> BufferId {
-    *app.buffers.keys().min().unwrap()
+    app.buffers.keys().min().unwrap()
 }
 
 pub fn text(app: &App) -> String {

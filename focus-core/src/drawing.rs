@@ -61,14 +61,16 @@ impl Rect {
     }
 
     pub(crate) fn split_from_bottom(&self, h: f32, gap: f32) -> [Rect; 2] {
+        let h_bottom = h.min(self.size[1]).max(0.0);
+        let h_top = (self.size[1] - h_bottom - gap).max(0.0);
         [
             Rect {
                 pos: self.pos,
-                size: [self.size[0], self.size[1] - h - gap],
+                size: [self.size[0], h_top],
             },
             Rect {
-                pos: [self.pos[0], self.pos[1] + self.size[1] - h + gap],
-                size: [self.size[0], h],
+                pos: [self.pos[0], self.pos[1] + self.size[1] - h_bottom],
+                size: [self.size[0], h_bottom],
             },
         ]
     }
