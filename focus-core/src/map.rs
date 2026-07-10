@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::ops::{Index, IndexMut};
 
 pub(crate) trait MapKey: Copy + Debug {
     fn index(self) -> usize;
@@ -60,17 +61,83 @@ impl<K: MapKey, V> Map<K, V> {
         }
         self.values.push(value);
     }
+}
 
-    pub(crate) fn get(&self, key: K) -> &V {
+impl<K: MapKey, V> Index<K> for Map<K, V> {
+    type Output = V;
+
+    fn index(&self, key: K) -> &V {
         self.values
             .get(key.index())
             .unwrap_or_else(|| panic!("key {:?} is missing", key))
     }
+}
 
-    pub(crate) fn get_mut(&mut self, key: K) -> &mut V {
+impl<K: MapKey, V> IndexMut<K> for Map<K, V> {
+    fn index_mut(&mut self, key: K) -> &mut V {
         let len = self.values.len();
         self.values
             .get_mut(key.index())
             .unwrap_or_else(|| panic!("key {:?} is missing from map of len {}", key, len))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone, Copy, Debug)]
+    struct TestId(usize);
+
+    impl MapKey for TestId {
+        fn index(self) -> usize {
+            self.0
+        }
+
+        fn from_index(index: usize) -> Self {
+            TestId(index)
+        }
+    }
+
+    #[test]
+    fn insert_index_and_keys_are_append_only() {
+        let mut map = Map::new();
+        map.insert(TestId(0), "a");
+        map.insert(TestId(1), "b");
+
+        assert_eq!(map[TestId(0)], "a");
+        assert_eq!(map[TestId(1)], "b");
+        assert_eq!(map.keys().map(|id| id.0).collect::<Vec<_>>(), vec![0, 1]);
+    }
+
+    #[test]
+    fn index_mut_updates_value() {
+        let mut map = Map::new();
+        map.insert(TestId(0), "a");
+        map[TestId(0)] = "b";
+
+        assert_eq!(map[TestId(0)], "b");
+    }
+
+    #[test]
+    #[should_panic(expected = "already present")]
+    fn insert_panics_if_key_exists() {
+        let mut map = Map::new();
+        map.insert(TestId(0), "a");
+        map.insert(TestId(0), "b");
+    }
+
+    #[test]
+    #[should_panic(expected = "would create a hole")]
+    fn insert_panics_if_key_skips_index() {
+        let mut map = Map::new();
+        map.insert(TestId(1), "b");
+    }
+
+    #[test]
+    #[should_panic(expected = "missing")]
+    fn index_panics_if_key_missing() {
+        let map: Map<TestId, &str> = Map::new();
+        let _ = map[TestId(0)];
     }
 }

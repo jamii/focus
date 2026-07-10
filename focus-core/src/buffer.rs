@@ -135,23 +135,23 @@ pub(crate) fn assert_invariants(app: &App) {
     assert_eq!(buffers.redos.len(), buffers.buffer_count);
     assert_eq!(buffers.last_center_offset.len(), buffers.buffer_count);
     for buffer_id in (0..buffers.buffer_count).map(BufferId) {
-        buffers.source.get(buffer_id).assert_invariants();
-        let text = buffers.text.get(buffer_id);
-        let newlines = buffers.newlines.get(buffer_id);
+        buffers.source[buffer_id].assert_invariants();
+        let text = &buffers.text[buffer_id];
+        let newlines = &buffers.newlines[buffer_id];
         assert_eq!(text.chars().filter(|c| *c == '\n').count(), newlines.len());
         for offset in newlines {
             assert_eq!(text[*offset..].chars().next().unwrap(), '\n');
         }
-        for undo in buffers.undos.get(buffer_id) {
+        for undo in &buffers.undos[buffer_id] {
             assert!(!undo.is_empty());
             for edits in undo {
                 Edit::assert_invariants(edits, None);
             }
         }
-        for edits in buffers.doing.get(buffer_id) {
+        for edits in &buffers.doing[buffer_id] {
             Edit::assert_invariants(edits, None);
         }
-        for redo in buffers.redos.get(buffer_id) {
+        for redo in &buffers.redos[buffer_id] {
             assert!(!redo.is_empty());
             for edits in redo {
                 Edit::assert_invariants(edits, None);
@@ -162,24 +162,24 @@ pub(crate) fn assert_invariants(app: &App) {
 
 impl BufferId {
     pub fn text(self, app: &App) -> &BStr {
-        app.buffers.text.get(self).as_bstr()
+        app.buffers.text[self].as_bstr()
     }
 
     pub(crate) fn source(self, app: &App) -> &Source {
-        app.buffers.source.get(self)
+        &app.buffers.source[self]
     }
 
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         // Maybe flush doing.
-        let last_modified_time = *app.buffers.last_modified_time.get(self);
+        let last_modified_time = app.buffers.last_modified_time[self];
         if app.frame_start - last_modified_time > Duration::from_secs(1) {
             self.flush_doing(app);
         }
 
         // Maybe reload.
         let frame_start = app.frame_start;
-        let last_modified_time = *app.buffers.last_modified_time.get(self);
-        let text = match app.buffers.source.get_mut(self) {
+        let last_modified_time = app.buffers.last_modified_time[self];
+        let text = match &mut app.buffers.source[self] {
             Source::File(source) if !(last_modified_time > source.last_save_time) => {
                 source.load(io, frame_start)
             }
@@ -202,8 +202,8 @@ impl BufferId {
 
         self.apply_edits_raw(app, edits);
 
-        app.buffers.doing.get_mut(self).push(edits.to_vec());
-        app.buffers.redos.get_mut(self).clear();
+        app.buffers.doing[self].push(edits.to_vec());
+        app.buffers.redos[self].clear();
     }
 
     fn apply_edits_raw(self, app: &mut App, edits: &[Edit]) {
@@ -211,7 +211,7 @@ impl BufferId {
 
         let frame_start = app.frame_start;
         let len_old = {
-            let text = app.buffers.text.get_mut(self);
+            let text = &mut app.buffers.text[self];
             Edit::assert_invariants(edits, Some(text.as_bstr()));
 
             let len_old = text.len();
@@ -238,16 +238,16 @@ impl BufferId {
 
         // TODO This can be made way more efficient, so that common cases don't have to iterate over the whole text.
         let mut newlines = Vec::new();
-        for (char_start, _, char) in app.buffers.text.get(self).char_indices() {
+        for (char_start, _, char) in app.buffers.text[self].char_indices() {
             if char == '\n' {
                 newlines.push(char_start);
             }
         }
-        *app.buffers.newlines.get_mut(self) = newlines;
+        app.buffers.newlines[self] = newlines;
 
         let diff = OffsetDiff::from_edits(edits, len_old);
 
-        *app.buffers.last_modified_time.get_mut(self) = frame_start;
+        app.buffers.last_modified_time[self] = frame_start;
 
         let editor_ids: Vec<_> = app
             .editors
@@ -277,8 +277,8 @@ impl BufferId {
     /// No-op for Scratch sources or when not modified since last save.
     pub(crate) fn save(self, app: &mut App, io: &mut dyn IO, kind: SaveKind) {
         let frame_start = app.frame_start;
-        let last_modified_time = *app.buffers.last_modified_time.get(self);
-        let absolute_path = match app.buffers.source.get(self) {
+        let last_modified_time = app.buffers.last_modified_time[self];
+        let absolute_path = match &app.buffers.source[self] {
             Source::File(SourceFile {
                 absolute_path,
                 last_save_time,
@@ -286,7 +286,7 @@ impl BufferId {
             }) if last_modified_time > *last_save_time => absolute_path.clone(),
             _ => return,
         };
-        let contents = app.buffers.text.get(self).clone();
+        let contents = app.buffers.text[self].clone();
         let create = kind == SaveKind::Explicit;
         match io.file_write(&absolute_path, &contents, create) {
             Ok(mtime) => {
@@ -295,7 +295,7 @@ impl BufferId {
                     last_save_time,
                     deleted_since_last_save,
                     ..
-                }) = app.buffers.source.get_mut(self)
+                }) = &mut app.buffers.source[self]
                 {
                     *last_load_mtime = mtime;
                     *last_save_time = frame_start;
@@ -306,7 +306,7 @@ impl BufferId {
                 if let Source::File(SourceFile {
                     deleted_since_last_save,
                     ..
-                }) = app.buffers.source.get_mut(self)
+                }) = &mut app.buffers.source[self]
                 {
                     *deleted_since_last_save = true;
                 }
@@ -318,8 +318,8 @@ impl BufferId {
     }
 
     pub(crate) fn grid_from_offset(self, app: &App, offset: usize) -> [usize; 2] {
-        let text = app.buffers.text.get(self);
-        let newlines = app.buffers.newlines.get(self);
+        let text = &app.buffers.text[self];
+        let newlines = &app.buffers.newlines[self];
         let line = newlines.partition_point(|&nl| nl < offset);
         if line == 0 {
             [text[0..offset].chars().count(), 0]
@@ -330,8 +330,8 @@ impl BufferId {
 
     pub(crate) fn line_range_from_offset(self, app: &App, offset: usize) -> std::ops::Range<usize> {
         let line = self.grid_from_offset(app, offset)[1];
-        let text = app.buffers.text.get(self);
-        let newlines = app.buffers.newlines.get(self);
+        let text = &app.buffers.text[self];
+        let newlines = &app.buffers.newlines[self];
         if line == 0 {
             0..{
                 if newlines.is_empty() {
@@ -352,7 +352,7 @@ impl BufferId {
     }
 
     pub(crate) fn char_next(self, app: &App, offset: usize) -> Option<usize> {
-        let text = app.buffers.text.get(self);
+        let text = &app.buffers.text[self];
         if offset == text.len() {
             return None;
         }
@@ -361,7 +361,7 @@ impl BufferId {
     }
 
     pub(crate) fn char_prev(self, app: &App, offset: usize) -> Option<usize> {
-        let text = app.buffers.text.get(self);
+        let text = &app.buffers.text[self];
         if offset == 0 {
             return None;
         }
@@ -370,17 +370,17 @@ impl BufferId {
     }
 
     pub(crate) fn flush_doing(self, app: &mut App) {
-        let doing = app.buffers.doing.get_mut(self);
+        let doing = &mut app.buffers.doing[self];
         if doing.is_empty() {
             return;
         }
         let doing = take(doing);
-        app.buffers.undos.get_mut(self).push(doing);
+        app.buffers.undos[self].push(doing);
     }
 
     pub(crate) fn undo(self, app: &mut App) -> Option<usize> {
         self.flush_doing(app);
-        let undo = app.buffers.undos.get_mut(self).pop()?;
+        let undo = app.buffers.undos[self].pop()?;
         let offset = undo.first().unwrap().last().unwrap().offset;
         let mut redo = vec![];
         for mut edits in undo.into_iter().rev() {
@@ -388,13 +388,13 @@ impl BufferId {
             self.apply_edits_raw(app, &edits);
             redo.push(edits);
         }
-        app.buffers.redos.get_mut(self).push(redo);
+        app.buffers.redos[self].push(redo);
         Some(offset)
     }
 
     pub(crate) fn redo(self, app: &mut App) -> Option<usize> {
         self.flush_doing(app);
-        let redo = app.buffers.redos.get_mut(self).pop()?;
+        let redo = app.buffers.redos[self].pop()?;
         let offset = redo.first().unwrap().last().unwrap().offset;
         let mut undo = vec![];
         for mut edits in redo.into_iter().rev() {
@@ -402,7 +402,7 @@ impl BufferId {
             self.apply_edits_raw(app, &edits);
             undo.push(edits);
         }
-        app.buffers.undos.get_mut(self).push(undo);
+        app.buffers.undos[self].push(undo);
         Some(offset)
     }
 }

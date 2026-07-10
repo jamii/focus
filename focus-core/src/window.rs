@@ -68,11 +68,11 @@ pub fn open_edit(app: &mut App, io: &mut dyn IO, buffer_id: BufferId) -> WindowI
 
 pub(crate) fn close(app: &mut App, window_id: WindowId) {
     assert!(
-        *app.windows.open.get(window_id),
+        app.windows.open[window_id],
         "tried to close window {:?}, but it is not open",
         window_id,
     );
-    *app.windows.open.get_mut(window_id) = false;
+    app.windows.open[window_id] = false;
     app.windows.open_count -= 1;
 }
 
@@ -85,23 +85,19 @@ pub(crate) fn assert_invariants(app: &App) {
         windows.open_count
     );
     for window_id in windows.page_id.keys() {
-        let page_id = *windows.page_id.get(window_id);
+        let page_id = windows.page_id[window_id];
         assert!(page_id.0 < app.pages.page_count);
     }
 }
 
 impl WindowId {
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
-        let page_id = *app.windows.page_id.get(self);
+        let page_id = app.windows.page_id[self];
         page_id.tick(app, io);
     }
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
-        assert!(
-            *app.windows.open.get(self),
-            "input for closed window {:?}",
-            self,
-        );
+        assert!(app.windows.open[self], "input for closed window {:?}", self,);
 
         let handled = match &event {
             InputEvent::Key {
@@ -113,15 +109,15 @@ impl WindowId {
                         true
                     }
                     Key::Character("m") => {
-                        let page_id = *app.windows.page_id.get(self);
-                        let editor_id = app.pages.editor_ids.get(page_id)[0];
-                        let buffer_id = *app.editors.buffer_id.get(editor_id);
+                        let page_id = app.windows.page_id[self];
+                        let editor_id = app.pages.editor_ids[page_id][0];
+                        let buffer_id = app.editors.buffer_id[editor_id];
                         open_edit(app, io, buffer_id);
                         true
                     }
                     Key::Character("o") => {
                         let page_id = page::new_open_file(app);
-                        *app.windows.page_id.get_mut(self) = page_id;
+                        app.windows.page_id[self] = page_id;
                         true
                     }
                     _ => false,
@@ -131,13 +127,13 @@ impl WindowId {
         };
 
         if !handled {
-            let page_id = *app.windows.page_id.get(self);
+            let page_id = app.windows.page_id[self];
             page_id.input(app, io, event);
         }
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {
-        let page_id = *app.windows.page_id.get(self);
+        let page_id = app.windows.page_id[self];
         page_id.draw(app, drawing);
     }
 }
