@@ -325,10 +325,10 @@ impl EditorId {
         app.buffers.last_center_offset[buffer_id] = self.center_offset(app);
 
         let buffer_id = app.editors.buffer_id[self];
-        let cursors = app.editors.cursors[self].clone();
+        let cursors = &app.editors.cursors[self];
         let marked = app.editors.marked[self];
         let show_cursor = app.editors.show_cursor[self];
-        let wraps = app.editors.wraps[self].clone();
+        let wraps = &app.editors.wraps[self];
         let top_pixel = app.editors.top_pixel[self];
         let translate_y = -top_pixel as f32;
 
@@ -405,7 +405,7 @@ impl EditorId {
 
             // Draw mark.
             if marked {
-                for cursor in &cursors {
+                for cursor in cursors {
                     let range = cursor.range();
                     for line_idx in line_first..line_after {
                         let [wrap_start, wrap_end] = wraps[line_idx];
@@ -452,7 +452,7 @@ impl EditorId {
                 } else {
                     TEXT_COLOR
                 };
-                for cursor in &cursors {
+                for cursor in cursors {
                     for grid_start in self.grid_from_offset(app, cursor.head.offset) {
                         let mut grid_end = grid_start;
                         grid_end[1] += 1;
@@ -717,11 +717,11 @@ impl EditorId {
 
     fn cursor_delete_right(self, app: &mut App) {
         let buffer_id = app.editors.buffer_id[self];
-        let cursors = app.editors.cursors[self].clone();
+        let cursors = &app.editors.cursors[self];
         let marked = app.editors.marked[self];
         let text = buffer_id.text(app);
         let mut edits = Vec::with_capacity(cursors.len());
-        for cursor in &cursors {
+        for cursor in cursors {
             if marked {
                 let range = cursor.range();
                 edits.push(Edit {
@@ -748,7 +748,7 @@ impl EditorId {
             return;
         }
         let buffer_id = app.editors.buffer_id[self];
-        let cursors = app.editors.cursors[self].clone();
+        let cursors = &app.editors.cursors[self];
         let text = buffer_id.text(app);
         let text = bstr::join("\n", cursors.iter().map(|cursor| &text[cursor.range()]));
         io.set_clipboard_text(text.into());

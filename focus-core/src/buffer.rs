@@ -278,17 +278,22 @@ impl BufferId {
     pub(crate) fn save(self, app: &mut App, io: &mut dyn IO, kind: SaveKind) {
         let frame_start = app.frame_start;
         let last_modified_time = app.buffers.last_modified_time[self];
-        let absolute_path = match &app.buffers.source[self] {
-            Source::File(SourceFile {
+        let create = kind == SaveKind::Explicit;
+        let write_result = {
+            let Source::File(SourceFile {
                 absolute_path,
                 last_save_time,
                 ..
-            }) if last_modified_time > *last_save_time => absolute_path.clone(),
-            _ => return,
+            }) = &app.buffers.source[self]
+            else {
+                return;
+            };
+            if last_modified_time <= *last_save_time {
+                return;
+            }
+            io.file_write(absolute_path, &app.buffers.text[self], create)
         };
-        let contents = app.buffers.text[self].clone();
-        let create = kind == SaveKind::Explicit;
-        match io.file_write(&absolute_path, &contents, create) {
+        match write_result {
             Ok(mtime) => {
                 if let Source::File(SourceFile {
                     last_load_mtime,
@@ -312,6 +317,10 @@ impl BufferId {
                 }
             }
             Err(err) => {
+                let Source::File(SourceFile { absolute_path, .. }) = &app.buffers.source[self]
+                else {
+                    unreachable!();
+                };
                 eprintln!("error saving {}: {}", absolute_path.display(), err);
             }
         }

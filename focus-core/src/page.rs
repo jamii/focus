@@ -133,19 +133,18 @@ impl PageId {
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         match app.pages.content[self] {
             PageContent::Edit => {
-                let editor_ids = app.pages.editor_ids[self].clone();
-                let [editor_id, status_bar_id] = &*editor_ids else {
-                    unreachable!()
+                let [editor_id, status_bar_id] = match app.pages.editor_ids[self].as_slice() {
+                    [editor_id, status_bar_id] => [*editor_id, *status_bar_id],
+                    _ => unreachable!(),
                 };
 
                 editor_id.tick(app, io);
 
                 // Update status bar text.
-                let status_bar_buffer_id = app.editors.buffer_id[*status_bar_id];
-                let cursor_main_offset =
-                    app.editors.cursors[*editor_id].last().unwrap().head.offset;
+                let status_bar_buffer_id = app.editors.buffer_id[status_bar_id];
+                let cursor_main_offset = app.editors.cursors[editor_id].last().unwrap().head.offset;
                 let grid = editor_id.grid_from_offset(app, cursor_main_offset);
-                let buffer_id = app.editors.buffer_id[*editor_id];
+                let buffer_id = app.editors.buffer_id[editor_id];
                 let source = match buffer_id.source(app) {
                     Source::Scratch => BStr::new("scratch"),
                     Source::File(SourceFile { absolute_path, .. }) => {
@@ -172,16 +171,16 @@ impl PageId {
         // Check if focus changed.
         if let InputEvent::MouseMoved { position } = event {
             if !app.pages.dragging[self] {
-                let editor_rects = app.pages.editor_rects[self].clone();
                 let focus = app.pages.focus[self];
-                let focus_new = (0..editor_rects.len())
-                    .filter(|i| editor_rects[*i].contains(position))
-                    .next()
+                let focus_new = app.pages.editor_rects[self]
+                    .iter()
+                    .position(|rect| rect.contains(position))
                     .unwrap_or(focus);
                 if focus != focus_new {
                     app.pages.focus[self] = focus_new;
-                    let editor_ids = app.pages.editor_ids[self].clone();
-                    for (i, editor_id) in editor_ids.iter().enumerate() {
+                    let editor_count = app.pages.editor_ids[self].len();
+                    for i in 0..editor_count {
+                        let editor_id = app.pages.editor_ids[self][i];
                         editor_id.input(
                             app,
                             io,
@@ -254,12 +253,12 @@ impl PageId {
         );
 
         // Draw each editor.
-        let editor_ids = app.pages.editor_ids[self].clone();
-        let editor_rects = app.pages.editor_rects[self].clone();
+        let editor_count = app.pages.editor_ids[self].len();
         let focus = app.pages.focus[self];
-        for (i, (editor_id, editor_rect)) in editor_ids.iter().zip(editor_rects.iter()).enumerate()
-        {
-            let mut drawing = drawing.push_clip_rect(*editor_rect);
+        for i in 0..editor_count {
+            let editor_id = app.pages.editor_ids[self][i];
+            let editor_rect = app.pages.editor_rects[self][i];
+            let mut drawing = drawing.push_clip_rect(editor_rect);
             editor_id.draw(app, &mut drawing, focus == i);
         }
     }

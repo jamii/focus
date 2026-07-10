@@ -265,9 +265,10 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             app.input(io, window_id, InputEvent::MouseButton { state, position });
         }
         9 => {
-            let paths: Vec<PathBuf> = io.files.keys().cloned().collect();
+            let mut paths: Vec<PathBuf> = io.files.keys().cloned().collect();
             if !paths.is_empty() {
-                let path = paths[frng.usize_bounded(0, paths.len() - 1)?].clone();
+                let path_index = frng.usize_bounded(0, paths.len() - 1)?;
+                let path = paths.swap_remove(path_index);
                 let len = frng.usize_bounded(0, 64)?;
                 let mut contents = Vec::with_capacity(len);
                 for _ in 0..len {
@@ -296,8 +297,8 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             // file_read calls for this path then return NotFound.
             let paths: Vec<PathBuf> = io.files.keys().cloned().collect();
             if !paths.is_empty() {
-                let path = paths[frng.usize_bounded(0, paths.len() - 1)?].clone();
-                io.files.remove(&path);
+                let path_index = frng.usize_bounded(0, paths.len() - 1)?;
+                io.files.remove(&paths[path_index]);
             }
         }
         _ => unreachable!(),
