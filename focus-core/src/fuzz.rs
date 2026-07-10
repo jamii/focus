@@ -316,10 +316,7 @@ pub fn fuzz_one(bytes: &[u8]) {
     let buffer_id = buffer::from_file(&mut app, initial_path);
     window::open_edit(&mut app, &mut io, buffer_id);
 
-    loop {
-        if step(&mut frng, &mut app, &mut io).is_none() {
-            break;
-        }
+    while step(&mut frng, &mut app, &mut io).is_some() {
         if io.exited {
             break;
         }

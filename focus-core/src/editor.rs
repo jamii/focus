@@ -1,4 +1,4 @@
-use std::mem::{replace, swap, take};
+use std::mem::{swap, take};
 use std::ops::Range;
 use std::time::Duration;
 
@@ -183,8 +183,6 @@ impl EditorId {
             }
             self.clamp_top_pixel(app);
 
-            let frame_start = app.frame_start;
-
             // Drag main cursor.
             let offset = self.offset_from_screen(app, position);
             let cursors = &mut app.editors.cursors[self];
@@ -195,13 +193,12 @@ impl EditorId {
                 app.editors.marked[self] = true;
             }
 
-            app.editors.last_input[self] = frame_start;
+            app.editors.last_input[self] = app.frame_start;
         }
 
         // Animate cursor.
-        let frame_start = app.frame_start;
-        let last_input = app.editors.last_input[self];
-        app.editors.show_cursor[self] = (((frame_start - last_input).as_millis() / 500) % 2) == 0;
+        let since_input = app.frame_start - app.editors.last_input[self];
+        app.editors.show_cursor[self] = ((since_input.as_millis() / 500) % 2) == 0;
     }
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
@@ -287,8 +284,7 @@ impl EditorId {
             _ => flush_doing = false,
         }
 
-        let frame_start = app.frame_start;
-        app.editors.last_input[self] = frame_start;
+        app.editors.last_input[self] = app.frame_start;
         if flush_doing {
             let buffer_id = app.editors.buffer_id[self];
             buffer_id.flush_doing(app);
@@ -324,7 +320,6 @@ impl EditorId {
         let buffer_id = app.editors.buffer_id[self];
         app.buffers.last_center_offset[buffer_id] = self.center_offset(app);
 
-        let buffer_id = app.editors.buffer_id[self];
         let cursors = &app.editors.cursors[self];
         let marked = app.editors.marked[self];
         let show_cursor = app.editors.show_cursor[self];
@@ -474,7 +469,7 @@ impl EditorId {
     pub(crate) fn handle_edits(self, app: &mut App, diff: &OffsetDiff) {
         let center_before = self.center_offset(app);
 
-        let mut cursors = replace(&mut app.editors.cursors[self], vec![]);
+        let mut cursors = take(&mut app.editors.cursors[self]);
         for cursor in &mut cursors {
             for point in [&mut cursor.head, &mut cursor.tail] {
                 *point = CursorPoint::new(diff.apply(point.offset));
@@ -568,22 +563,16 @@ impl EditorId {
 
         let [wrap_start, wrap_end] = wraps[line];
         let text = &buffer_id.text(app);
-        let text_span = &text[wrap_start..wrap_end];
-        let mut char_idx = 0;
-        for (char_start, _char_end, _) in text_span.char_indices() {
-            if char_idx >= col {
-                return wrap_start + char_start;
-            }
-            char_idx += 1;
+        match text[wrap_start..wrap_end].char_indices().nth(col) {
+            Some((char_start, _, _)) => wrap_start + char_start,
+            None => wrap_end,
         }
-        wrap_end
     }
 
     fn toggle_mark(self, app: &mut App) {
-        if app.editors.marked[self] {
-            app.editors.marked[self] = false;
-        } else {
-            app.editors.marked[self] = true;
+        let marked = !app.editors.marked[self];
+        app.editors.marked[self] = marked;
+        if marked {
             for cursor in &mut app.editors.cursors[self] {
                 cursor.tail = cursor.head;
             }

@@ -303,39 +303,13 @@ impl Renderer {
                     let u1 = (src[0] + cell_w) as f32 * inv_atlas_w;
                     let v1 = (src[1] + cell_h) as f32 * inv_atlas_h;
                     let c = ch.color;
+                    let vertex = |pos, uv| Vertex { pos, uv, color: c };
+                    let tl = vertex([x0, y0], [u0, v0]);
+                    let tr = vertex([x1, y0], [u1, v0]);
+                    let br = vertex([x1, y1], [u1, v1]);
+                    let bl = vertex([x0, y1], [u0, v1]);
                     // Two triangles per quad: (tl, tr, br) and (tl, br, bl).
-                    self.vertex_buf.extend_from_slice(&[
-                        Vertex {
-                            pos: [x0, y0],
-                            uv: [u0, v0],
-                            color: c,
-                        },
-                        Vertex {
-                            pos: [x1, y0],
-                            uv: [u1, v0],
-                            color: c,
-                        },
-                        Vertex {
-                            pos: [x1, y1],
-                            uv: [u1, v1],
-                            color: c,
-                        },
-                        Vertex {
-                            pos: [x0, y0],
-                            uv: [u0, v0],
-                            color: c,
-                        },
-                        Vertex {
-                            pos: [x1, y1],
-                            uv: [u1, v1],
-                            color: c,
-                        },
-                        Vertex {
-                            pos: [x0, y1],
-                            uv: [u0, v1],
-                            color: c,
-                        },
-                    ]);
+                    self.vertex_buf.extend_from_slice(&[tl, tr, br, tl, br, bl]);
                 }
                 DrawCommand::SetClip(r) => {
                     if self.vertex_buf.len() > batch_start {

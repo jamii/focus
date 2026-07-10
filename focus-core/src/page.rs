@@ -133,9 +133,8 @@ impl PageId {
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         match app.pages.content[self] {
             PageContent::Edit => {
-                let [editor_id, status_bar_id] = match app.pages.editor_ids[self].as_slice() {
-                    [editor_id, status_bar_id] => [*editor_id, *status_bar_id],
-                    _ => unreachable!(),
+                let &[editor_id, status_bar_id] = app.pages.editor_ids[self].as_slice() else {
+                    unreachable!()
                 };
 
                 editor_id.tick(app, io);
@@ -169,26 +168,26 @@ impl PageId {
         }
 
         // Check if focus changed.
-        if let InputEvent::MouseMoved { position } = event {
-            if !app.pages.dragging[self] {
-                let focus = app.pages.focus[self];
-                let focus_new = app.pages.editor_rects[self]
-                    .iter()
-                    .position(|rect| rect.contains(position))
-                    .unwrap_or(focus);
-                if focus != focus_new {
-                    app.pages.focus[self] = focus_new;
-                    let editor_count = app.pages.editor_ids[self].len();
-                    for i in 0..editor_count {
-                        let editor_id = app.pages.editor_ids[self][i];
-                        editor_id.input(
-                            app,
-                            io,
-                            InputEvent::FocusChanged {
-                                focused: focus_new == i,
-                            },
-                        );
-                    }
+        if let InputEvent::MouseMoved { position } = event
+            && !app.pages.dragging[self]
+        {
+            let focus = app.pages.focus[self];
+            let focus_new = app.pages.editor_rects[self]
+                .iter()
+                .position(|rect| rect.contains(position))
+                .unwrap_or(focus);
+            if focus != focus_new {
+                app.pages.focus[self] = focus_new;
+                let editor_count = app.pages.editor_ids[self].len();
+                for i in 0..editor_count {
+                    let editor_id = app.pages.editor_ids[self][i];
+                    editor_id.input(
+                        app,
+                        io,
+                        InputEvent::FocusChanged {
+                            focused: focus_new == i,
+                        },
+                    );
                 }
             }
         }
@@ -228,7 +227,7 @@ impl PageId {
                 }
                 PageContent::OpenFile => {
                     let [preview_rect, rest] =
-                        page_rect.split_from_bottom(page_rect.size[1] as f32 / 2.0, GAP);
+                        page_rect.split_from_bottom(page_rect.size[1] / 2.0, GAP);
                     let [path_rect, list_rect] = rest.split_from_top(cell_size[1] as f32, GAP);
                     vec![preview_rect, path_rect, list_rect]
                 }

@@ -180,7 +180,7 @@ impl BufferId {
         let frame_start = app.frame_start;
         let last_modified_time = app.buffers.last_modified_time[self];
         let text = match &mut app.buffers.source[self] {
-            Source::File(source) if !(last_modified_time > source.last_save_time) => {
+            Source::File(source) if last_modified_time <= source.last_save_time => {
                 source.load(io, frame_start)
             }
             _ => None,
@@ -237,13 +237,10 @@ impl BufferId {
         };
 
         // TODO This can be made way more efficient, so that common cases don't have to iterate over the whole text.
-        let mut newlines = Vec::new();
-        for (char_start, _, char) in app.buffers.text[self].char_indices() {
-            if char == '\n' {
-                newlines.push(char_start);
-            }
-        }
-        app.buffers.newlines[self] = newlines;
+        app.buffers.newlines[self] = app.buffers.text[self]
+            .char_indices()
+            .filter_map(|(char_start, _, char)| (char == '\n').then_some(char_start))
+            .collect();
 
         let diff = OffsetDiff::from_edits(edits, len_old);
 
@@ -330,34 +327,17 @@ impl BufferId {
         let text = &app.buffers.text[self];
         let newlines = &app.buffers.newlines[self];
         let line = newlines.partition_point(|&nl| nl < offset);
-        if line == 0 {
-            [text[0..offset].chars().count(), 0]
-        } else {
-            [text[newlines[line - 1] + 1..offset].chars().count(), line]
-        }
+        let line_start = if line == 0 { 0 } else { newlines[line - 1] + 1 };
+        [text[line_start..offset].chars().count(), line]
     }
 
     pub(crate) fn line_range_from_offset(self, app: &App, offset: usize) -> std::ops::Range<usize> {
         let line = self.grid_from_offset(app, offset)[1];
         let text = &app.buffers.text[self];
         let newlines = &app.buffers.newlines[self];
-        if line == 0 {
-            0..{
-                if newlines.is_empty() {
-                    text.len()
-                } else {
-                    newlines[0]
-                }
-            }
-        } else {
-            (newlines[line - 1] + 1)..{
-                if line < newlines.len() {
-                    newlines[line]
-                } else {
-                    text.len()
-                }
-            }
-        }
+        let start = if line == 0 { 0 } else { newlines[line - 1] + 1 };
+        let end = newlines.get(line).copied().unwrap_or(text.len());
+        start..end
     }
 
     pub(crate) fn char_next(self, app: &App, offset: usize) -> Option<usize> {
@@ -433,19 +413,11 @@ impl SourceFile {
     /// If the file's mtime has advanced past `last_load_mtime` and the buffer is
     /// not modified, reload its contents.
     fn load(&mut self, io: &mut dyn IO, frame_start: Duration) -> Option<BString> {
-        let Ok(mtime) = io.file_mtime(&self.absolute_path) else {
-            return None;
-        };
+        let mtime = io.file_mtime(&self.absolute_path).ok()?;
         if mtime <= self.last_load_mtime {
             return None;
         }
-        let contents = match io.file_read(&self.absolute_path) {
-            Ok(c) => c,
-            Err(err) => {
-                eprintln!("error reading {}: {}", self.absolute_path.display(), err);
-                return None;
-            }
-        };
+        let contents = io.file_read(&self.absolute_path).ok()?;
         self.last_load_mtime = mtime;
         self.last_save_time = frame_start;
         Some(contents.into())

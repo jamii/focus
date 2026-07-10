@@ -221,8 +221,7 @@ impl ApplicationHandler for Chrome {
 
 impl Running {
     fn new_events(&mut self, event_loop: &ActiveEventLoop) {
-        let frame_start = Instant::now();
-        self.last_frame = frame_start;
+        self.last_frame = Instant::now();
         let mut io = IoReal {
             backend: &mut self.backend,
             event_loop,
@@ -438,16 +437,14 @@ fn translate_event(
             };
             Some(InputEvent::MouseWheel { y_offset })
         }
-        WindowEvent::MouseInput { state, button, .. } => {
-            if *button == winit::event::MouseButton::Left {
-                Some(InputEvent::MouseButton {
-                    state: translate_state(*state),
-                    position: [last_mouse_position.x as f32, last_mouse_position.y as f32],
-                })
-            } else {
-                None
-            }
-        }
+        WindowEvent::MouseInput {
+            state,
+            button: winit::event::MouseButton::Left,
+            ..
+        } => Some(InputEvent::MouseButton {
+            state: translate_state(*state),
+            position: [last_mouse_position.x as f32, last_mouse_position.y as f32],
+        }),
         WindowEvent::CursorMoved { position, .. } => Some(InputEvent::MouseMoved {
             position: [position.x as f32, position.y as f32],
         }),
