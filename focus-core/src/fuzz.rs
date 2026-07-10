@@ -7,13 +7,13 @@
 //
 // This is the body of the honggfuzz target (see hfuzz/src/main.rs).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 
-use crate::app::{App, IO, WindowSize};
+use crate::app::{App, DirEntry, IO, WindowSize};
 use crate::buffer;
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
@@ -107,6 +107,52 @@ impl IO for MockIO {
             .insert(path.to_path_buf(), (contents.to_vec(), mtime));
         Ok(mtime)
     }
+
+    fn file_read_prefix(&mut self, path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
+        self.file_read(path).map(|mut contents| {
+            contents.truncate(limit);
+            contents
+        })
+    }
+
+    // Parent dirs exist implicitly, so only the file needs creating.
+    fn file_create(&mut self, path: &Path) -> std::io::Result<()> {
+        if !self.files.contains_key(path) {
+            let mtime = self.system_time + Duration::from_nanos(1);
+            self.files.insert(path.to_path_buf(), (Vec::new(), mtime));
+        }
+        Ok(())
+    }
+
+    fn current_dir(&mut self) -> PathBuf {
+        PathBuf::from("/")
+    }
+
+    // Directories exist implicitly: `path` is a dir iff it is the root or a
+    // proper ancestor of some file in `files`.
+    fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>> {
+        // An empty path would strip_prefix-match every file.
+        if path.as_os_str().is_empty() {
+            return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+        }
+        let mut entries = BTreeMap::new();
+        for file in self.files.keys() {
+            if let Ok(rest) = file.strip_prefix(path) {
+                let mut components = rest.components();
+                if let Some(first) = components.next() {
+                    let is_dir = components.next().is_some();
+                    *entries.entry(first.as_os_str().to_owned()).or_insert(false) |= is_dir;
+                }
+            }
+        }
+        if entries.is_empty() && path != Path::new("/") {
+            return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+        }
+        Ok(entries
+            .into_iter()
+            .map(|(name, is_dir)| DirEntry { name, is_dir })
+            .collect())
+    }
 }
 
 // Action picked by the fuzzer for each step.
@@ -122,6 +168,12 @@ const A_MOUSE_BUTTON: u32 = 20;
 const A_FILE_MODIFY: u32 = 10;
 const A_FILE_DELETE: u32 = 5;
 const A_FOCUS: u32 = 10;
+const A_OPEN_FILE_PAGE: u32 = 10;
+const A_FILE_CREATE: u32 = 5;
+
+// Small pool of path components for A_FILE_CREATE, so created files
+// sometimes collide with the seeded tree and sometimes add new dirs.
+const FUZZ_PATH_COMPONENTS: &[&str] = &["dir", "sub", "a", "b.txt", "c.rs", "Émile"];
 
 fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> {
     let x_limit = (screen_size[0].max(0.0) as u32)
@@ -158,6 +210,8 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_FILE_MODIFY,
         A_FOCUS,
         A_FILE_DELETE,
+        A_OPEN_FILE_PAGE,
+        A_FILE_CREATE,
     ])?;
     match action {
         0 => {
@@ -301,6 +355,43 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                 io.files.remove(&paths[path_index]);
             }
         }
+        12 => {
+            // Switch the window to the FileOpen page (ctrl+o). Enter and
+            // ctrl+enter are then reachable via A_MODIFIERS + A_KEY_NAMED.
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState {
+                    control: true,
+                    ..ModifiersState::default()
+                }),
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::Key {
+                    state: ButtonState::Pressed,
+                    logical_key: Key::Character("o"),
+                },
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState::default()),
+            );
+        }
+        13 => {
+            // Create a file at a random path, so dirs appear and change
+            // under the FileOpen page.
+            let mut path = PathBuf::from("/");
+            let component_count = frng.usize_bounded(1, 3)?;
+            for _ in 0..component_count {
+                let ix = frng.usize_bounded(0, FUZZ_PATH_COMPONENTS.len() - 1)?;
+                path.push(FUZZ_PATH_COMPONENTS[ix]);
+            }
+            let mtime = io.system_time + Duration::from_nanos(1);
+            io.files.insert(path, (b"created".to_vec(), mtime));
+        }
         _ => unreachable!(),
     }
     Some(())
@@ -310,8 +401,11 @@ pub fn fuzz_one(bytes: &[u8]) {
     let mut frng = Frng::new(bytes);
     let mut io = MockIO::new();
     let initial_path = PathBuf::from("/fuzz.txt");
-    io.files
-        .insert(initial_path.clone(), (Vec::new(), SystemTime::UNIX_EPOCH));
+    // A small file tree for the FileOpen page to browse.
+    for path in ["/fuzz.txt", "/other.rs", "/dir/a", "/dir/sub/b.txt"] {
+        io.files
+            .insert(PathBuf::from(path), (Vec::new(), SystemTime::UNIX_EPOCH));
+    }
     let mut app = App::new(&mut io);
     let buffer_id = buffer::from_file(&mut app, initial_path);
     window::open_edit(&mut app, &mut io, buffer_id);

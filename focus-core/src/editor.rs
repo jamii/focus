@@ -10,28 +10,21 @@ use crate::{
     app::{App, IO},
     buffer::{self, BufferId, Edit, EditKind, OffsetDiff, SaveKind},
     drawing::{Drawing, Rect},
-    map::{Map, MapKey},
+    map::Map,
     style::{HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR},
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct EditorId(pub(crate) usize);
 
-impl MapKey for EditorId {
-    fn index(self) -> usize {
-        self.0
-    }
-
-    fn from_index(index: usize) -> Self {
-        EditorId(index)
-    }
-}
-
 pub struct Editors {
     pub(crate) editor_count: usize,
 
     pub(crate) buffer_id: Map<EditorId, BufferId>,
     pub(crate) cursors: Map<EditorId, Vec<Cursor>>,
+    // Draw a '>' in the left gutter next to the main cursor's line (used
+    // by the FileOpen list to show the selected entry).
+    pub(crate) gutter_marker: Map<EditorId, bool>,
     marked: Map<EditorId, bool>,
     show_cursor: Map<EditorId, bool>,
     wrap_chars: Map<EditorId, usize>,
@@ -71,6 +64,7 @@ impl Editors {
             editor_count: 0,
             buffer_id: Map::new(),
             cursors: Map::new(),
+            gutter_marker: Map::new(),
             marked: Map::new(),
             show_cursor: Map::new(),
             wrap_chars: Map::new(),
@@ -97,6 +91,7 @@ pub(crate) fn new(app: &mut App, buffer_id: BufferId) -> EditorId {
             tail: CursorPoint::new(0),
         }],
     );
+    app.editors.gutter_marker.insert(editor_id, false);
     app.editors.marked.insert(editor_id, false);
     app.editors.show_cursor.insert(editor_id, true);
     app.editors.wrap_chars.insert(editor_id, wrap_chars);
@@ -120,6 +115,7 @@ pub(crate) fn assert_invariants(app: &App) {
     let editors = &app.editors;
     assert_eq!(editors.buffer_id.len(), editors.editor_count);
     assert_eq!(editors.cursors.len(), editors.editor_count);
+    assert_eq!(editors.gutter_marker.len(), editors.editor_count);
     assert_eq!(editors.marked.len(), editors.editor_count);
     assert_eq!(editors.show_cursor.len(), editors.editor_count);
     assert_eq!(editors.wrap_chars.len(), editors.editor_count);
@@ -360,6 +356,16 @@ impl EditorId {
                     pos[1] += translate_y;
                     drawing.draw_text(app.cell_size(), BStr::new(b"\\"), pos, HIGHLIGHT_COLOR);
                 }
+            }
+
+            // Marker next to the first row of the main cursor's line.
+            if app.editors.gutter_marker[self] {
+                let offset = cursors.last().unwrap().head.offset;
+                let line_start = buffer_id.line_range_from_offset(app, offset).start;
+                let row = self.grid_from_offset(app, line_start)[0][1];
+                let mut pos = app.screen_from_grid([0, row]);
+                pos[1] += translate_y;
+                drawing.draw_text(app.cell_size(), BStr::new(b">"), pos, HIGHLIGHT_COLOR);
             }
         }
 
@@ -812,7 +818,18 @@ impl EditorId {
         self.scroll_offset_into_view(app, 0);
     }
 
-    fn cursor_goto_buffer_end(self, app: &mut App) {
+    // Collapse to a single unmarked cursor at the buffer start and scroll
+    // to the top.
+    pub(crate) fn cursor_reset(self, app: &mut App) {
+        app.editors.cursors[self] = vec![Cursor {
+            head: CursorPoint::new(0),
+            tail: CursorPoint::new(0),
+        }];
+        app.editors.marked[self] = false;
+        self.scroll_main_cursor_into_view(app);
+    }
+
+    pub(crate) fn cursor_goto_buffer_end(self, app: &mut App) {
         let buffer_id = app.editors.buffer_id[self];
         let end = buffer_id.text(app).len();
         for cursor in &mut app.editors.cursors[self] {

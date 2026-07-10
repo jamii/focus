@@ -2,9 +2,54 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 
+use crate::buffer::BufferId;
+use crate::editor::EditorId;
+use crate::page::PageId;
+use crate::window::WindowId;
+
 pub(crate) trait MapKey: Copy + Debug {
     fn index(self) -> usize;
     fn from_index(index: usize) -> Self;
+}
+
+impl MapKey for BufferId {
+    fn index(self) -> usize {
+        self.0
+    }
+
+    fn from_index(index: usize) -> Self {
+        BufferId(index)
+    }
+}
+
+impl MapKey for EditorId {
+    fn index(self) -> usize {
+        self.0
+    }
+
+    fn from_index(index: usize) -> Self {
+        EditorId(index)
+    }
+}
+
+impl MapKey for PageId {
+    fn index(self) -> usize {
+        self.0
+    }
+
+    fn from_index(index: usize) -> Self {
+        PageId(index)
+    }
+}
+
+impl MapKey for WindowId {
+    fn index(self) -> usize {
+        self.0
+    }
+
+    fn from_index(index: usize) -> Self {
+        WindowId(index)
+    }
 }
 
 pub(crate) struct Map<K, V> {

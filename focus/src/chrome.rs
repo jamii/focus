@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::CString;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -23,7 +23,7 @@ use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamedKey};
 use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
 
-use focus_core::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, WindowSize};
+use focus_core::app::{App, DirEntry, INITIAL_SIZE, INITIAL_TITLE, IO, WindowSize};
 use focus_core::buffer;
 use focus_core::drawing::Drawing;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
@@ -149,6 +149,42 @@ impl IO for IoReal<'_> {
         let mut f = opts.open(path)?;
         f.write_all(contents)?;
         f.metadata()?.modified()
+    }
+
+    fn file_read_prefix(&mut self, path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
+        let mut contents = Vec::new();
+        std::fs::File::open(path)?
+            .take(limit as u64)
+            .read_to_end(&mut contents)?;
+        Ok(contents)
+    }
+
+    fn file_create(&mut self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(path)?;
+        Ok(())
+    }
+
+    fn current_dir(&mut self) -> PathBuf {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))
+    }
+
+    fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>> {
+        let mut entries = Vec::new();
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            entries.push(DirEntry {
+                name: entry.file_name(),
+                // Follows symlinks, so a link to a dir counts as a dir.
+                is_dir: std::fs::metadata(entry.path()).is_ok_and(|m| m.is_dir()),
+            });
+        }
+        Ok(entries)
     }
 }
 

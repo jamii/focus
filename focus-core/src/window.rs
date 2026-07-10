@@ -3,22 +3,11 @@ use crate::buffer::BufferId;
 use crate::drawing::Drawing;
 use crate::editor;
 use crate::input::{ButtonState, InputEvent, Key};
-use crate::map::{Map, MapKey};
+use crate::map::Map;
 use crate::page::{self, PageId};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct WindowId(pub usize);
-
-// @bot move all the impl MapKey into map.rs
-impl MapKey for WindowId {
-    fn index(self) -> usize {
-        self.0
-    }
-
-    fn from_index(index: usize) -> Self {
-        WindowId(index)
-    }
-}
 
 pub struct Windows {
     pub(crate) window_count: usize,
@@ -66,16 +55,6 @@ pub fn open_edit(app: &mut App, io: &mut dyn IO, buffer_id: BufferId) -> WindowI
     open(app, io, page_id)
 }
 
-pub(crate) fn close(app: &mut App, window_id: WindowId) {
-    assert!(
-        app.windows.open[window_id],
-        "tried to close window {:?}, but it is not open",
-        window_id,
-    );
-    app.windows.open[window_id] = false;
-    app.windows.open_count -= 1;
-}
-
 pub(crate) fn assert_invariants(app: &App) {
     let windows = &app.windows;
     assert_eq!(windows.page_id.len(), windows.window_count);
@@ -100,6 +79,10 @@ impl WindowId {
         assert!(app.windows.open[self], "input for closed window {:?}", self,);
 
         let handled = match &event {
+            InputEvent::CloseRequested => {
+                self.close(app, io);
+                true
+            }
             InputEvent::Key {
                 state, logical_key, ..
             } if *state == ButtonState::Pressed && app.modifiers.control && !app.modifiers.alt => {
@@ -116,7 +99,7 @@ impl WindowId {
                         true
                     }
                     Key::Character("o") => {
-                        let page_id = page::new_open_file(app);
+                        let page_id = page::new_open_file(app, io);
                         app.windows.page_id[self] = page_id;
                         true
                     }
@@ -128,7 +111,25 @@ impl WindowId {
 
         if !handled {
             let page_id = app.windows.page_id[self];
-            page_id.input(app, io, event);
+            page_id.input(app, io, self, event);
+        }
+    }
+
+    fn close(self, app: &mut App, io: &mut dyn IO) {
+        assert!(
+            app.windows.open[self],
+            "tried to close window {:?}, but it is not open",
+            self,
+        );
+
+        let page_id = app.windows.page_id[self];
+        page_id.input(app, io, self, InputEvent::FocusChanged { focused: false });
+
+        app.windows.open[self] = false;
+        app.windows.open_count -= 1;
+        io.close_window(self);
+        if app.windows.open_count == 0 {
+            io.exit();
         }
     }
 

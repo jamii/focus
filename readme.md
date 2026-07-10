@@ -18,7 +18,7 @@ Editor:
 
 Tools:
 
-- [ ] Open file
+- [x] Open file
 - [ ] Search project files
 - [ ] Search open buffers
 - [ ] Search within buffer
