@@ -45,6 +45,24 @@ fn closing_last_window_exits() {
 }
 
 #[test]
+fn closing_a_window_autosaves() {
+    let path = std::path::PathBuf::from("/tmp/focus-close-autosave-test.txt");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "before");
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += std::time::Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::text_input(&mut app, &mut io, window_id, " after");
+
+    app.input(&mut io, window_id, InputEvent::CloseRequested);
+
+    assert_eq!(io.files.get(&path).unwrap().0, b"before after");
+    assert!(io.open_windows.is_empty());
+    app.assert_invariants();
+}
+
+#[test]
 fn draw_includes_status_bar_on_bottom_row() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
@@ -114,7 +132,8 @@ fn status_bar_uses_file_path_for_file_buffers() {
         .find(|text| text.starts_with(path.to_str().unwrap()))
         .unwrap();
 
-    assert_eq!(status_text, format!("{} 1:4", path.display()));
+    // The cursor starts at the top after loading.
+    assert_eq!(status_text, format!("{} 1:1", path.display()));
     app.assert_invariants();
 }
 
@@ -188,6 +207,7 @@ fn status_bar_focus_loss_autosaves_main_editor() {
 
     io.frame_start += std::time::Duration::from_secs(1);
     common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
     common::text_input(&mut app, &mut io, window_id, " after");
     common::draw(&mut app, window_id, 20, 3);
 

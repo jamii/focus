@@ -85,6 +85,25 @@ impl IO for ErrorIO {
         }
         self.inner.file_write(path, contents, create)
     }
+
+    fn file_read_prefix(&mut self, path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
+        if let Some(kind) = self.file_read_error {
+            return Err(std::io::Error::from(kind));
+        }
+        self.inner.file_read_prefix(path, limit)
+    }
+
+    fn file_create(&mut self, path: &Path) -> std::io::Result<()> {
+        self.inner.file_create(path)
+    }
+
+    fn current_dir(&mut self) -> PathBuf {
+        self.inner.current_dir()
+    }
+
+    fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<focus_core::app::DirEntry>> {
+        self.inner.dir_list(path)
+    }
 }
 
 fn error_file_app(path: PathBuf, text: &str) -> (App, ErrorIO, WindowId) {
@@ -132,6 +151,23 @@ fn error_control_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: 
         window_id,
         InputEvent::ModifiersChanged(ModifiersState {
             control: true,
+            ..Default::default()
+        }),
+    );
+    error_key(app, io, window_id, key);
+    app.input(
+        io,
+        window_id,
+        InputEvent::ModifiersChanged(ModifiersState::default()),
+    );
+}
+
+fn error_alt_key(app: &mut App, io: &mut ErrorIO, window_id: WindowId, key: Key<'_>) {
+    app.input(
+        io,
+        window_id,
+        InputEvent::ModifiersChanged(ModifiersState {
+            alt: true,
             ..Default::default()
         }),
     );
@@ -227,6 +263,20 @@ fn tick_loads_file_buffer_from_mock_io() {
 }
 
 #[test]
+fn from_file_reuses_existing_buffer_for_same_path() {
+    let path = PathBuf::from("/tmp/focus-buffer-reuse-test.txt");
+    let mut io = focus_core::fuzz::MockIO::new();
+    let mut app = App::new(&mut io);
+
+    let first = buffer::from_file(&mut app, path.clone());
+    let second = buffer::from_file(&mut app, path);
+
+    assert_eq!(first, second);
+    assert_eq!(app.buffers.keys().count(), 1);
+    app.assert_invariants();
+}
+
+#[test]
 fn tick_reloads_clean_file_after_external_change() {
     let path = PathBuf::from("/tmp/focus-buffer-reload-test.txt");
     let (mut app, mut io, _) = common::file_app(path.clone(), "before\n");
@@ -256,6 +306,8 @@ fn explicit_save_writes_modified_file() {
 
     io.frame_start += Duration::from_secs(1);
     common::tick(&mut app, &mut io);
+    // The cursor starts at the top after loading; append from the end.
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
     common::text_input(&mut app, &mut io, window_id, " after");
     common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
 
@@ -271,6 +323,7 @@ fn focus_loss_autosaves_existing_modified_file() {
 
     io.frame_start += Duration::from_secs(1);
     common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
     common::text_input(&mut app, &mut io, window_id, " after");
     common::focus_changed(&mut app, &mut io, window_id, false);
 
@@ -287,12 +340,25 @@ fn autosave_does_not_recreate_deleted_file_but_explicit_save_does() {
     io.files.remove(&path);
     io.frame_start += Duration::from_secs(1);
     common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
     common::text_input(&mut app, &mut io, window_id, " after");
     common::focus_changed(&mut app, &mut io, window_id, false);
     assert!(!io.files.contains_key(&path));
 
     common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
     assert_eq!(io.files.get(&path).unwrap().0, b"before after");
+    app.assert_invariants();
+}
+
+#[test]
+fn first_load_is_not_undoable() {
+    let path = PathBuf::from("/tmp/focus-buffer-first-load-undo-test.txt");
+    let (mut app, mut io, window_id) = common::file_app(path, "contents");
+    common::tick(&mut app, &mut io);
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
+
+    assert_eq!(common::text(&app), "contents");
     app.assert_invariants();
 }
 
@@ -315,6 +381,7 @@ fn dirty_file_buffer_does_not_reload_external_changes() {
 
     io.frame_start += Duration::from_secs(1);
     common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
     common::text_input(&mut app, &mut io, window_id, " local");
     io.files.insert(
         path,
@@ -336,6 +403,7 @@ fn clean_external_replacement_updates_text_and_cursor_offsets() {
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "abcd ef");
     common::tick(&mut app, &mut io);
 
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
     common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
     io.files.insert(
         path,
@@ -411,6 +479,7 @@ fn explicit_save_error_leaves_file_dirty_until_next_successful_save() {
 
     io.inner.frame_start += Duration::from_secs(1);
     error_tick(&mut app, &mut io);
+    error_alt_key(&mut app, &mut io, window_id, Key::Character("k"));
     error_text_input(&mut app, &mut io, window_id, " after");
     io.file_write_error = Some(std::io::ErrorKind::PermissionDenied);
     error_control_key(&mut app, &mut io, window_id, Key::Character("s"));
@@ -432,6 +501,7 @@ fn autosave_non_notfound_error_leaves_file_dirty_until_explicit_save() {
 
     io.inner.frame_start += Duration::from_secs(1);
     error_tick(&mut app, &mut io);
+    error_alt_key(&mut app, &mut io, window_id, Key::Character("k"));
     error_text_input(&mut app, &mut io, window_id, " after");
     io.file_write_error = Some(std::io::ErrorKind::PermissionDenied);
     error_focus_changed(&mut app, &mut io, window_id, false);

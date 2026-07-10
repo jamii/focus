@@ -5,20 +5,10 @@ use std::time::{Duration, SystemTime};
 use bstr::{BStr, BString, ByteSlice};
 
 use crate::app::{App, IO};
-use crate::map::{Map, MapKey};
+use crate::map::Map;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct BufferId(pub(crate) usize);
-
-impl MapKey for BufferId {
-    fn index(self) -> usize {
-        self.0
-    }
-
-    fn from_index(index: usize) -> Self {
-        BufferId(index)
-    }
-}
 
 pub struct Buffers {
     pub(crate) buffer_count: usize,
@@ -96,7 +86,17 @@ pub(crate) fn scratch(app: &mut App) -> BufferId {
     insert(app, Source::Scratch)
 }
 
+/// Return the existing buffer for `absolute_path`, or create one.
 pub fn from_file(app: &mut App, absolute_path: PathBuf) -> BufferId {
+    for buffer_id in app.buffers.keys() {
+        let Source::File(source) = &app.buffers.source[buffer_id] else {
+            continue;
+        };
+        if source.absolute_path.as_path() == absolute_path.as_path() {
+            return buffer_id;
+        }
+    }
+
     insert(
         app,
         Source::File(SourceFile {
@@ -179,14 +179,29 @@ impl BufferId {
         // Maybe reload.
         let frame_start = app.frame_start;
         let last_modified_time = app.buffers.last_modified_time[self];
-        let text = match &mut app.buffers.source[self] {
+        let (text, first_load) = match &mut app.buffers.source[self] {
             Source::File(source) if last_modified_time <= source.last_save_time => {
-                source.load(io, frame_start)
+                let first_load = source.last_load_mtime == SystemTime::UNIX_EPOCH;
+                (source.load(io, frame_start), first_load)
             }
-            _ => None,
+            _ => (None, false),
         };
         if let Some(text) = text {
             self.replace(app, text.as_bstr());
+            // The first load isn't an edit: open at the top rather than
+            // mapping cursors through the empty->contents diff.
+            if first_load {
+                app.buffers.doing[self].clear();
+                let editor_ids: Vec<_> = app
+                    .editors
+                    .buffer_id
+                    .iter()
+                    .filter_map(|(editor_id, buffer_id)| (*buffer_id == self).then_some(editor_id))
+                    .collect();
+                for editor_id in editor_ids {
+                    editor_id.cursor_reset(app);
+                }
+            }
         }
     }
 

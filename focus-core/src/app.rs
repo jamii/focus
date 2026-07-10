@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::BString;
@@ -59,6 +60,20 @@ pub trait IO {
         contents: &[u8],
         create: bool,
     ) -> std::io::Result<SystemTime>;
+    /// Read at most `limit` bytes from the start of the file.
+    fn file_read_prefix(&mut self, path: &Path, limit: usize) -> std::io::Result<Vec<u8>>;
+    /// Create the file, and any missing parent dirs, if it does not already
+    /// exist. Does not truncate an existing file.
+    fn file_create(&mut self, path: &Path) -> std::io::Result<()>;
+
+    fn current_dir(&mut self) -> PathBuf;
+    fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DirEntry {
+    pub name: OsString,
+    pub is_dir: bool,
 }
 
 const FONT_SIZE_INIT: f32 = 32.0;
@@ -102,14 +117,6 @@ impl App {
 
     pub fn input(&mut self, io: &mut dyn IO, window_id: WindowId, event: InputEvent<'_>) {
         let handled = match &event {
-            InputEvent::CloseRequested => {
-                window::close(self, window_id);
-                io.close_window(window_id);
-                if self.windows.open_count == 0 {
-                    io.exit();
-                }
-                true
-            }
             InputEvent::ModifiersChanged(modifiers) => {
                 self.modifiers = *modifiers;
                 true
