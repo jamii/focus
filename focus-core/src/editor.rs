@@ -173,6 +173,42 @@ impl EditorId {
         self.cursor_reset(app);
     }
 
+    pub(crate) fn main_cursor_offset(self, app: &App) -> usize {
+        app.editors.cursors[self].last().unwrap().head.offset
+    }
+
+    pub(crate) fn set_cursor_offsets(self, app: &mut App, offsets: &[usize]) {
+        if offsets.is_empty() {
+            self.cursor_reset(app);
+            return;
+        }
+        app.editors.cursors[self] = offsets
+            .iter()
+            .map(|&offset| Cursor {
+                head: CursorPoint::new(offset),
+                tail: CursorPoint::new(offset),
+            })
+            .collect();
+        app.editors.marked[self] = false;
+        self.scroll_main_cursor_into_view(app);
+    }
+
+    pub(crate) fn set_marked_ranges(self, app: &mut App, ranges: &[Range<usize>]) {
+        if ranges.is_empty() {
+            self.cursor_reset(app);
+            return;
+        }
+        app.editors.cursors[self] = ranges
+            .iter()
+            .map(|range| Cursor {
+                head: CursorPoint::new(range.end),
+                tail: CursorPoint::new(range.start),
+            })
+            .collect();
+        app.editors.marked[self] = true;
+        self.scroll_main_cursor_into_view(app);
+    }
+
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         let buffer_id = app.editors.buffer_id[self];
         buffer_id.tick(app, io);
@@ -493,7 +529,9 @@ impl EditorId {
         app.editors.cursors[self] = cursors;
         self.refresh_wraps(app);
 
-        self.scroll_offset_into_center(app, diff.apply(center_before));
+        if app.editors.last_draw_size[self][1] > 0.0 {
+            self.scroll_offset_into_center(app, diff.apply(center_before));
+        }
     }
 
     fn scroll_offset_into_view(self, app: &mut App, offset: usize) {
@@ -518,12 +556,13 @@ impl EditorId {
         self.scroll_offset_into_view(app, offset);
     }
 
-    fn scroll_offset_into_center(self, app: &mut App, offset: usize) {
+    pub(crate) fn scroll_offset_into_center(self, app: &mut App, offset: usize) {
         let viewport_h = app.editors.last_draw_size[self][1] as isize;
+        let line = self.grid_from_offset(app, offset)[1][1];
         if viewport_h <= 0 {
+            app.editors.top_pixel[self] = app.screen_from_grid([0, line])[1] as isize;
             return;
         }
-        let line = self.grid_from_offset(app, offset)[1][1];
         let y = app.screen_from_grid([0, line])[1] as isize;
         let y_end = app.screen_from_grid([0, line + 1])[1] as isize;
         app.editors.top_pixel[self] = (y + y_end) / 2 - viewport_h / 2;

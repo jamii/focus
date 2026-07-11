@@ -7,7 +7,7 @@ use crate::{
     buffer::{OffsetDiff, Source, SourceFile},
     drawing::Rect,
     editor::{self, EditorId},
-    input::InputEvent,
+    input::{ButtonState, InputEvent, Key},
     window::WindowId,
 };
 
@@ -59,12 +59,28 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
 }
 
 pub(super) fn input(
-    _page_id: PageId,
-    _app: &mut App,
+    page_id: PageId,
+    app: &mut App,
     _io: &mut dyn IO,
-    _window_id: WindowId,
-    _event: &InputEvent<'_>,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
 ) -> bool {
+    if let InputEvent::Key {
+        state: ButtonState::Pressed,
+        logical_key: Key::Character("f"),
+    } = event
+        && app.modifiers.control
+        && !app.modifiers.alt
+        && app.pages.focus[page_id] == EDITOR_IX
+    {
+        let editor_id = editors(app, page_id).editor_id;
+        let buffer_id = app.editors.buffer_id[editor_id];
+        let initial_offset = editor_id.main_cursor_offset(app);
+        let page_id = super::new_buffer_search(app, buffer_id, initial_offset);
+        app.windows.page_id[window_id] = page_id;
+        return true;
+    }
+
     false
 }
 

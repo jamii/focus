@@ -21,11 +21,11 @@ Tools:
 - [x] Open file
 - [x] Search project files
 - [x] Search open buffers
-- [ ] Search within buffer
+- [x] Search within buffer
 - [ ] Search within project files
-- [ ] Search errors
-- [ ] Runner
 - [ ] Navigation stack
+- [ ] Runner
+- [ ] Search errors
 
 Language specific:
 
