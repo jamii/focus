@@ -164,6 +164,15 @@ impl EditorId {
         }
     }
 
+    pub(crate) fn set_buffer(self, app: &mut App, buffer_id: BufferId) {
+        if app.editors.buffer_id[self] == buffer_id {
+            return;
+        }
+        app.editors.buffer_id[self] = buffer_id;
+        self.refresh_wraps(app);
+        self.cursor_reset(app);
+    }
+
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         let buffer_id = app.editors.buffer_id[self];
         buffer_id.tick(app, io);

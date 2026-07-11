@@ -20,7 +20,7 @@ Tools:
 
 - [x] Open file
 - [x] Search project files
-- [ ] Search open buffers
+- [x] Search open buffers
 - [ ] Search within buffer
 - [ ] Search within project files
 - [ ] Search errors
