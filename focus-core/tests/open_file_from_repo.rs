@@ -150,6 +150,23 @@ fn ctrl_enter_opens_selected_file() {
 }
 
 #[test]
+fn ctrl_enter_uses_current_search_before_next_tick() {
+    let (mut app, mut io, window_id) = open_repo_file_app(&[
+        ("/apple.txt", "apple contents"),
+        ("/banana.txt", "banana contents"),
+    ]);
+    common::text_input(&mut app, &mut io, window_id, "ban");
+    let buffers_before = app.buffers.keys().count();
+
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(buffer_text(&app, buffers_before), "banana contents");
+    app.assert_invariants();
+}
+
+#[test]
 fn alt_enter_does_nothing() {
     let (mut app, mut io, window_id) = open_repo_file_app(&[("/file.txt", "contents")]);
     common::tick(&mut app, &mut io);
