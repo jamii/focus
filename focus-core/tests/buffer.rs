@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::BString;
-use focus_core::app::{App, IO, WindowSize};
+use focus_core::app::{App, IO, RepoFiles, WindowSize};
 use focus_core::buffer;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::window::{self, WindowId};
@@ -103,6 +103,10 @@ impl IO for ErrorIO {
 
     fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<focus_core::app::DirEntry>> {
         self.inner.dir_list(path)
+    }
+
+    fn repo_files(&mut self, dir: &Path) -> std::io::Result<RepoFiles> {
+        self.inner.repo_files(dir)
     }
 }
 

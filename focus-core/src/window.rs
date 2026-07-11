@@ -108,6 +108,16 @@ impl WindowId {
                         app.windows.page_id[self] = page_id;
                         true
                     }
+                    Key::Character("p") => {
+                        let page_id = app.windows.page_id[self];
+                        let dir = page_id
+                            .current_path(app)
+                            .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+                            .unwrap_or_else(|| io.current_dir());
+                        let page_id = page::new_open_file_from_repo(app, io, dir);
+                        app.windows.page_id[self] = page_id;
+                        true
+                    }
                     _ => false,
                 }
             }

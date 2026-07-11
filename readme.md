@@ -19,7 +19,7 @@ Editor:
 Tools:
 
 - [x] Open file
-- [ ] Search project files
+- [x] Search project files
 - [ ] Search open buffers
 - [ ] Search within buffer
 - [ ] Search within project files

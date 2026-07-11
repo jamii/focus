@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 
 use bstr::BString;
 
-use crate::app::{App, DirEntry, IO, WindowSize};
+use crate::app::{App, DirEntry, IO, RepoFiles, WindowSize};
 use crate::buffer;
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
@@ -30,6 +30,7 @@ pub struct MockIO {
     pub mouse_position: [f32; 2],
     pub clipboard: Option<BString>,
     pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
+    pub git_roots: Vec<PathBuf>,
     pub system_time: SystemTime,
 }
 
@@ -43,8 +44,20 @@ impl MockIO {
             mouse_position: [0.0, 0.0],
             clipboard: None,
             files: HashMap::new(),
+            git_roots: Vec::new(),
             system_time: SystemTime::UNIX_EPOCH,
         }
+    }
+
+    fn repo_root(&self, dir: &Path) -> PathBuf {
+        let mut current = Some(dir);
+        while let Some(path) = current {
+            if self.git_roots.iter().any(|root| root == path) {
+                return path.to_path_buf();
+            }
+            current = path.parent();
+        }
+        dir.to_path_buf()
     }
 }
 
@@ -153,6 +166,23 @@ impl IO for MockIO {
             .map(|(name, is_dir)| DirEntry { name, is_dir })
             .collect())
     }
+
+    fn repo_files(&mut self, dir: &Path) -> std::io::Result<RepoFiles> {
+        let root = self.repo_root(dir);
+        let mut relative_paths = Vec::new();
+        for file in self.files.keys() {
+            if let Ok(relative_path) = file.strip_prefix(&root)
+                && !relative_path.as_os_str().is_empty()
+            {
+                relative_paths.push(relative_path.to_path_buf());
+            }
+        }
+        relative_paths.sort();
+        Ok(RepoFiles {
+            root,
+            relative_paths,
+        })
+    }
 }
 
 // Action picked by the fuzzer for each step.
@@ -169,6 +199,7 @@ const A_FILE_MODIFY: u32 = 10;
 const A_FILE_DELETE: u32 = 5;
 const A_FOCUS: u32 = 10;
 const A_OPEN_FILE_PAGE: u32 = 10;
+const A_OPEN_REPO_FILE_PAGE: u32 = 10;
 const A_FILE_CREATE: u32 = 5;
 
 // Small pool of path components for A_FILE_CREATE, so created files
@@ -211,6 +242,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_FOCUS,
         A_FILE_DELETE,
         A_OPEN_FILE_PAGE,
+        A_OPEN_REPO_FILE_PAGE,
         A_FILE_CREATE,
     ])?;
     match action {
@@ -381,8 +413,32 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             );
         }
         13 => {
+            // Switch the window to the repo file search page (ctrl+p).
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState {
+                    control: true,
+                    ..ModifiersState::default()
+                }),
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::Key {
+                    state: ButtonState::Pressed,
+                    logical_key: Key::Character("p"),
+                },
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState::default()),
+            );
+        }
+        14 => {
             // Create a file at a random path, so dirs appear and change
-            // under the FileOpen page.
+            // under the file open and repo file search pages.
             let mut path = PathBuf::from("/");
             let component_count = frng.usize_bounded(1, 3)?;
             for _ in 0..component_count {

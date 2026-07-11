@@ -23,7 +23,7 @@ use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamedKey};
 use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
 
-use focus_core::app::{App, DirEntry, INITIAL_SIZE, INITIAL_TITLE, IO, WindowSize};
+use focus_core::app::{App, DirEntry, INITIAL_SIZE, INITIAL_TITLE, IO, RepoFiles, WindowSize};
 use focus_core::buffer;
 use focus_core::drawing::Drawing;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
@@ -186,6 +186,42 @@ impl IO for IoReal<'_> {
         }
         Ok(entries)
     }
+
+    fn repo_files(&mut self, dir: &Path) -> std::io::Result<RepoFiles> {
+        let root = git_root(dir);
+        let mut relative_paths = Vec::new();
+        for result in ignore::WalkBuilder::new(&root).build() {
+            let entry = result.map_err(|error| std::io::Error::other(error.to_string()))?;
+            let Some(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_file() {
+                continue;
+            }
+            let Ok(relative_path) = entry.path().strip_prefix(&root) else {
+                continue;
+            };
+            if relative_path.as_os_str().is_empty() {
+                continue;
+            }
+            relative_paths.push(relative_path.to_path_buf());
+        }
+        Ok(RepoFiles {
+            root,
+            relative_paths,
+        })
+    }
+}
+
+fn git_root(dir: &Path) -> PathBuf {
+    let mut current = Some(dir);
+    while let Some(path) = current {
+        if path.join(".git").exists() {
+            return path.to_path_buf();
+        }
+        current = path.parent();
+    }
+    dir.to_path_buf()
 }
 
 impl ApplicationHandler for Chrome {

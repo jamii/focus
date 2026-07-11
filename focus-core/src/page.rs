@@ -13,9 +13,11 @@ use crate::{
 
 mod edit;
 mod open_file;
+mod open_file_from_repo;
 
 pub(crate) use edit::new as new_edit;
 pub(crate) use open_file::new as new_open_file;
+pub(crate) use open_file_from_repo::new as new_open_file_from_repo;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct PageId(pub(crate) usize);
@@ -31,10 +33,27 @@ pub struct Pages {
     last_draw_size: Map<PageId, [f32; 2]>,
 }
 
-#[derive(Clone, Copy)]
-pub enum PageContent {
+enum PageContent {
     Edit,
     OpenFile,
+    OpenFileFromRepo(open_file_from_repo::State),
+}
+
+#[derive(Clone, Copy)]
+enum PageContentKind {
+    Edit,
+    OpenFile,
+    OpenFileFromRepo,
+}
+
+impl PageContent {
+    fn kind(&self) -> PageContentKind {
+        match self {
+            PageContent::Edit => PageContentKind::Edit,
+            PageContent::OpenFile => PageContentKind::OpenFile,
+            PageContent::OpenFileFromRepo(_) => PageContentKind::OpenFileFromRepo,
+        }
+    }
 }
 
 pub(crate) const GAP: f32 = 1.0;
@@ -82,9 +101,12 @@ pub(crate) fn assert_invariants(app: &App) {
     assert_eq!(pages.last_draw_size.len(), pages.page_count);
     for page_id in (0..pages.page_count).map(PageId) {
         let editor_ids = &pages.editor_ids[page_id];
-        match pages.content[page_id] {
-            PageContent::Edit => assert!(editor_ids.len() == edit::EDITOR_COUNT),
-            PageContent::OpenFile => assert!(editor_ids.len() == open_file::EDITOR_COUNT),
+        match pages.content[page_id].kind() {
+            PageContentKind::Edit => assert!(editor_ids.len() == edit::EDITOR_COUNT),
+            PageContentKind::OpenFile => assert!(editor_ids.len() == open_file::EDITOR_COUNT),
+            PageContentKind::OpenFileFromRepo => {
+                assert!(editor_ids.len() == open_file_from_repo::EDITOR_COUNT)
+            }
         }
         for editor_id in editor_ids {
             assert!(editor_id.0 < app.editors.editor_count);
@@ -110,9 +132,10 @@ pub(crate) fn assert_invariants(app: &App) {
 
 impl PageId {
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
-        match app.pages.content[self] {
-            PageContent::Edit => edit::tick(self, app, io),
-            PageContent::OpenFile => open_file::tick(self, app, io),
+        match app.pages.content[self].kind() {
+            PageContentKind::Edit => edit::tick(self, app, io),
+            PageContentKind::OpenFile => open_file::tick(self, app, io),
+            PageContentKind::OpenFileFromRepo => open_file_from_repo::tick(self, app, io),
         }
     }
 
@@ -153,9 +176,12 @@ impl PageId {
             }
         }
 
-        let handled = match app.pages.content[self] {
-            PageContent::Edit => edit::input(self, app, io, window_id, &event),
-            PageContent::OpenFile => open_file::input(self, app, io, window_id, &event),
+        let handled = match app.pages.content[self].kind() {
+            PageContentKind::Edit => edit::input(self, app, io, window_id, &event),
+            PageContentKind::OpenFile => open_file::input(self, app, io, window_id, &event),
+            PageContentKind::OpenFileFromRepo => {
+                open_file_from_repo::input(self, app, io, window_id, &event)
+            }
         };
         if handled {
             return;
@@ -188,9 +214,12 @@ impl PageId {
                 pos: [0.0, 0.0],
                 size: drawing.size(),
             };
-            app.pages.editor_rects[self] = match app.pages.content[self] {
-                PageContent::Edit => edit::layout(page_rect, cell_size),
-                PageContent::OpenFile => open_file::layout(page_rect, cell_size),
+            app.pages.editor_rects[self] = match app.pages.content[self].kind() {
+                PageContentKind::Edit => edit::layout(page_rect, cell_size),
+                PageContentKind::OpenFile => open_file::layout(page_rect, cell_size),
+                PageContentKind::OpenFileFromRepo => {
+                    open_file_from_repo::layout(page_rect, cell_size)
+                }
             };
         }
 
@@ -223,16 +252,20 @@ impl PageId {
     }
 
     pub(crate) fn handle_edits(self, app: &mut App, editor_ix: usize, diff: &OffsetDiff) {
-        match app.pages.content[self] {
-            PageContent::Edit => edit::handle_edits(self, app, editor_ix, diff),
-            PageContent::OpenFile => open_file::handle_edits(self, app, editor_ix, diff),
+        match app.pages.content[self].kind() {
+            PageContentKind::Edit => edit::handle_edits(self, app, editor_ix, diff),
+            PageContentKind::OpenFile => open_file::handle_edits(self, app, editor_ix, diff),
+            PageContentKind::OpenFileFromRepo => {
+                open_file_from_repo::handle_edits(self, app, editor_ix, diff)
+            }
         }
     }
 
     pub(crate) fn current_path(self, app: &App) -> Option<PathBuf> {
-        match app.pages.content[self] {
-            PageContent::Edit => edit::current_path(self, app),
-            PageContent::OpenFile => open_file::current_path(self, app),
+        match app.pages.content[self].kind() {
+            PageContentKind::Edit => edit::current_path(self, app),
+            PageContentKind::OpenFile => open_file::current_path(self, app),
+            PageContentKind::OpenFileFromRepo => open_file_from_repo::current_path(self, app),
         }
     }
 }

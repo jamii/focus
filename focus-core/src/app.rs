@@ -68,12 +68,19 @@ pub trait IO {
 
     fn current_dir(&mut self) -> PathBuf;
     fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>>;
+    fn repo_files(&mut self, dir: &Path) -> std::io::Result<RepoFiles>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DirEntry {
     pub name: OsString,
     pub is_dir: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RepoFiles {
+    pub root: PathBuf,
+    pub relative_paths: Vec<PathBuf>,
 }
 
 const FONT_SIZE_INIT: f32 = 32.0;
