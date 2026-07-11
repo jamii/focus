@@ -1,0 +1,87 @@
+use std::os::unix::ffi::OsStrExt;
+
+use bstr::BStr;
+
+use crate::{
+    app::{App, IO},
+    buffer::{OffsetDiff, Source, SourceFile},
+    drawing::Rect,
+    editor::{self, EditorId},
+    input::InputEvent,
+    window::WindowId,
+};
+
+use super::{GAP, PageId};
+
+pub(super) const EDITOR_COUNT: usize = 2;
+
+const EDITOR_IX: usize = 0;
+
+#[derive(Clone, Copy)]
+struct EditEditors {
+    editor_id: EditorId,
+    status_bar_id: EditorId,
+}
+
+pub(super) fn new(app: &mut App, editor_id: EditorId) -> (Vec<EditorId>, usize) {
+    let status_bar_id = editor::new_scratch(app);
+    (vec![editor_id, status_bar_id], EDITOR_IX)
+}
+
+pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
+    let EditEditors {
+        editor_id,
+        status_bar_id,
+    } = editors(app, page_id);
+
+    editor_id.tick(app, io);
+
+    // Update status bar text.
+    let status_bar_buffer_id = app.editors.buffer_id[status_bar_id];
+    let cursor_main_offset = app.editors.cursors[editor_id].last().unwrap().head.offset;
+    let grid = editor_id.grid_from_offset(app, cursor_main_offset);
+    let buffer_id = app.editors.buffer_id[editor_id];
+    let source = match buffer_id.source(app) {
+        Source::Scratch => BStr::new("scratch"),
+        Source::File(SourceFile { absolute_path, .. }) => {
+            BStr::new(absolute_path.as_os_str().as_bytes())
+        }
+    };
+    let status_text = format!("{} {}:{}", source, grid[0][1] + 1, grid[0][0] + 1);
+    status_bar_buffer_id.replace(app, BStr::new(status_text.as_bytes()));
+
+    status_bar_id.tick(app, io);
+}
+
+pub(super) fn input(
+    _page_id: PageId,
+    _app: &mut App,
+    _io: &mut dyn IO,
+    _window_id: WindowId,
+    _event: &InputEvent<'_>,
+) -> bool {
+    false
+}
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect> {
+    let [editor_rect, status_bar_rect] = page_rect.split_from_bottom(cell_size[1] as f32, GAP);
+    vec![editor_rect, status_bar_rect]
+}
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+) {
+}
+
+fn editors(app: &App, page_id: PageId) -> EditEditors {
+    let &[editor_id, status_bar_id] = app.pages.editor_ids[page_id].as_slice() else {
+        unreachable!()
+    };
+    EditEditors {
+        editor_id,
+        status_bar_id,
+    }
+}
