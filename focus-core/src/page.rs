@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::{
     app::{App, IO},
     buffer::OffsetDiff,
@@ -11,6 +13,9 @@ use crate::{
 
 mod edit;
 mod open_file;
+
+pub(crate) use edit::new as new_edit;
+pub(crate) use open_file::new as new_open_file;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct PageId(pub(crate) usize);
@@ -46,16 +51,6 @@ impl Pages {
             last_draw_size: Map::new(),
         }
     }
-}
-
-pub(crate) fn new_edit(app: &mut App, editor_id: EditorId) -> PageId {
-    let (editor_ids, focus) = edit::new(app, editor_id);
-    insert(app, PageContent::Edit, editor_ids, focus)
-}
-
-pub(crate) fn new_open_file(app: &mut App, io: &mut dyn IO) -> PageId {
-    let (editor_ids, focus) = open_file::new(app, io);
-    insert(app, PageContent::OpenFile, editor_ids, focus)
 }
 
 fn insert(app: &mut App, content: PageContent, editor_ids: Vec<EditorId>, focus: usize) -> PageId {
@@ -231,6 +226,13 @@ impl PageId {
         match app.pages.content[self] {
             PageContent::Edit => edit::handle_edits(self, app, editor_ix, diff),
             PageContent::OpenFile => open_file::handle_edits(self, app, editor_ix, diff),
+        }
+    }
+
+    pub(crate) fn current_path(self, app: &App) -> Option<PathBuf> {
+        match app.pages.content[self] {
+            PageContent::Edit => edit::current_path(self, app),
+            PageContent::OpenFile => open_file::current_path(self, app),
         }
     }
 }

@@ -43,6 +43,14 @@ fn path_starts_with_current_dir() {
 }
 
 #[test]
+fn path_starts_with_current_file_dir() {
+    let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/dir/file.txt"), "");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("o"));
+    assert_eq!(buffer_text(&app, PATH), "/dir/");
+    app.assert_invariants();
+}
+
+#[test]
 fn lists_dir_sorted_by_name() {
     let (mut app, mut io, _window_id) = open_file_app(&[
         ("/banana.txt", ""),
