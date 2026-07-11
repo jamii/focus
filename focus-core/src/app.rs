@@ -20,6 +20,7 @@ pub struct App {
     pub editors: Editors,
     pub buffers: Buffers,
 
+    pub(crate) buffer_search_text: BString,
     pub(crate) modifiers: ModifiersState,
     pub(crate) frame_start: Duration,
 }
@@ -103,6 +104,7 @@ impl App {
             pages: Pages::new(),
             editors: Editors::new(),
             buffers: Buffers::new(),
+            buffer_search_text: BString::default(),
             frame_start: Duration::ZERO,
             modifiers: ModifiersState::default(),
         }
