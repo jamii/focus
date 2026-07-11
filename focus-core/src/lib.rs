@@ -4,6 +4,7 @@ pub mod drawing;
 pub mod editor;
 pub mod fuzz;
 mod fuzz_gen;
+mod fuzzy;
 pub mod input;
 pub(crate) mod map;
 pub mod page;

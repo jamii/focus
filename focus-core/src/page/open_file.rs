@@ -9,6 +9,7 @@ use crate::{
     buffer::{self, OffsetDiff},
     drawing::Rect,
     editor::{self, EditorId},
+    fuzzy,
     input::{ButtonState, InputEvent, Key, NamedKey},
     window::WindowId,
 };
@@ -260,9 +261,9 @@ fn listing(app: &App, io: &mut dyn IO, path_id: EditorId) -> Result<Listing, Str
     let mut entries = io
         .dir_list(&dir)
         .map_err(|error| format!("{}: {}", dir.display(), error))?;
-    let mut scored: Vec<(FuzzyScore, DirEntry)> = entries
+    let mut scored: Vec<(fuzzy::Score, DirEntry)> = entries
         .drain(..)
-        .filter_map(|entry| Some((fuzzy_score(entry.name.as_bytes(), pattern)?, entry)))
+        .filter_map(|entry| Some((fuzzy::score(entry.name.as_bytes(), pattern)?, entry)))
         .collect();
     scored.sort_by(|(score_a, entry_a), (score_b, entry_b)| {
         score_a
@@ -271,48 +272,4 @@ fn listing(app: &App, io: &mut dyn IO, path_id: EditorId) -> Result<Listing, Str
     });
     let entries = scored.into_iter().map(|(_, entry)| entry).collect();
     Ok(Listing { dir, entries })
-}
-
-// Lower is better: the tightest match wins, ties broken by earliest match then
-// shortest name.
-type FuzzyScore = [usize; 3];
-
-// Case-insensitive subsequence match of `pattern` against `name`.
-fn fuzzy_score(name: &[u8], pattern: &[u8]) -> Option<FuzzyScore> {
-    // An empty pattern ties everything, leaving the list sorted by name.
-    if pattern.is_empty() {
-        return Some([0, 0, 0]);
-    }
-    let lower = |byte: u8| byte.to_ascii_lowercase();
-
-    // Forward pass: earliest end of a subsequence match.
-    let mut pattern_ix = 0;
-    let mut end = 0;
-    for (ix, &byte) in name.iter().enumerate() {
-        if lower(byte) == lower(pattern[pattern_ix]) {
-            pattern_ix += 1;
-            if pattern_ix == pattern.len() {
-                end = ix;
-                break;
-            }
-        }
-    }
-    if pattern_ix < pattern.len() {
-        return None;
-    }
-
-    // Backward pass: latest start of a match ending at `end`.
-    let mut pattern_ix = pattern.len();
-    let mut start = end;
-    for ix in (0..=end).rev() {
-        if lower(name[ix]) == lower(pattern[pattern_ix - 1]) {
-            pattern_ix -= 1;
-            if pattern_ix == 0 {
-                start = ix;
-                break;
-            }
-        }
-    }
-
-    Some([end - start, start, name.len()])
 }
