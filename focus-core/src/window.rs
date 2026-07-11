@@ -121,6 +121,18 @@ impl WindowId {
                     _ => false,
                 }
             }
+            InputEvent::Key {
+                state, logical_key, ..
+            } if *state == ButtonState::Pressed && !app.modifiers.control && app.modifiers.alt => {
+                match *logical_key {
+                    Key::Character("p") => {
+                        let page_id = page::new_open_buffer(app);
+                        app.windows.page_id[self] = page_id;
+                        true
+                    }
+                    _ => false,
+                }
+            }
             _ => false,
         };
 
