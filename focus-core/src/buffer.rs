@@ -169,6 +169,13 @@ impl BufferId {
         &app.buffers.source[self]
     }
 
+    pub(crate) fn path(self, app: &App) -> Option<PathBuf> {
+        match self.source(app) {
+            Source::Scratch => None,
+            Source::File(SourceFile { absolute_path, .. }) => Some(absolute_path.clone()),
+        }
+    }
+
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         // Maybe flush doing.
         let last_modified_time = app.buffers.last_modified_time[self];

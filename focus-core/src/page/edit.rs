@@ -1,4 +1,4 @@
-use std::os::unix::ffi::OsStrExt;
+use std::{os::unix::ffi::OsStrExt, path::PathBuf};
 
 use bstr::BStr;
 
@@ -11,7 +11,7 @@ use crate::{
     window::WindowId,
 };
 
-use super::{GAP, PageId};
+use super::{GAP, PageContent, PageId, insert};
 
 pub(super) const EDITOR_COUNT: usize = 2;
 
@@ -23,9 +23,14 @@ struct EditEditors {
     status_bar_id: EditorId,
 }
 
-pub(super) fn new(app: &mut App, editor_id: EditorId) -> (Vec<EditorId>, usize) {
+pub(crate) fn new(app: &mut App, editor_id: EditorId) -> PageId {
     let status_bar_id = editor::new_scratch(app);
-    (vec![editor_id, status_bar_id], EDITOR_IX)
+    insert(
+        app,
+        PageContent::Edit,
+        vec![editor_id, status_bar_id],
+        EDITOR_IX,
+    )
 }
 
 pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
@@ -74,6 +79,12 @@ pub(super) fn handle_edits(
     _editor_ix: usize,
     _diff: &OffsetDiff,
 ) {
+}
+
+pub(super) fn current_path(page_id: PageId, app: &App) -> Option<PathBuf> {
+    let editor_id = editors(app, page_id).editor_id;
+    let buffer_id = app.editors.buffer_id[editor_id];
+    buffer_id.path(app)
 }
 
 fn editors(app: &App, page_id: PageId) -> EditEditors {

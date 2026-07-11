@@ -99,7 +99,12 @@ impl WindowId {
                         true
                     }
                     Key::Character("o") => {
-                        let page_id = page::new_open_file(app, io);
+                        let page_id = app.windows.page_id[self];
+                        let dir = page_id
+                            .current_path(app)
+                            .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+                            .unwrap_or_else(|| io.current_dir());
+                        let page_id = page::new_open_file(app, dir);
                         app.windows.page_id[self] = page_id;
                         true
                     }

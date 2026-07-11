@@ -13,7 +13,7 @@ use crate::{
     window::WindowId,
 };
 
-use super::{GAP, PageId, new_edit};
+use super::{GAP, PageContent, PageId, insert, new_edit};
 
 #[derive(Clone, Copy)]
 struct OpenFileEditors {
@@ -27,13 +27,13 @@ pub(super) const EDITOR_COUNT: usize = 3;
 const PATH_IX: usize = 1;
 const PREVIEW_BYTES: usize = 10 * 1024;
 
-pub(super) fn new(app: &mut App, io: &mut dyn IO) -> (Vec<EditorId>, usize) {
+pub(crate) fn new(app: &mut App, dir: PathBuf) -> PageId {
     let preview_id = editor::new_scratch(app);
     let path_id = editor::new_scratch(app);
     let list_id = editor::new_scratch(app);
 
-    // The path editor starts with the current working directory.
-    let mut path = io.current_dir().into_os_string().into_vec();
+    // The path editor starts with the provided directory.
+    let mut path = dir.into_os_string().into_vec();
     if path.last() != Some(&b'/') {
         path.push(b'/');
     }
@@ -41,7 +41,12 @@ pub(super) fn new(app: &mut App, io: &mut dyn IO) -> (Vec<EditorId>, usize) {
     path_buffer_id.replace(app, BStr::new(&path));
     path_id.cursor_goto_buffer_end(app);
 
-    (vec![preview_id, path_id, list_id], PATH_IX)
+    insert(
+        app,
+        PageContent::OpenFile,
+        vec![preview_id, path_id, list_id],
+        PATH_IX,
+    )
 }
 
 pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
@@ -161,6 +166,10 @@ pub(super) fn handle_edits(
     _diff: &OffsetDiff,
 ) {
     // The list and preview are recomputed every tick.
+}
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf> {
+    None
 }
 
 fn editors(app: &App, page_id: PageId) -> OpenFileEditors {
