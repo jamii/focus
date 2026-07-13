@@ -61,7 +61,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
 pub(super) fn input(
     page_id: PageId,
     app: &mut App,
-    _io: &mut dyn IO,
+    io: &mut dyn IO,
     window_id: WindowId,
     event: &InputEvent<'_>,
 ) -> bool {
@@ -77,7 +77,7 @@ pub(super) fn input(
         let buffer_id = app.editors.buffer_id[editor_id];
         let initial_offset = editor_id.main_cursor_offset(app);
         let page_id = super::new_search_buffer(app, buffer_id, initial_offset);
-        app.windows.page_id[window_id] = page_id;
+        window_id.push_page(app, io, page_id);
         return true;
     }
 
