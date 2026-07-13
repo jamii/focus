@@ -14,6 +14,9 @@ bstr = "1"
 fontdue = "0.9"
 arboard = { version = "3", features = ["wayland-data-control"] }
 ignore = "0.4"
+grep-matcher = "0.1"
+grep-regex = "0.1"
+grep-searcher = "0.1"
 
 [dev-dependencies]
 png = "0.17"
