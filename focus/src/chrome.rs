@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
-use bstr::BString;
+use bstr::{BStr, BString, ByteSlice};
 use fontdue::{Font, FontSettings};
 use glutin::config::{Config, ConfigTemplateBuilder};
 use glutin::context::{ContextApi, ContextAttributesBuilder, PossiblyCurrentContext, Version};
@@ -23,7 +23,9 @@ use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamedKey};
 use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
 
-use focus_core::app::{App, DirEntry, INITIAL_SIZE, INITIAL_TITLE, IO, RepoFiles, WindowSize};
+use focus_core::app::{
+    App, DirEntry, INITIAL_SIZE, INITIAL_TITLE, IO, RepoFiles, RepoMatch, RepoSearch, WindowSize,
+};
 use focus_core::buffer;
 use focus_core::drawing::Drawing;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
@@ -210,6 +212,88 @@ impl IO for IoReal<'_> {
             root,
             relative_paths,
         })
+    }
+
+    fn repo_search(&mut self, dir: &Path, pattern: &BStr) -> std::io::Result<RepoSearch> {
+        let root = git_root(dir);
+        let pattern = pattern.to_str().map_err(std::io::Error::other)?;
+        let matcher = grep_regex::RegexMatcherBuilder::new()
+            .fixed_strings(true)
+            .build(pattern)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        let mut searcher = grep_searcher::SearcherBuilder::new()
+            .line_number(true)
+            .binary_detection(grep_searcher::BinaryDetection::quit(0))
+            .build();
+        let mut matches = Vec::new();
+        for result in ignore::WalkBuilder::new(&root).build() {
+            let entry = result.map_err(|error| std::io::Error::other(error.to_string()))?;
+            let Some(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_file() {
+                continue;
+            }
+            let Ok(relative_path) = entry.path().strip_prefix(&root) else {
+                continue;
+            };
+            if relative_path.as_os_str().is_empty() {
+                continue;
+            }
+            searcher.search_path(
+                &matcher,
+                entry.path(),
+                MatchSink {
+                    matcher: &matcher,
+                    relative_path,
+                    matches: &mut matches,
+                },
+            )?;
+        }
+        Ok(RepoSearch { root, matches })
+    }
+}
+
+// Collects one RepoMatch per pattern occurrence within each matching line.
+struct MatchSink<'a> {
+    matcher: &'a grep_regex::RegexMatcher,
+    relative_path: &'a Path,
+    matches: &'a mut Vec<RepoMatch>,
+}
+
+impl grep_searcher::Sink for MatchSink<'_> {
+    type Error = std::io::Error;
+
+    fn matched(
+        &mut self,
+        _searcher: &grep_searcher::Searcher,
+        sink_match: &grep_searcher::SinkMatch<'_>,
+    ) -> Result<bool, Self::Error> {
+        use grep_matcher::Matcher;
+
+        // The searcher is built with line_number(true), so this is Some.
+        let line = (sink_match.line_number().unwrap() - 1) as usize;
+        let base = sink_match.absolute_byte_offset() as usize;
+        let bytes = sink_match.bytes();
+        let mut line_text = bytes;
+        if let Some(stripped) = line_text.strip_suffix(b"\n") {
+            line_text = stripped;
+        }
+        if let Some(stripped) = line_text.strip_suffix(b"\r") {
+            line_text = stripped;
+        }
+        self.matcher
+            .find_iter(bytes, |found| {
+                self.matches.push(RepoMatch {
+                    relative_path: self.relative_path.to_path_buf(),
+                    line,
+                    range: base + found.start()..base + found.end(),
+                    line_text: line_text.into(),
+                });
+                true
+            })
+            .map_err(std::io::Error::other)?;
+        Ok(true)
     }
 }
 

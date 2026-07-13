@@ -11,9 +11,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use bstr::BString;
+use bstr::{BStr, BString, ByteSlice};
 
-use crate::app::{App, DirEntry, IO, RepoFiles, WindowSize};
+use crate::app::{App, DirEntry, IO, RepoFiles, RepoMatch, RepoSearch, WindowSize};
 use crate::buffer;
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
@@ -183,6 +183,49 @@ impl IO for MockIO {
             relative_paths,
         })
     }
+
+    fn repo_search(&mut self, dir: &Path, pattern: &BStr) -> std::io::Result<RepoSearch> {
+        let root = self.repo_root(dir);
+        let mut matches = Vec::new();
+        if pattern.is_empty() {
+            return Ok(RepoSearch { root, matches });
+        }
+        let mut entries: Vec<(PathBuf, &Vec<u8>)> = self
+            .files
+            .iter()
+            .filter_map(|(file, (contents, _))| {
+                let relative_path = file.strip_prefix(&root).ok()?;
+                (!relative_path.as_os_str().is_empty())
+                    .then(|| (relative_path.to_path_buf(), contents))
+            })
+            .collect();
+        entries.sort();
+        for (relative_path, contents) in entries {
+            let contents = contents.as_bstr();
+            let mut search_start = 0;
+            while let Some(relative_start) = contents[search_start..].find(pattern) {
+                let start = search_start + relative_start;
+                let end = start + pattern.len();
+                let line = contents[..start].iter().filter(|&&byte| byte == b'\n').count();
+                let line_start = contents[..start]
+                    .rfind_byte(b'\n')
+                    .map(|ix| ix + 1)
+                    .unwrap_or(0);
+                let line_end = contents[start..]
+                    .find_byte(b'\n')
+                    .map(|ix| start + ix)
+                    .unwrap_or(contents.len());
+                matches.push(RepoMatch {
+                    relative_path: relative_path.clone(),
+                    line,
+                    range: start..end,
+                    line_text: contents[line_start..line_end].into(),
+                });
+                search_start = end;
+            }
+        }
+        Ok(RepoSearch { root, matches })
+    }
 }
 
 // Action picked by the fuzzer for each step.
@@ -203,6 +246,7 @@ const A_OPEN_REPO_FILE_PAGE: u32 = 10;
 const A_OPEN_BUFFER_PAGE: u32 = 10;
 const A_SEARCH_BUFFER_PAGE: u32 = 10;
 const A_FILE_CREATE: u32 = 5;
+const A_SEARCH_REPO_PAGE: u32 = 10;
 
 // Small pool of path components for A_FILE_CREATE, so created files
 // sometimes collide with the seeded tree and sometimes add new dirs.
@@ -248,6 +292,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_OPEN_BUFFER_PAGE,
         A_SEARCH_BUFFER_PAGE,
         A_FILE_CREATE,
+        A_SEARCH_REPO_PAGE,
     ])?;
     match action {
         0 => {
@@ -499,6 +544,30 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             }
             let mtime = io.system_time + Duration::from_nanos(1);
             io.files.insert(path, (b"created".to_vec(), mtime));
+        }
+        17 => {
+            // Switch the window to the repo search page (alt+f).
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState {
+                    alt: true,
+                    ..ModifiersState::default()
+                }),
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::Key {
+                    state: ButtonState::Pressed,
+                    logical_key: Key::Character("f"),
+                },
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState::default()),
+            );
         }
         _ => unreachable!(),
     }
