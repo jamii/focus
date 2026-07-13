@@ -11,13 +11,13 @@ use crate::{
     window::WindowId,
 };
 
-mod buffer_search;
+mod search_buffer;
 mod edit;
 mod open_buffer;
 mod open_file;
 mod open_file_from_repo;
 
-pub(crate) use buffer_search::new as new_buffer_search;
+pub(crate) use search_buffer::new as new_search_buffer;
 pub(crate) use edit::new as new_edit;
 pub(crate) use open_buffer::new as new_open_buffer;
 pub(crate) use open_file::new as new_open_file;
@@ -38,7 +38,7 @@ pub struct Pages {
 }
 
 enum PageContent {
-    BufferSearch(buffer_search::State),
+    SearchBuffer(search_buffer::State),
     Edit,
     OpenBuffer(open_buffer::State),
     OpenFile,
@@ -47,7 +47,7 @@ enum PageContent {
 
 #[derive(Clone, Copy)]
 enum PageContentKind {
-    BufferSearch,
+    SearchBuffer,
     Edit,
     OpenBuffer,
     OpenFile,
@@ -57,7 +57,7 @@ enum PageContentKind {
 impl PageContent {
     fn kind(&self) -> PageContentKind {
         match self {
-            PageContent::BufferSearch(_) => PageContentKind::BufferSearch,
+            PageContent::SearchBuffer(_) => PageContentKind::SearchBuffer,
             PageContent::Edit => PageContentKind::Edit,
             PageContent::OpenBuffer(_) => PageContentKind::OpenBuffer,
             PageContent::OpenFile => PageContentKind::OpenFile,
@@ -112,8 +112,8 @@ pub(crate) fn assert_invariants(app: &App) {
     for page_id in (0..pages.page_count).map(PageId) {
         let editor_ids = &pages.editor_ids[page_id];
         match pages.content[page_id].kind() {
-            PageContentKind::BufferSearch => {
-                assert!(editor_ids.len() == buffer_search::EDITOR_COUNT)
+            PageContentKind::SearchBuffer => {
+                assert!(editor_ids.len() == search_buffer::EDITOR_COUNT)
             }
             PageContentKind::Edit => assert!(editor_ids.len() == edit::EDITOR_COUNT),
             PageContentKind::OpenBuffer => assert!(editor_ids.len() == open_buffer::EDITOR_COUNT),
@@ -147,7 +147,7 @@ pub(crate) fn assert_invariants(app: &App) {
 impl PageId {
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         match app.pages.content[self].kind() {
-            PageContentKind::BufferSearch => buffer_search::tick(self, app, io),
+            PageContentKind::SearchBuffer => search_buffer::tick(self, app, io),
             PageContentKind::Edit => edit::tick(self, app, io),
             PageContentKind::OpenBuffer => open_buffer::tick(self, app, io),
             PageContentKind::OpenFile => open_file::tick(self, app, io),
@@ -193,7 +193,7 @@ impl PageId {
         }
 
         let handled = match app.pages.content[self].kind() {
-            PageContentKind::BufferSearch => buffer_search::input(self, app, io, window_id, &event),
+            PageContentKind::SearchBuffer => search_buffer::input(self, app, io, window_id, &event),
             PageContentKind::Edit => edit::input(self, app, io, window_id, &event),
             PageContentKind::OpenBuffer => open_buffer::input(self, app, io, window_id, &event),
             PageContentKind::OpenFile => open_file::input(self, app, io, window_id, &event),
@@ -233,7 +233,7 @@ impl PageId {
                 size: drawing.size(),
             };
             app.pages.editor_rects[self] = match app.pages.content[self].kind() {
-                PageContentKind::BufferSearch => buffer_search::layout(page_rect, cell_size),
+                PageContentKind::SearchBuffer => search_buffer::layout(page_rect, cell_size),
                 PageContentKind::Edit => edit::layout(page_rect, cell_size),
                 PageContentKind::OpenBuffer => open_buffer::layout(page_rect, cell_size),
                 PageContentKind::OpenFile => open_file::layout(page_rect, cell_size),
@@ -273,8 +273,8 @@ impl PageId {
 
     pub(crate) fn handle_edits(self, app: &mut App, editor_ix: usize, diff: &OffsetDiff) {
         match app.pages.content[self].kind() {
-            PageContentKind::BufferSearch => {
-                buffer_search::handle_edits(self, app, editor_ix, diff)
+            PageContentKind::SearchBuffer => {
+                search_buffer::handle_edits(self, app, editor_ix, diff)
             }
             PageContentKind::Edit => edit::handle_edits(self, app, editor_ix, diff),
             PageContentKind::OpenBuffer => open_buffer::handle_edits(self, app, editor_ix, diff),
@@ -287,7 +287,7 @@ impl PageId {
 
     pub(crate) fn current_path(self, app: &App) -> Option<PathBuf> {
         match app.pages.content[self].kind() {
-            PageContentKind::BufferSearch => buffer_search::current_path(self, app),
+            PageContentKind::SearchBuffer => search_buffer::current_path(self, app),
             PageContentKind::Edit => edit::current_path(self, app),
             PageContentKind::OpenBuffer => open_buffer::current_path(self, app),
             PageContentKind::OpenFile => open_file::current_path(self, app),

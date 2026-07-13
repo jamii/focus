@@ -201,7 +201,7 @@ const A_FOCUS: u32 = 10;
 const A_OPEN_FILE_PAGE: u32 = 10;
 const A_OPEN_REPO_FILE_PAGE: u32 = 10;
 const A_OPEN_BUFFER_PAGE: u32 = 10;
-const A_BUFFER_SEARCH_PAGE: u32 = 10;
+const A_SEARCH_BUFFER_PAGE: u32 = 10;
 const A_FILE_CREATE: u32 = 5;
 
 // Small pool of path components for A_FILE_CREATE, so created files
@@ -246,7 +246,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_OPEN_FILE_PAGE,
         A_OPEN_REPO_FILE_PAGE,
         A_OPEN_BUFFER_PAGE,
-        A_BUFFER_SEARCH_PAGE,
+        A_SEARCH_BUFFER_PAGE,
         A_FILE_CREATE,
     ])?;
     match action {
@@ -465,7 +465,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             );
         }
         15 => {
-            // Switch the window to the buffer search page (ctrl+f).
+            // Switch the window to the search buffer page (ctrl+f).
             app.input(
                 io,
                 window_id,

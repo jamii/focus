@@ -76,7 +76,7 @@ pub(super) fn input(
         let editor_id = editors(app, page_id).editor_id;
         let buffer_id = app.editors.buffer_id[editor_id];
         let initial_offset = editor_id.main_cursor_offset(app);
-        let page_id = super::new_buffer_search(app, buffer_id, initial_offset);
+        let page_id = super::new_search_buffer(app, buffer_id, initial_offset);
         app.windows.page_id[window_id] = page_id;
         return true;
     }

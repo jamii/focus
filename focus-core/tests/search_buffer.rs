@@ -16,7 +16,7 @@ fn buffer_text(app: &App, n: usize) -> String {
     app.buffers.keys().nth(n).unwrap().text(app).to_string()
 }
 
-fn buffer_search_app(text: &str) -> (App, focus_core::fuzz::MockIO, WindowId) {
+fn search_buffer_app(text: &str) -> (App, focus_core::fuzz::MockIO, WindowId) {
     let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/file.txt"), text);
     common::tick(&mut app, &mut io);
     common::control_key(&mut app, &mut io, window_id, Key::Character("f"));
@@ -25,7 +25,7 @@ fn buffer_search_app(text: &str) -> (App, focus_core::fuzz::MockIO, WindowId) {
 
 #[test]
 fn empty_search_has_no_matches() {
-    let (mut app, mut io, _window_id) = buffer_search_app("foo");
+    let (mut app, mut io, _window_id) = search_buffer_app("foo");
 
     common::tick(&mut app, &mut io);
 
@@ -36,7 +36,7 @@ fn empty_search_has_no_matches() {
 
 #[test]
 fn lists_exact_case_sensitive_matches_with_line_number_prefix() {
-    let (mut app, mut io, window_id) = buffer_search_app("Foo foo\naa aa\nbb aa");
+    let (mut app, mut io, window_id) = search_buffer_app("Foo foo\naa aa\nbb aa");
     common::text_input(&mut app, &mut io, window_id, "aa");
 
     common::tick(&mut app, &mut io);
@@ -47,7 +47,7 @@ fn lists_exact_case_sensitive_matches_with_line_number_prefix() {
 
 #[test]
 fn exact_match_is_case_sensitive() {
-    let (mut app, mut io, window_id) = buffer_search_app("Foo foo");
+    let (mut app, mut io, window_id) = search_buffer_app("Foo foo");
     common::text_input(&mut app, &mut io, window_id, "foo");
 
     common::tick(&mut app, &mut io);
@@ -58,7 +58,7 @@ fn exact_match_is_case_sensitive() {
 
 #[test]
 fn ctrl_enter_opens_selected_match() {
-    let (mut app, mut io, window_id) = buffer_search_app("one foo two foo");
+    let (mut app, mut io, window_id) = search_buffer_app("one foo two foo");
     common::text_input(&mut app, &mut io, window_id, "foo");
 
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
@@ -80,7 +80,7 @@ fn opened_edit_scrolls_to_main_cursor() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let (mut app, mut io, window_id) = buffer_search_app(&text);
+    let (mut app, mut io, window_id) = search_buffer_app(&text);
     common::text_input(&mut app, &mut io, window_id, "needle");
 
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
@@ -92,7 +92,7 @@ fn opened_edit_scrolls_to_main_cursor() {
 
 #[test]
 fn ctrl_f_marks_cached_search_text() {
-    let (mut app, mut io, window_id) = buffer_search_app("foo bar");
+    let (mut app, mut io, window_id) = search_buffer_app("foo bar");
     common::text_input(&mut app, &mut io, window_id, "foo");
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
 
@@ -106,7 +106,7 @@ fn ctrl_f_marks_cached_search_text() {
 
 #[test]
 fn ctrl_enter_then_ctrl_f_selects_next_match() {
-    let (mut app, mut io, window_id) = buffer_search_app("x foo one foo two foo");
+    let (mut app, mut io, window_id) = search_buffer_app("x foo one foo two foo");
     common::text_input(&mut app, &mut io, window_id, "foo");
 
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
@@ -120,7 +120,7 @@ fn ctrl_enter_then_ctrl_f_selects_next_match() {
 
 #[test]
 fn alt_enter_opens_all_matches() {
-    let (mut app, mut io, window_id) = buffer_search_app("foo one foo two foo");
+    let (mut app, mut io, window_id) = search_buffer_app("foo one foo two foo");
     common::text_input(&mut app, &mut io, window_id, "foo");
 
     common::alt_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
@@ -132,7 +132,7 @@ fn alt_enter_opens_all_matches() {
 
 #[test]
 fn ctrl_enter_uses_all_bottom_cursors_and_keeps_duplicates() {
-    let (mut app, mut io, window_id) = buffer_search_app("foo one foo");
+    let (mut app, mut io, window_id) = search_buffer_app("foo one foo");
     common::text_input(&mut app, &mut io, window_id, "foo");
     common::tick(&mut app, &mut io);
 
@@ -184,7 +184,7 @@ fn marker_rows(app: &App, drawing: &Drawing) -> Vec<usize> {
 
 #[test]
 fn initial_selection_is_first_match_strictly_after_cursor() {
-    let (mut app, mut io, window_id) = buffer_search_app("foo one foo two foo");
+    let (mut app, mut io, window_id) = search_buffer_app("foo one foo two foo");
     common::text_input(&mut app, &mut io, window_id, "foo");
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
     common::control_key(&mut app, &mut io, window_id, Key::Character("f"));

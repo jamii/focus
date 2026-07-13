@@ -31,7 +31,7 @@ struct Match {
 }
 
 #[derive(Clone, Copy)]
-struct BufferSearchEditors {
+struct SearchBufferEditors {
     preview_id: EditorId,
     search_id: EditorId,
     list_id: EditorId,
@@ -48,7 +48,7 @@ pub(crate) fn new(app: &mut App, buffer_id: BufferId, initial_offset: usize) -> 
     let search_id = editor::new_scratch(app);
     let list_id = editor::new_scratch(app);
 
-    let search_text = app.buffer_search_text.clone();
+    let search_text = app.search_buffer_text.clone();
     let search_buffer_id = app.editors.buffer_id[search_id];
     search_buffer_id.replace(app, search_text.as_bstr());
     if search_text.is_empty() {
@@ -59,7 +59,7 @@ pub(crate) fn new(app: &mut App, buffer_id: BufferId, initial_offset: usize) -> 
 
     insert(
         app,
-        PageContent::BufferSearch(State {
+        PageContent::SearchBuffer(State {
             buffer_id,
             initial_offset,
             needs_initial_selection: true,
@@ -73,7 +73,7 @@ pub(crate) fn new(app: &mut App, buffer_id: BufferId, initial_offset: usize) -> 
 }
 
 pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
-    let BufferSearchEditors {
+    let SearchBufferEditors {
         preview_id,
         search_id,
         list_id,
@@ -178,7 +178,7 @@ pub(super) fn handle_edits(page_id: PageId, app: &mut App, editor_ix: usize, _di
         SEARCH_IX => {
             let search_id = editors(app, page_id).search_id;
             let search_buffer_id = app.editors.buffer_id[search_id];
-            app.buffer_search_text = search_buffer_id.text(app).into();
+            app.search_buffer_text = search_buffer_id.text(app).into();
             state_mut(app, page_id).last_pattern = None;
         }
         LIST_IX => {}
@@ -190,11 +190,11 @@ pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf> {
     None
 }
 
-fn editors(app: &App, page_id: PageId) -> BufferSearchEditors {
+fn editors(app: &App, page_id: PageId) -> SearchBufferEditors {
     let &[preview_id, search_id, list_id] = app.pages.editor_ids[page_id].as_slice() else {
         unreachable!()
     };
-    BufferSearchEditors {
+    SearchBufferEditors {
         preview_id,
         search_id,
         list_id,
@@ -202,14 +202,14 @@ fn editors(app: &App, page_id: PageId) -> BufferSearchEditors {
 }
 
 fn state(app: &App, page_id: PageId) -> &State {
-    let PageContent::BufferSearch(state) = &app.pages.content[page_id] else {
+    let PageContent::SearchBuffer(state) = &app.pages.content[page_id] else {
         unreachable!()
     };
     state
 }
 
 fn state_mut(app: &mut App, page_id: PageId) -> &mut State {
-    let PageContent::BufferSearch(state) = &mut app.pages.content[page_id] else {
+    let PageContent::SearchBuffer(state) = &mut app.pages.content[page_id] else {
         unreachable!()
     };
     state
@@ -218,7 +218,7 @@ fn state_mut(app: &mut App, page_id: PageId) -> &mut State {
 fn refresh_matches(app: &mut App, page_id: PageId, search_id: EditorId) {
     let search_buffer_id = app.editors.buffer_id[search_id];
     let pattern = BString::from(search_buffer_id.text(app).to_vec());
-    app.buffer_search_text = pattern.clone();
+    app.search_buffer_text = pattern.clone();
 
     let state = state(app, page_id);
     if state.last_pattern.as_ref() == Some(&pattern) {
@@ -320,7 +320,7 @@ fn selected_line(app: &App, list_id: EditorId) -> usize {
 }
 
 fn submit_selected(page_id: PageId, app: &mut App, _io: &mut dyn IO, window_id: WindowId) {
-    let BufferSearchEditors {
+    let SearchBufferEditors {
         search_id, list_id, ..
     } = editors(app, page_id);
     refresh_matches(app, page_id, search_id);
