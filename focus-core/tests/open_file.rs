@@ -349,6 +349,26 @@ fn ctrl_enter_opens_selected_file() {
 }
 
 #[test]
+fn ctrl_q_after_opened_file_skips_file_picker() {
+    let (mut app, mut io, window_id) = open_file_app(&[("/dir/inner.txt", "inner contents")]);
+    common::text_input(&mut app, &mut io, window_id, "dir/");
+    common::tick(&mut app, &mut io);
+    let file_buffer = app.buffers.keys().count();
+
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+    common::tick(&mut app, &mut io);
+    common::char_input(&mut app, &mut io, window_id, 'X');
+    common::control_key(&mut app, &mut io, window_id, Key::Character("q"));
+    common::char_input(&mut app, &mut io, window_id, 'z');
+
+    assert_eq!(buffer_text(&app, file_buffer), "Xinner contents");
+    assert_eq!(buffer_text(&app, PATH), "/dir/");
+    assert_eq!(common::text(&app), "z");
+    app.assert_invariants();
+}
+
+#[test]
 fn ctrl_enter_does_nothing_for_dirs() {
     let (mut app, mut io, window_id) = open_file_app(&[("/dir/inner.txt", "")]);
     common::tick(&mut app, &mut io);

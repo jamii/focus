@@ -35,6 +35,39 @@ fn ctrl_m_opens_a_new_window_on_the_same_buffer() {
 }
 
 #[test]
+fn ctrl_q_pops_back_to_previous_page() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "base");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("o"));
+    common::char_input(&mut app, &mut io, window_id, 'x');
+    common::control_key(&mut app, &mut io, window_id, Key::Character("q"));
+    common::char_input(&mut app, &mut io, window_id, 'y');
+
+    assert_eq!(common::text(&app), "basey");
+    app.assert_invariants();
+}
+
+#[test]
+fn ctrl_q_on_last_page_leaves_a_scratch_page() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "base");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("q"));
+    common::char_input(&mut app, &mut io, window_id, 'y');
+
+    assert_eq!(io.open_windows, vec![window_id]);
+    assert!(!io.exited);
+    assert_eq!(common::text(&app), "base");
+    assert!(
+        app.buffers
+            .keys()
+            .any(|buffer_id| buffer_id.text(&app).to_string() == "y")
+    );
+    app.assert_invariants();
+}
+
+#[test]
 fn closing_last_window_exits() {
     let (mut app, mut io, window_id) = common::scratch_app();
 

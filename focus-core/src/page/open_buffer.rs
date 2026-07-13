@@ -179,8 +179,8 @@ fn state_mut(app: &mut App, page_id: PageId) -> &mut State {
     state
 }
 
-// Open the selected buffer, replacing this window's page.
-fn submit(page_id: PageId, app: &mut App, _io: &mut dyn IO, window_id: WindowId) {
+// Replace this picker with the selected buffer.
+fn submit(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) {
     let OpenBufferEditors {
         search_id, list_id, ..
     } = editors(app, page_id);
@@ -189,7 +189,8 @@ fn submit(page_id: PageId, app: &mut App, _io: &mut dyn IO, window_id: WindowId)
         return;
     };
     let editor_id = editor::new(app, buffer_id);
-    app.windows.page_id[window_id] = new_edit(app, editor_id);
+    let page_id = new_edit(app, editor_id);
+    window_id.replace_page(app, io, page_id);
 }
 
 fn refresh_matches(app: &mut App, page_id: PageId, search_id: EditorId) {

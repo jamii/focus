@@ -392,8 +392,8 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             }
         }
         12 => {
-            // Switch the window to the FileOpen page (ctrl+o). Enter and
-            // ctrl+enter are then reachable via A_MODIFIERS + A_KEY_NAMED.
+            // Push the FileOpen page (ctrl+o). Enter and ctrl+enter are then
+            // reachable via A_MODIFIERS + A_KEY_NAMED.
             app.input(
                 io,
                 window_id,
@@ -417,7 +417,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             );
         }
         13 => {
-            // Switch the window to the repo file search page (ctrl+p).
+            // Push the repo file search page (ctrl+p).
             app.input(
                 io,
                 window_id,
@@ -441,7 +441,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             );
         }
         14 => {
-            // Switch the window to the open buffer page (alt+p).
+            // Push the open buffer page (alt+p).
             app.input(
                 io,
                 window_id,
@@ -465,7 +465,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             );
         }
         15 => {
-            // Switch the window to the search buffer page (ctrl+f).
+            // Push the search buffer page (ctrl+f).
             app.input(
                 io,
                 window_id,
