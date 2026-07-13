@@ -11,17 +11,17 @@ use crate::{
     window::WindowId,
 };
 
-mod search_buffer;
 mod edit;
 mod open_buffer;
 mod open_file;
 mod open_file_from_repo;
+mod search_buffer;
 
-pub(crate) use search_buffer::new as new_search_buffer;
 pub(crate) use edit::new as new_edit;
 pub(crate) use open_buffer::new as new_open_buffer;
 pub(crate) use open_file::new as new_open_file;
 pub(crate) use open_file_from_repo::new as new_open_file_from_repo;
+pub(crate) use search_buffer::new as new_search_buffer;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct PageId(pub(crate) usize);
