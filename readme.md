@@ -23,7 +23,7 @@ Tools:
 - [x] Search open buffers
 - [x] Search within buffer
 - [x] Search within project files
-- [ ] Navigation stack
+- [x] Navigation stack
 - [ ] Runner
 - [ ] Search errors
 

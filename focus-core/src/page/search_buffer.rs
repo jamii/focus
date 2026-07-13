@@ -319,7 +319,7 @@ fn selected_line(app: &App, list_id: EditorId) -> usize {
     selected_lines(app, list_id).last().copied().unwrap_or(0)
 }
 
-fn submit_selected(page_id: PageId, app: &mut App, _io: &mut dyn IO, window_id: WindowId) {
+fn submit_selected(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) {
     let SearchBufferEditors {
         search_id, list_id, ..
     } = editors(app, page_id);
@@ -337,10 +337,10 @@ fn submit_selected(page_id: PageId, app: &mut App, _io: &mut dyn IO, window_id: 
             .filter_map(|line| state.matches.get(line).map(|entry| entry.range.clone()))
             .collect()
     };
-    open_edit_with_ranges(app, window_id, state.buffer_id, &ranges);
+    open_edit_with_ranges(app, io, window_id, state.buffer_id, &ranges);
 }
 
-fn submit_all(page_id: PageId, app: &mut App, _io: &mut dyn IO, window_id: WindowId) {
+fn submit_all(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) {
     let search_id = editors(app, page_id).search_id;
     refresh_matches(app, page_id, search_id);
 
@@ -350,11 +350,12 @@ fn submit_all(page_id: PageId, app: &mut App, _io: &mut dyn IO, window_id: Windo
         .iter()
         .map(|entry| entry.range.clone())
         .collect();
-    open_edit_with_ranges(app, window_id, state.buffer_id, &ranges);
+    open_edit_with_ranges(app, io, window_id, state.buffer_id, &ranges);
 }
 
 fn open_edit_with_ranges(
     app: &mut App,
+    io: &mut dyn IO,
     window_id: WindowId,
     buffer_id: BufferId,
     ranges: &[Range<usize>],
@@ -365,5 +366,6 @@ fn open_edit_with_ranges(
     let editor_id = editor::new(app, buffer_id);
     editor_id.set_marked_ranges(app, ranges);
     editor_id.scroll_offset_into_center(app, ranges.last().unwrap().end);
-    app.windows.page_id[window_id] = new_edit(app, editor_id);
+    let page_id = new_edit(app, editor_id);
+    window_id.replace_page(app, io, page_id);
 }

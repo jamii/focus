@@ -184,8 +184,7 @@ fn editors(app: &App, page_id: PageId) -> OpenFileEditors {
     }
 }
 
-// Descend into the selected dir, or open the selected file, replacing this
-// window's page.
+// Descend into the selected dir, or replace this picker with the selected file.
 fn submit(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) {
     let OpenFileEditors {
         path_id, list_id, ..
@@ -205,12 +204,12 @@ fn submit(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) 
         path_id.cursor_goto_buffer_end(app);
     } else {
         let path = listing.dir.join(&entry.name);
-        open_edit_in_window(app, window_id, path);
+        open_edit_in_window(app, io, window_id, path);
     }
 }
 
-// Create the file at the entered path, and any missing parent dirs, then open
-// it, replacing this window's page.
+// Create the file at the entered path, and any missing parent dirs, then
+// replace this picker with it.
 fn create(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) {
     let path_id = editors(app, page_id).path_id;
     let path_buffer_id = app.editors.buffer_id[path_id];
@@ -223,14 +222,15 @@ fn create(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) 
     if io.file_create(&path).is_err() {
         return;
     }
-    open_edit_in_window(app, window_id, path);
+    open_edit_in_window(app, io, window_id, path);
 }
 
-// Show the file at `path` in the window, replacing its page.
-fn open_edit_in_window(app: &mut App, window_id: WindowId, path: PathBuf) {
+// Replace this picker with the file at `path`.
+fn open_edit_in_window(app: &mut App, io: &mut dyn IO, window_id: WindowId, path: PathBuf) {
     let buffer_id = buffer::from_file(app, path);
     let editor_id = editor::new(app, buffer_id);
-    app.windows.page_id[window_id] = new_edit(app, editor_id);
+    let page_id = new_edit(app, editor_id);
+    window_id.replace_page(app, io, page_id);
 }
 
 struct Listing {
