@@ -69,10 +69,8 @@ fn lists_matches_with_path_and_line_prefix() {
 
 #[test]
 fn preview_shows_whole_file_of_selected_match() {
-    let (mut app, mut io, window_id) = search_repo_app(&[
-        ("/a.txt", "foo\nbar foo"),
-        ("/b.txt", "b foo"),
-    ]);
+    let (mut app, mut io, window_id) =
+        search_repo_app(&[("/a.txt", "foo\nbar foo"), ("/b.txt", "b foo")]);
     common::text_input(&mut app, &mut io, window_id, "foo");
 
     common::tick(&mut app, &mut io);

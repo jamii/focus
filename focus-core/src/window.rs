@@ -198,13 +198,13 @@ impl WindowId {
                         true
                     }
                     Key::Character("f") => {
-                        let page_id = app.windows.page_id[self];
+                        let page_id = self.current_page(app);
                         let dir = page_id
                             .current_path(app)
                             .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
                             .unwrap_or_else(|| io.current_dir());
                         let page_id = page::new_search_repo(app, dir);
-                        app.windows.page_id[self] = page_id;
+                        self.push_page(app, io, page_id);
                         true
                     }
                     _ => false,
