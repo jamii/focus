@@ -329,7 +329,7 @@ fn open_matches(
     for (relative_path, ranges) in groups {
         let page_id = edit_page_for_matches(app, io, root.join(relative_path), &ranges);
         if relative_path == main_path {
-            app.windows.page_id[window_id] = page_id;
+            window_id.replace_page(app, io, page_id);
         } else {
             window::open(app, io, page_id);
         }

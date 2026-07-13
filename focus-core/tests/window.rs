@@ -49,6 +49,20 @@ fn ctrl_q_pops_back_to_previous_page() {
 }
 
 #[test]
+fn ctrl_q_pops_back_from_repo_search() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "base");
+
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("f"));
+    common::char_input(&mut app, &mut io, window_id, 'x');
+    common::control_key(&mut app, &mut io, window_id, Key::Character("q"));
+    common::char_input(&mut app, &mut io, window_id, 'y');
+
+    assert_eq!(common::text(&app), "basey");
+    app.assert_invariants();
+}
+
+#[test]
 fn ctrl_q_on_last_page_leaves_a_scratch_page() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "base");

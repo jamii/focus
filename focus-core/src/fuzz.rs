@@ -206,7 +206,10 @@ impl IO for MockIO {
             while let Some(relative_start) = contents[search_start..].find(pattern) {
                 let start = search_start + relative_start;
                 let end = start + pattern.len();
-                let line = contents[..start].iter().filter(|&&byte| byte == b'\n').count();
+                let line = contents[..start]
+                    .iter()
+                    .filter(|&&byte| byte == b'\n')
+                    .count();
                 let line_start = contents[..start]
                     .rfind_byte(b'\n')
                     .map(|ix| ix + 1)
