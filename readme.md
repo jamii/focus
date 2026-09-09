@@ -51,8 +51,10 @@ VCS:
 
 Testing:
 
-- [x] deterministic simulation testing
-- [x] e2e fuzzing
+- [x] Deterministic simulation testing
+- [x] E2E fuzzing
+- [ ] Replayable history of live sessions, for later debugging
+- [ ] Wasm build of core to make sure no IO sneaks in
 
 Arch:
 
@@ -60,7 +62,9 @@ Arch:
 
 Perf:
 
-- [ ] Don't store undo for readonly buffers
+- [x] Don't store undo for readonly buffers
+- [ ] Test that fuzzer actions take at most linear time in buffer size
+- [ ] Test that fuzzer actions never take longer than frame budget
 
 ## wishlist
 
