@@ -20,7 +20,7 @@ use crate::app::{
 use crate::buffer;
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
-use crate::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
+use crate::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey, ScrollPhase};
 use crate::window::{self, WindowId};
 
 // Mock IO: tracks open windows and advances `frame_start` by whatever
@@ -583,12 +583,24 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             app.draw(window_id, &mut drawing);
         }
         6 => {
-            // Mouse wheel scroll. Map the raw byte into a signed scroll
-            // amount roughly the size of a wheel notch, with occasional
-            // larger jumps (smooth-scroll / pixel-delta sized).
+            // Scrolling. Either a mouse wheel notch, or one step of a
+            // touchpad gesture - whose phases the fuzzer picks freely, so
+            // that it also produces the gestures a touchpad never sends
+            // (moves with no start, ends with no gesture, ...).
             let raw = frng.u8_bounded(0, 200)? as f32;
-            let y_offset = (raw - 100.0) / 10.0;
-            app.input(io, window_id, InputEvent::MouseWheel { y_offset });
+            let amount = (raw - 100.0) / 10.0;
+            let event = match frng.u8_bounded(0, 3)? {
+                0 => InputEvent::MouseWheel { y_lines: amount },
+                phase => InputEvent::TouchpadScroll {
+                    y_pixels: amount * 10.0,
+                    phase: match phase {
+                        1 => ScrollPhase::Started,
+                        2 => ScrollPhase::Moved,
+                        _ => ScrollPhase::Ended,
+                    },
+                },
+            };
+            app.input(io, window_id, event);
         }
         7 => {
             let position = random_mouse_pos(frng, io.screen_size)?;

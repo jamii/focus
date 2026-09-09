@@ -22,7 +22,7 @@ use glutin_winit::{DisplayBuilder, GlWindow};
 use raw_window_handle::HasWindowHandle;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
-use winit::event::{StartCause, WindowEvent};
+use winit::event::{StartCause, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamedKey};
 use winit::platform::wayland::WindowAttributesExtWayland;
@@ -34,7 +34,7 @@ use focus_core::app::{
 };
 use focus_core::buffer;
 use focus_core::drawing::Drawing;
-use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
+use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey, ScrollPhase};
 use focus_core::window::WindowId;
 
 use crate::APP_ID;
@@ -944,13 +944,25 @@ fn translate_event(
                 logical_key,
             })
         }
-        WindowEvent::MouseWheel { delta, .. } => {
-            let y_offset = match delta {
-                winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
-                winit::event::MouseScrollDelta::PixelDelta(p) => (p.y as f32) / 32.0,
-            };
-            Some(InputEvent::MouseWheel { y_offset })
-        }
+        // A mouse wheel reports notches, a touchpad reports the pixels
+        // the fingers moved. They scroll differently - the touchpad
+        // gesture drags the content around and has momentum - so they
+        // stay apart all the way into the editor.
+        WindowEvent::MouseWheel { delta, phase, .. } => match delta {
+            winit::event::MouseScrollDelta::LineDelta(_, y) => {
+                Some(InputEvent::MouseWheel { y_lines: *y })
+            }
+            winit::event::MouseScrollDelta::PixelDelta(p) => Some(InputEvent::TouchpadScroll {
+                y_pixels: p.y as f32,
+                phase: match phase {
+                    TouchPhase::Started => ScrollPhase::Started,
+                    TouchPhase::Moved => ScrollPhase::Moved,
+                    // Cancelled means the gesture was taken over by
+                    // something else, so it is over either way.
+                    TouchPhase::Ended | TouchPhase::Cancelled => ScrollPhase::Ended,
+                },
+            }),
+        },
         WindowEvent::MouseInput {
             state,
             button: winit::event::MouseButton::Left,

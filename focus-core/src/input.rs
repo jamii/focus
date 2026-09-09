@@ -6,8 +6,15 @@ pub enum InputEvent<'a> {
         state: ButtonState,
         logical_key: Key<'a>,
     },
+    /// A mouse wheel notch.
     MouseWheel {
-        y_offset: f32,
+        y_lines: f32,
+    },
+    /// One step of a touchpad scroll gesture: `y_pixels` of finger
+    /// movement, and where in the gesture we are.
+    TouchpadScroll {
+        y_pixels: f32,
+        phase: ScrollPhase,
     },
     MouseButton {
         state: ButtonState,
@@ -19,6 +26,16 @@ pub enum InputEvent<'a> {
     FocusChanged {
         focused: bool,
     },
+}
+
+/// A touchpad scroll gesture runs Started, Moved.., Ended as the fingers
+/// touch, move and leave the pad. Only Ended is worth acting on beyond
+/// scrolling: it is where the momentum starts.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ScrollPhase {
+    Started,
+    Moved,
+    Ended,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

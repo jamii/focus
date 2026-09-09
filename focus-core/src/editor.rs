@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use bstr::{BStr, ByteSlice};
 
-use crate::input::{ButtonState, InputEvent, Key, NamedKey};
+use crate::input::{ButtonState, InputEvent, Key, NamedKey, ScrollPhase};
 use crate::style::BACKGROUND_COLOR;
 use crate::{
     app::{App, IO},
@@ -30,13 +30,46 @@ pub struct Editors {
     wrap_chars: Map<EditorId, usize>,
     wraps: Map<EditorId, Vec<[usize; 2]>>,
     last_input: Map<EditorId, Duration>,
-    top_pixel: Map<EditorId, isize>,
+    top_pixel: Map<EditorId, f32>,
+    // Touchpad momentum. While the fingers are on the pad the content
+    // follows them exactly; `scroll_pixels` collects how far they moved
+    // this frame so that `scroll_velocity` can track how fast they are
+    // going, and when they leave the pad - `scroll_ended` - the view
+    // carries on at that speed and slows to a stop: `scroll_coasting`.
+    scroll_pixels: Map<EditorId, f32>,
+    scroll_velocity: Map<EditorId, f32>,
+    scroll_ended: Map<EditorId, bool>,
+    scroll_coasting: Map<EditorId, bool>,
     last_draw_size: Map<EditorId, [f32; 2]>,
     last_mouse_position: Map<EditorId, [f32; 2]>,
     is_dragging: Map<EditorId, bool>,
 }
 
-const SCROLL_AMOUNT: f32 = 32.0;
+// Pixels scrolled per pixel of finger movement. 1.0 would stick the
+// content to the fingers; this is the one knob for how fast the touchpad
+// scrolls, momentum included.
+const TOUCHPAD_SCROLL_SPEED: f32 = 4.0;
+// One notch of a mouse wheel.
+const WHEEL_SCROLL_PIXELS: f32 = 128.0;
+// Per frame, while a selection drag is held off the top or bottom of the
+// viewport.
+const DRAG_SCROLL_PIXELS: f32 = 32.0;
+// Momentum, once the fingers leave the pad: the scroll speed decays by a
+// factor of e every COAST_TAU, so a flick coasts for around a second.
+const COAST_TAU: f32 = 0.3;
+// How much the momentum outruns the flick that starts it. The coast
+// begins at the lift-off speed scaled by `1 + speed/FLING_BOOST_SPEED`,
+// so easing the fingers off carries on at the speed they were going,
+// while a flick this fast leaves twice as fast - and one twice this fast
+// leaves three times as fast, and travels three times as far. Flicking
+// through a file is meant to be a flick, not a series of them.
+const FLING_BOOST_SPEED: f32 = 4000.0;
+// ... and is over below this speed, in pixels per second.
+const COAST_MIN_SPEED: f32 = 20.0;
+// The speed the coast starts at is the finger speed smoothed over about
+// this long. Short enough that a flick coasts at the speed of the flick,
+// long enough that pausing before lifting off leaves no momentum behind.
+const VELOCITY_TAU: f32 = 0.03;
 
 #[derive(Clone)]
 pub(crate) struct Cursor {
@@ -71,6 +104,10 @@ impl Editors {
             wraps: Map::new(),
             last_input: Map::new(),
             top_pixel: Map::new(),
+            scroll_pixels: Map::new(),
+            scroll_velocity: Map::new(),
+            scroll_ended: Map::new(),
+            scroll_coasting: Map::new(),
             last_draw_size: Map::new(),
             last_mouse_position: Map::new(),
             is_dragging: Map::new(),
@@ -97,7 +134,11 @@ pub(crate) fn new(app: &mut App, buffer_id: BufferId) -> EditorId {
     app.editors.wrap_chars.insert(editor_id, wrap_chars);
     app.editors.wraps.insert(editor_id, wraps);
     app.editors.last_input.insert(editor_id, Duration::ZERO);
-    app.editors.top_pixel.insert(editor_id, 0);
+    app.editors.top_pixel.insert(editor_id, 0.0);
+    app.editors.scroll_pixels.insert(editor_id, 0.0);
+    app.editors.scroll_velocity.insert(editor_id, 0.0);
+    app.editors.scroll_ended.insert(editor_id, false);
+    app.editors.scroll_coasting.insert(editor_id, false);
     app.editors.last_draw_size.insert(editor_id, [0.0, 0.0]);
     app.editors
         .last_mouse_position
@@ -156,6 +197,10 @@ pub(crate) fn assert_invariants(app: &App) {
     assert_eq!(editors.wraps.len(), editors.editor_count);
     assert_eq!(editors.last_input.len(), editors.editor_count);
     assert_eq!(editors.top_pixel.len(), editors.editor_count);
+    assert_eq!(editors.scroll_pixels.len(), editors.editor_count);
+    assert_eq!(editors.scroll_velocity.len(), editors.editor_count);
+    assert_eq!(editors.scroll_ended.len(), editors.editor_count);
+    assert_eq!(editors.scroll_coasting.len(), editors.editor_count);
     assert_eq!(editors.last_draw_size.len(), editors.editor_count);
     assert_eq!(editors.last_mouse_position.len(), editors.editor_count);
     assert_eq!(editors.is_dragging.len(), editors.editor_count);
@@ -172,6 +217,12 @@ impl EditorId {
         let wrap_chars = app.editors.wrap_chars[self];
         let wraps = &app.editors.wraps[self];
         let text = buffer_id.text(app);
+
+        // Scrolling. `top_pixel` is only brought inside the buffer when
+        // drawing, so all that holds here is that neither it nor the
+        // momentum has run away.
+        assert!(app.editors.top_pixel[self].is_finite());
+        assert!(app.editors.scroll_velocity[self].is_finite());
 
         // Cursors
         assert!(cursors.len() > 0);
@@ -253,11 +304,10 @@ impl EditorId {
             let position = app.editors.last_mouse_position[self];
             // Scroll when mouse is off-screen vertically.
             if position[1] <= 0.0 {
-                app.editors.top_pixel[self] -= SCROLL_AMOUNT as isize;
+                app.editors.top_pixel[self] -= DRAG_SCROLL_PIXELS;
             } else if position[1] >= app.editors.last_draw_size[self][1] {
-                app.editors.top_pixel[self] += SCROLL_AMOUNT as isize;
+                app.editors.top_pixel[self] += DRAG_SCROLL_PIXELS;
             }
-            self.clamp_top_pixel(app);
 
             // Drag main cursor.
             let offset = self.offset_from_screen(app, position);
@@ -270,6 +320,35 @@ impl EditorId {
             }
 
             app.editors.last_input[self] = app.frame_start;
+        }
+
+        // Touchpad momentum. The gesture itself has already scrolled the
+        // view (see `scroll_by`); what is left is to track how fast the
+        // fingers are moving, and to keep scrolling at that speed once
+        // they leave the pad.
+        let dt = app.frame_dt.as_secs_f32();
+        let scrolled = take(&mut app.editors.scroll_pixels[self]);
+        if app.editors.scroll_coasting[self] {
+            let velocity = app.editors.scroll_velocity[self];
+            app.editors.top_pixel[self] += velocity * dt;
+            app.editors.scroll_velocity[self] = velocity * (-dt / COAST_TAU).exp();
+            if app.editors.scroll_velocity[self].abs() < COAST_MIN_SPEED {
+                self.stop_coasting(app);
+            }
+        } else if dt > 0.0 {
+            let velocity = &mut app.editors.scroll_velocity[self];
+            *velocity += (scrolled / dt - *velocity) * (1.0 - (-dt / VELOCITY_TAU).exp());
+        }
+        if take(&mut app.editors.scroll_ended[self]) {
+            app.editors.scroll_coasting[self] = true;
+            let velocity = &mut app.editors.scroll_velocity[self];
+            *velocity *= 1.0 + velocity.abs() / FLING_BOOST_SPEED;
+        }
+        // Coasting into the top or the bottom of the buffer stops there.
+        let top_pixel_before = app.editors.top_pixel[self];
+        self.clamp_top_pixel(app);
+        if app.editors.top_pixel[self] != top_pixel_before {
+            self.stop_coasting(app);
         }
 
         // Animate cursor.
@@ -357,9 +436,24 @@ impl EditorId {
                 ButtonState::Pressed => self.cursor_begin_drag(app, position),
                 ButtonState::Released => app.editors.is_dragging[self] = false,
             },
-            InputEvent::MouseWheel { y_offset } => {
-                app.editors.top_pixel[self] -= (SCROLL_AMOUNT * y_offset) as isize;
+            // A wheel notch is a jump, not a gesture: it scrolls the
+            // view and leaves no momentum behind it.
+            InputEvent::MouseWheel { y_lines } => {
+                self.stop_coasting(app);
+                app.editors.top_pixel[self] -= WHEEL_SCROLL_PIXELS * y_lines;
             }
+            InputEvent::TouchpadScroll { y_pixels, phase } => match phase {
+                // Fingers back on the pad: they take the view over from
+                // whatever momentum it still had.
+                ScrollPhase::Started => {
+                    self.stop_coasting(app);
+                    self.scroll_by(app, -TOUCHPAD_SCROLL_SPEED * y_pixels);
+                }
+                ScrollPhase::Moved => self.scroll_by(app, -TOUCHPAD_SCROLL_SPEED * y_pixels),
+                // Fingers off the pad. The scrolling carries on from the
+                // next tick, at whatever speed they left at.
+                ScrollPhase::Ended => app.editors.scroll_ended[self] = true,
+            },
             InputEvent::MouseMoved { position } => {
                 app.editors.last_mouse_position[self] = position;
             }
@@ -410,16 +504,17 @@ impl EditorId {
         let marked = app.editors.marked[self];
         let show_cursor = app.editors.show_cursor[self];
         let wraps = &app.editors.wraps[self];
-        let top_pixel = app.editors.top_pixel[self];
-        let translate_y = -top_pixel as f32;
+        // Rounded: the touchpad scrolls in fractions of a pixel, and
+        // glyphs drawn at fractional offsets come out blurry.
+        let top_pixel = app.editors.top_pixel[self].round();
+        let translate_y = -top_pixel;
 
         // Compute the visible line range so we don't iterate the whole buffer.
         let line_first =
-            (app.grid_from_screen([0.0, top_pixel as f32])[1].max(0) as usize).min(wraps.len());
+            (app.grid_from_screen([0.0, top_pixel])[1].max(0) as usize).min(wraps.len());
         let line_after =
-            (app.grid_from_screen([0.0, top_pixel as f32 + viewport_size[1]])[1].max(0) as usize
-                + 1)
-            .min(wraps.len());
+            (app.grid_from_screen([0.0, top_pixel + viewport_size[1]])[1].max(0) as usize + 1)
+                .min(wraps.len());
 
         let gutter_w = app.screen_from_grid([1, 0])[0];
 
@@ -580,13 +675,16 @@ impl EditorId {
     }
 
     fn scroll_offset_into_view(self, app: &mut App, offset: usize) {
-        let viewport_h = app.editors.last_draw_size[self][1] as isize;
-        if viewport_h <= 0 {
+        let viewport_h = app.editors.last_draw_size[self][1];
+        if viewport_h <= 0.0 {
             return;
         }
+        // Moving the cursor takes the view over from any momentum: the
+        // cursor has to stay where the keys put it.
+        self.stop_coasting(app);
         let line = self.grid_from_offset(app, offset)[1][1];
-        let y = app.screen_from_grid([0, line])[1] as isize;
-        let y_end = app.screen_from_grid([0, line + 1])[1] as isize;
+        let y = app.screen_from_grid([0, line])[1];
+        let y_end = app.screen_from_grid([0, line + 1])[1];
         let top_pixel = &mut app.editors.top_pixel[self];
         if y < *top_pixel {
             *top_pixel = y;
@@ -602,47 +700,57 @@ impl EditorId {
     }
 
     pub(crate) fn scroll_offset_into_center(self, app: &mut App, offset: usize) {
-        let viewport_h = app.editors.last_draw_size[self][1] as isize;
+        let viewport_h = app.editors.last_draw_size[self][1];
         let line = self.grid_from_offset(app, offset)[1][1];
-        if viewport_h <= 0 {
-            app.editors.top_pixel[self] = app.screen_from_grid([0, line])[1] as isize;
+        self.stop_coasting(app);
+        if viewport_h <= 0.0 {
+            app.editors.top_pixel[self] = app.screen_from_grid([0, line])[1];
             return;
         }
-        let y = app.screen_from_grid([0, line])[1] as isize;
-        let y_end = app.screen_from_grid([0, line + 1])[1] as isize;
-        app.editors.top_pixel[self] = (y + y_end) / 2 - viewport_h / 2;
+        let y = app.screen_from_grid([0, line])[1];
+        let y_end = app.screen_from_grid([0, line + 1])[1];
+        app.editors.top_pixel[self] = (y + y_end) / 2.0 - viewport_h / 2.0;
     }
 
     fn center_offset(self, app: &App) -> usize {
-        let viewport_h = app.editors.last_draw_size[self][1] as isize;
-        let center_y = app.editors.top_pixel[self] + viewport_h / 2;
-        let line = app.grid_from_screen([0.0, center_y as f32])[1].max(0) as usize;
+        let viewport_h = app.editors.last_draw_size[self][1];
+        let center_y = app.editors.top_pixel[self] + viewport_h / 2.0;
+        let line = app.grid_from_screen([0.0, center_y])[1].max(0) as usize;
         let wraps = &app.editors.wraps[self];
         let line = line.min(wraps.len() - 1);
         wraps[line][0]
     }
 
     fn clamp_top_pixel(self, app: &mut App) {
-        let total_h = app.screen_from_grid([0, app.editors.wraps[self].len()])[1] as isize;
-        let viewport_h = app.editors.last_draw_size[self][1] as isize;
-        let top_pixel = &mut app.editors.top_pixel[self];
-        if viewport_h > 0 {
-            let max_top = (total_h - viewport_h / 2).max(0);
-            if *top_pixel > max_top {
-                *top_pixel = max_top;
-            }
-        }
-        if *top_pixel < 0 {
-            *top_pixel = 0;
-        }
+        let total_h = app.screen_from_grid([0, app.editors.wraps[self].len()])[1];
+        let viewport_h = app.editors.last_draw_size[self][1];
+        let max_top = if viewport_h > 0.0 {
+            (total_h - viewport_h / 2.0).max(0.0)
+        } else {
+            f32::INFINITY
+        };
+        app.editors.top_pixel[self] = app.editors.top_pixel[self].clamp(0.0, max_top);
+    }
+
+    // Scroll the view now, and remember the distance so that `tick` can
+    // work out how fast the fingers are moving. Touchpad only: what this
+    // records is the momentum a lift-off would leave behind.
+    fn scroll_by(self, app: &mut App, pixels: f32) {
+        app.editors.top_pixel[self] += pixels;
+        app.editors.scroll_pixels[self] += pixels;
+    }
+
+    fn stop_coasting(self, app: &mut App) {
+        app.editors.scroll_coasting[self] = false;
+        app.editors.scroll_velocity[self] = 0.0;
     }
 
     fn offset_from_screen(self, app: &App, screen_pos: [f32; 2]) -> usize {
         let buffer_id = app.editors.buffer_id[self];
         let wraps = &app.editors.wraps[self];
-        let top_pixel = app.editors.top_pixel[self];
+        let top_pixel = app.editors.top_pixel[self].round();
         let cell_w = app.cell_size()[0] as f32;
-        let doc_y = screen_pos[1] + top_pixel as f32;
+        let doc_y = screen_pos[1] + top_pixel;
         let grid = app.grid_from_screen([screen_pos[0], doc_y]);
         if grid[1] < 0 {
             return 0;
@@ -679,6 +787,9 @@ impl EditorId {
     }
 
     fn cursor_begin_drag(self, app: &mut App, position: [f32; 2]) {
+        // Clicking into a view that is still coasting stops it there,
+        // rather than leaving the text sliding out from under the click.
+        self.stop_coasting(app);
         let offset = self.offset_from_screen(app, position);
         let control_key = app.modifiers.control;
         let cursors = &mut app.editors.cursors[self];
