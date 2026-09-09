@@ -112,6 +112,35 @@ impl IO for ErrorIO {
     fn repo_search(&mut self, dir: &Path, pattern: &BStr) -> std::io::Result<RepoSearch> {
         self.inner.repo_search(dir, pattern)
     }
+
+    fn repo_root(&mut self, dir: &Path) -> PathBuf {
+        self.inner.repo_root(dir)
+    }
+
+    fn home_dir(&mut self) -> PathBuf {
+        self.inner.home_dir()
+    }
+
+    fn process_spawn(
+        &mut self,
+        dir: &Path,
+        command: &BStr,
+        args: &[&BStr],
+    ) -> focus_core::app::ProcessId {
+        self.inner.process_spawn(dir, command, args)
+    }
+
+    fn process_poll(&mut self, id: focus_core::app::ProcessId) -> focus_core::app::ProcessPoll {
+        self.inner.process_poll(id)
+    }
+
+    fn process_kill(&mut self, id: focus_core::app::ProcessId) {
+        self.inner.process_kill(id)
+    }
+
+    fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) {
+        self.inner.process_spawn_detached(dir, command, args)
+    }
 }
 
 fn error_file_app(path: PathBuf, text: &str) -> (App, ErrorIO, WindowId) {
@@ -266,6 +295,40 @@ fn tick_loads_file_buffer_from_mock_io() {
     let frame_start = io.frame_start;
     app.tick(&mut io, frame_start);
 
+    assert_eq!(common::text(&app), "from disk\n");
+    app.assert_invariants();
+}
+
+#[test]
+fn typing_before_the_first_load_is_not_undoable_after_it() {
+    // Minimized from a fuzzer failure: a keystroke lands before the file
+    // has been read, the first load replaces it, and undo then tried to
+    // delete the keystroke from the loaded text.
+    let path = PathBuf::from("/tmp/focus-buffer-first-load-undo-test.txt");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "");
+    // The file exists but has never been loaded (mtime at the epoch).
+    io.files
+        .insert(path.clone(), (b"".to_vec(), SystemTime::UNIX_EPOCH));
+    common::char_input(&mut app, &mut io, window_id, 'x');
+    assert_eq!(common::text(&app), "x");
+    // A quiet second moves the keystroke from `doing` onto the undo stack.
+    io.frame_start += Duration::from_secs(2);
+    common::tick(&mut app, &mut io);
+    assert_eq!(common::text(&app), "x");
+
+    // The file arrives on disk and is loaded for the first time.
+    io.files.insert(
+        path,
+        (
+            b"from disk\n".to_vec(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(1),
+        ),
+    );
+    common::tick(&mut app, &mut io);
+    assert_eq!(common::text(&app), "from disk\n");
+
+    // Undo has nothing to undo: the keystroke went with the pre-load text.
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
     assert_eq!(common::text(&app), "from disk\n");
     app.assert_invariants();
 }

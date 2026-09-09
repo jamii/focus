@@ -24,6 +24,9 @@ pub struct App {
     pub(crate) search_buffer_text: BString,
     pub(crate) modifiers: ModifiersState,
     pub(crate) frame_start: Duration,
+    // Incremented on every successful file save, so the runner page can
+    // restart its command when any file changes.
+    pub(crate) save_count: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -69,11 +72,37 @@ pub trait IO {
     fn file_create(&mut self, path: &Path) -> std::io::Result<()>;
 
     fn current_dir(&mut self) -> PathBuf;
+    fn home_dir(&mut self) -> PathBuf;
     fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>>;
     fn repo_files(&mut self, dir: &Path) -> std::io::Result<RepoFiles>;
     /// Search every file in the repo containing `dir` for the literal string
     /// `pattern`. Returns one match per occurrence, in file order.
     fn repo_search(&mut self, dir: &Path, pattern: &BStr) -> std::io::Result<RepoSearch>;
+    /// The root of the repo containing `dir`, or `dir` itself if there is
+    /// no containing repo.
+    fn repo_root(&mut self, dir: &Path) -> PathBuf;
+
+    /// Spawn `command` as a shell command in `dir`, with stdout and stderr
+    /// merged into one stream. `args` are passed to the shell as `$argv`,
+    /// so text can be handed over without any quoting.
+    fn process_spawn(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) -> ProcessId;
+    /// Drain any output produced since the last poll. `exit_code` is Some
+    /// once the process has exited.
+    fn process_poll(&mut self, id: ProcessId) -> ProcessPoll;
+    fn process_kill(&mut self, id: ProcessId);
+    /// As `process_spawn`, but for a short one-shot command: the output is
+    /// discarded and the process is reaped when it exits. There is no
+    /// ProcessId, so nothing can poll or kill it.
+    fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]);
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub struct ProcessId(pub usize);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcessPoll {
+    pub new_output: Vec<u8>,
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -128,6 +157,7 @@ impl App {
             buffers: Buffers::new(),
             search_buffer_text: BString::default(),
             frame_start: Duration::ZERO,
+            save_count: 0,
             modifiers: ModifiersState::default(),
         }
     }

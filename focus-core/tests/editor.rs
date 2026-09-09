@@ -7,6 +7,34 @@ use focus_core::window::WindowId;
 
 mod common;
 
+// Minimized from a fuzzer failure. Breaking a long line at a space means
+// the scan looks ahead up to a whole wrap width, so inserting a space
+// *after* a wrap has already ended can still move that wrap's break point.
+// Recomputing only from the wrap containing the edit left the earlier one
+// stale, which assert_invariants catches by comparing the incrementally
+// updated wraps against a full recompute.
+#[test]
+fn a_space_typed_after_a_wrap_can_still_move_its_break() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    // Wraps at 80 columns: the only space is at 70, so the first wrap is
+    // [0, 71] and the rest of the line follows it.
+    let mut text = "a".repeat(70);
+    text.push(' ');
+    text.push_str(&"b".repeat(20));
+    common::text_input(&mut app, &mut io, window_id, &text);
+    app.assert_invariants();
+
+    // Move back to offset 75, past the end of that first wrap, and put a
+    // space there. It is still inside the first wrap's lookahead, so the
+    // break moves from 71 to 76.
+    for _ in 0..16 {
+        common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+    }
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
+
+    app.assert_invariants();
+}
+
 fn move_right(app: &mut App, io: &mut MockIO, window_id: WindowId, count: usize) {
     for _ in 0..count {
         common::control_key(app, io, window_id, Key::Character("l"));

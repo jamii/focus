@@ -11,6 +11,7 @@ glutin-winit = "0.5"
 raw-window-handle = "0.6"
 gl = "0.14"
 bstr = "1"
+libc = "0.2"
 fontdue = "0.9"
 arboard = { version = "3", features = ["wayland-data-control"] }
 ignore = "0.4"

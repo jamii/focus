@@ -1,8 +1,12 @@
 use std::collections::HashMap;
-use std::ffi::CString;
+use std::ffi::{CString, OsStr};
 use std::io::{Read, Write};
+use std::mem::take;
 use std::num::NonZeroU32;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -24,7 +28,8 @@ use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Window;
 
 use focus_core::app::{
-    App, DirEntry, INITIAL_SIZE, INITIAL_TITLE, IO, RepoFiles, RepoMatch, RepoSearch, WindowSize,
+    App, DirEntry, INITIAL_SIZE, INITIAL_TITLE, IO, ProcessId, ProcessPoll, RepoFiles, RepoMatch,
+    RepoSearch, WindowSize,
 };
 use focus_core::buffer;
 use focus_core::drawing::Drawing;
@@ -81,6 +86,57 @@ struct Backend {
     font: Font,
     clipboard: arboard::Clipboard,
     last_mouse_position: PhysicalPosition<f64>,
+    processes: Vec<ProcessState>,
+    // One-shot processes nobody polls, reaped by reap_detached.
+    detached: Vec<std::process::Child>,
+}
+
+struct ProcessState {
+    // Some until the process has been reaped (by a poll or a kill); None
+    // from the start if the spawn failed.
+    child: Option<std::process::Child>,
+    // The reader thread appends the merged stdout/stderr stream here;
+    // polls drain it. See release() for how the reader is stopped.
+    output: Arc<Mutex<Vec<u8>>>,
+    reader: Option<thread::JoinHandle<()>>,
+    // Set when the process is reaped. The code is reported to the app once
+    // the reader has drained the pipe (so the app sees the exit after the
+    // last output) or, if a descendant is still holding the pipe open,
+    // once EXIT_GRACE has passed since the exit.
+    exit_code: Option<i32>,
+    exited_at: Option<Instant>,
+}
+
+// How much unread output to buffer for a process. Past this the reader
+// stops reading, so the pipe fills and the command blocks on its own
+// write. That bounds memory and the work one poll can hand the app, and a
+// command producing output without end throttles itself instead of
+// locking up the editor.
+const MAX_BUFFERED_OUTPUT: usize = 128 * 1024;
+
+// How long the reader waits before checking again once that limit is hit.
+const READER_WAIT: Duration = Duration::from_millis(2);
+
+// How long after the shell exits to wait for its pipe to close before
+// reporting the exit anyway. The pipe normally closes within microseconds
+// of the exit; only a descendant that inherited it keeps it open longer.
+const EXIT_GRACE: Duration = Duration::from_millis(100);
+
+impl ProcessState {
+    // Called once the process has been reaped and nothing more will be
+    // read from it: stop the reader and drop the buffered output. The
+    // Vec entry stays, so ProcessIds remain valid, but the retained state
+    // is small.
+    //
+    // The reader is never joined: a descendant that inherited the pipe (a
+    // daemon, a background job) can hold its write end open indefinitely,
+    // and joining would hang the UI thread until it exits. Instead we drop
+    // our handle on the output buffer; the reader notices it is the sole
+    // owner at its next read and stops.
+    fn release(&mut self) {
+        self.reader = None;
+        self.output = Arc::new(Mutex::new(Vec::new()));
+    }
 }
 
 // Held only across an app callback; carries the live `ActiveEventLoop`
@@ -251,6 +307,30 @@ impl IO for IoReal<'_> {
             )?;
         }
         Ok(RepoSearch { root, matches })
+    }
+
+    fn repo_root(&mut self, dir: &Path) -> PathBuf {
+        git_root(dir)
+    }
+
+    fn home_dir(&mut self) -> PathBuf {
+        std::env::home_dir().unwrap_or_else(|| PathBuf::from("/"))
+    }
+
+    fn process_spawn(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) -> ProcessId {
+        self.backend.process_spawn(dir, command, args)
+    }
+
+    fn process_poll(&mut self, id: ProcessId) -> ProcessPoll {
+        self.backend.process_poll(id)
+    }
+
+    fn process_kill(&mut self, id: ProcessId) {
+        self.backend.process_kill(id)
+    }
+
+    fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) {
+        self.backend.process_spawn_detached(dir, command, args)
     }
 }
 
@@ -495,6 +575,8 @@ impl Backend {
             font,
             clipboard,
             last_mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
+            processes: Vec::new(),
+            detached: Vec::new(),
         };
         let id = WindowId(0);
         backend.register_window(id, window, surface);
@@ -540,6 +622,14 @@ impl Backend {
         }
     }
 
+    // Drop the one-shot processes that have finished, so they don't linger
+    // as zombies. Called whenever the app touches the process API, which is
+    // every frame while a command is running.
+    fn reap_detached(&mut self) {
+        self.detached
+            .retain_mut(|child| matches!(child.try_wait(), Ok(None)));
+    }
+
     fn resize_surface(&mut self, window_id: WindowId, size: PhysicalSize<u32>) {
         let Some(state) = self.windows.get(&window_id) else {
             return;
@@ -549,6 +639,174 @@ impl Backend {
         };
         state.surface.resize(&self.context, w, h);
     }
+
+    fn process_spawn(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) -> ProcessId {
+        self.reap_detached();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let state = match spawn_fish(dir, command, args) {
+            Ok((child, pipe)) => {
+                let reader = spawn_pipe_reader(pipe, Arc::clone(&output));
+                ProcessState {
+                    child: Some(child),
+                    output,
+                    reader: Some(reader),
+                    exit_code: None,
+                    exited_at: None,
+                }
+            }
+            Err(error) => {
+                output
+                    .lock()
+                    .unwrap()
+                    .extend_from_slice(format!("Failed to spawn fish: {}", error).as_bytes());
+                ProcessState {
+                    child: None,
+                    output,
+                    reader: None,
+                    exit_code: Some(-1),
+                    exited_at: Some(Instant::now()),
+                }
+            }
+        };
+        self.processes.push(state);
+        ProcessId(self.processes.len() - 1)
+    }
+
+    fn process_poll(&mut self, id: ProcessId) -> ProcessPoll {
+        self.reap_detached();
+        let process = &mut self.processes[id.0];
+        // Reap the shell as soon as it exits, whether or not its pipe is
+        // still held open by something it left behind.
+        if let Some(child) = &mut process.child
+            && let Ok(Some(status)) = child.try_wait()
+        {
+            process.child = None;
+            process.exit_code = Some(status.code().unwrap_or(-1));
+            process.exited_at = Some(Instant::now());
+        }
+        let new_output = take(&mut *process.output.lock().unwrap());
+        let reader_finished = process
+            .reader
+            .as_ref()
+            .is_none_or(|reader| reader.is_finished());
+        let exit_code = match (process.exit_code, process.exited_at) {
+            (Some(code), Some(exited_at))
+                if reader_finished || exited_at.elapsed() >= EXIT_GRACE =>
+            {
+                Some(code)
+            }
+            _ => None,
+        };
+        // Once the process has exited and its pipe has closed, nothing more
+        // can arrive; free everything but the exit code. While a descendant
+        // holds the pipe, keep draining so the app can show the tail.
+        if exit_code.is_some() && reader_finished {
+            process.release();
+        }
+        ProcessPoll {
+            new_output,
+            exit_code,
+        }
+    }
+
+    fn process_kill(&mut self, id: ProcessId) {
+        let process = &mut self.processes[id.0];
+        // Only signal the group while the child is unreaped: after it has
+        // been reaped the pid (and so the group id) may have been reused by
+        // an unrelated process.
+        if let Some(mut child) = process.child.take() {
+            // Negative pid signals the process group (see spawn_fish).
+            unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
+            let _ = child.kill();
+            // Reap, so the child doesn't linger as a zombie. This waits
+            // only for the shell itself, which was just killed, not for
+            // anything holding its pipe.
+            process.exit_code = Some(match child.wait() {
+                Ok(status) => status.code().unwrap_or(-1),
+                Err(_) => -1,
+            });
+            process.exited_at = Some(Instant::now());
+        }
+        // Nothing polls a killed process again; free the rest of its state.
+        process.release();
+    }
+
+    fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) {
+        self.reap_detached();
+        let spawned = fish_command(dir, command, args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        match spawned {
+            Ok(child) => self.detached.push(child),
+            Err(error) => eprintln!("failed to spawn fish: {}", error),
+        }
+    }
+}
+
+// Build the fish invocation shared by both spawn paths, leaving only the
+// output redirection to the caller. `--` stops fish parsing an arg that
+// starts with `-` as its own option, so any text can be passed through
+// verbatim; it is harmless when there are no args. process_group(0) puts
+// the child in its own process group, so process_kill can signal the whole
+// group.
+fn fish_command(dir: &Path, command: &BStr, args: &[&BStr]) -> std::process::Command {
+    let mut fish = std::process::Command::new("fish");
+    fish.arg("--command")
+        .arg(OsStr::from_bytes(command))
+        .arg("--")
+        .args(args.iter().map(|arg| OsStr::from_bytes(arg)))
+        .current_dir(dir)
+        .stdin(std::process::Stdio::null())
+        .process_group(0);
+    fish
+}
+
+// Run `command` under fish with stdout and stderr sharing a single pipe, so
+// the two streams are merged by the kernel in write order rather than by
+// racing reader threads.
+fn spawn_fish(
+    dir: &Path,
+    command: &BStr,
+    args: &[&BStr],
+) -> std::io::Result<(std::process::Child, std::io::PipeReader)> {
+    let (reader, writer) = std::io::pipe()?;
+    let writer_for_stderr = writer.try_clone()?;
+    // The Command (and with it our copies of the write end) is dropped at
+    // the end of this statement, so the reader sees EOF once every process
+    // that inherited the pipe has closed it.
+    let child = fish_command(dir, command, args)
+        .stdout(std::process::Stdio::from(writer))
+        .stderr(std::process::Stdio::from(writer_for_stderr))
+        .spawn()?;
+    Ok((child, reader))
+}
+
+fn spawn_pipe_reader(
+    mut pipe: impl Read + Send + 'static,
+    output: Arc<Mutex<Vec<u8>>>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            // The backend released this process (see
+            // ProcessState::release); nobody will read what we append, so
+            // stop rather than buffer it forever.
+            if Arc::strong_count(&output) == 1 {
+                break;
+            }
+            // Wait for the app to catch up rather than buffering without
+            // limit. The command blocks writing to a full pipe meanwhile.
+            if output.lock().unwrap().len() >= MAX_BUFFERED_OUTPUT {
+                thread::sleep(READER_WAIT);
+                continue;
+            }
+            match pipe.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => output.lock().unwrap().extend_from_slice(&buf[..n]),
+            }
+        }
+    })
 }
 
 fn window_attrs(title: &str, size: WindowSize) -> winit::window::WindowAttributes {

@@ -305,6 +305,33 @@ fn alt_enter_creates_and_opens_file() {
 }
 
 #[test]
+fn alt_enter_rejects_a_relative_path() {
+    // Minimized from a fuzzer failure: deleting the leading `/` and creating
+    // gave a buffer whose path was relative to the editor's cwd.
+    let (mut app, mut io, window_id) = open_file_app(&[("/dir/a.txt", "")]);
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::Backspace),
+    );
+    common::text_input(&mut app, &mut io, window_id, "dir/new.txt");
+    common::tick(&mut app, &mut io);
+    assert_eq!(buffer_text(&app, PATH), "dir/new.txt");
+    assert_eq!(buffer_text(&app, LIST), "dir/: not an absolute path");
+
+    common::alt_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+
+    // Nothing created or opened; still on the picker.
+    assert!(!io.files.contains_key(&PathBuf::from("dir/new.txt")));
+    assert_eq!(app.buffers.keys().count(), LIST + 1);
+    common::char_input(&mut app, &mut io, window_id, 'x');
+    assert_eq!(buffer_text(&app, PATH), "dir/new.txtx");
+    app.assert_invariants();
+}
+
+#[test]
 fn alt_enter_opens_existing_file_without_truncating() {
     let (mut app, mut io, window_id) = open_file_app(&[("/file.txt", "contents")]);
     common::text_input(&mut app, &mut io, window_id, "file.txt");

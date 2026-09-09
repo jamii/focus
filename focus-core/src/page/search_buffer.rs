@@ -91,7 +91,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     if list_changed {
         let list_text = state(app, page_id).list_text.clone();
-        list_buffer_id.replace(app, list_text.as_bstr());
+        list_buffer_id.reset(app, list_text.as_bstr());
     }
 
     let initial_selection = if state(app, page_id).needs_initial_selection {

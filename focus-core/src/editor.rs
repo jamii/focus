@@ -147,7 +147,8 @@ impl EditorId {
             }
         }
 
-        // Wraps
+        // Wraps: incremental updates must match a full recompute.
+        assert_eq!(*wraps, wraps_from_text(text, wrap_chars));
         assert!(!wraps.is_empty());
         assert_eq!(wraps[0][0], 0);
         assert_eq!(wraps.last().unwrap()[1], text.len());
@@ -527,7 +528,7 @@ impl EditorId {
             }
         }
         app.editors.cursors[self] = cursors;
-        self.refresh_wraps(app);
+        self.refresh_wraps_from(app, diff.unchanged_before());
 
         if app.editors.last_draw_size[self][1] > 0.0 {
             self.scroll_offset_into_center(app, diff.apply(center_before));
@@ -829,6 +830,44 @@ impl EditorId {
         let buffer_id = app.editors.buffer_id[self];
         let wrap_chars = app.editors.wrap_chars[self];
         app.editors.wraps[self] = wraps_from_text(buffer_id.text(app).as_bstr(), wrap_chars);
+    }
+
+    // Rewrap the text from `offset` onwards, leaving earlier wraps alone.
+    //
+    // A wrap is not decided by its own contents alone: to break at a space
+    // the scan looks ahead up to one wrap width, so a wrap that ends before
+    // `offset` can still have read past it and can still change. Only wraps
+    // starting a whole width earlier are safe to keep, hence the margin.
+    // A char is at most four bytes, and the scan reads one char past the
+    // width before giving up, which is what the four and the plus one are.
+    fn refresh_wraps_from(self, app: &mut App, offset: usize) {
+        let buffer_id = app.editors.buffer_id[self];
+        let wrap_chars = app.editors.wrap_chars[self];
+        let margin = wrap_chars.saturating_add(1).saturating_mul(4);
+        let safe = offset.saturating_sub(margin);
+        // Wraps always start with [0, _], so there is one at or before any
+        // offset and `keep` cannot underflow. Everything before it started
+        // more than a wrap width before the edit, so it cannot have seen it.
+        let keep = app.editors.wraps[self]
+            .partition_point(|[start, _]| *start <= safe)
+            .saturating_sub(1);
+        let start = app.editors.wraps[self][keep][0];
+        let mut tail = wraps_from_text(&buffer_id.text(app)[start..], wrap_chars);
+        if start != 0 {
+            for wrap in &mut tail {
+                wrap[0] += start;
+                wrap[1] += start;
+            }
+        }
+        let wraps = &mut app.editors.wraps[self];
+        // keep == 0 means start == 0, so the tail is already the whole
+        // thing and can be moved in rather than copied.
+        if keep == 0 {
+            *wraps = tail;
+        } else {
+            wraps.truncate(keep);
+            wraps.append(&mut tail);
+        }
     }
 
     fn cursor_goto_line_start(self, app: &mut App) {

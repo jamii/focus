@@ -88,6 +88,13 @@ pub(crate) fn scratch(app: &mut App) -> BufferId {
 
 /// Return the existing buffer for `absolute_path`, or create one.
 pub fn from_file(app: &mut App, absolute_path: PathBuf) -> BufferId {
+    // Callers resolve paths against a known dir; a relative path here would
+    // silently read and save relative to the editor's own cwd.
+    assert!(
+        absolute_path.is_absolute(),
+        "buffer path must be absolute: {:?}",
+        absolute_path
+    );
     for buffer_id in app.buffers.keys() {
         let Source::File(source) = &app.buffers.source[buffer_id] else {
             continue;
@@ -194,11 +201,13 @@ impl BufferId {
             _ => (None, false),
         };
         if let Some(text) = text {
-            self.replace(app, text.as_bstr());
-            // The first load isn't an edit: open at the top rather than
-            // mapping cursors through the empty->contents diff.
             if first_load {
-                app.buffers.doing[self].clear();
+                // The first load isn't an edit: it replaces whatever was
+                // typed before the file arrived, and drops that typing's
+                // undo history along with it (undoing it against the loaded
+                // text would delete the wrong bytes). Open at the top rather
+                // than mapping cursors through the empty->contents diff.
+                self.reset(app, text.as_bstr());
                 let editor_ids: Vec<_> = app
                     .editors
                     .buffer_id
@@ -208,6 +217,8 @@ impl BufferId {
                 for editor_id in editor_ids {
                     editor_id.cursor_reset(app);
                 }
+            } else {
+                self.replace(app, text.as_bstr());
             }
         }
     }
@@ -215,6 +226,81 @@ impl BufferId {
     pub(crate) fn replace(self, app: &mut App, text: &BStr) {
         let edits = diff_text(self.text(app).as_bstr(), text);
         self.apply_edits(app, &edits);
+    }
+
+    /// Append generated text (eg command output) without recording undo.
+    /// Appends never invalidate earlier recorded edits, so the existing
+    /// undo history stays valid.
+    pub(crate) fn append(self, app: &mut App, text: &BStr) {
+        if text.is_empty() {
+            return;
+        }
+        let offset = self.text(app).len();
+        self.apply_edits_raw(
+            app,
+            &[Edit {
+                kind: EditKind::Insert,
+                offset,
+                text: text.into(),
+            }],
+        );
+    }
+
+    /// Drop text from the start so at most `max_len` bytes remain, cutting
+    /// at a line boundary where there is one. No undo is recorded, and the
+    /// existing history is dropped because the trim moves every offset it
+    /// referred to. Generated output only.
+    pub(crate) fn trim_front_to(self, app: &mut App, max_len: usize) {
+        let len = self.text(app).len();
+        if len <= max_len {
+            return;
+        }
+        let cut = len - max_len;
+        let cut = match self.text(app)[cut..].find_byte(b'\n') {
+            Some(ix) => cut + ix + 1,
+            None => cut,
+        };
+        let removed: BString = self.text(app)[..cut].into();
+        self.apply_edits_raw(
+            app,
+            &[Edit {
+                kind: EditKind::Delete,
+                offset: 0,
+                text: removed,
+            }],
+        );
+        app.buffers.undos[self].clear();
+        app.buffers.doing[self].clear();
+        app.buffers.redos[self].clear();
+    }
+
+    /// Replace the whole text with generated text without recording undo.
+    /// The old undo history no longer applies to the new text, so it is
+    /// dropped.
+    pub(crate) fn reset(self, app: &mut App, text: &BStr) {
+        let old = self.text(app);
+        if old == text {
+            return;
+        }
+        let mut edits = Vec::new();
+        if !text.is_empty() {
+            edits.push(Edit {
+                kind: EditKind::Insert,
+                offset: 0,
+                text: text.into(),
+            });
+        }
+        if !old.is_empty() {
+            edits.push(Edit {
+                kind: EditKind::Delete,
+                offset: 0,
+                text: old.into(),
+            });
+        }
+        self.apply_edits_raw(app, &edits);
+        app.buffers.undos[self].clear();
+        app.buffers.doing[self].clear();
+        app.buffers.redos[self].clear();
     }
 
     pub(crate) fn apply_edits(self, app: &mut App, edits: &[Edit]) {
@@ -232,12 +318,29 @@ impl BufferId {
         assert!(!edits.is_empty());
 
         let frame_start = app.frame_start;
-        let len_old = {
-            let text = &mut app.buffers.text[self];
-            Edit::assert_invariants(edits, Some(text.as_bstr()));
+        let text = &mut app.buffers.text[self];
+        Edit::assert_invariants(edits, Some(text.as_bstr()));
+        let len_old = text.len();
+        let diff = OffsetDiff::from_edits(edits, len_old);
 
-            let len_old = text.len();
-
+        // A single insert at the end is the streamed-output case: extend in
+        // place and scan only the new text for newlines. This is a property
+        // of the edits, not of the offsets, so read it from the edits.
+        let appended = match edits {
+            [
+                Edit {
+                    kind: EditKind::Insert,
+                    offset,
+                    text,
+                },
+            ] if *offset == len_old => Some(text),
+            _ => None,
+        };
+        if let Some(new_text) = appended {
+            text.extend_from_slice(new_text);
+            let newlines = &mut app.buffers.newlines[self];
+            newlines.extend(new_text.find_iter(b"\n").map(|ix| len_old + ix));
+        } else {
             // TODO This can be made way more efficient, so that common cases don't have to allocate a whole new text.
             let mut text_new = BString::new(Vec::with_capacity(text.len()));
             let mut offset = 0;
@@ -255,16 +358,10 @@ impl BufferId {
             }
             text_new.extend_from_slice(&text[offset..]);
             *text = text_new;
-            len_old
-        };
-
-        // TODO This can be made way more efficient, so that common cases don't have to iterate over the whole text.
-        app.buffers.newlines[self] = app.buffers.text[self]
-            .char_indices()
-            .filter_map(|(char_start, _, char)| (char == '\n').then_some(char_start))
-            .collect();
-
-        let diff = OffsetDiff::from_edits(edits, len_old);
+            // `\n` is a single byte in any encoding this editor sees, so a
+            // byte scan finds the same offsets as a char scan.
+            app.buffers.newlines[self] = app.buffers.text[self].find_iter(b"\n").collect();
+        }
 
         app.buffers.last_modified_time[self] = frame_start;
 
@@ -325,6 +422,7 @@ impl BufferId {
                     *last_save_time = frame_start;
                     *deleted_since_last_save = false;
                 }
+                app.save_count += 1;
             }
             Err(err) if kind == SaveKind::Auto && err.kind() == std::io::ErrorKind::NotFound => {
                 if let Source::File(SourceFile {
@@ -351,6 +449,21 @@ impl BufferId {
         let line = newlines.partition_point(|&nl| nl < offset);
         let line_start = if line == 0 { 0 } else { newlines[line - 1] + 1 };
         [text[line_start..offset].chars().count(), line]
+    }
+
+    /// Inverse of grid_from_offset: the byte offset of the char at
+    /// `[col, line]`, clamped to the end of the line / buffer.
+    pub(crate) fn offset_from_grid(self, app: &App, grid: [usize; 2]) -> usize {
+        let text = &app.buffers.text[self];
+        let newlines = &app.buffers.newlines[self];
+        let [col, line] = grid;
+        let line = line.min(newlines.len());
+        let start = if line == 0 { 0 } else { newlines[line - 1] + 1 };
+        let end = newlines.get(line).copied().unwrap_or(text.len());
+        match text[start..end].char_indices().nth(col) {
+            Some((char_start, _, _)) => start + char_start,
+            None => end,
+        }
     }
 
     pub(crate) fn line_range_from_offset(self, app: &App, offset: usize) -> std::ops::Range<usize> {
@@ -429,7 +542,11 @@ impl Source {
 
 impl SourceFile {
     pub fn assert_invariants(&self) {
-        assert!(self.absolute_path.is_absolute());
+        assert!(
+            self.absolute_path.is_absolute(),
+            "not absolute: {:?}",
+            self.absolute_path
+        );
     }
 
     /// If the file's mtime has advanced past `last_load_mtime` and the buffer is
@@ -590,17 +707,48 @@ impl OffsetDiff {
         diff
     }
 
+    /// Offsets below this are left where they are by the diff, because
+    /// nothing before the first edit can move. Callers tracking offsets
+    /// use it to skip work that would map them to themselves.
+    pub(crate) fn unchanged_before(&self) -> usize {
+        // from_edits always pushes a final sentinel, so this is never empty.
+        self.offsets_old[0]
+    }
+
+    /// Map an old offset to a new offset. An insert at exactly `offset`
+    /// lands before it, so the mapped offset follows the inserted text.
     pub(crate) fn apply(&self, offset: usize) -> usize {
-        if self.offsets_new.is_empty() {
-            return offset;
-        }
         let i = self.offsets_old.partition_point(|&o| o <= offset);
+        self.apply_segment(i, offset)
+    }
+
+    /// Like `apply`, but an insert at exactly `offset` lands after it, so
+    /// the mapped offset stays before the inserted text. Use for the end
+    /// of a range, so typing just after the range doesn't extend it.
+    pub(crate) fn apply_before(&self, offset: usize) -> usize {
+        let i = self.offsets_old.partition_point(|&o| o < offset);
+        self.apply_segment(i, offset)
+    }
+
+    fn apply_segment(&self, i: usize, offset: usize) -> usize {
         if self.deleted[i] {
             self.offsets_new[i]
         } else {
             let old_start = if i == 0 { 0 } else { self.offsets_old[i - 1] };
             offset + self.offsets_new[i] - old_start
         }
+    }
+
+    /// Map a range: the start moves past inserts at the start, the end
+    /// stays before inserts at the end. Returns None if nothing of the
+    /// range survives.
+    pub(crate) fn apply_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Option<std::ops::Range<usize>> {
+        let start = self.apply(range.start);
+        let end = self.apply_before(range.end);
+        (start < end).then_some(start..end)
     }
 }
 
@@ -720,6 +868,85 @@ mod tests {
         assert_eq!(edits[1].offset, 6);
         assert_eq!(edits[1].text, "résumé");
         assert_eq!(apply_text(old, &edits), new);
+    }
+
+    #[test]
+    fn apply_before_keeps_offsets_before_an_insert_at_that_offset() {
+        // "abcd" -> "abXYcd"
+        let diff = OffsetDiff::from_edits(
+            &[Edit {
+                kind: EditKind::Insert,
+                offset: 2,
+                text: "XY".into(),
+            }],
+            4,
+        );
+        assert_eq!(diff.unchanged_before(), 2);
+        assert_eq!(diff.apply(2), 4);
+        assert_eq!(diff.apply_before(2), 2);
+        assert_eq!(diff.apply(1), 1);
+        assert_eq!(diff.apply_before(3), 5);
+        // A range ending at the insert point doesn't grow; one starting
+        // there moves past the insert.
+        assert_eq!(diff.apply_range(0..2), Some(0..2));
+        assert_eq!(diff.apply_range(2..4), Some(4..6));
+    }
+
+    #[test]
+    fn apply_range_drops_ranges_that_were_deleted() {
+        // "abcdef" -> "af"
+        let diff = OffsetDiff::from_edits(
+            &[Edit {
+                kind: EditKind::Delete,
+                offset: 1,
+                text: "bcde".into(),
+            }],
+            6,
+        );
+        assert_eq!(diff.apply_range(2..4), None);
+        assert_eq!(diff.apply_range(1..5), None);
+        assert_eq!(diff.apply_range(0..6), Some(0..2));
+        assert_eq!(diff.apply_range(3..6), Some(1..2));
+        assert_eq!(diff.apply_before(5), 1);
+        assert_eq!(diff.apply_before(1), 1);
+    }
+
+    #[test]
+    fn nothing_below_the_first_edit_moves() {
+        // An append, a mid-text insert, a front delete and a replacement.
+        let cases: Vec<(usize, Vec<Edit>)> = vec![
+            (10, vec![insert(10, "xyz")]),
+            (10, vec![insert(4, "xyz")]),
+            (10, vec![delete(0, "abcd")]),
+            (10, vec![insert(2, "QQ"), delete(2, "cd")]),
+        ];
+        for (len_old, edits) in cases {
+            let diff = OffsetDiff::from_edits(&edits, len_old);
+            let first = diff.unchanged_before();
+            assert_eq!(first, edits[0].offset);
+            for offset in 0..first {
+                assert_eq!(diff.apply(offset), offset);
+                assert_eq!(diff.apply_before(offset), offset);
+            }
+            // The boundary itself is not dragged along by an insert there.
+            assert_eq!(diff.apply_before(first), first);
+        }
+    }
+
+    fn insert(offset: usize, text: &str) -> Edit {
+        Edit {
+            kind: EditKind::Insert,
+            offset,
+            text: text.into(),
+        }
+    }
+
+    fn delete(offset: usize, text: &str) -> Edit {
+        Edit {
+            kind: EditKind::Delete,
+            offset,
+            text: text.into(),
+        }
     }
 
     #[test]

@@ -8,12 +8,15 @@
 // This is the body of the honggfuzz target (see hfuzz/src/main.rs).
 
 use std::collections::{BTreeMap, HashMap};
+use std::mem::take;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::{BStr, BString, ByteSlice};
 
-use crate::app::{App, DirEntry, IO, RepoFiles, RepoMatch, RepoSearch, WindowSize};
+use crate::app::{
+    App, DirEntry, IO, ProcessId, ProcessPoll, RepoFiles, RepoMatch, RepoSearch, WindowSize,
+};
 use crate::buffer;
 use crate::drawing::Drawing;
 use crate::fuzz_gen::Frng;
@@ -32,6 +35,31 @@ pub struct MockIO {
     pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
     pub git_roots: Vec<PathBuf>,
     pub system_time: SystemTime,
+    pub processes: Vec<MockProcess>,
+    pub detached: Vec<DetachedProcess>,
+}
+
+// A scripted process: tests push bytes into `pending_output` and set
+// `exit_code`; `process_poll` drains the former and reports the latter.
+pub struct MockProcess {
+    pub dir: PathBuf,
+    pub command: BString,
+    pub args: Vec<BString>,
+    pub pending_output: Vec<u8>,
+    pub exit_code: Option<i32>,
+    pub killed: bool,
+}
+
+fn to_bstrings(args: &[&BStr]) -> Vec<BString> {
+    args.iter().map(|arg| BString::from(arg.to_vec())).collect()
+}
+
+// A one-shot process spawned and forgotten. Nothing runs it; it is
+// recorded so tests can assert what was handed to the shell.
+pub struct DetachedProcess {
+    pub dir: PathBuf,
+    pub command: BString,
+    pub args: Vec<BString>,
 }
 
 impl MockIO {
@@ -46,18 +74,9 @@ impl MockIO {
             files: HashMap::new(),
             git_roots: Vec::new(),
             system_time: SystemTime::UNIX_EPOCH,
+            processes: Vec::new(),
+            detached: Vec::new(),
         }
-    }
-
-    fn repo_root(&self, dir: &Path) -> PathBuf {
-        let mut current = Some(dir);
-        while let Some(path) = current {
-            if self.git_roots.iter().any(|root| root == path) {
-                return path.to_path_buf();
-            }
-            current = path.parent();
-        }
-        dir.to_path_buf()
     }
 }
 
@@ -139,6 +158,10 @@ impl IO for MockIO {
 
     fn current_dir(&mut self) -> PathBuf {
         PathBuf::from("/")
+    }
+
+    fn home_dir(&mut self) -> PathBuf {
+        PathBuf::from("/home")
     }
 
     // Directories exist implicitly: `path` is a dir iff it is the root or a
@@ -229,6 +252,54 @@ impl IO for MockIO {
         }
         Ok(RepoSearch { root, matches })
     }
+
+    fn repo_root(&mut self, dir: &Path) -> PathBuf {
+        let mut current = Some(dir);
+        while let Some(path) = current {
+            if self.git_roots.iter().any(|root| root == path) {
+                return path.to_path_buf();
+            }
+            current = path.parent();
+        }
+        dir.to_path_buf()
+    }
+
+    fn process_spawn(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) -> ProcessId {
+        self.processes.push(MockProcess {
+            dir: dir.to_path_buf(),
+            command: command.into(),
+            args: to_bstrings(args),
+            pending_output: Vec::new(),
+            exit_code: None,
+            killed: false,
+        });
+        ProcessId(self.processes.len() - 1)
+    }
+
+    fn process_poll(&mut self, id: ProcessId) -> ProcessPoll {
+        let process = &mut self.processes[id.0];
+        ProcessPoll {
+            new_output: take(&mut process.pending_output),
+            exit_code: process.exit_code,
+        }
+    }
+
+    fn process_kill(&mut self, id: ProcessId) {
+        let process = &mut self.processes[id.0];
+        process.killed = true;
+        // Match the real impl: a killed process reports an exit on later polls.
+        if process.exit_code.is_none() {
+            process.exit_code = Some(-1);
+        }
+    }
+
+    fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) {
+        self.detached.push(DetachedProcess {
+            dir: dir.to_path_buf(),
+            command: command.into(),
+            args: to_bstrings(args),
+        });
+    }
 }
 
 // Action picked by the fuzzer for each step.
@@ -250,6 +321,8 @@ const A_OPEN_BUFFER_PAGE: u32 = 10;
 const A_SEARCH_BUFFER_PAGE: u32 = 10;
 const A_FILE_CREATE: u32 = 5;
 const A_SEARCH_REPO_PAGE: u32 = 10;
+const A_CHOOSE_COMMAND_PAGE: u32 = 10;
+const A_PROCESS_OUTPUT: u32 = 10;
 
 // Small pool of path components for A_FILE_CREATE, so created files
 // sometimes collide with the seeded tree and sometimes add new dirs.
@@ -296,6 +369,8 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_SEARCH_BUFFER_PAGE,
         A_FILE_CREATE,
         A_SEARCH_REPO_PAGE,
+        A_CHOOSE_COMMAND_PAGE,
+        A_PROCESS_OUTPUT,
     ])?;
     match action {
         0 => {
@@ -403,7 +478,11 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             app.input(io, window_id, InputEvent::MouseButton { state, position });
         }
         9 => {
+            // Sorted so the pick depends only on the fuzz bytes, not on
+            // HashMap iteration order, which changes from run to run and
+            // would make crashes irreproducible.
             let mut paths: Vec<PathBuf> = io.files.keys().cloned().collect();
+            paths.sort();
             if !paths.is_empty() {
                 let path_index = frng.usize_bounded(0, paths.len() - 1)?;
                 let path = paths.swap_remove(path_index);
@@ -433,7 +512,8 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             // Delete a file out from under the app, as if it had been
             // removed on disk by another process. Subsequent file_mtime /
             // file_read calls for this path then return NotFound.
-            let paths: Vec<PathBuf> = io.files.keys().cloned().collect();
+            let mut paths: Vec<PathBuf> = io.files.keys().cloned().collect();
+            paths.sort();
             if !paths.is_empty() {
                 let path_index = frng.usize_bounded(0, paths.len() - 1)?;
                 io.files.remove(&paths[path_index]);
@@ -571,6 +651,55 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                 window_id,
                 InputEvent::ModifiersChanged(ModifiersState::default()),
             );
+        }
+        18 => {
+            // Push the dir picker (ctrl+m), which leads to the command
+            // picker and then the runner page via enter chords.
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState {
+                    control: true,
+                    ..ModifiersState::default()
+                }),
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::Key {
+                    state: ButtonState::Pressed,
+                    logical_key: Key::Character("m"),
+                },
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState::default()),
+            );
+        }
+        19 => {
+            // Feed output / an exit code to a random spawned process, so
+            // the runner page's parsing and exited paths are reachable.
+            if !io.processes.is_empty() {
+                let ix = frng.usize_bounded(0, io.processes.len() - 1)?;
+                if frng.boolean()? {
+                    let len = frng.usize_bounded(0, 32)?;
+                    let mut output = Vec::with_capacity(len);
+                    for _ in 0..len {
+                        // Mostly printable ascii, with some newlines and
+                        // colons to form path:line:col tokens.
+                        output.push(match frng.u8_bounded(0, 6)? {
+                            0 => b'\n',
+                            1 => b':',
+                            2 => frng.u8_bounded(b'0', b'9')?,
+                            _ => frng.u8_bounded(0x20, 0x7e)?,
+                        });
+                    }
+                    io.processes[ix].pending_output.extend_from_slice(&output);
+                } else {
+                    io.processes[ix].exit_code = Some(frng.u8_bounded(0, 2)? as i32);
+                }
+            }
         }
         _ => unreachable!(),
     }
