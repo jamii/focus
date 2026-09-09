@@ -71,8 +71,13 @@ pub trait IO {
     /// exist. Does not truncate an existing file.
     fn file_create(&mut self, path: &Path) -> std::io::Result<()>;
 
-    fn current_dir(&mut self) -> PathBuf;
     fn home_dir(&mut self) -> PathBuf;
+    /// Resolve `path` to the one name the filesystem knows the file by:
+    /// no `.` or `..`, and no symlinks. Two spellings of one file must
+    /// produce the same result, or they end up in two buffers that save
+    /// over each other. Returns `path` unchanged if it cannot be
+    /// resolved - a file whose parent dir does not exist, say.
+    fn canonical_path(&mut self, path: &Path) -> PathBuf;
     fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>>;
     fn repo_files(&mut self, dir: &Path) -> std::io::Result<RepoFiles>;
     /// Search every file in the repo containing `dir` for the literal string

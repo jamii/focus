@@ -42,6 +42,10 @@ pkgs.mkShell {
     pkgs.rustfmt
     # The `cargo hfuzz` subcommand, built above (avoids `cargo install`).
     cargo-hfuzz
+    # A headless compositor for the daemon end-to-end test, and the
+    # `swaymsg -t get_tree` it asserts against. Unwrapped, because the
+    # wrapper insists on a dbus session.
+    pkgs.sway-unwrapped
   ];
 
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [

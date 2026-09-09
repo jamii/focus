@@ -97,10 +97,6 @@ impl IO for ErrorIO {
         self.inner.file_create(path)
     }
 
-    fn current_dir(&mut self) -> PathBuf {
-        self.inner.current_dir()
-    }
-
     fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<focus_core::app::DirEntry>> {
         self.inner.dir_list(path)
     }
@@ -115,6 +111,10 @@ impl IO for ErrorIO {
 
     fn repo_root(&mut self, dir: &Path) -> PathBuf {
         self.inner.repo_root(dir)
+    }
+
+    fn canonical_path(&mut self, path: &Path) -> PathBuf {
+        self.inner.canonical_path(path)
     }
 
     fn home_dir(&mut self) -> PathBuf {
@@ -153,7 +153,7 @@ fn error_file_app(path: PathBuf, text: &str) -> (App, ErrorIO, WindowId) {
         ),
     );
     let mut app = App::new(&mut io);
-    let buffer_id = buffer::from_file(&mut app, path);
+    let buffer_id = buffer::from_file(&mut app, &mut io, path);
     let window_id = window::open_edit(&mut app, &mut io, buffer_id);
     (app, io, window_id)
 }
@@ -339,8 +339,8 @@ fn from_file_reuses_existing_buffer_for_same_path() {
     let mut io = focus_core::fuzz::MockIO::new();
     let mut app = App::new(&mut io);
 
-    let first = buffer::from_file(&mut app, path.clone());
-    let second = buffer::from_file(&mut app, path);
+    let first = buffer::from_file(&mut app, &mut io, path.clone());
+    let second = buffer::from_file(&mut app, &mut io, path);
 
     assert_eq!(first, second);
     assert_eq!(app.buffers.keys().count(), 1);
@@ -735,5 +735,21 @@ fn undo_and_redo_empty_stacks_are_noops() {
     common::char_input(&mut app, &mut io, window_id, 'X');
 
     assert_eq!(common::text(&app), "X");
+    app.assert_invariants();
+}
+
+// Two spellings of one path are one buffer: otherwise `focus ../notes.txt`
+// and `focus /home/j/notes.txt` would edit the same file through two
+// buffers, and whichever saved last would win.
+#[test]
+fn from_file_reuses_existing_buffer_for_an_unnormalized_path() {
+    let (mut app, mut io, _window_id) = common::scratch_app();
+
+    let first = buffer::from_file(&mut app, &mut io, PathBuf::from("/dir/notes.txt"));
+    let second = buffer::from_file(&mut app, &mut io, PathBuf::from("/dir/sub/../notes.txt"));
+    let third = buffer::from_file(&mut app, &mut io, PathBuf::from("/dir/./notes.txt"));
+
+    assert_eq!(first, second);
+    assert_eq!(first, third);
     app.assert_invariants();
 }

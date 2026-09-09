@@ -21,7 +21,7 @@ const LIST: usize = 6;
 const OUTPUT: usize = 7;
 const MAKER_STATUS: usize = 8;
 
-const FISH_HISTORY_PATH: &str = "/home/.local/share/fish/fish_history";
+const FISH_HISTORY_PATH: &str = "/.local/share/fish/fish_history";
 
 fn buffer_text(app: &App, n: usize) -> String {
     app.buffers.keys().nth(n).unwrap().text(app).to_string()
@@ -646,7 +646,7 @@ fn saving_a_file_buffer_restarts_the_command() {
 
     // Open the file in a second window and load it.
     insert_file(&mut io, "/src.txt", "contents");
-    let buffer_id = buffer::from_file(&mut app, PathBuf::from("/src.txt"));
+    let buffer_id = buffer::from_file(&mut app, &mut io, PathBuf::from("/src.txt"));
     let window2_id = window::open_edit(&mut app, &mut io, buffer_id);
     io.frame_start += Duration::from_secs(1);
     common::tick(&mut app, &mut io);
@@ -673,7 +673,7 @@ fn saving_an_unmodified_buffer_does_not_restart() {
     let (mut app, mut io, _window_id) = runner_app("cargo build");
 
     insert_file(&mut io, "/src.txt", "contents");
-    let buffer_id = buffer::from_file(&mut app, PathBuf::from("/src.txt"));
+    let buffer_id = buffer::from_file(&mut app, &mut io, PathBuf::from("/src.txt"));
     let window2_id = window::open_edit(&mut app, &mut io, buffer_id);
     io.frame_start += Duration::from_secs(1);
     common::tick(&mut app, &mut io);

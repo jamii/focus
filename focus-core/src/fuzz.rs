@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::mem::take;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::{BStr, BString, ByteSlice};
@@ -160,12 +160,27 @@ impl IO for MockIO {
         Ok(())
     }
 
-    fn current_dir(&mut self) -> PathBuf {
+    // The mock filesystem is a synthetic tree rooted at "/", so that is
+    // also where home lives: pages that fall back to the home dir start at
+    // the root of the tree the test built.
+    fn home_dir(&mut self) -> PathBuf {
         PathBuf::from("/")
     }
 
-    fn home_dir(&mut self) -> PathBuf {
-        PathBuf::from("/home")
+    // The mock filesystem has no symlinks, so resolving `.` and `..`
+    // textually is exactly what canonicalizing means here.
+    fn canonical_path(&mut self, path: &Path) -> PathBuf {
+        let mut canonical = PathBuf::from("/");
+        for component in path.components() {
+            match component {
+                Component::Normal(part) => canonical.push(part),
+                Component::ParentDir => {
+                    canonical.pop();
+                }
+                Component::CurDir | Component::RootDir | Component::Prefix(_) => {}
+            }
+        }
+        canonical
     }
 
     // Directories exist implicitly: `path` is a dir iff it is the root or a
@@ -328,6 +343,7 @@ const A_SEARCH_REPO_PAGE: u32 = 10;
 const A_CHOOSE_COMMAND_PAGE: u32 = 10;
 const A_PROCESS_OUTPUT: u32 = 10;
 const A_DUPLICATE_PAGE: u32 = 10;
+const A_OPEN_WINDOW: u32 = 5;
 
 // Small pool of path components for A_FILE_CREATE, so created files
 // sometimes collide with the seeded tree and sometimes add new dirs.
@@ -345,12 +361,121 @@ fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> 
     Some([x, y])
 }
 
-// Each step: tick once (advancing time), then perform one randomly
-// chosen action. Returns Some(()) if more entropy is available; None
-// when the buffer is exhausted (Frng signals end-of-stream as None).
+// Actions that need no window. A daemon with every window closed can
+// still tick, and still sees files change underneath it, so the
+// windowless step below runs these too.
+
+fn act_tick(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
+    // Advance time by a fuzzer-chosen delta in [0, ~1s].
+    let delta_us = frng.u32_bounded(0, 1_000_000)?;
+    io.frame_start += Duration::from_micros(delta_us as u64);
+    let frame_start = io.frame_start;
+    app.tick(io, frame_start);
+    Some(())
+}
+
+fn act_file_modify(frng: &mut Frng, io: &mut MockIO) -> Option<()> {
+    // Sorted so the pick depends only on the fuzz bytes, not on
+    // HashMap iteration order, which changes from run to run and
+    // would make crashes irreproducible.
+    let mut paths: Vec<PathBuf> = io.files.keys().cloned().collect();
+    paths.sort();
+    if !paths.is_empty() {
+        let path_index = frng.usize_bounded(0, paths.len() - 1)?;
+        let path = paths.swap_remove(path_index);
+        let len = frng.usize_bounded(0, 64)?;
+        let mut contents = Vec::with_capacity(len);
+        for _ in 0..len {
+            contents.push(frng.u8_bounded(0x20, 0x7e)?);
+        }
+        let mtime = io
+            .files
+            .get(&path)
+            .map(|(_, mtime)| *mtime + Duration::from_nanos(1))
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        io.files.insert(path, (contents, mtime));
+    }
+    Some(())
+}
+
+fn act_file_delete(frng: &mut Frng, io: &mut MockIO) -> Option<()> {
+    // Delete a file out from under the app, as if it had been
+    // removed on disk by another process. Subsequent file_mtime /
+    // file_read calls for this path then return NotFound.
+    let mut paths: Vec<PathBuf> = io.files.keys().cloned().collect();
+    paths.sort();
+    if !paths.is_empty() {
+        let path_index = frng.usize_bounded(0, paths.len() - 1)?;
+        io.files.remove(&paths[path_index]);
+    }
+    Some(())
+}
+
+fn act_file_create(frng: &mut Frng, io: &mut MockIO) -> Option<()> {
+    // Create a file at a random path, so dirs appear and change
+    // under the file open and repo file search pages.
+    let mut path = PathBuf::from("/");
+    let component_count = frng.usize_bounded(1, 3)?;
+    for _ in 0..component_count {
+        let ix = frng.usize_bounded(0, FUZZ_PATH_COMPONENTS.len() - 1)?;
+        path.push(FUZZ_PATH_COMPONENTS[ix]);
+    }
+    let mtime = io.system_time + Duration::from_nanos(1);
+    io.files.insert(path, (b"created".to_vec(), mtime));
+    Some(())
+}
+
+// Open a window, as a daemon does when a client sends it a request.
+fn act_open_window(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
+    match frng.u8_bounded(0, 2)? {
+        0 => {
+            let mut paths: Vec<PathBuf> = io.files.keys().cloned().collect();
+            paths.sort();
+            if paths.is_empty() {
+                window::open_scratch(app, io);
+            } else {
+                let path_index = frng.usize_bounded(0, paths.len() - 1)?;
+                let buffer_id = buffer::from_file(app, io, paths.swap_remove(path_index));
+                window::open_edit(app, io, buffer_id);
+            }
+        }
+        1 => {
+            // The launcher loads its command list synchronously, polling
+            // until the process exits, so the mock process has to be one
+            // that exits - otherwise the page never finishes opening.
+            io.next_process_output = b"a\tcommand\nb\tcommand\n".to_vec();
+            io.next_process_exit_code = Some(0);
+            window::open_launcher(app, io);
+        }
+        _ => {
+            window::open_scratch(app, io);
+        }
+    }
+    Some(())
+}
+
+// Each step: perform one randomly chosen action. Returns Some(()) if
+// more entropy is available; None when the buffer is exhausted (Frng
+// signals end-of-stream as None).
 fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
+    // Closing the last window leaves a live daemon waiting for a request,
+    // not a dead app, so the run continues with only the actions that need
+    // no window - one of which opens one again.
     if io.open_windows.is_empty() {
-        return None;
+        let action = frng.weighted(&[
+            A_TICK,
+            A_FILE_MODIFY,
+            A_FILE_DELETE,
+            A_FILE_CREATE,
+            A_OPEN_WINDOW,
+        ])?;
+        return match action {
+            0 => act_tick(frng, app, io),
+            1 => act_file_modify(frng, io),
+            2 => act_file_delete(frng, io),
+            3 => act_file_create(frng, io),
+            _ => act_open_window(frng, app, io),
+        };
     }
     let window_idx = frng.usize_bounded(0, io.open_windows.len() - 1)?;
     let window_id = io.open_windows[window_idx];
@@ -377,6 +502,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_CHOOSE_COMMAND_PAGE,
         A_PROCESS_OUTPUT,
         A_DUPLICATE_PAGE,
+        A_OPEN_WINDOW,
     ])?;
     match action {
         0 => {
@@ -444,11 +570,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             app.input(io, window_id, InputEvent::CloseRequested);
         }
         4 => {
-            // Advance time by a fuzzer-chosen delta in [0, ~1s].
-            let delta_us = frng.u32_bounded(0, 1_000_000)?;
-            io.frame_start += Duration::from_micros(delta_us as u64);
-            let frame_start = io.frame_start;
-            app.tick(io, frame_start);
+            act_tick(frng, app, io)?;
         }
         5 => {
             // Draw at a fuzzer-chosen screen size.
@@ -484,26 +606,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             app.input(io, window_id, InputEvent::MouseButton { state, position });
         }
         9 => {
-            // Sorted so the pick depends only on the fuzz bytes, not on
-            // HashMap iteration order, which changes from run to run and
-            // would make crashes irreproducible.
-            let mut paths: Vec<PathBuf> = io.files.keys().cloned().collect();
-            paths.sort();
-            if !paths.is_empty() {
-                let path_index = frng.usize_bounded(0, paths.len() - 1)?;
-                let path = paths.swap_remove(path_index);
-                let len = frng.usize_bounded(0, 64)?;
-                let mut contents = Vec::with_capacity(len);
-                for _ in 0..len {
-                    contents.push(frng.u8_bounded(0x20, 0x7e)?);
-                }
-                let mtime = io
-                    .files
-                    .get(&path)
-                    .map(|(_, mtime)| *mtime + Duration::from_nanos(1))
-                    .unwrap_or(SystemTime::UNIX_EPOCH);
-                io.files.insert(path, (contents, mtime));
-            }
+            act_file_modify(frng, io)?;
         }
         10 => {
             app.input(
@@ -515,15 +618,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             );
         }
         11 => {
-            // Delete a file out from under the app, as if it had been
-            // removed on disk by another process. Subsequent file_mtime /
-            // file_read calls for this path then return NotFound.
-            let mut paths: Vec<PathBuf> = io.files.keys().cloned().collect();
-            paths.sort();
-            if !paths.is_empty() {
-                let path_index = frng.usize_bounded(0, paths.len() - 1)?;
-                io.files.remove(&paths[path_index]);
-            }
+            act_file_delete(frng, io)?;
         }
         12 => {
             // Push the FileOpen page (ctrl+o). Enter and ctrl+enter are then
@@ -623,16 +718,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             );
         }
         16 => {
-            // Create a file at a random path, so dirs appear and change
-            // under the file open and repo file search pages.
-            let mut path = PathBuf::from("/");
-            let component_count = frng.usize_bounded(1, 3)?;
-            for _ in 0..component_count {
-                let ix = frng.usize_bounded(0, FUZZ_PATH_COMPONENTS.len() - 1)?;
-                path.push(FUZZ_PATH_COMPONENTS[ix]);
-            }
-            let mtime = io.system_time + Duration::from_nanos(1);
-            io.files.insert(path, (b"created".to_vec(), mtime));
+            act_file_create(frng, io)?;
         }
         17 => {
             // Switch the window to the repo search page (alt+f).
@@ -732,6 +818,9 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                 InputEvent::ModifiersChanged(ModifiersState::default()),
             );
         }
+        21 => {
+            act_open_window(frng, app, io)?;
+        }
         _ => unreachable!(),
     }
     Some(())
@@ -747,7 +836,7 @@ pub fn fuzz_one(bytes: &[u8]) {
             .insert(PathBuf::from(path), (Vec::new(), SystemTime::UNIX_EPOCH));
     }
     let mut app = App::new(&mut io);
-    let buffer_id = buffer::from_file(&mut app, initial_path);
+    let buffer_id = buffer::from_file(&mut app, &mut io, initial_path);
     window::open_edit(&mut app, &mut io, buffer_id);
 
     while step(&mut frng, &mut app, &mut io).is_some() {

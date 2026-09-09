@@ -59,7 +59,7 @@ Testing:
 
 Arch:
 
-- [ ] Daemonize
+- [x] Daemonize
 
 Perf:
 

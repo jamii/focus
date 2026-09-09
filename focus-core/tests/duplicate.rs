@@ -8,7 +8,7 @@ use focus_core::window::{self, WindowId};
 
 mod common;
 
-const FISH_HISTORY_PATH: &str = "/home/.local/share/fish/fish_history";
+const FISH_HISTORY_PATH: &str = "/.local/share/fish/fish_history";
 
 fn buffer_text(app: &App, n: usize) -> String {
     app.buffers.keys().nth(n).unwrap().text(app).to_string()
