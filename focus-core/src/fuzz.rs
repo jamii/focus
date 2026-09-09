@@ -323,6 +323,7 @@ const A_FILE_CREATE: u32 = 5;
 const A_SEARCH_REPO_PAGE: u32 = 10;
 const A_CHOOSE_COMMAND_PAGE: u32 = 10;
 const A_PROCESS_OUTPUT: u32 = 10;
+const A_DUPLICATE_PAGE: u32 = 10;
 
 // Small pool of path components for A_FILE_CREATE, so created files
 // sometimes collide with the seeded tree and sometimes add new dirs.
@@ -371,6 +372,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_SEARCH_REPO_PAGE,
         A_CHOOSE_COMMAND_PAGE,
         A_PROCESS_OUTPUT,
+        A_DUPLICATE_PAGE,
     ])?;
     match action {
         0 => {
@@ -700,6 +702,31 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                     io.processes[ix].exit_code = Some(frng.u8_bounded(0, 2)? as i32);
                 }
             }
+        }
+        20 => {
+            // Open a copy of the current page in a new window (ctrl+n), so
+            // every page kind gets duplicated under random input.
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState {
+                    control: true,
+                    ..ModifiersState::default()
+                }),
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::Key {
+                    state: ButtonState::Pressed,
+                    logical_key: Key::Character("n"),
+                },
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState::default()),
+            );
         }
         _ => unreachable!(),
     }

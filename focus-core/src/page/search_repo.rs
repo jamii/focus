@@ -36,9 +36,9 @@ pub(super) const EDITOR_COUNT: usize = 3;
 const SEARCH_IX: usize = 1;
 
 pub(crate) fn new(app: &mut App, dir: PathBuf) -> PageId {
-    let preview_id = editor::new_scratch(app);
+    let preview_id = editor::new_generated(app);
     let search_id = editor::new_scratch(app);
-    let list_id = editor::new_scratch(app);
+    let list_id = editor::new_generated(app);
 
     let search_text = app.search_buffer_text.clone();
     let search_buffer_id = app.editors.buffer_id[search_id];
@@ -63,6 +63,26 @@ pub(crate) fn new(app: &mut App, dir: PathBuf) -> PageId {
     )
 }
 
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId {
+    let SearchRepoEditors {
+        preview_id,
+        search_id,
+        list_id,
+    } = editors(app, page_id);
+    // Clone the captured matches rather than re-running the search.
+    let state = state(app, page_id).clone();
+    let preview_id = editor::new_copy(app, preview_id);
+    let search_id = editor::new_copy(app, search_id);
+    let list_id = editor::new_copy(app, list_id);
+    let focus = app.pages.focus[page_id];
+    insert(
+        app,
+        PageContent::SearchRepo(state),
+        vec![preview_id, search_id, list_id],
+        focus,
+    )
+}
+
 pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     let SearchRepoEditors {
         preview_id,
@@ -82,7 +102,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     if list_changed {
         let list_text = state(app, page_id).list_text.clone();
-        list_buffer_id.reset(app, list_text.as_bstr());
+        list_buffer_id.replace(app, list_text.as_bstr());
         // The list changed, so select the first match again.
         list_id.cursor_reset(app);
     }
@@ -104,7 +124,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     let preview_buffer_id = app.editors.buffer_id[preview_id];
     if preview_buffer_id.text(app) != preview_text.as_bstr() {
-        preview_buffer_id.reset(app, preview_text.as_bstr());
+        preview_buffer_id.replace(app, preview_text.as_bstr());
         preview_id.cursor_reset(app);
     }
     // The range check fails if the file changed since the search.

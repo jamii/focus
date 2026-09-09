@@ -111,6 +111,40 @@ pub(crate) fn new_scratch(app: &mut App) -> EditorId {
     new(app, buffer_id)
 }
 
+pub(crate) fn new_generated(app: &mut App) -> EditorId {
+    let buffer_id = buffer::generated(app);
+    new(app, buffer_id)
+}
+
+/// A new editor over `buffer_id`, showing it exactly as `editor_id` does:
+/// same cursors, selection, gutter marker and scroll position. `buffer_id`
+/// must hold the same text as `editor_id`'s buffer, or the copied cursors
+/// would be out of bounds.
+pub(crate) fn new_like(app: &mut App, editor_id: EditorId, buffer_id: BufferId) -> EditorId {
+    assert_eq!(
+        app.editors.buffer_id[editor_id].text(app),
+        buffer_id.text(app),
+        "new_like needs a buffer holding the same text"
+    );
+    let copy_id = new(app, buffer_id);
+    app.editors.cursors[copy_id] = app.editors.cursors[editor_id].clone();
+    app.editors.marked[copy_id] = app.editors.marked[editor_id];
+    app.editors.gutter_marker[copy_id] = app.editors.gutter_marker[editor_id];
+    app.editors.wrap_chars[copy_id] = app.editors.wrap_chars[editor_id];
+    app.editors.top_pixel[copy_id] = app.editors.top_pixel[editor_id];
+    copy_id.refresh_wraps(app);
+    copy_id
+}
+
+/// A new editor over a new buffer of the same kind holding a copy of
+/// `editor_id`'s text, shown the same way. Used to duplicate the editors a
+/// page owns; editors over buffers the page merely holds - a file, or
+/// another page's buffer - share those with `new_like` instead.
+pub(crate) fn new_copy(app: &mut App, editor_id: EditorId) -> EditorId {
+    let buffer_id = buffer::copy(app, app.editors.buffer_id[editor_id]);
+    new_like(app, editor_id, buffer_id)
+}
+
 pub(crate) fn assert_invariants(app: &App) {
     let editors = &app.editors;
     assert_eq!(editors.buffer_id.len(), editors.editor_count);
@@ -244,6 +278,16 @@ impl EditorId {
     }
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
+        // Generated buffers - picker lists, previews, runner output, status
+        // bars - are rewritten by their page every tick, so the keys that
+        // would edit them fall through to the catch-all and are ignored.
+        // Everything that only moves or reads - cursors, marking, copy,
+        // mouse, scrolling - still works, because selecting a line of
+        // command output and copying it is the point of showing it in an
+        // editor at all. Read from the buffer rather than the editor: an
+        // editor can be pointed at a different buffer (the open_buffer
+        // preview switches between the selection and a placeholder).
+        let editable = app.editors.buffer_id[self].is_editable(app);
         let mut flush_doing = true;
 
         match event {
@@ -259,15 +303,15 @@ impl EditorId {
                     Key::Character("d") => self.cursor_add_next_match(app),
                     Key::Character("D") => self.cursor_remove_last(app),
                     Key::Character("c") => self.cursor_copy(app, io),
-                    Key::Character("x") => self.cursor_cut(app, io),
-                    Key::Character("v") => self.cursor_paste(app, io),
-                    Key::Character("V") => self.cursor_paste_many(app, io),
-                    Key::Character("s") => {
+                    Key::Character("x") if editable => self.cursor_cut(app, io),
+                    Key::Character("v") if editable => self.cursor_paste(app, io),
+                    Key::Character("V") if editable => self.cursor_paste_many(app, io),
+                    Key::Character("s") if editable => {
                         let buffer_id = app.editors.buffer_id[self];
                         buffer_id.save(app, io, SaveKind::Explicit);
                     }
-                    Key::Character("z") => self.undo(app),
-                    Key::Character("Z") => self.redo(app),
+                    Key::Character("z") if editable => self.undo(app),
+                    Key::Character("Z") if editable => self.redo(app),
                     _ => flush_doing = false,
                 }
             }
@@ -286,23 +330,23 @@ impl EditorId {
                 state, logical_key, ..
             } if state == ButtonState::Pressed && !app.modifiers.control && !app.modifiers.alt => {
                 match logical_key {
-                    Key::Character(char) => {
+                    Key::Character(char) if editable => {
                         self.cursor_replace(app, char.into());
                         flush_doing = false;
                     }
-                    Key::Named(NamedKey::Enter) => {
+                    Key::Named(NamedKey::Enter) if editable => {
                         self.cursor_replace(app, "\n".into());
                         flush_doing = false;
                     }
-                    Key::Named(NamedKey::Space) => {
+                    Key::Named(NamedKey::Space) if editable => {
                         self.cursor_replace(app, " ".into());
                         flush_doing = false;
                     }
-                    Key::Named(NamedKey::Backspace) => {
+                    Key::Named(NamedKey::Backspace) if editable => {
                         self.cursor_delete_left(app);
                         flush_doing = false;
                     }
-                    Key::Named(NamedKey::Delete) => {
+                    Key::Named(NamedKey::Delete) if editable => {
                         self.cursor_delete_right(app);
                         flush_doing = false;
                     }
@@ -319,7 +363,7 @@ impl EditorId {
             InputEvent::MouseMoved { position } => {
                 app.editors.last_mouse_position[self] = position;
             }
-            InputEvent::FocusChanged { focused: false } => {
+            InputEvent::FocusChanged { focused: false } if editable => {
                 let buffer_id = app.editors.buffer_id[self];
                 buffer_id.save(app, io, SaveKind::Auto);
             }
@@ -327,7 +371,7 @@ impl EditorId {
         }
 
         app.editors.last_input[self] = app.frame_start;
-        if flush_doing {
+        if flush_doing && editable {
             let buffer_id = app.editors.buffer_id[self];
             buffer_id.flush_doing(app);
         }

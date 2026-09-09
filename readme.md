@@ -24,7 +24,7 @@ Tools:
 - [x] Search within buffer
 - [x] Search within project files
 - [x] Navigation stack
-- [ ] Runner
+- [x] Runner
 - [ ] Search errors
 
 Language specific:

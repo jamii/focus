@@ -59,8 +59,8 @@ pub(crate) fn new(app: &mut App, io: &mut dyn IO, dir: PathBuf, command: BString
     // Parsed locations are resolved against dir, and file buffers require
     // absolute paths.
     assert!(dir.is_absolute(), "runner dir must be absolute: {:?}", dir);
-    let output_id = editor::new_scratch(app);
-    let status_id = editor::new_scratch(app);
+    let output_id = editor::new_generated(app);
+    let status_id = editor::new_generated(app);
     let process_id = io.process_spawn(&dir, command.as_bstr(), &[]);
     let spawn_save_count = app.save_count;
     let started_at = app.frame_start;
@@ -79,6 +79,23 @@ pub(crate) fn new(app: &mut App, io: &mut dyn IO, dir: PathBuf, command: BString
         vec![output_id, status_id],
         OUTPUT_IX,
     )
+}
+
+pub(super) fn duplicate(page_id: PageId, app: &mut App, io: &mut dyn IO) -> PageId {
+    // A process can only be drained by one page - process_poll hands each
+    // chunk of output to a single caller, and teardown kills it - so the
+    // copy runs the command again in its own process rather than sharing.
+    let (dir, command, focus) = {
+        let state = state(app, page_id);
+        (
+            state.dir.clone(),
+            state.command.clone(),
+            app.pages.focus[page_id],
+        )
+    };
+    let copy_id = new(app, io, dir, command);
+    app.pages.focus[copy_id] = focus;
+    copy_id
 }
 
 // Format an elapsed duration at the coarsest useful resolution: "42s",
@@ -158,7 +175,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     let elapsed = app.frame_start.saturating_sub(started_at);
     let status_text = format!("{} (started {} ago)", command, format_elapsed(elapsed));
-    status_buffer_id.reset(app, BStr::new(status_text.as_bytes()));
+    status_buffer_id.replace(app, BStr::new(status_text.as_bytes()));
 
     status_id.tick(app, io);
     output_id.tick(app, io);
@@ -279,7 +296,7 @@ fn restart(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     io.process_kill(old_process_id);
     // The old output is gone for good: no undo history to keep.
-    output_buffer_id.reset(app, BStr::new(b""));
+    output_buffer_id.replace(app, BStr::new(b""));
     let process_id = io.process_spawn(&dir, command.as_bstr(), &[]);
     let spawn_save_count = app.save_count;
     let started_at = app.frame_start;

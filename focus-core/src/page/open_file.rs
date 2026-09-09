@@ -29,9 +29,9 @@ const PATH_IX: usize = 1;
 const PREVIEW_BYTES: usize = 10 * 1024;
 
 pub(crate) fn new(app: &mut App, dir: PathBuf) -> PageId {
-    let preview_id = editor::new_scratch(app);
+    let preview_id = editor::new_generated(app);
     let path_id = editor::new_scratch(app);
-    let list_id = editor::new_scratch(app);
+    let list_id = editor::new_generated(app);
 
     // The path editor starts with the provided directory.
     let mut path = dir.into_os_string().into_vec();
@@ -47,6 +47,24 @@ pub(crate) fn new(app: &mut App, dir: PathBuf) -> PageId {
         PageContent::OpenFile,
         vec![preview_id, path_id, list_id],
         PATH_IX,
+    )
+}
+
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId {
+    let OpenFileEditors {
+        preview_id,
+        path_id,
+        list_id,
+    } = editors(app, page_id);
+    let preview_id = editor::new_copy(app, preview_id);
+    let path_id = editor::new_copy(app, path_id);
+    let list_id = editor::new_copy(app, list_id);
+    let focus = app.pages.focus[page_id];
+    insert(
+        app,
+        PageContent::OpenFile,
+        vec![preview_id, path_id, list_id],
+        focus,
     )
 }
 
@@ -76,7 +94,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     let list_buffer_id = app.editors.buffer_id[list_id];
     if list_buffer_id.text(app) != list_text.as_bstr() {
-        list_buffer_id.reset(app, list_text.as_bstr());
+        list_buffer_id.replace(app, list_text.as_bstr());
         // The list changed, so select the closest match again.
         list_id.cursor_reset(app);
     }
@@ -101,7 +119,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     let preview_buffer_id = app.editors.buffer_id[preview_id];
     if preview_buffer_id.text(app) != preview_text.as_bstr() {
-        preview_buffer_id.reset(app, preview_text.as_bstr());
+        preview_buffer_id.replace(app, preview_text.as_bstr());
         // The selection changed, so show the top of the new file.
         preview_id.cursor_reset(app);
     }

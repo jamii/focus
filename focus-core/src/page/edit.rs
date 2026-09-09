@@ -24,12 +24,36 @@ struct EditEditors {
 }
 
 pub(crate) fn new(app: &mut App, editor_id: EditorId) -> PageId {
-    let status_bar_id = editor::new_scratch(app);
+    let buffer_id = app.editors.buffer_id[editor_id];
+    assert!(
+        buffer_id.is_editable(app),
+        "can't open an edit page over a generated buffer"
+    );
+    let status_bar_id = editor::new_generated(app);
     insert(
         app,
         PageContent::Edit,
         vec![editor_id, status_bar_id],
         EDITOR_IX,
+    )
+}
+
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId {
+    let EditEditors {
+        editor_id,
+        status_bar_id,
+    } = editors(app, page_id);
+    // Share the buffer being edited - that is the point of a second window
+    // on it - but give the copy its own status bar.
+    let buffer_id = app.editors.buffer_id[editor_id];
+    let editor_id = editor::new_like(app, editor_id, buffer_id);
+    let status_bar_id = editor::new_copy(app, status_bar_id);
+    let focus = app.pages.focus[page_id];
+    insert(
+        app,
+        PageContent::Edit,
+        vec![editor_id, status_bar_id],
+        focus,
     )
 }
 
@@ -48,6 +72,8 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     let buffer_id = app.editors.buffer_id[editor_id];
     let source = match buffer_id.source(app) {
         Source::Scratch => BStr::new("scratch"),
+        // Edit pages are only ever opened over a file or a scratch buffer.
+        Source::Generated => unreachable!(),
         Source::File(SourceFile { absolute_path, .. }) => {
             BStr::new(absolute_path.as_os_str().as_bytes())
         }

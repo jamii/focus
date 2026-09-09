@@ -46,7 +46,7 @@ const LIST_IX: usize = 2;
 pub(crate) fn new(app: &mut App, buffer_id: BufferId, initial_offset: usize) -> PageId {
     let preview_id = editor::new(app, buffer_id);
     let search_id = editor::new_scratch(app);
-    let list_id = editor::new_scratch(app);
+    let list_id = editor::new_generated(app);
 
     let search_text = app.search_buffer_text.clone();
     let search_buffer_id = app.editors.buffer_id[search_id];
@@ -72,6 +72,27 @@ pub(crate) fn new(app: &mut App, buffer_id: BufferId, initial_offset: usize) -> 
     )
 }
 
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId {
+    let SearchBufferEditors {
+        preview_id,
+        search_id,
+        list_id,
+    } = editors(app, page_id);
+    // Clone the captured matches rather than re-running the search.
+    let state = state(app, page_id).clone();
+    // The preview shares the buffer being searched.
+    let preview_id = editor::new_like(app, preview_id, state.buffer_id);
+    let search_id = editor::new_copy(app, search_id);
+    let list_id = editor::new_copy(app, list_id);
+    let focus = app.pages.focus[page_id];
+    insert(
+        app,
+        PageContent::SearchBuffer(state),
+        vec![preview_id, search_id, list_id],
+        focus,
+    )
+}
+
 pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     let SearchBufferEditors {
         preview_id,
@@ -91,7 +112,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     if list_changed {
         let list_text = state(app, page_id).list_text.clone();
-        list_buffer_id.reset(app, list_text.as_bstr());
+        list_buffer_id.replace(app, list_text.as_bstr());
     }
 
     let initial_selection = if state(app, page_id).needs_initial_selection {

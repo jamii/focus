@@ -26,8 +26,13 @@ pub struct Buffers {
 }
 
 pub(crate) enum Source {
+    /// Editable, not backed by a file: input fields, scratch pages.
     Scratch,
+    /// Editable, backed by a file on disk.
     File(SourceFile),
+    /// Written only by the editor itself: picker lists, previews, runner
+    /// output, status bars. Ignores user input and keeps no undo history.
+    Generated,
 }
 
 pub(crate) struct SourceFile {
@@ -86,6 +91,10 @@ pub(crate) fn scratch(app: &mut App) -> BufferId {
     insert(app, Source::Scratch)
 }
 
+pub(crate) fn generated(app: &mut App) -> BufferId {
+    insert(app, Source::Generated)
+}
+
 /// Return the existing buffer for `absolute_path`, or create one.
 pub fn from_file(app: &mut App, absolute_path: PathBuf) -> BufferId {
     // Callers resolve paths against a known dir; a relative path here would
@@ -113,6 +122,37 @@ pub fn from_file(app: &mut App, absolute_path: PathBuf) -> BufferId {
             deleted_since_last_save: false,
         }),
     )
+}
+
+/// A new buffer of the same kind holding a copy of `buffer_id`'s text and
+/// edit history. Used to duplicate a page: each page owns its input fields
+/// and its generated buffers, so a copy of the page needs its own.
+/// File-backed buffers are never copied - two buffers over one path would
+/// save over each other - so pages share those instead.
+pub(crate) fn copy(app: &mut App, buffer_id: BufferId) -> BufferId {
+    let source = match buffer_id.source(app) {
+        Source::Scratch => Source::Scratch,
+        Source::Generated => Source::Generated,
+        Source::File(SourceFile { absolute_path, .. }) => {
+            panic!("can't copy the file buffer for {:?}", absolute_path)
+        }
+    };
+    let text = app.buffers.text[buffer_id].clone();
+    let newlines = app.buffers.newlines[buffer_id].clone();
+    let last_modified_time = app.buffers.last_modified_time[buffer_id];
+    let undos = app.buffers.undos[buffer_id].clone();
+    let doing = app.buffers.doing[buffer_id].clone();
+    let redos = app.buffers.redos[buffer_id].clone();
+    let last_center_offset = app.buffers.last_center_offset[buffer_id];
+    let copy_id = insert(app, source);
+    app.buffers.text[copy_id] = text;
+    app.buffers.newlines[copy_id] = newlines;
+    app.buffers.last_modified_time[copy_id] = last_modified_time;
+    app.buffers.undos[copy_id] = undos;
+    app.buffers.doing[copy_id] = doing;
+    app.buffers.redos[copy_id] = redos;
+    app.buffers.last_center_offset[copy_id] = last_center_offset;
+    copy_id
 }
 
 fn insert(app: &mut App, source: Source) -> BufferId {
@@ -149,6 +189,14 @@ pub(crate) fn assert_invariants(app: &App) {
         for offset in newlines {
             assert_eq!(text[*offset..].chars().next().unwrap(), '\n');
         }
+        if !buffer_id.is_editable(app) {
+            // Generated buffers record no history: nothing undoes a picker
+            // list or a command's output, and keeping one would grow without
+            // bound as the page rewrites the buffer every tick.
+            assert!(buffers.undos[buffer_id].is_empty());
+            assert!(buffers.doing[buffer_id].is_empty());
+            assert!(buffers.redos[buffer_id].is_empty());
+        }
         for undo in &buffers.undos[buffer_id] {
             assert!(!undo.is_empty());
             for edits in undo {
@@ -176,14 +224,27 @@ impl BufferId {
         &app.buffers.source[self]
     }
 
+    /// Whether user input can edit this buffer. Generated buffers are
+    /// rewritten by their page every tick, so typing into one would be
+    /// undone by the next frame; the editor ignores edits to them instead.
+    pub(crate) fn is_editable(self, app: &App) -> bool {
+        !matches!(self.source(app), Source::Generated)
+    }
+
     pub(crate) fn path(self, app: &App) -> Option<PathBuf> {
         match self.source(app) {
-            Source::Scratch => None,
+            Source::Scratch | Source::Generated => None,
             Source::File(SourceFile { absolute_path, .. }) => Some(absolute_path.clone()),
         }
     }
 
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
+        // Generated buffers have no history to flush and no file to reload
+        // from: their page rewrites them every tick instead.
+        if !self.is_editable(app) {
+            return;
+        }
+
         // Maybe flush doing.
         let last_modified_time = app.buffers.last_modified_time[self];
         if app.frame_start - last_modified_time > Duration::from_secs(1) {
@@ -207,7 +268,10 @@ impl BufferId {
                 // undo history along with it (undoing it against the loaded
                 // text would delete the wrong bytes). Open at the top rather
                 // than mapping cursors through the empty->contents diff.
-                self.reset(app, text.as_bstr());
+                self.replace_raw(app, text.as_bstr());
+                app.buffers.undos[self].clear();
+                app.buffers.doing[self].clear();
+                app.buffers.redos[self].clear();
                 let editor_ids: Vec<_> = app
                     .editors
                     .buffer_id
@@ -223,61 +287,22 @@ impl BufferId {
         }
     }
 
+    /// Replace the buffer's text. Editable buffers use an undoable diff so
+    /// cursors and selections survive the change; generated buffers replace
+    /// the whole text without recording history.
     pub(crate) fn replace(self, app: &mut App, text: &BStr) {
-        let edits = diff_text(self.text(app).as_bstr(), text);
-        self.apply_edits(app, &edits);
-    }
-
-    /// Append generated text (eg command output) without recording undo.
-    /// Appends never invalidate earlier recorded edits, so the existing
-    /// undo history stays valid.
-    pub(crate) fn append(self, app: &mut App, text: &BStr) {
-        if text.is_empty() {
+        if self.is_editable(app) {
+            let edits = diff_text(self.text(app).as_bstr(), text);
+            self.apply_edits(app, &edits);
             return;
         }
-        let offset = self.text(app).len();
-        self.apply_edits_raw(
-            app,
-            &[Edit {
-                kind: EditKind::Insert,
-                offset,
-                text: text.into(),
-            }],
-        );
+
+        self.replace_raw(app, text);
     }
 
-    /// Drop text from the start so at most `max_len` bytes remain, cutting
-    /// at a line boundary where there is one. No undo is recorded, and the
-    /// existing history is dropped because the trim moves every offset it
-    /// referred to. Generated output only.
-    pub(crate) fn trim_front_to(self, app: &mut App, max_len: usize) {
-        let len = self.text(app).len();
-        if len <= max_len {
-            return;
-        }
-        let cut = len - max_len;
-        let cut = match self.text(app)[cut..].find_byte(b'\n') {
-            Some(ix) => cut + ix + 1,
-            None => cut,
-        };
-        let removed: BString = self.text(app)[..cut].into();
-        self.apply_edits_raw(
-            app,
-            &[Edit {
-                kind: EditKind::Delete,
-                offset: 0,
-                text: removed,
-            }],
-        );
-        app.buffers.undos[self].clear();
-        app.buffers.doing[self].clear();
-        app.buffers.redos[self].clear();
-    }
-
-    /// Replace the whole text with generated text without recording undo.
-    /// The old undo history no longer applies to the new text, so it is
-    /// dropped.
-    pub(crate) fn reset(self, app: &mut App, text: &BStr) {
+    /// Replace the whole buffer without diffing or recording history. Initial
+    /// file loads and generated buffers do not need an edit-shaped change.
+    fn replace_raw(self, app: &mut App, text: &BStr) {
         let old = self.text(app);
         if old == text {
             return;
@@ -298,12 +323,53 @@ impl BufferId {
             });
         }
         self.apply_edits_raw(app, &edits);
-        app.buffers.undos[self].clear();
-        app.buffers.doing[self].clear();
-        app.buffers.redos[self].clear();
+    }
+
+    /// Append generated text (eg command output) without recording undo.
+    pub(crate) fn append(self, app: &mut App, text: &BStr) {
+        assert!(!self.is_editable(app), "append to an editable buffer");
+        if text.is_empty() {
+            return;
+        }
+        let offset = self.text(app).len();
+        self.apply_edits_raw(
+            app,
+            &[Edit {
+                kind: EditKind::Insert,
+                offset,
+                text: text.into(),
+            }],
+        );
+    }
+
+    /// Drop text from the start so at most `max_len` bytes remain, cutting
+    /// at a line boundary where there is one. Generated output only.
+    pub(crate) fn trim_front_to(self, app: &mut App, max_len: usize) {
+        assert!(!self.is_editable(app), "trim of an editable buffer");
+        let len = self.text(app).len();
+        if len <= max_len {
+            return;
+        }
+        let cut = len - max_len;
+        let cut = match self.text(app)[cut..].find_byte(b'\n') {
+            Some(ix) => cut + ix + 1,
+            None => cut,
+        };
+        let removed: BString = self.text(app)[..cut].into();
+        self.apply_edits_raw(
+            app,
+            &[Edit {
+                kind: EditKind::Delete,
+                offset: 0,
+                text: removed,
+            }],
+        );
     }
 
     pub(crate) fn apply_edits(self, app: &mut App, edits: &[Edit]) {
+        // The editor gates every mutating key on the buffer being editable,
+        // so reaching here with a generated one means a path was missed.
+        assert!(self.is_editable(app), "undoable edit to a generated buffer");
         if edits.is_empty() {
             return;
         }
@@ -534,7 +600,7 @@ impl BufferId {
 impl Source {
     pub fn assert_invariants(&self) {
         match self {
-            Source::Scratch => {}
+            Source::Scratch | Source::Generated => {}
             Source::File(file) => file.assert_invariants(),
         }
     }

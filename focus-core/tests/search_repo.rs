@@ -85,6 +85,25 @@ fn preview_shows_whole_file_of_selected_match() {
 }
 
 #[test]
+fn typing_into_the_preview_does_nothing() {
+    let (mut app, mut io, window_id) =
+        search_repo_app(&[("/a.txt", "foo\nbar foo"), ("/b.txt", "b foo")]);
+    common::text_input(&mut app, &mut io, window_id, "foo");
+    common::tick(&mut app, &mut io);
+    let preview_before = buffer_text(&app, PREVIEW);
+
+    // Focus the generated preview in the top half of the page.
+    common::draw(&mut app, window_id, 40, 20);
+    let cell_size = app.cell_size();
+    let preview_position = [2.0 * cell_size[0] as f32, 2.0 * cell_size[1] as f32];
+    common::mouse_moved(&mut app, &mut io, window_id, preview_position);
+    common::char_input(&mut app, &mut io, window_id, 'X');
+
+    assert_eq!(buffer_text(&app, PREVIEW), preview_before);
+    app.assert_invariants();
+}
+
+#[test]
 fn ctrl_enter_opens_selected_match_in_current_window() {
     let (mut app, mut io, window_id) = search_repo_app(&[("/a.txt", "one foo two foo")]);
     common::text_input(&mut app, &mut io, window_id, "foo");
