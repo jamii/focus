@@ -293,6 +293,29 @@ fn ctrl_enter_descends_into_dirs() {
 }
 
 #[test]
+fn ctrl_shift_enter_descends_in_new_window() {
+    let (mut app, mut io, window_id) =
+        open_file_app(&[("/dir/inner.txt", "inner contents"), ("/dab.txt", "")]);
+    common::text_input(&mut app, &mut io, window_id, "di");
+    common::tick(&mut app, &mut io);
+
+    common::control_shift_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    let window_id_new = *io.open_windows.last().unwrap();
+    common::tick(&mut app, &mut io);
+    common::char_input(&mut app, &mut io, window_id_new, 'x');
+    common::char_input(&mut app, &mut io, window_id, 'y');
+
+    assert_eq!(io.open_windows.len(), 2);
+    assert_eq!(buffer_text(&app, PATH), "/diy");
+    assert!(
+        app.buffers
+            .keys()
+            .any(|buffer_id| buffer_id.text(&app) == b"/dir/x")
+    );
+    app.assert_invariants();
+}
+
+#[test]
 fn ctrl_enter_does_nothing_without_a_selection() {
     let (mut app, mut io, window_id) = open_file_app(&[("/file.txt", "")]);
     common::text_input(&mut app, &mut io, window_id, "nomatch");

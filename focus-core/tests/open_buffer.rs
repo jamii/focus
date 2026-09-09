@@ -163,6 +163,23 @@ fn ctrl_enter_opens_selected_buffer() {
 }
 
 #[test]
+fn ctrl_shift_enter_opens_selected_buffer_in_new_window() {
+    let (mut app, mut io, window_id, files, search, _list) =
+        open_buffer_app(&[("/apple.txt", "apple contents")]);
+    common::tick(&mut app, &mut io);
+
+    common::control_shift_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    let window_id_new = *io.open_windows.last().unwrap();
+    common::char_input(&mut app, &mut io, window_id_new, 'X');
+    common::char_input(&mut app, &mut io, window_id, 'z');
+
+    assert_eq!(io.open_windows.len(), 2);
+    assert_eq!(buffer_text(&app, files[0]), "Xapple contents");
+    assert_eq!(buffer_text(&app, search), "z");
+    app.assert_invariants();
+}
+
+#[test]
 fn ctrl_enter_uses_current_search_before_next_tick() {
     let (mut app, mut io, window_id, _files, _search, _list) = open_buffer_app(&[
         ("/apple.txt", "apple contents"),

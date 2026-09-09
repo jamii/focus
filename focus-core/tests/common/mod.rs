@@ -91,6 +91,21 @@ pub fn control_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key
     modifiers(app, io, window_id, ModifiersState::default());
 }
 
+pub fn control_shift_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
+    modifiers(
+        app,
+        io,
+        window_id,
+        ModifiersState {
+            control: true,
+            shift: true,
+            ..Default::default()
+        },
+    );
+    self::key(app, io, window_id, key);
+    modifiers(app, io, window_id, ModifiersState::default());
+}
+
 pub fn alt_key(app: &mut App, io: &mut MockIO, window_id: WindowId, key: Key<'_>) {
     modifiers(
         app,
