@@ -92,6 +92,65 @@ fn closing_a_window_autosaves() {
 }
 
 #[test]
+fn first_mouse_move_keeps_the_default_focus() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::tick(&mut app, &mut io);
+    common::draw(&mut app, window_id, 20, 3);
+    let status_bar = [0.0, app.cell_size()[1] as f32 * 2.5];
+
+    app.input(
+        &mut io,
+        window_id,
+        InputEvent::MouseMoved {
+            position: status_bar,
+        },
+    );
+    common::char_input(&mut app, &mut io, window_id, 'a');
+    assert_eq!(common::text(&app), "a");
+
+    app.input(
+        &mut io,
+        window_id,
+        InputEvent::MouseMoved {
+            position: status_bar,
+        },
+    );
+    common::char_input(&mut app, &mut io, window_id, 'b');
+    assert_eq!(common::text(&app), "a");
+    app.assert_invariants();
+}
+
+#[test]
+fn each_window_ignores_its_own_first_mouse_move() {
+    let (mut app, mut io, first_window_id) = common::scratch_app();
+    let second_window_id = focus_core::window::open_scratch(&mut app, &mut io);
+    common::tick(&mut app, &mut io);
+    common::draw(&mut app, first_window_id, 20, 3);
+    common::draw(&mut app, second_window_id, 20, 3);
+    let status_bar = [0.0, app.cell_size()[1] as f32 * 2.5];
+
+    for window_id in [first_window_id, second_window_id] {
+        app.input(
+            &mut io,
+            window_id,
+            InputEvent::MouseMoved {
+                position: status_bar,
+            },
+        );
+        common::char_input(&mut app, &mut io, window_id, 'x');
+    }
+
+    let buffer_texts: Vec<String> = app
+        .buffers
+        .keys()
+        .map(|buffer_id| buffer_id.text(&app).to_string())
+        .collect();
+    assert_eq!(buffer_texts[0], "x");
+    assert_eq!(buffer_texts[2], "x");
+    app.assert_invariants();
+}
+
+#[test]
 fn draw_includes_status_bar_on_bottom_row() {
     let (mut app, mut io, window_id) = common::scratch_app();
 

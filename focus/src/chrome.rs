@@ -51,17 +51,25 @@ const APP_ID: &str = if cfg!(debug_assertions) {
 
 const TARGET_FRAME: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
-pub fn run(initial_path: Option<PathBuf>) {
+pub enum InitialPage {
+    Scratch,
+    File(PathBuf),
+    Launcher,
+}
+
+pub fn run(initial_page: InitialPage) {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut chrome = Chrome::Init { initial_path };
+    let mut chrome = Chrome::Init {
+        initial_page: Some(initial_page),
+    };
     event_loop.run_app(&mut chrome).unwrap();
 }
 
 // Two-phase: stay in `Init` until the first `resumed` gives us an
 // `ActiveEventLoop`, then transition to `Running` and stay there.
 enum Chrome {
-    Init { initial_path: Option<PathBuf> },
+    Init { initial_page: Option<InitialPage> },
     Running(Running),
 }
 
@@ -390,8 +398,8 @@ fn git_root(dir: &Path) -> PathBuf {
 
 impl ApplicationHandler for Chrome {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let initial_path = match self {
-            Chrome::Init { initial_path } => initial_path.take(),
+        let initial_page = match self {
+            Chrome::Init { initial_page } => initial_page.take().unwrap(),
             Chrome::Running(_) => return,
         };
         let (mut backend, _initial_window_id) =
@@ -407,13 +415,16 @@ impl ApplicationHandler for Chrome {
             backend: &mut backend,
             event_loop,
         };
-        match initial_path {
-            Some(path) => {
+        match initial_page {
+            InitialPage::File(path) => {
                 let buffer_id = buffer::from_file(&mut app, path);
                 focus_core::window::open_edit(&mut app, &mut io, buffer_id);
             }
-            None => {
+            InitialPage::Scratch => {
                 focus_core::window::open_scratch(&mut app, &mut io);
+            }
+            InitialPage::Launcher => {
+                focus_core::window::open_launcher(&mut app, &mut io);
             }
         }
         let now = Instant::now();
