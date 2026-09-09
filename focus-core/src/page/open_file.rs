@@ -76,7 +76,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     let list_buffer_id = app.editors.buffer_id[list_id];
     if list_buffer_id.text(app) != list_text.as_bstr() {
-        list_buffer_id.replace(app, list_text.as_bstr());
+        list_buffer_id.reset(app, list_text.as_bstr());
         // The list changed, so select the closest match again.
         list_id.cursor_reset(app);
     }
@@ -101,7 +101,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     let preview_buffer_id = app.editors.buffer_id[preview_id];
     if preview_buffer_id.text(app) != preview_text.as_bstr() {
-        preview_buffer_id.replace(app, preview_text.as_bstr());
+        preview_buffer_id.reset(app, preview_text.as_bstr());
         // The selection changed, so show the top of the new file.
         preview_id.cursor_reset(app);
     }
@@ -219,6 +219,11 @@ fn create(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) 
         return;
     }
     let path = PathBuf::from(OsStr::from_bytes(text));
+    // Buffers need absolute paths; a relative one would be created and
+    // opened relative to wherever the editor was started.
+    if !path.is_absolute() {
+        return;
+    }
     if io.file_create(&path).is_err() {
         return;
     }
@@ -258,6 +263,9 @@ fn listing(app: &App, io: &mut dyn IO, path_id: EditorId) -> Result<Listing, Str
     let split = text.rfind_byte(b'/').map_or(0, |ix| ix + 1);
     let (dir, pattern) = text.split_at(split);
     let dir = PathBuf::from(OsStr::from_bytes(dir));
+    if !dir.is_absolute() {
+        return Err(format!("{}: not an absolute path", dir.display()));
+    }
     let mut entries = io
         .dir_list(&dir)
         .map_err(|error| format!("{}: {}", dir.display(), error))?;

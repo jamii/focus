@@ -144,7 +144,7 @@ pub fn point_for_offset(cell_size: [u32; 2], offset: usize, line: usize) -> [f32
 
 pub fn open_same_buffer_window(app: &mut App, io: &mut MockIO, window_id: WindowId) -> WindowId {
     let before = io.open_windows.clone();
-    control_key(app, io, window_id, Key::Character("m"));
+    control_key(app, io, window_id, Key::Character("n"));
     *io.open_windows
         .iter()
         .find(|window_id| !before.contains(window_id))

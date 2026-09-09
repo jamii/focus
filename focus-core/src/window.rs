@@ -107,6 +107,7 @@ impl WindowId {
             .pop()
             .unwrap_or_else(|| panic!("window {:?} has an empty page stack", self));
         old_page_id.input(app, io, self, InputEvent::FocusChanged { focused: false });
+        old_page_id.teardown(app, io);
         app.windows.page_stack[self].push(page_id);
         page_id.input(app, io, self, InputEvent::FocusChanged { focused: true });
     }
@@ -122,6 +123,7 @@ impl WindowId {
             .pop()
             .unwrap_or_else(|| panic!("window {:?} has an empty page stack", self));
         page_id.input(app, io, self, InputEvent::FocusChanged { focused: false });
+        page_id.teardown(app, io);
 
         if app.windows.page_stack[self].is_empty() {
             let editor_id = editor::new_scratch(app);
@@ -134,7 +136,11 @@ impl WindowId {
     }
 
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
-        let page_id = self.current_page(app);
+        let page_stack = app.windows.page_stack[self].clone();
+        let (page_id, hidden) = page_stack.split_last().unwrap();
+        for page_id in hidden {
+            page_id.tick_background(app, io);
+        }
         page_id.tick(app, io);
     }
 
@@ -155,14 +161,23 @@ impl WindowId {
                         true
                     }
                     Key::Character("n") => {
-                        open_scratch(app, io);
-                        true
-                    }
-                    Key::Character("m") => {
+                        // Open a new window on the same buffer (was Ctrl+m).
                         let page_id = self.current_page(app);
                         let editor_id = app.pages.editor_ids[page_id][0];
                         let buffer_id = app.editors.buffer_id[editor_id];
                         open_edit(app, io, buffer_id);
+                        true
+                    }
+                    Key::Character("m") => {
+                        // Open the runner dir picker.
+                        let page_id = self.current_page(app);
+                        let dir = page_id
+                            .current_path(app)
+                            .and_then(|path| path.parent().map(|p| p.to_path_buf()))
+                            .unwrap_or_else(|| io.current_dir());
+                        let root = io.repo_root(&dir);
+                        let dir_page_id = page::new_choose_dir(app, io, root);
+                        self.push_page(app, io, dir_page_id);
                         true
                     }
                     Key::Character("o") => {
@@ -232,6 +247,11 @@ impl WindowId {
         app.windows.open[self] = false;
         app.windows.open_count -= 1;
         io.close_window(self);
+        // The window will never show its pages again; tear them all down.
+        let page_stack = app.windows.page_stack[self].clone();
+        for page_id in page_stack {
+            page_id.teardown(app, io);
+        }
         if app.windows.open_count == 0 {
             io.exit();
         }

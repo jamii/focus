@@ -493,6 +493,7 @@ dependencies = [
  "grep-searcher",
  "ignore",
  "khronos-egl",
+ "libc",
  "png 0.17.16",
  "raw-window-handle",
  "winit",

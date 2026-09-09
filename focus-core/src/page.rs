@@ -11,17 +11,23 @@ use crate::{
     window::WindowId,
 };
 
+mod choose_command;
+mod choose_dir;
 mod edit;
 mod open_buffer;
 mod open_file;
 mod open_file_from_repo;
+mod runner;
 mod search_buffer;
 mod search_repo;
 
+pub(crate) use choose_command::new as new_choose_command;
+pub(crate) use choose_dir::new as new_choose_dir;
 pub(crate) use edit::new as new_edit;
 pub(crate) use open_buffer::new as new_open_buffer;
 pub(crate) use open_file::new as new_open_file;
 pub(crate) use open_file_from_repo::new as new_open_file_from_repo;
+pub(crate) use runner::new as new_runner;
 pub(crate) use search_buffer::new as new_search_buffer;
 pub(crate) use search_repo::new as new_search_repo;
 
@@ -46,6 +52,9 @@ enum PageContent {
     OpenBuffer(open_buffer::State),
     OpenFile,
     OpenFileFromRepo(open_file_from_repo::State),
+    ChooseCommand(choose_command::State),
+    ChooseDir,
+    Runner(runner::State),
 }
 
 #[derive(Clone, Copy)]
@@ -56,6 +65,9 @@ enum PageContentKind {
     OpenBuffer,
     OpenFile,
     OpenFileFromRepo,
+    ChooseCommand,
+    ChooseDir,
+    Runner,
 }
 
 impl PageContent {
@@ -67,6 +79,9 @@ impl PageContent {
             PageContent::OpenBuffer(_) => PageContentKind::OpenBuffer,
             PageContent::OpenFile => PageContentKind::OpenFile,
             PageContent::OpenFileFromRepo(_) => PageContentKind::OpenFileFromRepo,
+            PageContent::ChooseCommand(_) => PageContentKind::ChooseCommand,
+            PageContent::ChooseDir => PageContentKind::ChooseDir,
+            PageContent::Runner(_) => PageContentKind::Runner,
         }
     }
 }
@@ -129,6 +144,13 @@ pub(crate) fn assert_invariants(app: &App) {
             PageContentKind::OpenFileFromRepo => {
                 assert!(editor_ids.len() == open_file_from_repo::EDITOR_COUNT)
             }
+            PageContentKind::ChooseCommand => {
+                assert!(editor_ids.len() == choose_command::EDITOR_COUNT)
+            }
+            PageContentKind::ChooseDir => {
+                assert!(editor_ids.len() == choose_dir::EDITOR_COUNT)
+            }
+            PageContentKind::Runner => assert!(editor_ids.len() == runner::EDITOR_COUNT),
         }
         for editor_id in editor_ids {
             assert!(editor_id.0 < app.editors.editor_count);
@@ -161,6 +183,26 @@ impl PageId {
             PageContentKind::OpenBuffer => open_buffer::tick(self, app, io),
             PageContentKind::OpenFile => open_file::tick(self, app, io),
             PageContentKind::OpenFileFromRepo => open_file_from_repo::tick(self, app, io),
+            PageContentKind::ChooseCommand => choose_command::tick(self, app, io),
+            PageContentKind::ChooseDir => choose_dir::tick(self, app, io),
+            PageContentKind::Runner => runner::tick(self, app, io),
+        }
+    }
+
+    // Called every frame for pages below the top of a window's stack.
+    // Only work that must keep going while hidden belongs here: the runner
+    // page keeps draining and restarting its process.
+    pub(crate) fn tick_background(self, app: &mut App, io: &mut dyn IO) {
+        match app.pages.content[self].kind() {
+            PageContentKind::Runner => runner::tick_background(self, app, io),
+            PageContentKind::SearchBuffer
+            | PageContentKind::SearchRepo
+            | PageContentKind::Edit
+            | PageContentKind::OpenBuffer
+            | PageContentKind::OpenFile
+            | PageContentKind::OpenFileFromRepo
+            | PageContentKind::ChooseCommand
+            | PageContentKind::ChooseDir => {}
         }
     }
 
@@ -210,6 +252,11 @@ impl PageId {
             PageContentKind::OpenFileFromRepo => {
                 open_file_from_repo::input(self, app, io, window_id, &event)
             }
+            PageContentKind::ChooseCommand => {
+                choose_command::input(self, app, io, window_id, &event)
+            }
+            PageContentKind::ChooseDir => choose_dir::input(self, app, io, window_id, &event),
+            PageContentKind::Runner => runner::input(self, app, io, window_id, &event),
         };
         if handled {
             return;
@@ -251,6 +298,9 @@ impl PageId {
                 PageContentKind::OpenFileFromRepo => {
                     open_file_from_repo::layout(page_rect, cell_size)
                 }
+                PageContentKind::ChooseCommand => choose_command::layout(page_rect, cell_size),
+                PageContentKind::ChooseDir => choose_dir::layout(page_rect, cell_size),
+                PageContentKind::Runner => runner::layout(page_rect, cell_size),
             };
         }
 
@@ -294,6 +344,30 @@ impl PageId {
             PageContentKind::OpenFileFromRepo => {
                 open_file_from_repo::handle_edits(self, app, editor_ix, diff)
             }
+            PageContentKind::ChooseCommand => {
+                choose_command::handle_edits(self, app, editor_ix, diff)
+            }
+            PageContentKind::ChooseDir => choose_dir::handle_edits(self, app, editor_ix, diff),
+            PageContentKind::Runner => runner::handle_edits(self, app, editor_ix, diff),
+        }
+    }
+
+    // Called when the page is removed from its window's page stack (popped,
+    // replaced, or its window closed) and will never be shown again. Pages
+    // are single-use — each PageId is pushed into exactly one stack once and
+    // nothing re-pushes a removed page — so teardown on removal is
+    // unambiguous.
+    pub(crate) fn teardown(self, app: &mut App, io: &mut dyn IO) {
+        match app.pages.content[self].kind() {
+            PageContentKind::Runner => runner::teardown(self, app, io),
+            PageContentKind::SearchBuffer
+            | PageContentKind::SearchRepo
+            | PageContentKind::Edit
+            | PageContentKind::OpenBuffer
+            | PageContentKind::OpenFile
+            | PageContentKind::OpenFileFromRepo
+            | PageContentKind::ChooseCommand
+            | PageContentKind::ChooseDir => {}
         }
     }
 
@@ -305,6 +379,9 @@ impl PageId {
             PageContentKind::OpenBuffer => open_buffer::current_path(self, app),
             PageContentKind::OpenFile => open_file::current_path(self, app),
             PageContentKind::OpenFileFromRepo => open_file_from_repo::current_path(self, app),
+            PageContentKind::ChooseCommand => choose_command::current_path(self, app),
+            PageContentKind::ChooseDir => choose_dir::current_path(self, app),
+            PageContentKind::Runner => runner::current_path(self, app),
         }
     }
 }

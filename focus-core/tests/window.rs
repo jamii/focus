@@ -5,25 +5,7 @@ use focus_core::style::TEXT_COLOR;
 mod common;
 
 #[test]
-fn ctrl_n_opens_a_new_window_with_a_new_buffer() {
-    let (mut app, mut io, window_id) = common::scratch_app();
-
-    let before = io.open_windows.clone();
-    common::control_key(&mut app, &mut io, window_id, Key::Character("n"));
-    let window_id_new = *io
-        .open_windows
-        .iter()
-        .find(|window_id| !before.contains(window_id))
-        .unwrap();
-    common::char_input(&mut app, &mut io, window_id_new, 'X');
-
-    assert_eq!(io.open_windows.len(), 2);
-    assert_eq!(common::text(&app), "");
-    app.assert_invariants();
-}
-
-#[test]
-fn ctrl_m_opens_a_new_window_on_the_same_buffer() {
+fn ctrl_n_opens_a_new_window_on_the_same_buffer() {
     let (mut app, mut io, window_id) = common::scratch_app();
 
     let window_id_new = common::open_same_buffer_window(&mut app, &mut io, window_id);
