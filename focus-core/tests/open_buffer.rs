@@ -114,6 +114,7 @@ fn preview_uses_selected_buffer_directly() {
     common::draw(&mut app, window_id, 40, 20);
     let cell_size = app.cell_size();
     let preview_position = [2.0 * cell_size[0] as f32, 2.0 * cell_size[1] as f32];
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, preview_position);
     common::char_input(&mut app, &mut io, window_id, 'X');
 
@@ -135,6 +136,7 @@ fn ctrl_ik_move_the_selection() {
     common::draw(&mut app, window_id, 40, 20);
     let cell_size = app.cell_size();
     let preview_position = [2.0 * cell_size[0] as f32, 2.0 * cell_size[1] as f32];
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, preview_position);
     common::char_input(&mut app, &mut io, window_id, 'X');
 

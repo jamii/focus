@@ -262,6 +262,7 @@ fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
 
     let start = common::point_for_offset(app.cell_size(), 1, 0);
     let end = common::point_for_offset(app.cell_size(), 4, 0);
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
     common::mouse_moved(&mut app, &mut io, window_id, end);
     common::tick(&mut app, &mut io);
@@ -643,6 +644,7 @@ fn dragging_selects_text_for_replacement() {
 
     let start = common::point_for_offset(app.cell_size(), 1, 0);
     let end = common::point_for_offset(app.cell_size(), 3, 0);
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, start);
     common::mouse_moved(&mut app, &mut io, window_id, end);
     common::tick(&mut app, &mut io);

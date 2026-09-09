@@ -140,6 +140,7 @@ fn ctrl_enter_uses_all_bottom_cursors_and_keeps_duplicates() {
     let cell_size = app.cell_size();
     let line0 = [2.0 * cell_size[0] as f32, 11.5 * cell_size[1] as f32];
     let line1 = [2.0 * cell_size[0] as f32, 12.5 * cell_size[1] as f32];
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, line0);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, line0);
     common::mouse_button(&mut app, &mut io, window_id, ButtonState::Released, line0);

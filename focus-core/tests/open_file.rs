@@ -129,6 +129,7 @@ fn selection_follows_list_cursor() {
         2.0 * cell_size[0] as f32,
         16.0 * cell_size[1] as f32, // in the list, well below the path row
     ];
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, list_position);
     common::control_key(&mut app, &mut io, window_id, Key::Character("k"));
     common::tick(&mut app, &mut io);
@@ -173,6 +174,7 @@ fn typing_into_the_list_does_nothing_and_selection_still_moves() {
     common::draw(&mut app, window_id, 40, 20);
     let cell_size = app.cell_size();
     let list_position = [2.0 * cell_size[0] as f32, 16.0 * cell_size[1] as f32];
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, list_position);
     common::char_input(&mut app, &mut io, window_id, 'X');
     assert_eq!(buffer_text(&app, LIST), list_before);
@@ -202,6 +204,7 @@ fn preview_reloads_with_cursor_at_top() {
     common::draw(&mut app, window_id, 40, 20);
     let cell_size = app.cell_size();
     let preview_position = [2.0 * cell_size[0] as f32, 2.0 * cell_size[1] as f32];
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, preview_position);
     common::char_input(&mut app, &mut io, window_id, 'X');
     assert_eq!(buffer_text(&app, PREVIEW), "banana contents");

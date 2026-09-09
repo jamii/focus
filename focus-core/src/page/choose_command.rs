@@ -93,18 +93,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     search_id.tick(app, io);
 
     // Update list text: matching history entries.
-    refresh_matches(app, page_id, search_id);
-    let list_buffer_id = app.editors.buffer_id[list_id];
-    let list_changed = {
-        let list_text = &state(app, page_id).list_text;
-        list_buffer_id.text(app) != list_text.as_bstr()
-    };
-    if list_changed {
-        let list_text = state(app, page_id).list_text.clone();
-        list_buffer_id.replace(app, list_text.as_bstr());
-        // The list changed, so select the closest match again.
-        list_id.cursor_reset(app);
-    }
+    refresh_list(page_id, app);
 
     // Mark the selected line, if there is one.
     app.editors.gutter_marker[list_id] = has_selection(app, page_id);
@@ -204,10 +193,12 @@ fn state_mut(app: &mut App, page_id: PageId) -> &mut State {
 
 // Run the selected history entry.
 fn submit_selected(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) {
-    let ChooseCommandEditors {
-        search_id, list_id, ..
-    } = editors(app, page_id);
-    refresh_matches(app, page_id, search_id);
+    // Refresh the whole list rather than just the matches: the cursor line
+    // is a position in the list buffer, so recomputing the matches alone
+    // would run whatever the new matches happen to hold at the line the
+    // previous frame's list is showing.
+    refresh_list(page_id, app);
+    let list_id = editors(app, page_id).list_id;
     let Some(command) = selected_command(app, page_id, list_id) else {
         return;
     };
@@ -231,6 +222,28 @@ fn run(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId, com
     append_history(io, &dir, command.as_bstr());
     let runner_page_id = new_runner(app, io, dir, command);
     window_id.replace_page(app, io, runner_page_id);
+}
+
+// Bring `matches` and the list buffer in line with the current search text.
+// Both change together, so the list buffer's line numbers are always
+// positions in `matches`.
+fn refresh_list(page_id: PageId, app: &mut App) {
+    let ChooseCommandEditors {
+        search_id, list_id, ..
+    } = editors(app, page_id);
+    refresh_matches(app, page_id, search_id);
+
+    let list_buffer_id = app.editors.buffer_id[list_id];
+    let list_changed = {
+        let list_text = &state(app, page_id).list_text;
+        list_buffer_id.text(app) != list_text.as_bstr()
+    };
+    if list_changed {
+        let list_text = state(app, page_id).list_text.clone();
+        list_buffer_id.replace(app, list_text.as_bstr());
+        // The list changed, so select the closest match again.
+        list_id.cursor_reset(app);
+    }
 }
 
 fn refresh_matches(app: &mut App, page_id: PageId, search_id: EditorId) {

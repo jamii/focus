@@ -311,6 +311,7 @@ fn mouse_move_to_status_bar_switches_focus() {
     common::draw(&mut app, window_id, 20, 3);
 
     let cell_h = app.cell_size()[1] as f32;
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, [0.0, cell_h * 2.5]);
     common::char_input(&mut app, &mut io, window_id, 'X');
     let drawing = common::draw(&mut app, window_id, 20, 3);
@@ -339,6 +340,7 @@ fn mouse_move_back_to_editor_restores_focus() {
     common::draw(&mut app, window_id, 20, 3);
 
     let cell_h = app.cell_size()[1] as f32;
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, [0.0, cell_h * 2.5]);
     common::char_input(&mut app, &mut io, window_id, 'X');
     common::mouse_moved(&mut app, &mut io, window_id, [0.0, cell_h * 0.5]);
@@ -361,6 +363,7 @@ fn status_bar_focus_loss_autosaves_main_editor() {
     common::draw(&mut app, window_id, 20, 3);
 
     let cell_h = app.cell_size()[1] as f32;
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, [0.0, cell_h * 2.5]);
 
     assert_eq!(io.files.get(&path).unwrap().0, b"before after");
@@ -375,6 +378,7 @@ fn status_bar_mouse_coordinates_are_translated() {
 
     let cell_size = app.cell_size();
     let cell_h = cell_size[1] as f32;
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, [0.0, cell_h * 2.5]);
     let point = common::point_for_offset(cell_size, 2, 2);
     common::mouse_button(
@@ -417,6 +421,7 @@ fn dragging_over_status_bar_does_not_switch_focus() {
     let cell_size = app.cell_size();
     let start = common::point_for_offset(cell_size, 1, 0);
     let end = [0.0, cell_size[1] as f32 * 2.5];
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_button(
         &mut app,
         &mut io,
@@ -457,6 +462,7 @@ fn status_bar_cursor_draws_only_when_status_bar_focused() {
         })
         .collect();
 
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, [0.0, cell_h * 2.5]);
     let drawing = common::draw(&mut app, window_id, 20, 3);
     let cursor_rows_after: Vec<usize> = drawing

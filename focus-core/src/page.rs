@@ -390,10 +390,10 @@ impl PageId {
     pub(crate) fn teardown(self, app: &mut App, io: &mut dyn IO) {
         match app.pages.content[self].kind() {
             PageContentKind::Runner => runner::teardown(self, app, io),
+            PageContentKind::Launcher => launcher::teardown(self, app, io),
             PageContentKind::SearchBuffer
             | PageContentKind::SearchRepo
             | PageContentKind::Edit
-            | PageContentKind::Launcher
             | PageContentKind::OpenBuffer
             | PageContentKind::OpenFile
             | PageContentKind::OpenFileFromRepo
