@@ -2,7 +2,7 @@ use crate::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO};
 use crate::buffer::BufferId;
 use crate::drawing::Drawing;
 use crate::editor;
-use crate::input::{ButtonState, InputEvent, Key};
+use crate::input::{ButtonState, InputEvent, Key, NamedKey};
 use crate::map::Map;
 use crate::page::{self, PageId};
 
@@ -156,6 +156,17 @@ impl WindowId {
                 state, logical_key, ..
             } if *state == ButtonState::Pressed && app.modifiers.control && !app.modifiers.alt => {
                 match *logical_key {
+                    Key::Named(NamedKey::Enter) if app.modifiers.shift => {
+                        // Ctrl+shift+enter is ctrl+n followed by ctrl+enter:
+                        // copy the page into a new window, then navigate there.
+                        let page_id = self.current_page(app).duplicate(app, io);
+                        let window_id = open(app, io, page_id);
+                        let modifiers = app.modifiers;
+                        app.modifiers.shift = false;
+                        window_id.input(app, io, event.clone());
+                        app.modifiers = modifiers;
+                        true
+                    }
                     Key::Character("q") => {
                         self.pop_page(app, io);
                         true
