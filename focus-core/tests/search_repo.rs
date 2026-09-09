@@ -96,6 +96,7 @@ fn typing_into_the_preview_does_nothing() {
     common::draw(&mut app, window_id, 40, 20);
     let cell_size = app.cell_size();
     let preview_position = [2.0 * cell_size[0] as f32, 2.0 * cell_size[1] as f32];
+    common::mouse_enter(&mut app, &mut io, window_id);
     common::mouse_moved(&mut app, &mut io, window_id, preview_position);
     common::char_input(&mut app, &mut io, window_id, 'X');
 

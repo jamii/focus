@@ -440,9 +440,8 @@ fn act_open_window(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()
             }
         }
         1 => {
-            // The launcher loads its command list synchronously, polling
-            // until the process exits, so the mock process has to be one
-            // that exits - otherwise the page never finishes opening.
+            // Script the completion process the launcher spawns, so that
+            // its command list is non-empty once a tick has drained it.
             io.next_process_output = b"a\tcommand\nb\tcommand\n".to_vec();
             io.next_process_exit_code = Some(0);
             window::open_launcher(app, io);
