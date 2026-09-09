@@ -1,7 +1,7 @@
 use focus_core::app::App;
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
-use focus_core::input::{ButtonState, Key, ModifiersState, NamedKey};
+use focus_core::input::{ButtonState, Key, ModifiersState, NamedKey, ScrollPhase};
 use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
 use focus_core::window::WindowId;
 
@@ -655,6 +655,128 @@ fn dragging_selects_text_for_replacement() {
     app.assert_invariants();
 }
 
+// The right gutter's viewport indicator runs from the top of the gutter
+// down to where the visible region begins, so its height tracks the scroll
+// position continuously - unlike the text, which only moves a whole row at
+// a time.
+fn scroll_indicator_top(app: &App, drawing: &Drawing, wrap_chars: usize) -> f32 {
+    let gutter_x = app.cell_size()[0] as f32 * (wrap_chars + 1) as f32;
+    solid_quads_with_color(drawing, HIGHLIGHT_COLOR)
+        .find(|c| c.dst.pos[0] >= gutter_x && c.dst.pos[1] == 0.0)
+        .map_or(0.0, |c| c.dst.size[1])
+}
+
+// Scrolling a touchpad gesture by `y_pixels` a frame for `frames`
+// frames, holding still for `pause_frames`, then lifting the fingers off.
+// Returns how far the view carries on after the fingers leave the pad.
+fn coast_distance(y_pixels: f32, frames: usize, pause_frames: usize) -> f32 {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, &"x\n".repeat(400));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
+    common::draw(&mut app, window_id, 10, 20);
+
+    let mut phase = ScrollPhase::Started;
+    for _ in 0..frames {
+        common::touchpad_scroll(&mut app, &mut io, window_id, y_pixels, phase);
+        phase = ScrollPhase::Moved;
+        common::tick_frames(&mut app, &mut io, 1);
+    }
+    common::tick_frames(&mut app, &mut io, pause_frames);
+
+    common::touchpad_scroll(&mut app, &mut io, window_id, 0.0, ScrollPhase::Ended);
+    let drawing = common::draw(&mut app, window_id, 10, 20);
+    let at_lift_off = scroll_indicator_top(&app, &drawing, 10);
+
+    // Long enough for any momentum to have run out.
+    common::tick_frames(&mut app, &mut io, 180);
+    let drawing = common::draw(&mut app, window_id, 10, 20);
+    scroll_indicator_top(&app, &drawing, 10) - at_lift_off
+}
+
+// While the fingers are on the pad the content goes exactly where they
+// put it, that frame - no easing, nothing to catch up with.
+#[test]
+fn touchpad_scrolling_follows_the_fingers() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, &"x\n".repeat(40));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
+
+    let drawing = common::draw(&mut app, window_id, 10, 3);
+    assert_eq!(scroll_indicator_top(&app, &drawing, 10), 0.0);
+
+    common::touchpad_scroll(&mut app, &mut io, window_id, -20.0, ScrollPhase::Started);
+    let drawing = common::draw(&mut app, window_id, 10, 3);
+    let moved = scroll_indicator_top(&app, &drawing, 10);
+    common::touchpad_scroll(&mut app, &mut io, window_id, -20.0, ScrollPhase::Moved);
+    let drawing = common::draw(&mut app, window_id, 10, 3);
+    let moved_again = scroll_indicator_top(&app, &drawing, 10);
+
+    assert!(0.0 < moved && moved < moved_again);
+    app.assert_invariants();
+}
+
+#[test]
+fn lifting_the_fingers_coasts_to_a_stop() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, &"x\n".repeat(400));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
+    common::draw(&mut app, window_id, 10, 20);
+
+    let mut phase = ScrollPhase::Started;
+    for _ in 0..5 {
+        common::touchpad_scroll(&mut app, &mut io, window_id, -20.0, phase);
+        phase = ScrollPhase::Moved;
+        common::tick_frames(&mut app, &mut io, 1);
+    }
+    common::touchpad_scroll(&mut app, &mut io, window_id, 0.0, ScrollPhase::Ended);
+    let drawing = common::draw(&mut app, window_id, 10, 20);
+    let at_lift_off = scroll_indicator_top(&app, &drawing, 10);
+
+    // It keeps going once the fingers are off the pad ...
+    common::tick_frames(&mut app, &mut io, 6);
+    let drawing = common::draw(&mut app, window_id, 10, 20);
+    let coasting = scroll_indicator_top(&app, &drawing, 10);
+
+    // ... slows down ...
+    common::tick_frames(&mut app, &mut io, 6);
+    let drawing = common::draw(&mut app, window_id, 10, 20);
+    let slowing = scroll_indicator_top(&app, &drawing, 10);
+
+    // ... and stops.
+    common::tick_frames(&mut app, &mut io, 180);
+    let drawing = common::draw(&mut app, window_id, 10, 20);
+    let stopped = scroll_indicator_top(&app, &drawing, 10);
+    common::tick_frames(&mut app, &mut io, 60);
+    let drawing = common::draw(&mut app, window_id, 10, 20);
+
+    assert!(at_lift_off < coasting, "{at_lift_off} {coasting}");
+    assert!(coasting - at_lift_off > slowing - coasting);
+    assert_eq!(scroll_indicator_top(&app, &drawing, 10), stopped);
+    app.assert_invariants();
+}
+
+// The momentum is the speed the fingers were moving at as they left the
+// pad, not the speed of the gesture as a whole: holding still before
+// lifting off leaves the view where the fingers put it.
+#[test]
+fn momentum_comes_from_the_speed_at_lift_off() {
+    let flicked = coast_distance(-20.0, 5, 0);
+    let paused = coast_distance(-20.0, 5, 10);
+
+    assert!(flicked > 0.0);
+    assert!(paused < flicked / 10.0, "{paused} {flicked}");
+}
+
+// Flicking twice as fast has to go more than twice as far, or crossing a
+// file means flicking over and over.
+#[test]
+fn a_faster_flick_goes_further_than_its_speed() {
+    let slow = coast_distance(-10.0, 5, 0);
+    let fast = coast_distance(-20.0, 5, 0);
+
+    assert!(fast > 2.2 * slow, "{slow} {fast}");
+}
+
 #[test]
 fn mouse_wheel_scrolls_visible_wraps() {
     let (mut app, mut io, window_id) = common::scratch_app();
@@ -1039,12 +1161,11 @@ fn cursor_blinks_off_after_idle_time() {
 #[test]
 fn resizing_viewport_preserves_centered_content() {
     let (mut app, mut io, window_id) = common::scratch_app();
-    common::text_input(
-        &mut app,
-        &mut io,
-        window_id,
-        "a\nbb\nccc\ndddd\neeeee\nffffff",
-    );
+    // Long enough that a scroll lands in the middle of it rather than
+    // against the end, whatever a wheel notch is worth.
+    let text: String = (1..=40).map(|i| "x".repeat(i % 8 + 1) + "\n").collect();
+    common::text_input(&mut app, &mut io, window_id, &text);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
 
     common::mouse_wheel(&mut app, &mut io, window_id, -3.0);
     let before = common::draw(&mut app, window_id, 10, 3);

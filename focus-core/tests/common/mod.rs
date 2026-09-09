@@ -8,7 +8,7 @@ use focus_core::app::App;
 use focus_core::buffer::{self, BufferId};
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
-use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
+use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey, ScrollPhase};
 use focus_core::style::TEXT_COLOR;
 use focus_core::window::{self, WindowId};
 
@@ -144,8 +144,32 @@ pub fn mouse_moved(app: &mut App, io: &mut MockIO, window_id: WindowId, position
     app.input(io, window_id, InputEvent::MouseMoved { position });
 }
 
-pub fn mouse_wheel(app: &mut App, io: &mut MockIO, window_id: WindowId, y_offset: f32) {
-    app.input(io, window_id, InputEvent::MouseWheel { y_offset });
+pub fn mouse_wheel(app: &mut App, io: &mut MockIO, window_id: WindowId, y_lines: f32) {
+    app.input(io, window_id, InputEvent::MouseWheel { y_lines });
+}
+
+pub fn touchpad_scroll(
+    app: &mut App,
+    io: &mut MockIO,
+    window_id: WindowId,
+    y_pixels: f32,
+    phase: ScrollPhase,
+) {
+    app.input(
+        io,
+        window_id,
+        InputEvent::TouchpadScroll { y_pixels, phase },
+    );
+}
+
+// Run the app for `frames` frames of 16ms each, as the real event loop
+// would. Momentum moves the view a frame at a time, so tests that watch
+// it have to let time pass rather than just ticking.
+pub fn tick_frames(app: &mut App, io: &mut MockIO, frames: usize) {
+    for _ in 0..frames {
+        io.frame_start += Duration::from_millis(16);
+        tick(app, io);
+    }
 }
 
 pub fn focus_changed(app: &mut App, io: &mut MockIO, window_id: WindowId, focused: bool) {

@@ -24,6 +24,10 @@ pub struct App {
     pub(crate) search_buffer_text: BString,
     pub(crate) modifiers: ModifiersState,
     pub(crate) frame_start: Duration,
+    // How long the last frame took. Animations - the scroll easing -
+    // multiply by this so they run at the same speed whatever the frame
+    // rate.
+    pub(crate) frame_dt: Duration,
     // Incremented on every successful file save, so the runner page can
     // restart its command when any file changes.
     pub(crate) save_count: u64,
@@ -140,7 +144,7 @@ pub struct RepoMatch {
     pub line_text: BString,
 }
 
-const FONT_SIZE_INIT: f32 = 32.0;
+const FONT_SIZE_INIT: f32 = 16.0;
 const FONT_SIZE_MIN: f32 = 4.0;
 
 impl App {
@@ -162,12 +166,14 @@ impl App {
             buffers: Buffers::new(),
             search_buffer_text: BString::default(),
             frame_start: Duration::ZERO,
+            frame_dt: Duration::ZERO,
             save_count: 0,
             modifiers: ModifiersState::default(),
         }
     }
 
     pub fn tick(&mut self, io: &mut dyn IO, frame_start: Duration) {
+        self.frame_dt = frame_start.saturating_sub(self.frame_start);
         self.frame_start = frame_start;
         let window_ids: Vec<_> = self
             .windows
