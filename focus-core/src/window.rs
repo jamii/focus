@@ -161,11 +161,9 @@ impl WindowId {
                         true
                     }
                     Key::Character("n") => {
-                        // Open a new window on the same buffer (was Ctrl+m).
-                        let page_id = self.current_page(app);
-                        let editor_id = app.pages.editor_ids[page_id][0];
-                        let buffer_id = app.editors.buffer_id[editor_id];
-                        open_edit(app, io, buffer_id);
+                        // Open a copy of this page in a new window.
+                        let page_id = self.current_page(app).duplicate(app, io);
+                        open(app, io, page_id);
                         true
                     }
                     Key::Character("m") => {

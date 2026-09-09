@@ -44,9 +44,9 @@ pub(super) const EDITOR_COUNT: usize = 3;
 const SEARCH_IX: usize = 1;
 
 pub(crate) fn new(app: &mut App, io: &mut dyn IO, dir: PathBuf) -> PageId {
-    let preview_id = editor::new_scratch(app);
+    let preview_id = editor::new_generated(app);
     let search_id = editor::new_scratch(app);
-    let list_id = editor::new_scratch(app);
+    let list_id = editor::new_generated(app);
 
     insert(
         app,
@@ -59,6 +59,27 @@ pub(crate) fn new(app: &mut App, io: &mut dyn IO, dir: PathBuf) -> PageId {
         }),
         vec![preview_id, search_id, list_id],
         SEARCH_IX,
+    )
+}
+
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId {
+    let ChooseCommandEditors {
+        preview_id,
+        search_id,
+        list_id,
+    } = editors(app, page_id);
+    // Clone the captured history rather than re-reading it, so the copy
+    // lists exactly what the original does.
+    let state = state(app, page_id).clone();
+    let preview_id = editor::new_copy(app, preview_id);
+    let search_id = editor::new_copy(app, search_id);
+    let list_id = editor::new_copy(app, list_id);
+    let focus = app.pages.focus[page_id];
+    insert(
+        app,
+        PageContent::ChooseCommand(state),
+        vec![preview_id, search_id, list_id],
+        focus,
     )
 }
 
@@ -80,7 +101,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     if list_changed {
         let list_text = state(app, page_id).list_text.clone();
-        list_buffer_id.reset(app, list_text.as_bstr());
+        list_buffer_id.replace(app, list_text.as_bstr());
         // The list changed, so select the closest match again.
         list_id.cursor_reset(app);
     }

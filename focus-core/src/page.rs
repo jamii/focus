@@ -189,6 +189,24 @@ impl PageId {
         }
     }
 
+    // A copy of this page, for a new window. Each page decides what the copy
+    // shares with the original and what it gets its own of: buffers the page
+    // owns - input fields, lists, previews, status bars - are copied, while
+    // buffers it merely holds - a file, or another page's buffer - are shared.
+    pub(crate) fn duplicate(self, app: &mut App, io: &mut dyn IO) -> PageId {
+        match app.pages.content[self].kind() {
+            PageContentKind::SearchBuffer => search_buffer::duplicate(self, app, io),
+            PageContentKind::SearchRepo => search_repo::duplicate(self, app, io),
+            PageContentKind::Edit => edit::duplicate(self, app, io),
+            PageContentKind::OpenBuffer => open_buffer::duplicate(self, app, io),
+            PageContentKind::OpenFile => open_file::duplicate(self, app, io),
+            PageContentKind::OpenFileFromRepo => open_file_from_repo::duplicate(self, app, io),
+            PageContentKind::ChooseCommand => choose_command::duplicate(self, app, io),
+            PageContentKind::ChooseDir => choose_dir::duplicate(self, app, io),
+            PageContentKind::Runner => runner::duplicate(self, app, io),
+        }
+    }
+
     // Called every frame for pages below the top of a window's stack.
     // Only work that must keep going while hidden belongs here: the runner
     // page keeps draining and restarting its process.

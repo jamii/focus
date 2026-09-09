@@ -149,6 +149,22 @@ fn status_bar_updates_cursor_position_after_movement() {
 }
 
 #[test]
+fn repeated_status_bar_updates_keep_generated_history_empty() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, &"x".repeat(100));
+
+    // Every movement changes the generated status text. The generated-buffer
+    // invariant checks that none of those replacements records undo, redo, or an
+    // in-progress edit batch.
+    for _ in 0..100 {
+        common::control_key(&mut app, &mut io, window_id, Key::Character("j"));
+        common::tick(&mut app, &mut io);
+    }
+
+    app.assert_invariants();
+}
+
+#[test]
 fn status_bar_uses_file_path_for_file_buffers() {
     let path = std::path::PathBuf::from("/tmp/focus-status-path-test.txt");
     let (mut app, mut io, _window_id) = common::file_app(path.clone(), "abc");
@@ -208,7 +224,8 @@ fn mouse_move_to_status_bar_switches_focus() {
         .collect();
 
     assert_eq!(common::text(&app), "main");
-    assert!(bottom_row_text.contains('X'));
+    assert!(bottom_row_text.contains("scratch"));
+    assert!(!bottom_row_text.contains('X'));
     app.assert_invariants();
 }
 
@@ -271,21 +288,20 @@ fn status_bar_mouse_coordinates_are_translated() {
         focus_core::input::ButtonState::Released,
         point,
     );
-    common::char_input(&mut app, &mut io, window_id, 'X');
-    let drawing = common::draw(&mut app, window_id, 20, 3);
-    let bottom_row_text: String = drawing
-        .commands
-        .iter()
-        .filter_map(|command| {
-            let DrawCommand::Character(c) = command else {
-                return None;
-            };
-            let row = (c.dst.pos[1] / cell_h).round() as usize;
-            (row == 2 && c.color == TEXT_COLOR && c.ch != FULL_BLOCK).then_some(c.ch)
-        })
-        .collect();
+    // Generated status text cannot be edited, but cursor movement,
+    // selection and copying still work. Clicking at offset 2 must therefore
+    // select the `r` when the page translates the bottom-row coordinates
+    // into the status editor's local coordinates.
+    common::control_key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(focus_core::input::NamedKey::Space),
+    );
+    common::control_key(&mut app, &mut io, window_id, Key::Character("l"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("c"));
 
-    assert!(bottom_row_text.contains("scXratch"));
+    assert_eq!(io.clipboard, Some("r".into()));
     app.assert_invariants();
 }
 

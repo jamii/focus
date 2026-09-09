@@ -5,7 +5,7 @@ use bstr::{BStr, BString, ByteSlice};
 
 use crate::{
     app::{App, IO},
-    buffer::{BufferId, OffsetDiff},
+    buffer::{self, BufferId, OffsetDiff},
     drawing::Rect,
     editor::{self, EditorId},
     fuzzy,
@@ -42,9 +42,9 @@ pub(super) const EDITOR_COUNT: usize = 3;
 const SEARCH_IX: usize = 1;
 
 pub(crate) fn new(app: &mut App) -> PageId {
-    let preview_id = editor::new_scratch(app);
+    let preview_id = editor::new_generated(app);
     let search_id = editor::new_scratch(app);
-    let list_id = editor::new_scratch(app);
+    let list_id = editor::new_generated(app);
     let empty_preview_buffer_id = app.editors.buffer_id[preview_id];
 
     insert(
@@ -58,6 +58,36 @@ pub(crate) fn new(app: &mut App) -> PageId {
         }),
         vec![preview_id, search_id, list_id],
         SEARCH_IX,
+    )
+}
+
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId {
+    let OpenBufferEditors {
+        preview_id,
+        search_id,
+        list_id,
+    } = editors(app, page_id);
+    let mut state = state(app, page_id).clone();
+    // The preview shares whichever buffer is selected, but the placeholder
+    // shown when nothing is selected belongs to the page, so the copy needs
+    // its own.
+    let empty_preview_buffer_id = buffer::generated(app);
+    let preview_buffer_id = app.editors.buffer_id[preview_id];
+    let preview_buffer_id = if preview_buffer_id == state.empty_preview_buffer_id {
+        empty_preview_buffer_id
+    } else {
+        preview_buffer_id
+    };
+    state.empty_preview_buffer_id = empty_preview_buffer_id;
+    let preview_id = editor::new_like(app, preview_id, preview_buffer_id);
+    let search_id = editor::new_copy(app, search_id);
+    let list_id = editor::new_copy(app, list_id);
+    let focus = app.pages.focus[page_id];
+    insert(
+        app,
+        PageContent::OpenBuffer(state),
+        vec![preview_id, search_id, list_id],
+        focus,
     )
 }
 
@@ -79,7 +109,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     if list_changed {
         let list_text = state(app, page_id).list_text.clone();
-        list_buffer_id.reset(app, list_text.as_bstr());
+        list_buffer_id.replace(app, list_text.as_bstr());
         // The list changed, so select the closest match again.
         list_id.cursor_reset(app);
     }

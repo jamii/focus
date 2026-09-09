@@ -27,7 +27,7 @@ const PATH_IX: usize = 0;
 
 pub(crate) fn new(app: &mut App, _io: &mut dyn IO, dir: PathBuf) -> PageId {
     let path_id = editor::new_scratch(app);
-    let list_id = editor::new_scratch(app);
+    let list_id = editor::new_generated(app);
 
     // The path editor starts with the provided directory (with trailing `/`).
     let mut path = dir.into_os_string().into_vec();
@@ -39,6 +39,14 @@ pub(crate) fn new(app: &mut App, _io: &mut dyn IO, dir: PathBuf) -> PageId {
     path_id.cursor_goto_buffer_end(app);
 
     insert(app, PageContent::ChooseDir, vec![path_id, list_id], PATH_IX)
+}
+
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId {
+    let ChooseDirEditors { path_id, list_id } = editors(app, page_id);
+    let path_id = editor::new_copy(app, path_id);
+    let list_id = editor::new_copy(app, list_id);
+    let focus = app.pages.focus[page_id];
+    insert(app, PageContent::ChooseDir, vec![path_id, list_id], focus)
 }
 
 pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
@@ -61,7 +69,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     };
     let list_buffer_id = app.editors.buffer_id[list_id];
     if list_buffer_id.text(app) != list_text.as_bstr() {
-        list_buffer_id.reset(app, list_text.as_bstr());
+        list_buffer_id.replace(app, list_text.as_bstr());
         list_id.cursor_reset(app);
     }
 

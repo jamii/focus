@@ -784,9 +784,11 @@ fn cursor_shifts_through_earlier_insert_from_another_editor() {
 fn selection_shifts_through_earlier_insert_from_another_editor() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcdefghijklmnop");
+    // Open the second window before marking: ctrl+n copies the page, so a
+    // selection made first would be copied into it too.
+    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
     move_left(&mut app, &mut io, window_id, 10);
     select_right(&mut app, &mut io, window_id, 4);
-    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
 
     move_right(&mut app, &mut io, other_window_id, 2);
     common::text_input(&mut app, &mut io, other_window_id, "XYZ");
@@ -800,9 +802,10 @@ fn selection_shifts_through_earlier_insert_from_another_editor() {
 fn selection_inside_delete_from_another_editor_collapses_to_delete_start() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcdefghij");
+    // Open the second window before marking, as above.
+    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
     move_left(&mut app, &mut io, window_id, 5);
     select_right(&mut app, &mut io, window_id, 2);
-    let other_window_id = common::open_same_buffer_window(&mut app, &mut io, window_id);
 
     move_right(&mut app, &mut io, other_window_id, 3);
     select_right(&mut app, &mut io, other_window_id, 6);

@@ -161,6 +161,31 @@ fn ctrl_ik_move_the_selection_from_any_editor() {
 }
 
 #[test]
+fn typing_into_the_list_does_nothing_and_selection_still_moves() {
+    let (mut app, mut io, window_id) = open_file_app(&[
+        ("/apple.txt", "apple contents"),
+        ("/banana.txt", "banana contents"),
+    ]);
+    common::tick(&mut app, &mut io);
+    let list_before = buffer_text(&app, LIST);
+
+    // Focus the generated list and try to edit it.
+    common::draw(&mut app, window_id, 40, 20);
+    let cell_size = app.cell_size();
+    let list_position = [2.0 * cell_size[0] as f32, 16.0 * cell_size[1] as f32];
+    common::mouse_moved(&mut app, &mut io, window_id, list_position);
+    common::char_input(&mut app, &mut io, window_id, 'X');
+    assert_eq!(buffer_text(&app, LIST), list_before);
+
+    // Navigation remains available on generated buffers.
+    common::control_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::tick(&mut app, &mut io);
+    assert_eq!(buffer_text(&app, PREVIEW), "banana contents");
+    assert_eq!(buffer_text(&app, LIST), list_before);
+    app.assert_invariants();
+}
+
+#[test]
 fn preview_reloads_with_cursor_at_top() {
     let (mut app, mut io, window_id) = open_file_app(&[
         ("/apple.txt", "apple contents"),
@@ -171,14 +196,17 @@ fn preview_reloads_with_cursor_at_top() {
     common::tick(&mut app, &mut io);
     assert_eq!(buffer_text(&app, PREVIEW), "banana contents");
 
-    // Focus the preview editor (the top half of the page) and type: the
-    // character lands at the start, so the cursor was reset to the top.
+    // Focus the preview editor (the top half of the page): its cursor is
+    // drawn on the first row, so it was reset to the top. The preview is
+    // generated, so typing into it changes nothing.
     common::draw(&mut app, window_id, 40, 20);
     let cell_size = app.cell_size();
     let preview_position = [2.0 * cell_size[0] as f32, 2.0 * cell_size[1] as f32];
     common::mouse_moved(&mut app, &mut io, window_id, preview_position);
     common::char_input(&mut app, &mut io, window_id, 'X');
-    assert_eq!(buffer_text(&app, PREVIEW), "Xbanana contents");
+    assert_eq!(buffer_text(&app, PREVIEW), "banana contents");
+    let drawing = common::draw(&mut app, window_id, 40, 20);
+    assert_eq!(common::cursor_lines(cell_size, &drawing), vec![0]);
     app.assert_invariants();
 }
 

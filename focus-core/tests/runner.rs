@@ -370,11 +370,11 @@ fn escaped_history_entries_are_listed_on_one_line_and_run_unescaped() {
 
 #[test]
 fn typing_in_the_picker_stays_fast_with_a_large_history() {
-    // The list is generated, so it is written with `reset`, which replaces
-    // the text outright. Writing it with `replace` word-diffed the old list
-    // against the new one, which was superlinear and made the first
-    // keystroke hang for seconds on a real-sized history. The bound is
-    // loose so this fails on that regression, not on a slow machine.
+    // `replace` swaps generated text outright. Treating this list as editable
+    // would word-diff the old list against the new one, which was superlinear
+    // and made the first keystroke hang for seconds on a real-sized history.
+    // The bound is loose so this fails on that regression, not on a slow
+    // machine.
     let commands = [
         "git status",
         "cargo build",
@@ -504,10 +504,11 @@ fn location_split_across_polls_is_jumpable() {
     common::char_input(&mut app, &mut io, window_id, 'X');
     assert_eq!(buffer_text(&app, buffers_before), "abc\ndeXfgh\n");
 
-    // Ctrl+q returns to the runner output.
+    // Ctrl+q returns to the runner output, where ctrl+r restarts the command.
     common::control_key(&mut app, &mut io, window_id, Key::Character("q"));
-    common::char_input(&mut app, &mut io, window_id, 'Z');
-    assert_eq!(buffer_text(&app, OUTPUT), "Zfoo/bar.rs:2:3 bad\n");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("r"));
+    assert_eq!(io.processes.len(), 2);
+    assert_eq!(buffer_text(&app, OUTPUT), "");
     app.assert_invariants();
 }
 
@@ -551,40 +552,50 @@ fn location_with_a_colon_before_the_message_is_jumpable() {
     app.assert_invariants();
 }
 
+// One `path:line` report per line, padded so that a megabyte of output is
+// a manageable number of parsed locations.
+fn report_lines(report: &str, lines: usize) -> Vec<u8> {
+    let mut line = report.as_bytes().to_vec();
+    line.resize(100, b'x');
+    line.push(b'\n');
+    let mut out = Vec::with_capacity(lines * line.len());
+    for _ in 0..lines {
+        out.extend_from_slice(&line);
+    }
+    out
+}
+
 #[test]
-fn locations_follow_edits_made_above_them() {
-    let (mut app, mut io, window_id) = runner_app("make");
+fn locations_shift_when_old_output_is_trimmed() {
+    let (mut app, mut io, window_id) = runner_app("cargo build");
     insert_file(&mut io, "/a.rs", "one\ntwo\n");
-    insert_file(&mut io, "/b.rs", "1\n2\n3\n");
+    insert_file(&mut io, "/c.rs", "nope\n");
 
-    io.processes[0]
-        .pending_output
-        .extend_from_slice(b"a.rs:1 x\nb.rs:2 y\n");
-    common::tick(&mut app, &mut io);
+    // Three rounds of output, sized so only the third crosses the 2MB trim
+    // threshold, and so the megabyte that survives holds no c.rs reports.
+    // The a.rs reports were parsed a tick before that trim, so they still
+    // point at their own text only if the trim shifted them.
+    for (report, lines) in [("c.rs:9 ", 11000), ("a.rs:1 ", 9000), ("b.rs:2 ", 1500)] {
+        io.processes[0]
+            .pending_output
+            .extend_from_slice(&report_lines(report, lines));
+        common::tick(&mut app, &mut io);
+    }
+    let output = buffer_text(&app, OUTPUT);
+    assert!(output.len() <= 1024 * 1024, "not trimmed: {}", output.len());
+    assert!(
+        output.starts_with("a.rs:1 "),
+        "trim kept the wrong text: {:?}",
+        &output[..16]
+    );
 
-    // Type a note on a new first line, pushing both reports down.
-    common::control_key(&mut app, &mut io, window_id, Key::Character("i"));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("i"));
-    common::text_input(&mut app, &mut io, window_id, "note here\n");
-    assert_eq!(buffer_text(&app, OUTPUT), "note here\na.rs:1 x\nb.rs:2 y\n");
-
-    // The cursor is at the start of the a.rs report; ctrl+enter opens a.rs,
-    // not the file whose stale range happened to cover this offset.
+    // The report on the first line still opens a.rs, not the c.rs text that
+    // used to live at those offsets.
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
     let buffers_before = app.buffers.keys().count();
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
     common::char_input(&mut app, &mut io, window_id, 'X');
     assert_eq!(buffer_text(&app, buffers_before), "Xone\ntwo\n");
-
-    // Deleting a report drops its location; the rest still jump.
-    common::control_key(&mut app, &mut io, window_id, Key::Character("q"));
-    for _ in 0.."a.rs:1 x\n".len() {
-        common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Delete));
-    }
-    assert_eq!(buffer_text(&app, OUTPUT), "note here\nb.rs:2 y\n");
-    let buffers_before = app.buffers.keys().count();
-    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
-    common::char_input(&mut app, &mut io, window_id, 'X');
-    assert_eq!(buffer_text(&app, buffers_before), "1\nX2\n3\n");
     app.assert_invariants();
 }
 
@@ -709,26 +720,28 @@ fn exit_is_reported_once() {
 }
 
 #[test]
-fn editing_the_output_does_not_break_parsing() {
+fn typing_into_the_output_does_nothing() {
     let (mut app, mut io, window_id) = runner_app("cargo build");
     insert_file(&mut io, "/bar.rs", "abc\ndefgh\n");
-
     io.processes[0]
         .pending_output
         .extend_from_slice(b"foo.rs:1 bad\n");
     common::tick(&mut app, &mut io);
 
-    // Delete all the parsed output by hand.
-    for _ in 0.."foo.rs:1 bad\n".len() {
-        common::key(
-            &mut app,
-            &mut io,
-            window_id,
-            Key::Named(NamedKey::Backspace),
-        );
-    }
+    // The output is generated, so every key that would edit it is ignored.
+    io.clipboard = Some("paste".into());
+    common::text_input(&mut app, &mut io, window_id, "hello\n");
+    common::key(
+        &mut app,
+        &mut io,
+        window_id,
+        Key::Named(NamedKey::Backspace),
+    );
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Delete));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("x"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("v"));
     common::tick(&mut app, &mut io);
-    assert_eq!(buffer_text(&app, OUTPUT), "");
+    assert_eq!(buffer_text(&app, OUTPUT), "foo.rs:1 bad\n");
 
     // Later output still parses and jumps.
     io.processes[0]
@@ -740,6 +753,28 @@ fn editing_the_output_does_not_break_parsing() {
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
     common::char_input(&mut app, &mut io, window_id, 'X');
     assert_eq!(buffer_text(&app, buffers_before), "abc\ndeXfgh\n");
+    app.assert_invariants();
+}
+
+#[test]
+fn the_output_can_be_selected_and_copied() {
+    let (mut app, mut io, window_id) = runner_app("cargo build");
+    io.processes[0].pending_output.extend_from_slice(b"one\n");
+    common::tick(&mut app, &mut io);
+
+    // Reading the output is the point of showing it in an editor, so
+    // selection and copy still work.
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
+    for _ in 0..3 {
+        common::control_key(&mut app, &mut io, window_id, Key::Character("l"));
+    }
+    common::control_key(&mut app, &mut io, window_id, Key::Character("c"));
+    assert_eq!(io.clipboard, Some("one".into()));
+
+    // Cut would delete, so it does nothing.
+    common::control_key(&mut app, &mut io, window_id, Key::Character("x"));
+    assert_eq!(buffer_text(&app, OUTPUT), "one\n");
     app.assert_invariants();
 }
 
@@ -783,26 +818,24 @@ fn output_is_drained_and_restarted_while_an_edit_page_is_on_top() {
 }
 
 #[test]
-fn appended_output_is_not_undoable() {
+fn the_output_has_no_undo_history() {
     let (mut app, mut io, window_id) = runner_app("cargo build");
     io.processes[0].pending_output.extend_from_slice(b"one\n");
     common::tick(&mut app, &mut io);
-    common::char_input(&mut app, &mut io, window_id, 'X');
     io.processes[0].pending_output.extend_from_slice(b"two\n");
     common::tick(&mut app, &mut io);
-    assert_eq!(buffer_text(&app, OUTPUT), "one\nXtwo\n");
-
-    // Undo removes the typed text but never the command's output.
-    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
     assert_eq!(buffer_text(&app, OUTPUT), "one\ntwo\n");
+
+    // Nothing the user did produced this text, so there is nothing to undo
+    // or redo - and no history piling up behind a command that never stops
+    // printing.
     common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
     assert_eq!(buffer_text(&app, OUTPUT), "one\ntwo\n");
     common::control_key(&mut app, &mut io, window_id, Key::Character("Z"));
-    assert_eq!(buffer_text(&app, OUTPUT), "one\nXtwo\n");
+    assert_eq!(buffer_text(&app, OUTPUT), "one\ntwo\n");
 
-    // A restart wipes the output and any undo history with it.
+    // A restart wipes the output.
     common::control_key(&mut app, &mut io, window_id, Key::Character("r"));
-    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
     assert_eq!(buffer_text(&app, OUTPUT), "");
     app.assert_invariants();
 }

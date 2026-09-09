@@ -142,13 +142,20 @@ pub fn point_for_offset(cell_size: [u32; 2], offset: usize, line: usize) -> [f32
     ]
 }
 
+// A second window on the same buffer, with its cursor at the start.
+// Ctrl+n copies the page, cursors included, so callers that position two
+// cursors against each other would otherwise start from wherever the
+// original happened to be.
 pub fn open_same_buffer_window(app: &mut App, io: &mut MockIO, window_id: WindowId) -> WindowId {
     let before = io.open_windows.clone();
     control_key(app, io, window_id, Key::Character("n"));
-    *io.open_windows
+    let window_id_new = *io
+        .open_windows
         .iter()
         .find(|window_id| !before.contains(window_id))
-        .unwrap()
+        .unwrap();
+    alt_key(app, io, window_id_new, Key::Character("i"));
+    window_id_new
 }
 
 pub fn draw(app: &mut App, window_id: WindowId, wrap_chars: usize, rows: usize) -> Drawing {
