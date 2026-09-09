@@ -335,7 +335,7 @@ fn submit_selected(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: W
         return;
     };
 
-    let buffer_id = buffer::from_file(app, location.path);
+    let buffer_id = buffer::from_file(app, io, location.path);
     // Load the file now so the target offset can be computed.
     buffer_id.tick(app, io);
     let target = buffer_id.offset_from_grid(

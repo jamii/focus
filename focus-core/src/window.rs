@@ -57,6 +57,21 @@ pub fn open_launcher(app: &mut App, io: &mut dyn IO) -> WindowId {
     open(app, io, page_id)
 }
 
+/// Close every open window - which tears down their pages, autosaving -
+/// and then exit. The only path out of a running daemon.
+pub fn quit(app: &mut App, io: &mut dyn IO) {
+    let window_ids: Vec<WindowId> = app
+        .windows
+        .open
+        .iter()
+        .filter_map(|(window_id, open)| open.then_some(window_id))
+        .collect();
+    for window_id in window_ids {
+        window_id.close(app, io);
+    }
+    io.exit();
+}
+
 pub fn open_edit(app: &mut App, io: &mut dyn IO, buffer_id: BufferId) -> WindowId {
     let editor_id = editor::new(app, buffer_id);
     let page_id = page::new_edit(app, editor_id);
@@ -199,7 +214,7 @@ impl WindowId {
                         let dir = page_id
                             .current_path(app)
                             .and_then(|path| path.parent().map(|p| p.to_path_buf()))
-                            .unwrap_or_else(|| io.current_dir());
+                            .unwrap_or_else(|| io.home_dir());
                         let root = io.repo_root(&dir);
                         let dir_page_id = page::new_choose_dir(app, io, root);
                         self.push_page(app, io, dir_page_id);
@@ -210,7 +225,7 @@ impl WindowId {
                         let dir = page_id
                             .current_path(app)
                             .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
-                            .unwrap_or_else(|| io.current_dir());
+                            .unwrap_or_else(|| io.home_dir());
                         let page_id = page::new_open_file(app, dir);
                         self.push_page(app, io, page_id);
                         true
@@ -220,7 +235,7 @@ impl WindowId {
                         let dir = page_id
                             .current_path(app)
                             .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
-                            .unwrap_or_else(|| io.current_dir());
+                            .unwrap_or_else(|| io.home_dir());
                         let page_id = page::new_open_file_from_repo(app, io, dir);
                         self.push_page(app, io, page_id);
                         true
@@ -242,7 +257,7 @@ impl WindowId {
                         let dir = page_id
                             .current_path(app)
                             .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
-                            .unwrap_or_else(|| io.current_dir());
+                            .unwrap_or_else(|| io.home_dir());
                         let page_id = page::new_search_repo(app, dir);
                         self.push_page(app, io, page_id);
                         true
@@ -277,9 +292,8 @@ impl WindowId {
         for page_id in page_stack {
             page_id.teardown(app, io);
         }
-        if app.windows.open_count == 0 {
-            io.exit();
-        }
+        // Closing the last window does not exit: the daemon stays up,
+        // holding its buffers, until a client asks it to quit.
     }
 
     pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing) {

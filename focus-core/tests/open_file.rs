@@ -37,7 +37,7 @@ fn open_file_app(files: &[(&str, &str)]) -> (App, MockIO, WindowId) {
 }
 
 #[test]
-fn path_starts_with_current_dir() {
+fn path_starts_with_home_dir() {
     let (app, _io, _window_id) = open_file_app(&[]);
     assert_eq!(buffer_text(&app, PATH), "/");
 }

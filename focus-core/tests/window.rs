@@ -1,6 +1,7 @@
 use focus_core::drawing::{DrawCommand, FULL_BLOCK};
 use focus_core::input::{InputEvent, Key};
 use focus_core::style::TEXT_COLOR;
+use focus_core::window;
 
 mod common;
 
@@ -64,13 +65,56 @@ fn ctrl_q_on_last_page_leaves_a_scratch_page() {
 }
 
 #[test]
-fn closing_last_window_exits() {
+fn closing_last_window_does_not_exit() {
     let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "base");
 
     app.input(&mut io, window_id, InputEvent::CloseRequested);
 
     assert!(io.open_windows.is_empty());
+    assert!(!io.exited);
+    // The app is still live: it ticks with no windows, and can open one
+    // again, as a daemon does between requests.
+    common::tick(&mut app, &mut io);
+    let window_id = window::open_scratch(&mut app, &mut io);
+    assert_eq!(io.open_windows, [window_id]);
+    // The buffer from the closed window is still there.
+    assert!(
+        app.buffers
+            .keys()
+            .any(|buffer_id| buffer_id.text(&app).to_string() == "base")
+    );
+    app.assert_invariants();
+}
+
+#[test]
+fn quit_closes_every_window_and_exits() {
+    let (mut app, mut io, _window_id) = common::scratch_app();
+    window::open_scratch(&mut app, &mut io);
+
+    window::quit(&mut app, &mut io);
+
+    assert!(io.open_windows.is_empty());
     assert!(io.exited);
+    app.assert_invariants();
+}
+
+#[test]
+fn quit_autosaves() {
+    let path = std::path::PathBuf::from("/tmp/focus-quit-autosave-test.txt");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "before");
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += std::time::Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::text_input(&mut app, &mut io, window_id, " after");
+
+    window::quit(&mut app, &mut io);
+
+    assert_eq!(io.files.get(&path).unwrap().0, b"before after");
+    assert!(io.exited);
+    app.assert_invariants();
 }
 
 #[test]

@@ -37,7 +37,7 @@ const COMPLETE_COMMAND: &str = "complete -C ''";
 const LAUNCH_COMMAND: &str = "eval \"$argv[1] &\"; disown";
 
 pub(crate) fn new(app: &mut App, io: &mut dyn IO) -> PageId {
-    let dir = io.current_dir();
+    let dir = io.home_dir();
     let commands = load_commands(io, &dir);
     let search_id = editor::new_scratch(app);
     let list_id = editor::new_generated(app);

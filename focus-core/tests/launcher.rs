@@ -88,7 +88,7 @@ fn ctrl_enter_uses_the_current_search_launches_disowned_and_closes() {
     assert_eq!(io.detached[0].command, "eval \"$argv[1] &\"; disown");
     assert_eq!(io.detached[0].args, ["footclient"]);
     assert!(io.open_windows.is_empty());
-    assert!(io.exited);
+    assert!(!io.exited);
     app.assert_invariants();
 }
 

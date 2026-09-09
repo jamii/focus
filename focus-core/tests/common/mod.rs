@@ -34,7 +34,7 @@ pub fn file_app(path: PathBuf, text: &str) -> (App, MockIO, WindowId) {
         ),
     );
     let mut app = App::new(&mut io);
-    let buffer_id = buffer::from_file(&mut app, path);
+    let buffer_id = buffer::from_file(&mut app, &mut io, path);
     let window_id = window::open_edit(&mut app, &mut io, buffer_id);
     (app, io, window_id)
 }

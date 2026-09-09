@@ -26,7 +26,7 @@ fn insert_file(io: &mut MockIO, path: &str, text: &str) {
 fn add_file_buffer(app: &mut App, io: &mut MockIO, path: &str, text: &str) -> usize {
     insert_file(io, path, text);
     let index = app.buffers.keys().count();
-    buffer::from_file(app, PathBuf::from(path));
+    buffer::from_file(app, io, PathBuf::from(path));
     index
 }
 

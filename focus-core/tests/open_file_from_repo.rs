@@ -68,7 +68,7 @@ fn starts_from_git_root_when_current_file_is_in_repo() {
 }
 
 #[test]
-fn starts_from_current_dir_without_git_root() {
+fn starts_from_home_dir_without_git_root() {
     let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/repo/src/main.rs"), "main");
     insert_file(&mut io, "/repo/src/lib.rs", "lib");
     insert_file(&mut io, "/repo/readme.md", "readme");

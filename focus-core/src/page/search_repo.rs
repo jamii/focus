@@ -362,7 +362,7 @@ fn edit_page_for_matches(
     path: PathBuf,
     ranges: &[Range<usize>],
 ) -> PageId {
-    let buffer_id = buffer::from_file(app, path);
+    let buffer_id = buffer::from_file(app, io, path);
     // Load the file now so the match ranges can be marked.
     buffer_id.tick(app, io);
     let editor_id = editor::new(app, buffer_id);

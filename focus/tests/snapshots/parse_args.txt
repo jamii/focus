@@ -1,0 +1,42 @@
+/home/j $ focus 
+  Ok(Cli { request: Scratch, replace: false, foreground: false, daemon: false, no_wait: false })
+/home/j $ focus notes.txt
+  Ok(Cli { request: File("/home/j/notes.txt"), replace: false, foreground: false, daemon: false, no_wait: false })
+/home/j $ focus ../other/notes.txt
+  Ok(Cli { request: File("/home/j/../other/notes.txt"), replace: false, foreground: false, daemon: false, no_wait: false })
+/tmp $ focus notes.txt
+  Ok(Cli { request: File("/tmp/notes.txt"), replace: false, foreground: false, daemon: false, no_wait: false })
+/home/j $ focus /abs/notes.txt
+  Ok(Cli { request: File("/abs/notes.txt"), replace: false, foreground: false, daemon: false, no_wait: false })
+/home/j $ focus --launcher
+  Ok(Cli { request: Launcher, replace: false, foreground: false, daemon: false, no_wait: false })
+/home/j $ focus --quit
+  Ok(Cli { request: Quit, replace: false, foreground: false, daemon: false, no_wait: false })
+/home/j $ focus --replace
+  Ok(Cli { request: Scratch, replace: true, foreground: false, daemon: false, no_wait: false })
+/home/j $ focus --replace --foreground
+  Ok(Cli { request: Scratch, replace: true, foreground: true, daemon: false, no_wait: false })
+/home/j $ focus --no-wait
+  Ok(Cli { request: Scratch, replace: false, foreground: false, daemon: false, no_wait: true })
+/home/j $ focus --no-wait notes.txt
+  Ok(Cli { request: File("/home/j/notes.txt"), replace: false, foreground: false, daemon: false, no_wait: true })
+/home/j $ focus --daemon --no-wait
+  Err("--daemon takes no other arguments")
+/home/j $ focus --replace notes.txt
+  Ok(Cli { request: File("/home/j/notes.txt"), replace: true, foreground: false, daemon: false, no_wait: false })
+/home/j $ focus --foreground --launcher
+  Ok(Cli { request: Launcher, replace: false, foreground: true, daemon: false, no_wait: false })
+/home/j $ focus --daemon
+  Ok(Cli { request: Scratch, replace: false, foreground: false, daemon: true, no_wait: false })
+/home/j $ focus --daemon --replace
+  Err("--daemon takes no other arguments")
+/home/j $ focus --daemon notes.txt
+  Err("--daemon takes no other arguments")
+/home/j $ focus notes.txt other.txt
+  Err("expected at most one of a path, --launcher or --quit, got \"notes.txt\" and \"other.txt\"")
+/home/j $ focus --launcher --quit
+  Err("expected at most one of a path, --launcher or --quit, got \"--launcher\" and \"--quit\"")
+/home/j $ focus --nope
+  Err("unknown flag: \"--nope\"")
+/home/j $ focus -
+  Err("unknown flag: \"-\"")

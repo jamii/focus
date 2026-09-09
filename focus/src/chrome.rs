@@ -4,6 +4,7 @@ use std::io::{Read, Write};
 use std::mem::take;
 use std::num::NonZeroU32;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -36,41 +37,46 @@ use focus_core::drawing::Drawing;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::window::WindowId;
 
+use crate::APP_ID;
 use crate::atlas::Atlas;
+use crate::daemon::{self, Incoming, Request};
 use crate::render::Renderer;
 
 const FONT: &[u8] = include_bytes!("../deps/FiraCode-Regular.ttf");
 
-// Distinct title + app_id in debug builds so a niri window-rule can
-// match only the dev instance (e.g. `open-focused false`).
-const APP_ID: &str = if cfg!(debug_assertions) {
-    "focus-debug"
-} else {
-    "focus"
-};
-
 const TARGET_FRAME: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
-pub enum InitialPage {
-    Scratch,
-    File(PathBuf),
-    Launcher,
-}
-
-pub fn run(initial_page: InitialPage) {
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
-    let mut chrome = Chrome::Init {
-        initial_page: Some(initial_page),
-    };
+/// Run the daemon: serve `listener` on a second thread, and turn every
+/// request it reads into a window on this one.
+pub fn run(listener: UnixListener) {
+    let event_loop = EventLoop::<Incoming>::with_user_event().build().unwrap();
+    // Nothing to draw until the first request arrives.
+    event_loop.set_control_flow(ControlFlow::Wait);
+    let proxy = event_loop.create_proxy();
+    daemon::serve(listener, move |incoming| {
+        // The loop is gone only once the daemon is exiting, and then
+        // there is nothing left to deliver to.
+        let _ = proxy.send_event(incoming);
+    });
+    let mut chrome = Chrome::Init(Init {
+        resumed: false,
+        pending: Vec::new(),
+    });
     event_loop.run_app(&mut chrome).unwrap();
 }
 
-// Two-phase: stay in `Init` until the first `resumed` gives us an
-// `ActiveEventLoop`, then transition to `Running` and stay there.
+// Two-phase: stay in `Init` until we have both an `ActiveEventLoop` (from
+// `resumed`) and something to show (a request), then transition to
+// `Running` and stay there. Nothing brings up GL or opens an OS window
+// before the first request, so an idle daemon holds no window at all.
 enum Chrome {
-    Init { initial_page: Option<InitialPage> },
+    Init(Init),
     Running(Running),
+}
+
+struct Init {
+    resumed: bool,
+    pending: Vec<Incoming>,
 }
 
 struct Running {
@@ -97,6 +103,9 @@ struct Backend {
     processes: Vec<ProcessState>,
     // One-shot processes nobody polls, reaped by reap_detached.
     detached: Vec<std::process::Child>,
+    // The connection each window's request arrived on, held open until
+    // the window closes so that a waiting client blocks until then.
+    waiting: HashMap<WindowId, UnixStream>,
 }
 
 struct ProcessState {
@@ -236,8 +245,8 @@ impl IO for IoReal<'_> {
         Ok(())
     }
 
-    fn current_dir(&mut self) -> PathBuf {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))
+    fn canonical_path(&mut self, path: &Path) -> PathBuf {
+        canonical_path(path)
     }
 
     fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>> {
@@ -396,44 +405,25 @@ fn git_root(dir: &Path) -> PathBuf {
     dir.to_path_buf()
 }
 
-impl ApplicationHandler for Chrome {
+impl ApplicationHandler<Incoming> for Chrome {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let initial_page = match self {
-            Chrome::Init { initial_page } => initial_page.take().unwrap(),
-            Chrome::Running(_) => return,
-        };
-        let (mut backend, _initial_window_id) =
-            Backend::bootstrap(event_loop, INITIAL_TITLE, INITIAL_SIZE);
-        let mut app = {
-            let mut io = IoReal {
-                backend: &mut backend,
-                event_loop,
-            };
-            App::new(&mut io)
-        };
-        let mut io = IoReal {
-            backend: &mut backend,
-            event_loop,
-        };
-        match initial_page {
-            InitialPage::File(path) => {
-                let buffer_id = buffer::from_file(&mut app, path);
-                focus_core::window::open_edit(&mut app, &mut io, buffer_id);
-            }
-            InitialPage::Scratch => {
-                focus_core::window::open_scratch(&mut app, &mut io);
-            }
-            InitialPage::Launcher => {
-                focus_core::window::open_launcher(&mut app, &mut io);
-            }
+        if let Chrome::Init(init) = self {
+            init.resumed = true;
+            self.start_if_ready(event_loop);
         }
-        let now = Instant::now();
-        *self = Chrome::Running(Running {
-            app,
-            backend,
-            first_frame: now,
-            last_frame: now,
-        });
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, incoming: Incoming) {
+        match self {
+            Chrome::Init(init) => {
+                // A request can arrive before winit says we are active -
+                // the client queues it on the socket before spawning us -
+                // so hold it until there is an event loop to open on.
+                init.pending.push(incoming);
+                self.start_if_ready(event_loop);
+            }
+            Chrome::Running(running) => running.request(event_loop, incoming),
+        }
     }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, _cause: StartCause) {
@@ -466,7 +456,76 @@ impl ApplicationHandler for Chrome {
     }
 }
 
+impl Chrome {
+    // Bring up GL and the app once there is both an event loop and a
+    // request to serve, then hand over every request held meanwhile.
+    fn start_if_ready(&mut self, event_loop: &ActiveEventLoop) {
+        let Chrome::Init(init) = self else {
+            return;
+        };
+        if !init.resumed || init.pending.is_empty() {
+            return;
+        }
+        let pending = take(&mut init.pending);
+        let (mut backend, _initial_window_id) =
+            Backend::bootstrap(event_loop, INITIAL_TITLE, INITIAL_SIZE);
+        let app = {
+            let mut io = IoReal {
+                backend: &mut backend,
+                event_loop,
+            };
+            App::new(&mut io)
+        };
+        let now = Instant::now();
+        let mut running = Running {
+            app,
+            backend,
+            first_frame: now,
+            last_frame: now,
+        };
+        for incoming in pending {
+            running.request(event_loop, incoming);
+        }
+        *self = Chrome::Running(running);
+    }
+}
+
 impl Running {
+    fn request(&mut self, event_loop: &ActiveEventLoop, incoming: Incoming) {
+        let Incoming {
+            request,
+            connection,
+        } = incoming;
+        let mut io = IoReal {
+            backend: &mut self.backend,
+            event_loop,
+        };
+        let window_id = match request {
+            Request::Scratch => Some(focus_core::window::open_scratch(&mut self.app, &mut io)),
+            // Absolute by construction: `Request::decode` only accepts a
+            // path starting with `/`.
+            Request::File(path) => {
+                let buffer_id = buffer::from_file(&mut self.app, &mut io, path);
+                Some(focus_core::window::open_edit(
+                    &mut self.app,
+                    &mut io,
+                    buffer_id,
+                ))
+            }
+            Request::Launcher => Some(focus_core::window::open_launcher(&mut self.app, &mut io)),
+            Request::Quit => {
+                focus_core::window::quit(&mut self.app, &mut io);
+                None
+            }
+        };
+        // Hold the connection until that window closes: dropping it is
+        // how a waiting client learns it is done. A quit has no window,
+        // so its client is released as the daemon goes down.
+        if let Some(window_id) = window_id {
+            self.backend.waiting.insert(window_id, connection);
+        }
+    }
+
     fn new_events(&mut self, event_loop: &ActiveEventLoop) {
         self.last_frame = Instant::now();
         let mut io = IoReal {
@@ -506,7 +565,15 @@ impl Running {
         self.app.input(&mut io, window_id, translated);
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // A daemon whose windows are all closed has nothing to tick,
+        // draw or animate: idle until a request wakes it, rather than
+        // spinning at the frame rate for as long as it lives.
+        if self.backend.windows.is_empty() {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        }
+        event_loop.set_control_flow(ControlFlow::Poll);
         // Sleep the remainder of the frame budget.
         // winit's `Poll` mode would otherwise spin.
         let elapsed = self.last_frame.elapsed();
@@ -588,6 +655,7 @@ impl Backend {
             last_mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
             processes: Vec::new(),
             detached: Vec::new(),
+            waiting: HashMap::new(),
         };
         let id = WindowId(0);
         backend.register_window(id, window, surface);
@@ -631,6 +699,8 @@ impl Backend {
         if let Some(state) = self.windows.remove(&window_id) {
             self.winit_to_window.remove(&state.window.id());
         }
+        // Releases whoever was waiting on this window.
+        self.waiting.remove(&window_id);
     }
 
     // Drop the one-shot processes that have finished, so they don't linger
@@ -818,6 +888,25 @@ fn spawn_pipe_reader(
             }
         }
     })
+}
+
+/// See `IO::canonical_path`. A free function so it can be tested without
+/// bringing up a window and a GL context.
+pub fn canonical_path(path: &Path) -> PathBuf {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return canonical;
+    }
+    // The file may not exist yet - `focus new-notes.txt` is how you make
+    // one - so fall back to canonicalizing the dir it will live in.
+    // Resolving the dir is what matters: that is where the `..` and the
+    // symlinks are.
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => match std::fs::canonicalize(parent) {
+            Ok(parent) => parent.join(name),
+            Err(_) => path.to_path_buf(),
+        },
+        _ => path.to_path_buf(),
+    }
 }
 
 fn window_attrs(title: &str, size: WindowSize) -> winit::window::WindowAttributes {

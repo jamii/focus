@@ -96,7 +96,7 @@ pub(crate) fn generated(app: &mut App) -> BufferId {
 }
 
 /// Return the existing buffer for `absolute_path`, or create one.
-pub fn from_file(app: &mut App, absolute_path: PathBuf) -> BufferId {
+pub fn from_file(app: &mut App, io: &mut dyn IO, absolute_path: PathBuf) -> BufferId {
     // Callers resolve paths against a known dir; a relative path here would
     // silently read and save relative to the editor's own cwd.
     assert!(
@@ -104,6 +104,10 @@ pub fn from_file(app: &mut App, absolute_path: PathBuf) -> BufferId {
         "buffer path must be absolute: {:?}",
         absolute_path
     );
+    // Buffers are keyed by path, so `focus ../notes.txt` and
+    // `focus /home/j/notes.txt` have to arrive here spelled the same way -
+    // otherwise one file gets two buffers, and whichever saves last wins.
+    let absolute_path = io.canonical_path(&absolute_path);
     for buffer_id in app.buffers.keys() {
         let Source::File(source) = &app.buffers.source[buffer_id] else {
             continue;

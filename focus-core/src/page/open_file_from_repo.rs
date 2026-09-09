@@ -241,7 +241,7 @@ fn submit(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) 
 
 // Replace this picker with the file at `path`.
 fn open_edit_in_window(app: &mut App, io: &mut dyn IO, window_id: WindowId, path: PathBuf) {
-    let buffer_id = buffer::from_file(app, path);
+    let buffer_id = buffer::from_file(app, io, path);
     let editor_id = editor::new(app, buffer_id);
     let page_id = new_edit(app, editor_id);
     window_id.replace_page(app, io, page_id);
