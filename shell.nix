@@ -17,6 +17,15 @@ let
     cargoHash = "sha256-9jlu9PDqQRW3r+ZJrGxDXB533gTa8XexZuK5LXcNY3s=";
     doCheck = false;
   };
+  # Needed at runtime by the built binaries, not just at build time.
+  graphicsLibs = [
+    pkgs.wayland
+    pkgs.libxkbcommon
+    pkgs.libGL
+    # Mesa supplies the actual EGL/GL driver (llvmpipe for software
+    # rendering); libGL alone is just libglvnd, the dispatcher.
+    pkgs.mesa
+  ];
 in
 pkgs.mkShell {
   # honggfuzz's libhfuzz redefines libc symbols (strcpy, etc.) as weak
@@ -25,13 +34,7 @@ pkgs.mkShell {
   # producing redeclaration errors. Disable fortify in this shell.
   hardeningDisable = [ "fortify" "fortify3" ];
 
-  buildInputs = [
-    pkgs.wayland
-    pkgs.libxkbcommon
-    pkgs.libGL
-    # Mesa supplies the actual EGL/GL driver (llvmpipe for software
-    # rendering); libGL alone is just libglvnd, the dispatcher.
-    pkgs.mesa
+  buildInputs = graphicsLibs ++ [
     # honggfuzz's libhfuzz build needs bfd.h (binutils) and libunwind.
     pkgs.binutils-unwrapped
     pkgs.libunwind
@@ -48,12 +51,21 @@ pkgs.mkShell {
     pkgs.sway-unwrapped
   ];
 
-  LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
-    pkgs.wayland
-    pkgs.libxkbcommon
-    pkgs.libGL
-    pkgs.mesa
-  ];
+  LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath graphicsLibs;
+
+  # winit and glutin `dlopen` libwayland-client, libxkbcommon and libEGL
+  # rather than linking them, so the loader only finds them via
+  # LD_LIBRARY_PATH - which exists inside this shell and nowhere else, so
+  # the binaries built here would only run inside it. Bake the same paths
+  # into the RUNPATH instead: a `dlopen` from the executable searches the
+  # executable's RUNPATH, so `target/release/focus` then works anywhere.
+  #
+  # This is only the client side of GL. The actual driver still comes from
+  # the system: nixpkgs' libglvnd looks for its vendor manifest in
+  # /run/opengl-driver/share/glvnd/egl_vendor.d, which is where NixOS puts
+  # the real one. The two variables at the bottom of this file point it at
+  # the mesa above instead, for the headless tests.
+  RUSTFLAGS = "-C link-arg=-Wl,-rpath,${pkgs.lib.makeLibraryPath graphicsLibs}";
 
   # Tell libglvnd where to find Mesa's EGL vendor manifest, and where
   # Mesa's DRI driver shared objects live (llvmpipe ships as a DRI driver

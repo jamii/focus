@@ -184,6 +184,37 @@ fn a_client_waits_until_its_window_closes() {
     assert!(sway.wait_for_windows(1));
 }
 
+// The binary has to run outside the nix-shell that built it. winit and
+// glutin `dlopen` libwayland-client, libxkbcommon and libEGL, and inside
+// the shell those resolve only through LD_LIBRARY_PATH - which a normal
+// desktop session does not have. shell.nix bakes the same paths into the
+// RUNPATH so that `dlopen` finds them anyway; this is what notices when
+// it stops doing that.
+#[test]
+fn the_daemon_runs_without_ld_library_path() {
+    if !sway_available() {
+        eprintln!("skipping: sway is not on PATH");
+        return;
+    }
+    let sway = Sway::start_named("no-ld-library-path");
+
+    // The daemon inherits the client's environment, so clearing it here
+    // clears it for the process that actually opens the window.
+    let status = Command::new(FOCUS)
+        .args(["--no-wait", "a.txt"])
+        .current_dir(&sway.dir)
+        .envs(sway.env())
+        .env_remove("LD_LIBRARY_PATH")
+        .status()
+        .unwrap();
+    assert!(status.success(), "focus failed: {status}");
+    assert!(
+        sway.wait_for_windows(1),
+        "no window without LD_LIBRARY_PATH - is the RUNPATH still baked in?\n{}",
+        sway.log()
+    );
+}
+
 // A headless sway, its runtime dir, and everything spawned into it. The
 // Drop impl runs even when an assertion fails, so a panicking test does
 // not leave a compositor and a daemon behind.
