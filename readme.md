@@ -55,6 +55,7 @@ Testing:
 - [x] E2E fuzzing
 - [ ] Replayable history of live sessions, for later debugging
 - [ ] Wasm build of core to make sure no IO sneaks in
+- [ ] Max out fuzzer coverage
 
 Arch:
 

@@ -14,6 +14,7 @@ use crate::{
 mod choose_command;
 mod choose_dir;
 mod edit;
+mod launcher;
 mod open_buffer;
 mod open_file;
 mod open_file_from_repo;
@@ -24,6 +25,7 @@ mod search_repo;
 pub(crate) use choose_command::new as new_choose_command;
 pub(crate) use choose_dir::new as new_choose_dir;
 pub(crate) use edit::new as new_edit;
+pub(crate) use launcher::new as new_launcher;
 pub(crate) use open_buffer::new as new_open_buffer;
 pub(crate) use open_file::new as new_open_file;
 pub(crate) use open_file_from_repo::new as new_open_file_from_repo;
@@ -49,6 +51,7 @@ enum PageContent {
     SearchBuffer(search_buffer::State),
     SearchRepo(search_repo::State),
     Edit,
+    Launcher(launcher::State),
     OpenBuffer(open_buffer::State),
     OpenFile,
     OpenFileFromRepo(open_file_from_repo::State),
@@ -62,6 +65,7 @@ enum PageContentKind {
     SearchBuffer,
     SearchRepo,
     Edit,
+    Launcher,
     OpenBuffer,
     OpenFile,
     OpenFileFromRepo,
@@ -76,6 +80,7 @@ impl PageContent {
             PageContent::SearchBuffer(_) => PageContentKind::SearchBuffer,
             PageContent::SearchRepo(_) => PageContentKind::SearchRepo,
             PageContent::Edit => PageContentKind::Edit,
+            PageContent::Launcher(_) => PageContentKind::Launcher,
             PageContent::OpenBuffer(_) => PageContentKind::OpenBuffer,
             PageContent::OpenFile => PageContentKind::OpenFile,
             PageContent::OpenFileFromRepo(_) => PageContentKind::OpenFileFromRepo,
@@ -139,6 +144,7 @@ pub(crate) fn assert_invariants(app: &App) {
                 assert!(editor_ids.len() == search_repo::EDITOR_COUNT)
             }
             PageContentKind::Edit => assert!(editor_ids.len() == edit::EDITOR_COUNT),
+            PageContentKind::Launcher => assert!(editor_ids.len() == launcher::EDITOR_COUNT),
             PageContentKind::OpenBuffer => assert!(editor_ids.len() == open_buffer::EDITOR_COUNT),
             PageContentKind::OpenFile => assert!(editor_ids.len() == open_file::EDITOR_COUNT),
             PageContentKind::OpenFileFromRepo => {
@@ -180,6 +186,7 @@ impl PageId {
             PageContentKind::SearchBuffer => search_buffer::tick(self, app, io),
             PageContentKind::SearchRepo => search_repo::tick(self, app, io),
             PageContentKind::Edit => edit::tick(self, app, io),
+            PageContentKind::Launcher => launcher::tick(self, app, io),
             PageContentKind::OpenBuffer => open_buffer::tick(self, app, io),
             PageContentKind::OpenFile => open_file::tick(self, app, io),
             PageContentKind::OpenFileFromRepo => open_file_from_repo::tick(self, app, io),
@@ -198,6 +205,7 @@ impl PageId {
             PageContentKind::SearchBuffer => search_buffer::duplicate(self, app, io),
             PageContentKind::SearchRepo => search_repo::duplicate(self, app, io),
             PageContentKind::Edit => edit::duplicate(self, app, io),
+            PageContentKind::Launcher => launcher::duplicate(self, app, io),
             PageContentKind::OpenBuffer => open_buffer::duplicate(self, app, io),
             PageContentKind::OpenFile => open_file::duplicate(self, app, io),
             PageContentKind::OpenFileFromRepo => open_file_from_repo::duplicate(self, app, io),
@@ -216,6 +224,7 @@ impl PageId {
             PageContentKind::SearchBuffer
             | PageContentKind::SearchRepo
             | PageContentKind::Edit
+            | PageContentKind::Launcher
             | PageContentKind::OpenBuffer
             | PageContentKind::OpenFile
             | PageContentKind::OpenFileFromRepo
@@ -265,6 +274,7 @@ impl PageId {
             PageContentKind::SearchBuffer => search_buffer::input(self, app, io, window_id, &event),
             PageContentKind::SearchRepo => search_repo::input(self, app, io, window_id, &event),
             PageContentKind::Edit => edit::input(self, app, io, window_id, &event),
+            PageContentKind::Launcher => launcher::input(self, app, io, window_id, &event),
             PageContentKind::OpenBuffer => open_buffer::input(self, app, io, window_id, &event),
             PageContentKind::OpenFile => open_file::input(self, app, io, window_id, &event),
             PageContentKind::OpenFileFromRepo => {
@@ -311,6 +321,7 @@ impl PageId {
                 PageContentKind::SearchBuffer => search_buffer::layout(page_rect, cell_size),
                 PageContentKind::SearchRepo => search_repo::layout(page_rect, cell_size),
                 PageContentKind::Edit => edit::layout(page_rect, cell_size),
+                PageContentKind::Launcher => launcher::layout(page_rect, cell_size),
                 PageContentKind::OpenBuffer => open_buffer::layout(page_rect, cell_size),
                 PageContentKind::OpenFile => open_file::layout(page_rect, cell_size),
                 PageContentKind::OpenFileFromRepo => {
@@ -357,6 +368,7 @@ impl PageId {
             }
             PageContentKind::SearchRepo => search_repo::handle_edits(self, app, editor_ix, diff),
             PageContentKind::Edit => edit::handle_edits(self, app, editor_ix, diff),
+            PageContentKind::Launcher => launcher::handle_edits(self, app, editor_ix, diff),
             PageContentKind::OpenBuffer => open_buffer::handle_edits(self, app, editor_ix, diff),
             PageContentKind::OpenFile => open_file::handle_edits(self, app, editor_ix, diff),
             PageContentKind::OpenFileFromRepo => {
@@ -381,6 +393,7 @@ impl PageId {
             PageContentKind::SearchBuffer
             | PageContentKind::SearchRepo
             | PageContentKind::Edit
+            | PageContentKind::Launcher
             | PageContentKind::OpenBuffer
             | PageContentKind::OpenFile
             | PageContentKind::OpenFileFromRepo
@@ -394,6 +407,7 @@ impl PageId {
             PageContentKind::SearchBuffer => search_buffer::current_path(self, app),
             PageContentKind::SearchRepo => search_repo::current_path(self, app),
             PageContentKind::Edit => edit::current_path(self, app),
+            PageContentKind::Launcher => launcher::current_path(self, app),
             PageContentKind::OpenBuffer => open_buffer::current_path(self, app),
             PageContentKind::OpenFile => open_file::current_path(self, app),
             PageContentKind::OpenFileFromRepo => open_file_from_repo::current_path(self, app),

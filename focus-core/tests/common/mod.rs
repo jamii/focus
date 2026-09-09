@@ -133,6 +133,9 @@ pub fn mouse_button(
 
 pub fn mouse_moved(app: &mut App, io: &mut MockIO, window_id: WindowId, position: [f32; 2]) {
     io.mouse_position = position;
+    // A newly mapped Wayland window receives a synthetic CursorMoved before
+    // real motion. Model that initial event before the deliberate movement.
+    app.input(io, window_id, InputEvent::MouseMoved { position });
     app.input(io, window_id, InputEvent::MouseMoved { position });
 }
 

@@ -15,6 +15,7 @@ pub struct Windows {
 
     pub(crate) page_stack: Map<WindowId, Vec<PageId>>,
     pub(crate) open: Map<WindowId, bool>,
+    ignore_first_mouse_move: Map<WindowId, bool>,
 }
 
 impl Windows {
@@ -24,6 +25,7 @@ impl Windows {
             open_count: 0,
             page_stack: Map::new(),
             open: Map::new(),
+            ignore_first_mouse_move: Map::new(),
         }
     }
 }
@@ -34,6 +36,7 @@ pub(crate) fn new(app: &mut App, page_id: PageId) -> WindowId {
     app.windows.open_count += 1;
     app.windows.page_stack.insert(window_id, vec![page_id]);
     app.windows.open.insert(window_id, true);
+    app.windows.ignore_first_mouse_move.insert(window_id, true);
     window_id
 }
 
@@ -49,6 +52,11 @@ pub fn open_scratch(app: &mut App, io: &mut dyn IO) -> WindowId {
     open(app, io, page_id)
 }
 
+pub fn open_launcher(app: &mut App, io: &mut dyn IO) -> WindowId {
+    let page_id = page::new_launcher(app, io);
+    open(app, io, page_id)
+}
+
 pub fn open_edit(app: &mut App, io: &mut dyn IO, buffer_id: BufferId) -> WindowId {
     let editor_id = editor::new(app, buffer_id);
     let page_id = page::new_edit(app, editor_id);
@@ -59,6 +67,7 @@ pub(crate) fn assert_invariants(app: &App) {
     let windows = &app.windows;
     assert_eq!(windows.page_stack.len(), windows.window_count);
     assert_eq!(windows.open.len(), windows.window_count);
+    assert_eq!(windows.ignore_first_mouse_move.len(), windows.window_count);
     assert_eq!(
         windows.open.values().filter(|open| **open).count(),
         windows.open_count
@@ -146,6 +155,13 @@ impl WindowId {
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
         assert!(app.windows.open[self], "input for closed window {:?}", self,);
+
+        if matches!(event, InputEvent::MouseMoved { .. })
+            && app.windows.ignore_first_mouse_move[self]
+        {
+            app.windows.ignore_first_mouse_move[self] = false;
+            return;
+        }
 
         let handled = match &event {
             InputEvent::CloseRequested => {
@@ -243,7 +259,7 @@ impl WindowId {
         }
     }
 
-    fn close(self, app: &mut App, io: &mut dyn IO) {
+    pub(crate) fn close(self, app: &mut App, io: &mut dyn IO) {
         assert!(
             app.windows.open[self],
             "tried to close window {:?}, but it is not open",

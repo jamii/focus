@@ -35,6 +35,8 @@ pub struct MockIO {
     pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
     pub git_roots: Vec<PathBuf>,
     pub system_time: SystemTime,
+    pub next_process_output: Vec<u8>,
+    pub next_process_exit_code: Option<i32>,
     pub processes: Vec<MockProcess>,
     pub detached: Vec<DetachedProcess>,
 }
@@ -74,6 +76,8 @@ impl MockIO {
             files: HashMap::new(),
             git_roots: Vec::new(),
             system_time: SystemTime::UNIX_EPOCH,
+            next_process_output: Vec::new(),
+            next_process_exit_code: None,
             processes: Vec::new(),
             detached: Vec::new(),
         }
@@ -269,8 +273,8 @@ impl IO for MockIO {
             dir: dir.to_path_buf(),
             command: command.into(),
             args: to_bstrings(args),
-            pending_output: Vec::new(),
-            exit_code: None,
+            pending_output: take(&mut self.next_process_output),
+            exit_code: self.next_process_exit_code.take(),
             killed: false,
         });
         ProcessId(self.processes.len() - 1)

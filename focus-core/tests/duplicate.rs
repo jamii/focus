@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime};
 use focus_core::app::App;
 use focus_core::fuzz::MockIO;
 use focus_core::input::{Key, NamedKey};
-use focus_core::window::WindowId;
+use focus_core::window::{self, WindowId};
 
 mod common;
 
@@ -108,6 +108,26 @@ fn every_page_kind_duplicates_and_renders_the_same() {
         );
         app.assert_invariants();
     }
+
+    // The launcher has no shortcut from an editor page, so construct it as
+    // the initial page and cover its duplicate path separately.
+    let mut io = MockIO::new();
+    io.next_process_output = b"cargo\tcommand\nfoot\tcommand\n".to_vec();
+    io.next_process_exit_code = Some(0);
+    let mut app = App::new(&mut io);
+    let window_id = window::open_launcher(&mut app, &mut io);
+    common::tick(&mut app, &mut io);
+
+    let copy_window_id = duplicate(&mut app, &mut io, window_id);
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(io.open_windows.len(), 2, "launcher");
+    assert_eq!(
+        render(&mut app, window_id),
+        render(&mut app, copy_window_id),
+        "launcher did not copy",
+    );
+    app.assert_invariants();
 }
 
 #[test]
