@@ -86,8 +86,16 @@ pub trait IO {
     fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>>;
     fn repo_files(&mut self, dir: &Path) -> std::io::Result<RepoFiles>;
     /// Search every file in the repo containing `dir` for the literal string
-    /// `pattern`. Returns one match per occurrence, in file order.
-    fn repo_search(&mut self, dir: &Path, pattern: &BStr) -> std::io::Result<RepoSearch>;
+    /// `pattern`. Returns one match per occurrence, in file order, stopping
+    /// after `match_limit` matches and keeping at most `line_limit` bytes of
+    /// each match's line.
+    fn repo_search(
+        &mut self,
+        dir: &Path,
+        pattern: &BStr,
+        match_limit: usize,
+        line_limit: usize,
+    ) -> std::io::Result<RepoSearch>;
     /// The root of the repo containing `dir`, or `dir` itself if there is
     /// no containing repo.
     fn repo_root(&mut self, dir: &Path) -> PathBuf;
@@ -131,6 +139,9 @@ pub struct RepoFiles {
 pub struct RepoSearch {
     pub root: PathBuf,
     pub matches: Vec<RepoMatch>,
+    /// True if the search stopped at the match limit, so `matches` is only a
+    /// prefix of the matches in the repo.
+    pub truncated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -141,7 +152,7 @@ pub struct RepoMatch {
     /// Byte range of the match within the file.
     pub range: Range<usize>,
     /// Text of the line containing the start of the match, without the
-    /// trailing newline.
+    /// trailing newline, truncated to the line limit.
     pub line_text: BString,
 }
 

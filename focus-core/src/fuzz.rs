@@ -232,11 +232,21 @@ impl IO for MockIO {
         })
     }
 
-    fn repo_search(&mut self, dir: &Path, pattern: &BStr) -> std::io::Result<RepoSearch> {
+    fn repo_search(
+        &mut self,
+        dir: &Path,
+        pattern: &BStr,
+        match_limit: usize,
+        line_limit: usize,
+    ) -> std::io::Result<RepoSearch> {
         let root = self.repo_root(dir);
         let mut matches = Vec::new();
         if pattern.is_empty() {
-            return Ok(RepoSearch { root, matches });
+            return Ok(RepoSearch {
+                root,
+                matches,
+                truncated: false,
+            });
         }
         let mut entries: Vec<(PathBuf, &Vec<u8>)> = self
             .files
@@ -248,7 +258,7 @@ impl IO for MockIO {
             })
             .collect();
         entries.sort();
-        for (relative_path, contents) in entries {
+        'files: for (relative_path, contents) in entries {
             let contents = contents.as_bstr();
             let mut search_start = 0;
             while let Some(relative_start) = contents[search_start..].find(pattern) {
@@ -266,6 +276,7 @@ impl IO for MockIO {
                     .find_byte(b'\n')
                     .map(|ix| start + ix)
                     .unwrap_or(contents.len());
+                let line_end = line_end.min(line_start + line_limit);
                 matches.push(RepoMatch {
                     relative_path: relative_path.clone(),
                     line,
@@ -273,9 +284,20 @@ impl IO for MockIO {
                     line_text: contents[line_start..line_end].into(),
                 });
                 search_start = end;
+                // One more than the limit is enough to know the search was
+                // truncated.
+                if matches.len() > match_limit {
+                    break 'files;
+                }
             }
         }
-        Ok(RepoSearch { root, matches })
+        let truncated = matches.len() > match_limit;
+        matches.truncate(match_limit);
+        Ok(RepoSearch {
+            root,
+            matches,
+            truncated,
+        })
     }
 
     fn repo_root(&mut self, dir: &Path) -> PathBuf {

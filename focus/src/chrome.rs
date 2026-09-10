@@ -291,43 +291,14 @@ impl IO for IoReal<'_> {
         })
     }
 
-    fn repo_search(&mut self, dir: &Path, pattern: &BStr) -> std::io::Result<RepoSearch> {
-        let root = git_root(dir);
-        let pattern = pattern.to_str().map_err(std::io::Error::other)?;
-        let matcher = grep_regex::RegexMatcherBuilder::new()
-            .fixed_strings(true)
-            .build(pattern)
-            .map_err(|error| std::io::Error::other(error.to_string()))?;
-        let mut searcher = grep_searcher::SearcherBuilder::new()
-            .line_number(true)
-            .binary_detection(grep_searcher::BinaryDetection::quit(0))
-            .build();
-        let mut matches = Vec::new();
-        for result in ignore::WalkBuilder::new(&root).build() {
-            let entry = result.map_err(|error| std::io::Error::other(error.to_string()))?;
-            let Some(file_type) = entry.file_type() else {
-                continue;
-            };
-            if !file_type.is_file() {
-                continue;
-            }
-            let Ok(relative_path) = entry.path().strip_prefix(&root) else {
-                continue;
-            };
-            if relative_path.as_os_str().is_empty() {
-                continue;
-            }
-            searcher.search_path(
-                &matcher,
-                entry.path(),
-                MatchSink {
-                    matcher: &matcher,
-                    relative_path,
-                    matches: &mut matches,
-                },
-            )?;
-        }
-        Ok(RepoSearch { root, matches })
+    fn repo_search(
+        &mut self,
+        dir: &Path,
+        pattern: &BStr,
+        match_limit: usize,
+        line_limit: usize,
+    ) -> std::io::Result<RepoSearch> {
+        repo_search(dir, pattern, match_limit, line_limit)
     }
 
     fn repo_root(&mut self, dir: &Path) -> PathBuf {
@@ -359,6 +330,8 @@ impl IO for IoReal<'_> {
 struct MatchSink<'a> {
     matcher: &'a grep_regex::RegexMatcher,
     relative_path: &'a Path,
+    match_limit: usize,
+    line_limit: usize,
     matches: &'a mut Vec<RepoMatch>,
 }
 
@@ -383,6 +356,9 @@ impl grep_searcher::Sink for MatchSink<'_> {
         if let Some(stripped) = line_text.strip_suffix(b"\r") {
             line_text = stripped;
         }
+        // A minified file has megabytes on one line, and every match on that
+        // line would keep its own copy.
+        let line_text = &line_text[..line_text.len().min(self.line_limit)];
         self.matcher
             .find_iter(bytes, |found| {
                 self.matches.push(RepoMatch {
@@ -391,11 +367,71 @@ impl grep_searcher::Sink for MatchSink<'_> {
                     range: base + found.start()..base + found.end(),
                     line_text: line_text.into(),
                 });
-                true
+                // One more than the limit is enough to know the search was
+                // truncated.
+                self.matches.len() <= self.match_limit
             })
             .map_err(std::io::Error::other)?;
-        Ok(true)
+        Ok(self.matches.len() <= self.match_limit)
     }
+}
+
+pub fn repo_search(
+    dir: &Path,
+    pattern: &BStr,
+    match_limit: usize,
+    line_limit: usize,
+) -> std::io::Result<RepoSearch> {
+    let root = git_root(dir);
+    let pattern = pattern.to_str().map_err(std::io::Error::other)?;
+    let matcher = grep_regex::RegexMatcherBuilder::new()
+        .fixed_strings(true)
+        .build(pattern)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let mut searcher = grep_searcher::SearcherBuilder::new()
+        .line_number(true)
+        .binary_detection(grep_searcher::BinaryDetection::quit(0))
+        .build();
+    let mut matches = Vec::new();
+    for result in ignore::WalkBuilder::new(&root).build() {
+        // Stop walking once the limit is passed, rather than searching the
+        // whole repo and throwing the rest away. One match past the limit is
+        // enough to know the search was truncated.
+        if matches.len() > match_limit {
+            break;
+        }
+        let entry = result.map_err(|error| std::io::Error::other(error.to_string()))?;
+        let Some(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_file() {
+            continue;
+        }
+        let Ok(relative_path) = entry.path().strip_prefix(&root) else {
+            continue;
+        };
+        if relative_path.as_os_str().is_empty() {
+            continue;
+        }
+        searcher.search_path(
+            &matcher,
+            entry.path(),
+            MatchSink {
+                matcher: &matcher,
+                relative_path,
+                match_limit,
+                line_limit,
+                matches: &mut matches,
+            },
+        )?;
+    }
+    let truncated = matches.len() > match_limit;
+    matches.truncate(match_limit);
+    Ok(RepoSearch {
+        root,
+        matches,
+        truncated,
+    })
 }
 
 fn git_root(dir: &Path) -> PathBuf {

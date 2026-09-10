@@ -198,3 +198,55 @@ fn repo_search_text_seeds_search_buffer() {
     assert_eq!(buffer_text(&app, buffers_before), "foo");
     app.assert_invariants();
 }
+
+#[test]
+fn match_list_stops_at_the_limit() {
+    // A short pattern in a big repo matches most lines of most files.
+    // Collecting all of them used to cost more memory than the machine has.
+    // The limits the page asks for, from page/search_repo.rs.
+    let limit = 1000;
+    let text = "foo\n".repeat(limit + 100);
+    let (mut app, mut io, window_id) =
+        search_repo_app(&[("/a.txt", text.as_str()), ("/b.txt", text.as_str())]);
+    common::text_input(&mut app, &mut io, window_id, "foo");
+
+    common::tick(&mut app, &mut io);
+
+    let list = buffer_text(&app, LIST);
+    let lines: Vec<&str> = list.split('\n').collect();
+    // One line per match, plus the truncation note.
+    assert_eq!(lines.len(), limit + 1);
+    assert_eq!(lines[0], "a.txt:1 foo");
+    assert_eq!(lines[limit - 1], format!("a.txt:{} foo", limit));
+    assert_eq!(lines[limit], format!("[first {} matches only]", limit));
+
+    // The note line has no match behind it, so it previews nothing and
+    // opens nothing.
+    for _ in 0..limit {
+        common::control_key(&mut app, &mut io, window_id, Key::Character("k"));
+    }
+    common::tick(&mut app, &mut io);
+    assert_eq!(buffer_text(&app, PREVIEW), "");
+    let buffers_before = app.buffers.keys().count();
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    assert_eq!(app.buffers.keys().count(), buffers_before);
+    app.assert_invariants();
+}
+
+#[test]
+fn long_match_lines_are_truncated() {
+    // One minified file would otherwise hold megabytes on a single line,
+    // once per match on that line.
+    let line_limit = 500;
+    let text = format!("foo{}", "x".repeat(2 * line_limit));
+    let (mut app, mut io, window_id) = search_repo_app(&[("/a.txt", text.as_str())]);
+    common::text_input(&mut app, &mut io, window_id, "foo");
+
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(
+        buffer_text(&app, LIST),
+        format!("a.txt:1 foo{}", "x".repeat(line_limit - 3))
+    );
+    app.assert_invariants();
+}
