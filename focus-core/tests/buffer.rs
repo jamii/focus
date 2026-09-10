@@ -56,6 +56,10 @@ impl IO for ErrorIO {
         self.inner.set_clipboard_text(text);
     }
 
+    fn log(&mut self, message: std::fmt::Arguments<'_>) {
+        self.inner.log(message);
+    }
+
     fn exit(&mut self) {
         self.inner.exit();
     }
@@ -555,6 +559,10 @@ fn explicit_save_error_leaves_file_dirty_until_next_successful_save() {
     io.file_write_error = Some(std::io::ErrorKind::PermissionDenied);
     error_control_key(&mut app, &mut io, window_id, Key::Character("s"));
     assert_eq!(io.inner.files.get(&path).unwrap().0, b"before");
+    assert_eq!(
+        io.inner.logs,
+        ["error saving /tmp/focus-buffer-explicit-save-error-test.txt: permission denied"]
+    );
 
     io.file_write_error = None;
     io.inner.frame_start += Duration::from_secs(1);

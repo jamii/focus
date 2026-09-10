@@ -201,6 +201,10 @@ impl IO for IoReal<'_> {
         let _ = self.backend.clipboard.set_text(text.to_string());
     }
 
+    fn log(&mut self, message: std::fmt::Arguments<'_>) {
+        eprintln!("{message}");
+    }
+
     fn exit(&mut self) {
         self.event_loop.exit();
     }

@@ -508,7 +508,7 @@ impl BufferId {
                 else {
                     unreachable!();
                 };
-                eprintln!("error saving {}: {}", absolute_path.display(), err);
+                crate::log!(io, "error saving {}: {}", absolute_path.display(), err);
             }
         }
     }

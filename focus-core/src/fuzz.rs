@@ -32,6 +32,7 @@ pub struct MockIO {
     pub frame_start: Duration,
     pub mouse_position: [f32; 2],
     pub clipboard: Option<BString>,
+    pub logs: Vec<String>,
     pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
     pub git_roots: Vec<PathBuf>,
     pub system_time: SystemTime,
@@ -73,6 +74,7 @@ impl MockIO {
             frame_start: Duration::ZERO,
             mouse_position: [0.0, 0.0],
             clipboard: None,
+            logs: Vec::new(),
             files: HashMap::new(),
             git_roots: Vec::new(),
             system_time: SystemTime::UNIX_EPOCH,
@@ -102,6 +104,10 @@ impl IO for MockIO {
 
     fn set_clipboard_text(&mut self, text: BString) {
         self.clipboard = Some(text);
+    }
+
+    fn log(&mut self, message: std::fmt::Arguments<'_>) {
+        self.logs.push(message.to_string());
     }
 
     fn request_redraw(&mut self, _window_id: WindowId) {}
