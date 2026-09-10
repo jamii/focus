@@ -109,8 +109,15 @@ impl IO for ErrorIO {
         self.inner.repo_files(dir)
     }
 
-    fn repo_search(&mut self, dir: &Path, pattern: &BStr) -> std::io::Result<RepoSearch> {
-        self.inner.repo_search(dir, pattern)
+    fn repo_search(
+        &mut self,
+        dir: &Path,
+        pattern: &BStr,
+        match_limit: usize,
+        line_limit: usize,
+    ) -> std::io::Result<RepoSearch> {
+        self.inner
+            .repo_search(dir, pattern, match_limit, line_limit)
     }
 
     fn repo_root(&mut self, dir: &Path) -> PathBuf {

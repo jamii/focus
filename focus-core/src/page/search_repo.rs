@@ -35,6 +35,16 @@ pub(super) const EDITOR_COUNT: usize = 3;
 
 const SEARCH_IX: usize = 1;
 
+// The most matches to ask `repo_search` for. A short pattern in a big
+// directory matches most lines of most files, and collecting all of them
+// costs more memory than the machine has.
+const MATCH_LIMIT: usize = 1000;
+
+// The most bytes of each match's line to ask `repo_search` for. One minified
+// file can otherwise hold megabytes on a single line, once per match on that
+// line.
+const LINE_LIMIT: usize = 500;
+
 pub(crate) fn new(app: &mut App, dir: PathBuf) -> PageId {
     let preview_id = editor::new_generated(app);
     let search_id = editor::new_scratch(app);
@@ -241,9 +251,13 @@ fn refresh_matches(app: &mut App, io: &mut dyn IO, page_id: PageId, search_id: E
     let (root, matches, list_text) = if pattern.is_empty() {
         (None, Vec::new(), BString::default())
     } else {
-        match io.repo_search(&dir, pattern.as_bstr()) {
-            Ok(RepoSearch { root, matches }) => {
-                let list_text = matches_text(&matches);
+        match io.repo_search(&dir, pattern.as_bstr(), MATCH_LIMIT, LINE_LIMIT) {
+            Ok(RepoSearch {
+                root,
+                matches,
+                truncated,
+            }) => {
+                let list_text = matches_text(&matches, truncated);
                 (Some(root), matches, list_text)
             }
             Err(error) => (
@@ -263,8 +277,16 @@ fn refresh_matches(app: &mut App, io: &mut dyn IO, page_id: PageId, search_id: E
     }
 }
 
-fn matches_text(matches: &[RepoMatch]) -> BString {
-    let lines = matches.iter().map(display_match);
+fn matches_text(matches: &[RepoMatch], truncated: bool) -> BString {
+    let mut lines: Vec<BString> = matches.iter().map(display_match).collect();
+    // The extra line has no match behind it, so selecting it shows no
+    // preview and opens nothing.
+    if truncated {
+        lines.push(BString::from(format!(
+            "[first {} matches only]",
+            MATCH_LIMIT
+        )));
+    }
     bstr::join("\n", lines).into()
 }
 
