@@ -56,6 +56,7 @@ pub trait IO {
     fn rebuild_atlas(&mut self, font_size: f32) -> [u32; 2];
     fn get_clipboard_text(&mut self) -> Option<BString>;
     fn set_clipboard_text(&mut self, text: BString);
+    fn log(&mut self, message: std::fmt::Arguments<'_>);
     fn exit(&mut self);
 
     fn file_mtime(&mut self, path: &Path) -> std::io::Result<SystemTime>;
