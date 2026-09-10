@@ -1,0 +1,12 @@
+Scratch
+  ""
+File("/home/j/notes.txt")
+  "/home/j/notes.txt"
+File("/a/with\nnewline")
+  "/a/with\nnewline"
+File("/\xFF\xFEx")
+  "/\xff\xfex"
+Launcher
+  "--launcher"
+Quit
+  "--quit"

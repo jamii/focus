@@ -1,0 +1,13 @@
+[package]
+name = "focus-hfuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "fuzz_hfuzz"
+path = "src/main.rs"
+
+[dependencies]
+focus-core = { path = "../focus-core" }
+honggfuzz = "0.5"

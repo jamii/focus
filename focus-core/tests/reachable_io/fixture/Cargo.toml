@@ -1,0 +1,12 @@
+[package]
+name = "focus-core-io-reachability"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+focus-core = { path = "../../../" }
+
+# Keep this fixture independent from the parent workspace so Cackle analyzes
+# only the core reachability root and its dependencies.
+[workspace]
