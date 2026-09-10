@@ -35,6 +35,11 @@ pub(super) const EDITOR_COUNT: usize = 3;
 
 const SEARCH_IX: usize = 1;
 
+// How much of the selected match's file to preview. The match sits in the
+// middle of the window, so a match deep in a big file costs no more to
+// preview than one at the top.
+const PREVIEW_BYTES: usize = 10 * 1024;
+
 // The most matches to ask `repo_search` for. A short pattern in a big
 // directory matches most lines of most files, and collecting all of them
 // costs more memory than the machine has.
@@ -120,12 +125,17 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     // Mark the selected line, if there is one.
     app.editors.gutter_marker[list_id] = has_selection(app, page_id);
 
-    // Update preview text: the selected match's file, with the match marked.
+    // Update preview text: a window of the selected match's file around the
+    // match, with the match marked.
     let selected = selected_match(app, page_id, list_id);
+    let window_start = match &selected {
+        Some(entry) => entry.range.start.saturating_sub(PREVIEW_BYTES / 2),
+        None => 0,
+    };
     let preview_text = match &selected {
         Some(entry) => {
             let path = state(app, page_id).root.join(&entry.relative_path);
-            match io.file_read(&path) {
+            match io.file_read_at(&path, window_start, PREVIEW_BYTES) {
                 Ok(contents) => BString::from(contents),
                 Err(error) => BString::from(error.to_string()),
             }
@@ -137,12 +147,14 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
         preview_buffer_id.replace(app, preview_text.as_bstr());
         preview_id.cursor_reset(app);
     }
-    // The range check fails if the file changed since the search.
+    // The range check fails if the match no longer fits in the window -
+    // because the file changed since the search, or because the match is
+    // longer than half of it.
     if let Some(entry) = &selected
-        && entry.range.end <= preview_text.len()
+        && let Some(range) = window_range(&entry.range, window_start, preview_text.len())
     {
-        preview_id.set_marked_ranges(app, &[entry.range.clone()]);
-        preview_id.scroll_offset_into_center(app, entry.range.start);
+        preview_id.set_marked_ranges(app, &[range.clone()]);
+        preview_id.scroll_offset_into_center(app, range.start);
     }
 
     preview_id.tick(app, io);
@@ -295,6 +307,18 @@ fn display_match(entry: &RepoMatch) -> BString {
     display.extend_from_slice(format!(":{} ", entry.line + 1).as_bytes());
     display.extend_from_slice(&entry.line_text);
     display
+}
+
+// A match's range in file offsets, as a range in the previewed window, or
+// None if it does not fit inside the window.
+fn window_range(
+    range: &Range<usize>,
+    window_start: usize,
+    window_len: usize,
+) -> Option<Range<usize>> {
+    let start = range.start.checked_sub(window_start)?;
+    let end = range.end.checked_sub(window_start)?;
+    (end <= window_len).then_some(start..end)
 }
 
 fn has_selection(app: &App, page_id: PageId) -> bool {

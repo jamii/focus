@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::{CString, OsStr};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::take;
 use std::num::NonZeroU32;
 use std::os::unix::ffi::OsStrExt;
@@ -230,11 +230,18 @@ impl IO for IoReal<'_> {
         f.metadata()?.modified()
     }
 
-    fn file_read_prefix(&mut self, path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
+    fn file_read_at(
+        &mut self,
+        path: &Path,
+        offset: usize,
+        limit: usize,
+    ) -> std::io::Result<Vec<u8>> {
+        let mut file = std::fs::File::open(path)?;
+        if offset > 0 {
+            file.seek(SeekFrom::Start(offset as u64))?;
+        }
         let mut contents = Vec::new();
-        std::fs::File::open(path)?
-            .take(limit as u64)
-            .read_to_end(&mut contents)?;
+        file.take(limit as u64).read_to_end(&mut contents)?;
         Ok(contents)
     }
 

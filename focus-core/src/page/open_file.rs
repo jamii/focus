@@ -108,7 +108,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
         Ok(listing) => match listing.selected(app, list_id) {
             Some(entry) if !entry.is_dir => {
                 let path = listing.dir.join(&entry.name);
-                match io.file_read_prefix(&path, PREVIEW_BYTES) {
+                match io.file_read_at(&path, 0, PREVIEW_BYTES) {
                     Ok(contents) => BString::from(contents),
                     Err(error) => BString::from(error.to_string()),
                 }

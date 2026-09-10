@@ -90,11 +90,16 @@ impl IO for ErrorIO {
         self.inner.file_write(path, contents, create)
     }
 
-    fn file_read_prefix(&mut self, path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
+    fn file_read_at(
+        &mut self,
+        path: &Path,
+        offset: usize,
+        limit: usize,
+    ) -> std::io::Result<Vec<u8>> {
         if let Some(kind) = self.file_read_error {
             return Err(std::io::Error::from(kind));
         }
-        self.inner.file_read_prefix(path, limit)
+        self.inner.file_read_at(path, offset, limit)
     }
 
     fn file_create(&mut self, path: &Path) -> std::io::Result<()> {
