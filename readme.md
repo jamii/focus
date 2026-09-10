@@ -54,7 +54,7 @@ Testing:
 - [x] Deterministic simulation testing
 - [x] E2E fuzzing
 - [ ] Replayable history of live sessions, for later debugging
-- [ ] Wasm build of core to make sure no IO sneaks in
+- [x] Test that IO functions are not reachable from focus-core build
 - [ ] Max out fuzzer coverage
 
 Arch:

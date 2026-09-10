@@ -17,6 +17,26 @@ let
     cargoHash = "sha256-9jlu9PDqQRW3r+ZJrGxDXB533gTa8XexZuK5LXcNY3s=";
     doCheck = false;
   };
+  # Link-time API reachability checker used by the focus-core ambient-I/O
+  # snapshot test. Keep this pinned so changes in its symbol analysis don't
+  # silently rewrite the snapshot.
+  cargo-acl = pkgs.rustPlatform.buildRustPackage rec {
+    pname = "cargo-acl";
+    version = "0.9.0";
+    src = pkgs.fetchCrate {
+      inherit pname version;
+      sha256 = "sha256-vQE3OxVCLpWg3DWOtok2haanClv79y7WoJA8CJFps18=";
+    };
+    cargoHash = "sha256-WniDUGBP40xJDFKk+xtFiiHpnnCbAKQcfO28RZSB//c=";
+    # nixpkgs currently builds packages with Rust 1.91. Cackle 0.9 declares
+    # 1.95, but the no-UI build used here remains compatible with 1.91.
+    postPatch = ''
+      substituteInPlace Cargo.toml \
+        --replace-fail 'rust-version = "1.95"' 'rust-version = "1.91"'
+    '';
+    buildNoDefaultFeatures = true;
+    doCheck = false;
+  };
   # Needed at runtime by the built binaries, not just at build time.
   graphicsLibs = [
     pkgs.wayland
@@ -43,6 +63,8 @@ pkgs.mkShell {
     pkgs.llvm
     # Formatter used by `cargo fmt`.
     pkgs.rustfmt
+    # Static link-time checks for ambient I/O reachable from focus-core.
+    cargo-acl
     # The `cargo hfuzz` subcommand, built above (avoids `cargo install`).
     cargo-hfuzz
     # A headless compositor for the daemon end-to-end test, and the
