@@ -1,0 +1,40 @@
+# Ambient I/O reachable from focus_core
+#
+# Generated from the core fuzz harness with Cackle's link-time reachability
+# analysis. Intentional effects are handled by MockIO and therefore don't
+# appear here. `random_hash_seed` entries are constructors of std HashMap or
+# HashSet; their RandomState initialization reads OS randomness.
+#
+# Update intentionally with:
+#   UPDATE_REACHABLE_IO=1 cargo test -p focus-core --test reachable_io
+
+ambient_io:
+- focus-core | focus-core/src/buffer.rs:511:17
+  focus_core::buffer::BufferId::save
+  -> std::io::stdio::_eprint
+
+random_hash_seed:
+- focus-core | focus-core/src/fuzz.rs:76:20
+  focus_core::fuzz::MockIO::new
+  -> std::collections::hash::map::HashMap<…>::new<…>
+- focus-core | focus-core/src/page/choose_command.rs:318:38
+  focus_core::page::choose_command::load_history
+  -> std::collections::hash::set::HashSet<…>::new<…>
+- similar | registry/similar-3.1.1/src/algorithms/histogram.rs:287:29
+  similar::algorithms::histogram::find_anchor<…>
+  -> std::collections::hash::map::HashMap<…>::new<…>
+- similar | registry/similar-3.1.1/src/algorithms/histogram.rs:288:26
+  similar::algorithms::histogram::find_anchor<…>
+  -> std::collections::hash::map::HashMap<…>::new<…>
+- similar | registry/similar-3.1.1/src/algorithms/hunt.rs:279:18
+  similar::algorithms::hunt::build_match_list<…>
+  -> std::collections::hash::map::HashMap<…>::new<…>
+- similar | registry/similar-3.1.1/src/algorithms/preflight.rs:86:23
+  similar::algorithms::preflight::has_common_item<…>
+  -> std::collections::hash::map::HashMap<…>::new<…>
+- similar | registry/similar-3.1.1/src/algorithms/utils.rs:121:23
+  similar::algorithms::utils::unique<…>
+  -> std::collections::hash::map::HashMap<…>::new<…>
+- similar | registry/similar-3.1.1/src/algorithms/utils.rs:270:23
+  similar::algorithms::utils::IdentifyDistinct<…>::new<…>
+  -> std::collections::hash::map::HashMap<…>::new<…>
