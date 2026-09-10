@@ -305,6 +305,53 @@ fn quit_without_a_daemon_starts_nothing() {
     assert!(!socket_path(&dir).exists());
 }
 
+// A connect landing in a dying daemon's backlog is not a daemon. The
+// kernel closes an exiting process's memory before its file descriptors,
+// so its listener keeps accepting connections into the backlog for a
+// window after the process looks gone; nothing ever accepts them, and
+// closing the listener resets them. `--quit` must read that as "there was
+// nothing to quit", not fail with the reset.
+#[test]
+fn quit_treats_a_daemon_dying_mid_handshake_as_no_daemon() {
+    let dir = runtime_dir("quit-dying");
+    let listener = UnixListener::bind(socket_path(&dir)).unwrap();
+
+    let client = thread::spawn({
+        let dir = dir.clone();
+        move || connect_or_start(&dir, &cli(Request::Quit)).unwrap()
+    });
+
+    // Take the queued connection and close it, along with the listener,
+    // without ever reading or answering - what a dying daemon does.
+    drop(listener.accept().unwrap().0);
+    drop(listener);
+
+    assert!(matches!(client.join().unwrap(), Started::NothingToDo));
+}
+
+// And the same window on the way in: the request is not lost with the
+// daemon that failed to take it, it goes to a daemon started in its place.
+#[test]
+fn a_request_starts_a_new_daemon_when_the_old_one_dies_mid_handshake() {
+    let dir = runtime_dir("request-dying");
+    let listener = UnixListener::bind(socket_path(&dir)).unwrap();
+
+    let client = thread::spawn({
+        let dir = dir.clone();
+        move || connect_or_start(&dir, &cli(Request::Scratch)).unwrap()
+    });
+
+    drop(listener.accept().unwrap().0);
+    drop(listener);
+
+    assert_eq!(
+        stub_daemon(listening(client.join().unwrap()), 1)
+            .join()
+            .unwrap(),
+        [Request::Scratch]
+    );
+}
+
 // The race the lock file exists for: without it, several clients each
 // find no daemon and each bind, and all but the last end up talking to an
 // orphaned socket. One round catches that most of the time; a handful of

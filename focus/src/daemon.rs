@@ -8,7 +8,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::Shutdown;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -196,31 +196,35 @@ pub fn connect_or_start(runtime_dir: &Path, cli: &Cli) -> std::io::Result<Starte
     // not the daemon has started accepting yet.
     let _lock = lock(runtime_dir)?;
     let socket = socket_path(runtime_dir);
+    // A connect that succeeds is not proof of a live daemon: see
+    // `send_request`. Both arms below fall through to the cold start when
+    // it reports the daemon gone, exactly as a refused connect does.
     let existing = UnixStream::connect(&socket).ok();
 
     // `--quit` never starts a daemon: with none running there is nothing
     // to do.
     if cli.request == Request::Quit {
-        let Some(mut stream) = existing else {
-            return Ok(Started::NothingToDo);
-        };
-        write_request(&mut stream, &Request::Quit)?;
-        read_reply(&stream)?;
-        return Ok(Started::Sent(stream));
+        if let Some(mut stream) = existing {
+            if send_request(&mut stream, &Request::Quit)? {
+                return Ok(Started::Sent(stream));
+            }
+        }
+        return Ok(Started::NothingToDo);
     }
 
     if let Some(mut stream) = existing {
         if !cli.replace {
-            write_request(&mut stream, &cli.request)?;
-            read_reply(&stream)?;
-            return Ok(Started::Sent(stream));
+            if send_request(&mut stream, &cli.request)? {
+                return Ok(Started::Sent(stream));
+            }
+        } else {
+            // Replacing: tell the old daemon to go away. We do not wait
+            // for it to die - it never unlinks the socket, so its inode
+            // is ours to replace right now, and it closes its windows and
+            // exits against a socket nobody can reach any more. It dying
+            // before it answers is the same outcome by another route.
+            send_request(&mut stream, &Request::Quit)?;
         }
-        // Replacing: tell the old daemon to go away. We do not wait for
-        // it to die - it never unlinks the socket, so its inode is ours
-        // to replace right now, and it closes its windows and exits
-        // against a socket nobody can reach any more.
-        write_request(&mut stream, &Request::Quit)?;
-        read_reply(&stream)?;
     }
 
     // Either nothing was listening (no daemon, or one that crashed and
@@ -270,6 +274,32 @@ fn lock(runtime_dir: &Path) -> std::io::Result<File> {
     Ok(file)
 }
 
+/// Hand `request` to the daemon on the other end of `stream`.
+///
+/// `Ok(false)` means there was no daemon after all, and the caller should
+/// carry on as if the connect had been refused. A connect succeeds
+/// against a daemon that is on its way out: the kernel closes a dying
+/// process's memory before its file descriptors, so its listener still
+/// accepts connections into the backlog for a window after the process
+/// is, by every other measure, gone. Nothing ever accepts those, and
+/// closing the listener resets them - which reaches us here as a reset,
+/// a broken pipe, or a clean EOF where the reply should have been,
+/// depending on how far the exchange got.
+fn send_request(stream: &mut UnixStream, request: &Request) -> std::io::Result<bool> {
+    match write_request(stream, request).and_then(|()| read_reply(stream)) {
+        Ok(()) => Ok(true),
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::ConnectionReset | ErrorKind::BrokenPipe | ErrorKind::UnexpectedEof
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn write_request(stream: &mut UnixStream, request: &Request) -> std::io::Result<()> {
     stream.write_all(&request.encode())?;
     // The shutdown is the frame: it is how the daemon knows the request
@@ -284,6 +314,10 @@ fn read_reply(stream: &UnixStream) -> std::io::Result<()> {
     BufReader::new(stream).read_line(&mut reply)?;
     if reply.as_bytes() == REPLY_OK {
         return Ok(());
+    }
+    // Closed before saying anything, rather than having answered badly.
+    if reply.is_empty() {
+        return Err(ErrorKind::UnexpectedEof.into());
     }
     Err(std::io::Error::other(reply.trim().to_string()))
 }
