@@ -70,8 +70,15 @@ pub trait IO {
         contents: &[u8],
         create: bool,
     ) -> std::io::Result<SystemTime>;
-    /// Read at most `limit` bytes from the start of the file.
-    fn file_read_prefix(&mut self, path: &Path, limit: usize) -> std::io::Result<Vec<u8>>;
+    /// Read at most `limit` bytes of the file, starting at `offset`. Reads
+    /// less than `limit` bytes at the end of the file, and no bytes at all
+    /// past it.
+    fn file_read_at(
+        &mut self,
+        path: &Path,
+        offset: usize,
+        limit: usize,
+    ) -> std::io::Result<Vec<u8>>;
     /// Create the file, and any missing parent dirs, if it does not already
     /// exist. Does not truncate an existing file.
     fn file_create(&mut self, path: &Path) -> std::io::Result<()>;

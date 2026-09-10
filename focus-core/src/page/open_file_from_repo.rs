@@ -128,7 +128,7 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
 
     // Update preview text: the start of the selected file, if any.
     let preview_text = match selected_path(app, page_id, list_id) {
-        Some(path) => match io.file_read_prefix(&path, PREVIEW_BYTES) {
+        Some(path) => match io.file_read_at(&path, 0, PREVIEW_BYTES) {
             Ok(contents) => BString::from(contents),
             Err(error) => BString::from(error.to_string()),
         },

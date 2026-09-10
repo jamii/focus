@@ -150,10 +150,16 @@ impl IO for MockIO {
         Ok(mtime)
     }
 
-    fn file_read_prefix(&mut self, path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
-        self.file_read(path).map(|mut contents| {
-            contents.truncate(limit);
-            contents
+    fn file_read_at(
+        &mut self,
+        path: &Path,
+        offset: usize,
+        limit: usize,
+    ) -> std::io::Result<Vec<u8>> {
+        self.file_read(path).map(|contents| {
+            let start = offset.min(contents.len());
+            let end = start.saturating_add(limit).min(contents.len());
+            contents[start..end].to_vec()
         })
     }
 

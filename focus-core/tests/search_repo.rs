@@ -250,3 +250,63 @@ fn long_match_lines_are_truncated() {
     );
     app.assert_invariants();
 }
+
+#[test]
+fn preview_is_a_window_around_a_match_deep_in_a_big_file() {
+    // Previewing used to read the whole file, every frame. From
+    // page/search_repo.rs.
+    let preview_bytes = 10 * 1024;
+    // The needle sits well past the window, so the preview can't just be
+    // the start of the file.
+    let head = "hay\n".repeat(preview_bytes);
+    let tail = "hay\n".repeat(preview_bytes);
+    let text = format!("{head}needle\n{tail}");
+    let (mut app, mut io, window_id) = search_repo_app(&[("/a.txt", text.as_str())]);
+    common::text_input(&mut app, &mut io, window_id, "needle");
+
+    common::tick(&mut app, &mut io);
+
+    let window_start = head.len() - preview_bytes / 2;
+    assert_eq!(
+        buffer_text(&app, PREVIEW),
+        text[window_start..window_start + preview_bytes]
+    );
+
+    // The match is marked and centered, so it is on screen.
+    let drawing = common::draw(&mut app, window_id, 40, 20);
+    assert!(drawn_rows(&app, &drawing).iter().any(|row| row == "needle"));
+    app.assert_invariants();
+}
+
+// The text drawn in each row of the window, in cell order.
+fn drawn_rows(app: &App, drawing: &focus_core::drawing::Drawing) -> Vec<String> {
+    use focus_core::drawing::{DrawCommand, FULL_BLOCK};
+    let [cell_w, cell_h] = [app.cell_size()[0] as f32, app.cell_size()[1] as f32];
+    let mut cells: Vec<(usize, usize, char)> = drawing
+        .commands
+        .iter()
+        .filter_map(|command| {
+            let DrawCommand::Character(c) = command else {
+                return None;
+            };
+            (c.ch != FULL_BLOCK).then(|| {
+                (
+                    (c.dst.pos[1] / cell_h) as usize,
+                    (c.dst.pos[0] / cell_w) as usize,
+                    c.ch,
+                )
+            })
+        })
+        .collect();
+    cells.sort();
+    let mut rows: Vec<String> = Vec::new();
+    let mut last_row = None;
+    for (row, _, ch) in cells {
+        if Some(row) != last_row {
+            rows.push(String::new());
+            last_row = Some(row);
+        }
+        rows.last_mut().unwrap().push(ch);
+    }
+    rows
+}
