@@ -1,0 +1,24 @@
+[package]
+name = "focus"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+focus-core = { path = "../focus-core" }
+winit = "0.30"
+glutin = "0.32"
+glutin-winit = "0.5"
+raw-window-handle = "0.6"
+gl = "0.14"
+bstr = "1"
+libc = "0.2"
+fontdue = "0.9"
+arboard = { version = "3", features = ["wayland-data-control"] }
+ignore = "0.4"
+grep-matcher = "0.1"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+
+[dev-dependencies]
+png = "0.17"
+khronos-egl = { version = "6", features = ["dynamic"] }

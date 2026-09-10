@@ -1,55 +1,98 @@
-{ cross ? false }:
+{ pkgs ? import <nixpkgs> {} }:
 
 let
-
-hostPkgs = import <nixpkgs> {};
-
-armPkgs = import <nixpkgs> {
-    system = "aarch64-linux";
-};
-
-crossPkgs = import <nixpkgs> {
-    overlays = [(self: super: {
-        inherit (armPkgs)
-        gcc
-        mesa
-        libGL
-        ;
-    })];
-    crossSystem = hostPkgs.lib.systems.examples.aarch64-multiplatform;
-};
-
-targetPkgs = if cross then crossPkgs else hostPkgs;
-
-zig = hostPkgs.stdenv.mkDerivation {
-    name = "zig";
-    src = fetchTarball (
-        if (hostPkgs.system == "x86_64-linux") then {
-            url = "https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz";
-            sha256 = "052pfb144qaqvf8vm7ic0p6j4q2krwwx1d6cy38jy2jzkb588gw3";
-        } else
-        throw ("Unknown system " ++ hostPkgs.system)
-    );
-    dontConfigure = true;
-    dontBuild = true;
-    installPhase = ''
-    mkdir -p $out
-    mv ./* $out/
-    mkdir -p $out/bin
-    mv $out/zig $out/bin
+  # The `cargo hfuzz` subcommand isn't packaged in nixpkgs (only the C
+  # honggfuzz tool is), so build it from the honggfuzz crate. This replaces
+  # `cargo install honggfuzz`. Bump `version` in step with the honggfuzz
+  # dependency in Cargo.lock; refresh both hashes when you do (nix prints the
+  # expected values on mismatch).
+  cargo-hfuzz = pkgs.rustPlatform.buildRustPackage rec {
+    pname = "cargo-hfuzz";
+    version = "0.5.60";
+    src = pkgs.fetchCrate {
+      pname = "honggfuzz";
+      inherit version;
+      sha256 = "sha256-btHYe+rN28bVeDWZB3AQCeF5mk30YNIINMXOOoTIjJk=";
+    };
+    cargoHash = "sha256-9jlu9PDqQRW3r+ZJrGxDXB533gTa8XexZuK5LXcNY3s=";
+    doCheck = false;
+  };
+  # Link-time API reachability checker used by the focus-core ambient-I/O
+  # snapshot test. Keep this pinned so changes in its symbol analysis don't
+  # silently rewrite the snapshot.
+  cargo-acl = pkgs.rustPlatform.buildRustPackage rec {
+    pname = "cargo-acl";
+    version = "0.9.0";
+    src = pkgs.fetchCrate {
+      inherit pname version;
+      sha256 = "sha256-vQE3OxVCLpWg3DWOtok2haanClv79y7WoJA8CJFps18=";
+    };
+    cargoHash = "sha256-WniDUGBP40xJDFKk+xtFiiHpnnCbAKQcfO28RZSB//c=";
+    # nixpkgs currently builds packages with Rust 1.91. Cackle 0.9 declares
+    # 1.95, but the no-UI build used here remains compatible with 1.91.
+    postPatch = ''
+      substituteInPlace Cargo.toml \
+        --replace-fail 'rust-version = "1.95"' 'rust-version = "1.91"'
     '';
-};
-
+    buildNoDefaultFeatures = true;
+    doCheck = false;
+  };
+  # Needed at runtime by the built binaries, not just at build time.
+  graphicsLibs = [
+    pkgs.wayland
+    pkgs.libxkbcommon
+    pkgs.libGL
+    # Mesa supplies the actual EGL/GL driver (llvmpipe for software
+    # rendering); libGL alone is just libglvnd, the dispatcher.
+    pkgs.mesa
+  ];
 in
+pkgs.mkShell {
+  # honggfuzz's libhfuzz redefines libc symbols (strcpy, etc.) as weak
+  # aliases. Nix's cc-wrapper auto-enables fortify, which makes glibc's
+  # headers declare those same names as __fortify_clang_overload_arg,
+  # producing redeclaration errors. Disable fortify in this shell.
+  hardeningDisable = [ "fortify" "fortify3" ];
 
-hostPkgs.mkShell rec {
-    buildInputs = [
-        zig
-        hostPkgs.git
-        hostPkgs.pkg-config
-        targetPkgs.libGL
-        targetPkgs.wayland
-        targetPkgs.libxkbcommon
-    ];
-    LD_LIBRARY_PATH = "${targetPkgs.lib.makeLibraryPath buildInputs}";
+  buildInputs = graphicsLibs ++ [
+    # honggfuzz's libhfuzz build needs bfd.h (binutils) and libunwind.
+    pkgs.binutils-unwrapped
+    pkgs.libunwind
+    # Coverage reports for tests and fuzz corpus replay.
+    pkgs.cargo-llvm-cov
+    pkgs.llvm
+    # Formatter used by `cargo fmt`.
+    pkgs.rustfmt
+    # Static link-time checks for ambient I/O reachable from focus-core.
+    cargo-acl
+    # The `cargo hfuzz` subcommand, built above (avoids `cargo install`).
+    cargo-hfuzz
+    # A headless compositor for the daemon end-to-end test, and the
+    # `swaymsg -t get_tree` it asserts against. Unwrapped, because the
+    # wrapper insists on a dbus session.
+    pkgs.sway-unwrapped
+  ];
+
+  LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath graphicsLibs;
+
+  # winit and glutin `dlopen` libwayland-client, libxkbcommon and libEGL
+  # rather than linking them, so the loader only finds them via
+  # LD_LIBRARY_PATH - which exists inside this shell and nowhere else, so
+  # the binaries built here would only run inside it. Bake the same paths
+  # into the RUNPATH instead: a `dlopen` from the executable searches the
+  # executable's RUNPATH, so `target/release/focus` then works anywhere.
+  #
+  # This is only the client side of GL. The actual driver still comes from
+  # the system: nixpkgs' libglvnd looks for its vendor manifest in
+  # /run/opengl-driver/share/glvnd/egl_vendor.d, which is where NixOS puts
+  # the real one. The two variables at the bottom of this file point it at
+  # the mesa above instead, for the headless tests.
+  RUSTFLAGS = "-C link-arg=-Wl,-rpath,${pkgs.lib.makeLibraryPath graphicsLibs}";
+
+  # Tell libglvnd where to find Mesa's EGL vendor manifest, and where
+  # Mesa's DRI driver shared objects live (llvmpipe ships as a DRI driver
+  # used by the surfaceless platform).
+  __EGL_VENDOR_LIBRARY_FILENAMES =
+    "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
+  LIBGL_DRIVERS_PATH = "${pkgs.mesa}/lib/dri";
 }
