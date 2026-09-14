@@ -30,7 +30,7 @@ use winit::window::Window;
 
 use focus_core::app::{
     App, DirEntry, INITIAL_SIZE, INITIAL_TITLE, IO, ProcessId, ProcessPoll, RepoFiles, RepoMatch,
-    RepoSearch, WindowSize,
+    RepoSearch, VcsChange, VcsFileStatus, WindowSize,
 };
 use focus_core::buffer;
 use focus_core::drawing::Drawing;
@@ -41,6 +41,7 @@ use crate::APP_ID;
 use crate::atlas::Atlas;
 use crate::daemon::{self, Incoming, Request};
 use crate::render::Renderer;
+use crate::vcs::Vcs;
 
 const FONT: &[u8] = include_bytes!("../deps/FiraCode-Regular.ttf");
 
@@ -106,6 +107,8 @@ struct Backend {
     // The connection each window's request arrived on, held open until
     // the window closes so that a waiting client blocks until then.
     waiting: HashMap<WindowId, UnixStream>,
+    // The jj repos we have looked at, and their last poll.
+    vcs: Vcs,
 }
 
 struct ProcessState {
@@ -274,7 +277,7 @@ impl IO for IoReal<'_> {
     }
 
     fn repo_files(&mut self, dir: &Path) -> std::io::Result<RepoFiles> {
-        let root = git_root(dir);
+        let root = repo_root(dir);
         let mut relative_paths = Vec::new();
         for result in ignore::WalkBuilder::new(&root).build() {
             let entry = result.map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -309,7 +312,17 @@ impl IO for IoReal<'_> {
     }
 
     fn repo_root(&mut self, dir: &Path) -> PathBuf {
-        git_root(dir)
+        repo_root(dir)
+    }
+
+    fn vcs_change(&mut self, dir: &Path) -> std::io::Result<VcsChange> {
+        let root = repo_root(dir);
+        self.backend.vcs.change(&root)
+    }
+
+    fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus> {
+        let root = repo_root(path.parent()?);
+        self.backend.vcs.file_status(&root, path)
     }
 
     fn home_dir(&mut self) -> PathBuf {
@@ -389,7 +402,7 @@ pub fn repo_search(
     match_limit: usize,
     line_limit: usize,
 ) -> std::io::Result<RepoSearch> {
-    let root = git_root(dir);
+    let root = repo_root(dir);
     let pattern = pattern.to_str().map_err(std::io::Error::other)?;
     let matcher = grep_regex::RegexMatcherBuilder::new()
         .fixed_strings(true)
@@ -441,10 +454,14 @@ pub fn repo_search(
     })
 }
 
-fn git_root(dir: &Path) -> PathBuf {
+// The repo containing `dir`: the nearest ancestor holding a `.jj` or a
+// `.git`. A colocated repo has both in the same directory, so which one
+// we find first only matters for a jj workspace nested inside a git repo,
+// where the jj workspace is the one we want.
+fn repo_root(dir: &Path) -> PathBuf {
     let mut current = Some(dir);
     while let Some(path) = current {
-        if path.join(".git").exists() {
+        if path.join(".jj").exists() || path.join(".git").exists() {
             return path.to_path_buf();
         }
         current = path.parent();
@@ -703,6 +720,7 @@ impl Backend {
             processes: Vec::new(),
             detached: Vec::new(),
             waiting: HashMap::new(),
+            vcs: Vcs::new(),
         };
         let id = WindowId(0);
         backend.register_window(id, window, surface);

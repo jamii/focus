@@ -18,7 +18,16 @@ ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"
 grep-searcher = "0.1"
+# The jj integration. Pinned exactly: jj-lib's API moves every release.
+jj-lib = "=0.45.1"
+# jj-lib's tree diff is a Stream; this is only for `StreamExt::next`.
+futures = "0.3"
+# Runs jj-lib's async API on this thread, so async stays at the boundary.
+pollster = "1"
 
 [dev-dependencies]
 png = "0.17"
+# The vcs test builds a real jj repo to read back.
+jj-lib = "=0.45.1"
+pollster = "1"
 khronos-egl = { version = "6", features = ["dynamic"] }

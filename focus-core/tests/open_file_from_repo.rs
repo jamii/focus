@@ -54,11 +54,11 @@ fn lists_repo_files_sorted_by_relative_path() {
 }
 
 #[test]
-fn starts_from_git_root_when_current_file_is_in_repo() {
+fn starts_from_repo_root_when_current_file_is_in_repo() {
     let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/repo/src/main.rs"), "main");
     insert_file(&mut io, "/repo/readme.md", "readme");
     insert_file(&mut io, "/elsewhere.txt", "elsewhere");
-    io.git_roots.push(PathBuf::from("/repo"));
+    io.repo_roots.push(PathBuf::from("/repo"));
 
     common::control_key(&mut app, &mut io, window_id, Key::Character("p"));
     common::tick(&mut app, &mut io);
@@ -68,7 +68,7 @@ fn starts_from_git_root_when_current_file_is_in_repo() {
 }
 
 #[test]
-fn starts_from_home_dir_without_git_root() {
+fn starts_from_home_dir_without_repo_root() {
     let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/repo/src/main.rs"), "main");
     insert_file(&mut io, "/repo/src/lib.rs", "lib");
     insert_file(&mut io, "/repo/readme.md", "readme");

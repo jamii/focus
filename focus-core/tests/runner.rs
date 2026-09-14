@@ -602,7 +602,7 @@ fn locations_shift_when_old_output_is_trimmed() {
 #[test]
 fn relative_and_absolute_paths_resolve_against_the_command_dir() {
     let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/repo/app/main.rs"), "x");
-    io.git_roots.push(PathBuf::from("/repo/app"));
+    io.repo_roots.push(PathBuf::from("/repo/app"));
     insert_file(&mut io, "/repo/sibling/foo.rs", "one\ntwo\nthree\n");
     insert_file(&mut io, "/abs/path/bar.rs", "a\nb\nc\nqwerty\n");
 

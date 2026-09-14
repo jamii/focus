@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::{BStr, BString};
-use focus_core::app::{App, IO, RepoFiles, RepoSearch, WindowSize};
+use focus_core::app::{App, IO, RepoFiles, RepoSearch, VcsChange, VcsFileStatus, WindowSize};
 use focus_core::buffer;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::window::{self, WindowId};
@@ -127,6 +127,14 @@ impl IO for ErrorIO {
 
     fn repo_root(&mut self, dir: &Path) -> PathBuf {
         self.inner.repo_root(dir)
+    }
+
+    fn vcs_change(&mut self, dir: &Path) -> std::io::Result<VcsChange> {
+        self.inner.vcs_change(dir)
+    }
+
+    fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus> {
+        self.inner.vcs_file_status(path)
     }
 
     fn canonical_path(&mut self, path: &Path) -> PathBuf {

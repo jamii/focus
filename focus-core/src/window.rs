@@ -220,6 +220,21 @@ impl WindowId {
                         self.push_page(app, io, dir_page_id);
                         true
                     }
+                    Key::Character("2") => {
+                        // The diff for the repo the current page is in,
+                        // opened at the line the cursor is on if that
+                        // file turns out to be part of the change.
+                        let page_id = self.current_page(app);
+                        let reveal = page_id.current_location(app);
+                        let dir = page_id
+                            .current_path(app)
+                            .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+                            .unwrap_or_else(|| io.home_dir());
+                        let root = io.repo_root(&dir);
+                        let diff_page_id = page::new_diff(app, root, reveal);
+                        self.push_page(app, io, diff_page_id);
+                        true
+                    }
                     Key::Character("o") => {
                         let page_id = self.current_page(app);
                         let dir = page_id

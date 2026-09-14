@@ -5,6 +5,11 @@ pub const HIGHLIGHT_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.9, 0.3);
 // pub const KEYWORD_COLOR: [u8; 4] = TEXT_COLOR;
 // pub const COMMENT_COLOR: [u8; 4] = hsla(0.0, 0.0, 0.6, 1.0);
 pub const MULTI_CURSOR_COLOR: [u8; 4] = hsla(150.0, 1.0, 0.5, 1.0);
+
+// Gutter bars for lines changed since the parent revision.
+pub const VCS_ADDED_COLOR: [u8; 4] = hsla(120.0, 1.0, 0.5, 1.0);
+pub const VCS_MODIFIED_COLOR: [u8; 4] = hsla(210.0, 1.0, 0.5, 1.0);
+pub const VCS_DELETED_COLOR: [u8; 4] = hsla(0.0, 1.0, 0.5, 1.0);
 // pub const PAREN_MATCH_COLOR: [u8; 4] = hsla(150.0, 1.0, 0.5, 0.3);
 
 // pub const EMPHASIS_RED: [u8; 4] = hsla(0.0, 1.0, 0.5, 1.0);

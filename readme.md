@@ -46,8 +46,8 @@ Language server:
 VCS:
 
 - [ ] Status
-- [ ] Diff
-- [ ] Traffic lights in editor gutter
+- [x] Diff
+- [x] Traffic lights in editor gutter
 
 Testing:
 

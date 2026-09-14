@@ -11,3 +11,4 @@ pub mod atlas;
 pub mod chrome;
 pub mod daemon;
 pub mod render;
+pub mod vcs;

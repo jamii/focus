@@ -15,7 +15,9 @@ use std::time::{Duration, SystemTime};
 use bstr::{BStr, BString, ByteSlice};
 
 use crate::app::{
-    App, DirEntry, IO, ProcessId, ProcessPoll, RepoFiles, RepoMatch, RepoSearch, WindowSize,
+    App, DirEntry, IO, ProcessId, ProcessPoll, RepoFiles, RepoMatch, RepoSearch, VcsChange,
+    VcsChangeKind, VcsFile, VcsFileKind, VcsFileStatus, VcsHunk, VcsLine, VcsLineKind,
+    VcsLineRange, WindowSize,
 };
 use crate::buffer;
 use crate::drawing::Drawing;
@@ -34,7 +36,11 @@ pub struct MockIO {
     pub clipboard: Option<BString>,
     pub logs: Vec<String>,
     pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
-    pub git_roots: Vec<PathBuf>,
+    pub repo_roots: Vec<PathBuf>,
+    // Scripted VCS state: the change of the repo at each root, and the
+    // line status of each file by absolute path.
+    pub vcs_changes: HashMap<PathBuf, VcsChange>,
+    pub vcs_statuses: HashMap<PathBuf, VcsFileStatus>,
     pub system_time: SystemTime,
     pub next_process_output: Vec<u8>,
     pub next_process_exit_code: Option<i32>,
@@ -76,7 +82,9 @@ impl MockIO {
             clipboard: None,
             logs: Vec::new(),
             files: HashMap::new(),
-            git_roots: Vec::new(),
+            repo_roots: Vec::new(),
+            vcs_changes: HashMap::new(),
+            vcs_statuses: HashMap::new(),
             system_time: SystemTime::UNIX_EPOCH,
             next_process_output: Vec::new(),
             next_process_exit_code: None,
@@ -309,12 +317,24 @@ impl IO for MockIO {
     fn repo_root(&mut self, dir: &Path) -> PathBuf {
         let mut current = Some(dir);
         while let Some(path) = current {
-            if self.git_roots.iter().any(|root| root == path) {
+            if self.repo_roots.iter().any(|root| root == path) {
                 return path.to_path_buf();
             }
             current = path.parent();
         }
         dir.to_path_buf()
+    }
+
+    fn vcs_change(&mut self, dir: &Path) -> std::io::Result<VcsChange> {
+        let root = self.repo_root(dir);
+        self.vcs_changes
+            .get(&root)
+            .cloned()
+            .ok_or_else(|| std::io::Error::other(format!("{}: no repo", root.display())))
+    }
+
+    fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus> {
+        self.vcs_statuses.get(path).cloned()
     }
 
     fn process_spawn(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) -> ProcessId {
@@ -376,6 +396,7 @@ const A_FILE_CREATE: u32 = 5;
 const A_SEARCH_REPO_PAGE: u32 = 10;
 const A_CHOOSE_COMMAND_PAGE: u32 = 10;
 const A_PROCESS_OUTPUT: u32 = 10;
+const A_DIFF_PAGE: u32 = 10;
 const A_DUPLICATE_PAGE: u32 = 10;
 const A_OPEN_WINDOW: u32 = 5;
 
@@ -536,6 +557,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_PROCESS_OUTPUT,
         A_DUPLICATE_PAGE,
         A_OPEN_WINDOW,
+        A_DIFF_PAGE,
     ])?;
     match action {
         0 => {
@@ -866,9 +888,75 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         21 => {
             act_open_window(frng, app, io)?;
         }
+        22 => {
+            // Push the diff page (ctrl+2).
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState {
+                    control: true,
+                    ..ModifiersState::default()
+                }),
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::Key {
+                    state: ButtonState::Pressed,
+                    logical_key: Key::Character("2"),
+                },
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState::default()),
+            );
+        }
         _ => unreachable!(),
     }
     Some(())
+}
+
+fn fuzz_change() -> VcsChange {
+    VcsChange {
+        root: PathBuf::from("/"),
+        change_id: BString::from("qpvuntsmwlqt"),
+        commit_id: BString::from("1f2a3b4c5d6e"),
+        author: BString::from("fuzz <fuzz@example.com> (2026-01-01 00:00:00)"),
+        description: BString::from("a change to fuzz"),
+        files: vec![VcsFile {
+            relative_path: PathBuf::from("fuzz.txt"),
+            kind: VcsFileKind::Modified,
+            binary: false,
+            hunks: vec![VcsHunk {
+                old_lines: 0..2,
+                new_lines: 0..2,
+                lines: vec![
+                    VcsLine {
+                        kind: VcsLineKind::Removed,
+                        text: BString::from("was"),
+                    },
+                    VcsLine {
+                        kind: VcsLineKind::Added,
+                        text: BString::from("is"),
+                    },
+                    VcsLine {
+                        kind: VcsLineKind::Context,
+                        text: BString::from("unchanged"),
+                    },
+                ],
+            }],
+        }],
+    }
+}
+
+fn fuzz_status() -> VcsFileStatus {
+    VcsFileStatus {
+        ranges: vec![VcsLineRange {
+            lines: 0..1,
+            kind: VcsChangeKind::Modified,
+        }],
+    }
 }
 
 pub fn fuzz_one(bytes: &[u8]) {
@@ -880,6 +968,12 @@ pub fn fuzz_one(bytes: &[u8]) {
         io.files
             .insert(PathBuf::from(path), (Vec::new(), SystemTime::UNIX_EPOCH));
     }
+    // A repo over that tree, with one changed file, so the diff page and
+    // the gutter bars have something to show.
+    io.repo_roots.push(PathBuf::from("/"));
+    io.vcs_changes.insert(PathBuf::from("/"), fuzz_change());
+    io.vcs_statuses
+        .insert(PathBuf::from("/fuzz.txt"), fuzz_status());
     let mut app = App::new(&mut io);
     let buffer_id = buffer::from_file(&mut app, &mut io, initial_path);
     window::open_edit(&mut app, &mut io, buffer_id);

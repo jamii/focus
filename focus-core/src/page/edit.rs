@@ -8,10 +8,10 @@ use crate::{
     drawing::Rect,
     editor::{self, EditorId},
     input::{ButtonState, InputEvent, Key},
-    window::WindowId,
+    window::{self, WindowId},
 };
 
-use super::{GAP, PageContent, PageId, insert};
+use super::{GAP, PageContent, PageId, insert, new_diff};
 
 pub(super) const EDITOR_COUNT: usize = 2;
 
@@ -105,6 +105,36 @@ pub(super) fn input(
         let page_id = super::new_search_buffer(app, buffer_id, initial_offset);
         window_id.push_page(app, io, page_id);
         return true;
+    }
+
+    // A press on a change bar in the left gutter opens the diff page at
+    // that hunk; with ctrl held, in a new window. A press anywhere else
+    // in the gutter falls through and moves the cursor, as before.
+    if let InputEvent::MouseButton {
+        state: ButtonState::Pressed,
+        position,
+    } = event
+    {
+        let editor_id = editors(app, page_id).editor_id;
+        let rect = app.pages.editor_rects[page_id][EDITOR_IX];
+        let position = [position[0] - rect.pos[0], position[1] - rect.pos[1]];
+        let buffer_id = app.editors.buffer_id[editor_id];
+        if let Some(line) = editor_id.vcs_line_at(app, position)
+            && let Some(path) = buffer_id.path(app)
+        {
+            let dir = path
+                .parent()
+                .map(|parent| parent.to_path_buf())
+                .unwrap_or_else(|| io.home_dir());
+            let root = io.repo_root(&dir);
+            let diff_page_id = new_diff(app, root, Some((path, line)));
+            if app.modifiers.control {
+                window::open(app, io, diff_page_id);
+            } else {
+                window_id.push_page(app, io, diff_page_id);
+            }
+            return true;
+        }
     }
 
     false

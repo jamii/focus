@@ -13,6 +13,7 @@ use crate::{
 
 mod choose_command;
 mod choose_dir;
+mod diff;
 mod edit;
 mod launcher;
 mod open_buffer;
@@ -24,6 +25,7 @@ mod search_repo;
 
 pub(crate) use choose_command::new as new_choose_command;
 pub(crate) use choose_dir::new as new_choose_dir;
+pub(crate) use diff::new as new_diff;
 pub(crate) use edit::new as new_edit;
 pub(crate) use launcher::new as new_launcher;
 pub(crate) use open_buffer::new as new_open_buffer;
@@ -58,6 +60,7 @@ enum PageContent {
     ChooseCommand(choose_command::State),
     ChooseDir,
     Runner(runner::State),
+    Diff(diff::State),
 }
 
 #[derive(Clone, Copy)]
@@ -72,6 +75,7 @@ enum PageContentKind {
     ChooseCommand,
     ChooseDir,
     Runner,
+    Diff,
 }
 
 impl PageContent {
@@ -87,6 +91,7 @@ impl PageContent {
             PageContent::ChooseCommand(_) => PageContentKind::ChooseCommand,
             PageContent::ChooseDir => PageContentKind::ChooseDir,
             PageContent::Runner(_) => PageContentKind::Runner,
+            PageContent::Diff(_) => PageContentKind::Diff,
         }
     }
 }
@@ -157,6 +162,7 @@ pub(crate) fn assert_invariants(app: &App) {
                 assert!(editor_ids.len() == choose_dir::EDITOR_COUNT)
             }
             PageContentKind::Runner => assert!(editor_ids.len() == runner::EDITOR_COUNT),
+            PageContentKind::Diff => assert!(editor_ids.len() == diff::EDITOR_COUNT),
         }
         for editor_id in editor_ids {
             assert!(editor_id.0 < app.editors.editor_count);
@@ -193,6 +199,7 @@ impl PageId {
             PageContentKind::ChooseCommand => choose_command::tick(self, app, io),
             PageContentKind::ChooseDir => choose_dir::tick(self, app, io),
             PageContentKind::Runner => runner::tick(self, app, io),
+            PageContentKind::Diff => diff::tick(self, app, io),
         }
     }
 
@@ -212,6 +219,7 @@ impl PageId {
             PageContentKind::ChooseCommand => choose_command::duplicate(self, app, io),
             PageContentKind::ChooseDir => choose_dir::duplicate(self, app, io),
             PageContentKind::Runner => runner::duplicate(self, app, io),
+            PageContentKind::Diff => diff::duplicate(self, app, io),
         }
     }
 
@@ -229,7 +237,8 @@ impl PageId {
             | PageContentKind::OpenFile
             | PageContentKind::OpenFileFromRepo
             | PageContentKind::ChooseCommand
-            | PageContentKind::ChooseDir => {}
+            | PageContentKind::ChooseDir
+            | PageContentKind::Diff => {}
         }
     }
 
@@ -285,6 +294,7 @@ impl PageId {
             }
             PageContentKind::ChooseDir => choose_dir::input(self, app, io, window_id, &event),
             PageContentKind::Runner => runner::input(self, app, io, window_id, &event),
+            PageContentKind::Diff => diff::input(self, app, io, window_id, &event),
         };
         if handled {
             return;
@@ -330,6 +340,7 @@ impl PageId {
                 PageContentKind::ChooseCommand => choose_command::layout(page_rect, cell_size),
                 PageContentKind::ChooseDir => choose_dir::layout(page_rect, cell_size),
                 PageContentKind::Runner => runner::layout(page_rect, cell_size),
+                PageContentKind::Diff => diff::layout(page_rect, cell_size),
             };
         }
 
@@ -379,6 +390,7 @@ impl PageId {
             }
             PageContentKind::ChooseDir => choose_dir::handle_edits(self, app, editor_ix, diff),
             PageContentKind::Runner => runner::handle_edits(self, app, editor_ix, diff),
+            PageContentKind::Diff => self::diff::handle_edits(self, app, editor_ix, diff),
         }
     }
 
@@ -398,7 +410,8 @@ impl PageId {
             | PageContentKind::OpenFile
             | PageContentKind::OpenFileFromRepo
             | PageContentKind::ChooseCommand
-            | PageContentKind::ChooseDir => {}
+            | PageContentKind::ChooseDir
+            | PageContentKind::Diff => {}
         }
     }
 
@@ -414,6 +427,23 @@ impl PageId {
             PageContentKind::ChooseCommand => choose_command::current_path(self, app),
             PageContentKind::ChooseDir => choose_dir::current_path(self, app),
             PageContentKind::Runner => runner::current_path(self, app),
+            PageContentKind::Diff => diff::current_path(self, app),
         }
+    }
+
+    /// The file and line the page is currently on, if it is on one: the
+    /// path `current_path` reports, and the main cursor's line in the
+    /// editor showing it.
+    pub(crate) fn current_location(self, app: &App) -> Option<(PathBuf, usize)> {
+        let path = self.current_path(app)?;
+        let editor_id = app.pages.editor_ids[self]
+            .iter()
+            .copied()
+            .find(|editor_id| {
+                app.editors.buffer_id[*editor_id].path(app).as_deref() == Some(path.as_path())
+            })?;
+        let buffer_id = app.editors.buffer_id[editor_id];
+        let line = buffer_id.grid_from_offset(app, editor_id.main_cursor_offset(app))[1];
+        Some((path, line))
     }
 }

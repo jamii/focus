@@ -7,11 +7,14 @@ use bstr::{BStr, ByteSlice};
 use crate::input::{ButtonState, InputEvent, Key, NamedKey, ScrollPhase};
 use crate::style::BACKGROUND_COLOR;
 use crate::{
-    app::{App, IO},
+    app::{App, IO, VcsChangeKind, VcsFileStatus},
     buffer::{self, BufferId, Edit, EditKind, OffsetDiff, SaveKind},
     drawing::{Drawing, Rect},
     map::Map,
-    style::{HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR},
+    style::{
+        HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR, VCS_ADDED_COLOR, VCS_DELETED_COLOR,
+        VCS_MODIFIED_COLOR,
+    },
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
@@ -25,6 +28,10 @@ pub struct Editors {
     // Draw a '>' in the left gutter next to the main cursor's line (used
     // by the FileOpen list to show the selected entry).
     pub(crate) gutter_marker: Map<EditorId, bool>,
+    // Lines of this editor's file changed since the parent revision,
+    // refreshed every tick. None for a buffer with no file behind it, or
+    // a file with no changes.
+    pub(crate) vcs_status: Map<EditorId, Option<VcsFileStatus>>,
     marked: Map<EditorId, bool>,
     show_cursor: Map<EditorId, bool>,
     wrap_chars: Map<EditorId, usize>,
@@ -98,6 +105,7 @@ impl Editors {
             buffer_id: Map::new(),
             cursors: Map::new(),
             gutter_marker: Map::new(),
+            vcs_status: Map::new(),
             marked: Map::new(),
             show_cursor: Map::new(),
             wrap_chars: Map::new(),
@@ -129,6 +137,7 @@ pub(crate) fn new(app: &mut App, buffer_id: BufferId) -> EditorId {
         }],
     );
     app.editors.gutter_marker.insert(editor_id, false);
+    app.editors.vcs_status.insert(editor_id, None);
     app.editors.marked.insert(editor_id, false);
     app.editors.show_cursor.insert(editor_id, true);
     app.editors.wrap_chars.insert(editor_id, wrap_chars);
@@ -171,6 +180,7 @@ pub(crate) fn new_like(app: &mut App, editor_id: EditorId, buffer_id: BufferId) 
     app.editors.cursors[copy_id] = app.editors.cursors[editor_id].clone();
     app.editors.marked[copy_id] = app.editors.marked[editor_id];
     app.editors.gutter_marker[copy_id] = app.editors.gutter_marker[editor_id];
+    app.editors.vcs_status[copy_id] = app.editors.vcs_status[editor_id].clone();
     app.editors.wrap_chars[copy_id] = app.editors.wrap_chars[editor_id];
     app.editors.top_pixel[copy_id] = app.editors.top_pixel[editor_id];
     copy_id.refresh_wraps(app);
@@ -186,11 +196,33 @@ pub(crate) fn new_copy(app: &mut App, editor_id: EditorId) -> EditorId {
     new_like(app, editor_id, buffer_id)
 }
 
+// The ranges are sorted and don't overlap, so the first one that could
+// hold `line` is the only one that can.
+fn vcs_kind_at_line(status: &VcsFileStatus, line: usize) -> Option<VcsChangeKind> {
+    for range in &status.ranges {
+        if range.lines.start > line {
+            break;
+        }
+        // An empty range marks the boundary lines were deleted from, so
+        // it belongs to the line it sits before.
+        let holds = if range.lines.is_empty() {
+            range.lines.start == line
+        } else {
+            range.lines.contains(&line)
+        };
+        if holds {
+            return Some(range.kind);
+        }
+    }
+    None
+}
+
 pub(crate) fn assert_invariants(app: &App) {
     let editors = &app.editors;
     assert_eq!(editors.buffer_id.len(), editors.editor_count);
     assert_eq!(editors.cursors.len(), editors.editor_count);
     assert_eq!(editors.gutter_marker.len(), editors.editor_count);
+    assert_eq!(editors.vcs_status.len(), editors.editor_count);
     assert_eq!(editors.marked.len(), editors.editor_count);
     assert_eq!(editors.show_cursor.len(), editors.editor_count);
     assert_eq!(editors.wrap_chars.len(), editors.editor_count);
@@ -298,6 +330,12 @@ impl EditorId {
     pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
         let buffer_id = app.editors.buffer_id[self];
         buffer_id.tick(app, io);
+
+        // Only editors on a visible page are ticked, so the gutter of a
+        // file nobody is looking at costs nothing.
+        if let Some(path) = buffer_id.path(app) {
+            app.editors.vcs_status[self] = io.vcs_file_status(&path);
+        }
 
         // During drag, poll mouse position and update cursor head.
         if app.editors.is_dragging[self] {
@@ -527,12 +565,37 @@ impl EditorId {
             BACKGROUND_COLOR,
         );
 
-        // Left gutter: soft-wrap continuation markers.
+        // Left gutter: change bars, then soft-wrap continuation markers.
         {
             let mut drawing = drawing.push_clip_rect(Rect {
                 pos: [0.0, 0.0],
                 size: [gutter_w, viewport_size[1]],
             });
+
+            // Half width, so the markers drawn over them stay readable.
+            // A deleted range has no line of its own, so it is a stub at
+            // the top edge of the line the deletion sits before.
+            let cell_h = app.screen_from_grid([0, 1])[1];
+            for line_idx in line_first..line_after {
+                let Some(kind) = self.vcs_kind_at_row(app, line_idx) else {
+                    continue;
+                };
+                let mut pos = app.screen_from_grid([0, line_idx]);
+                pos[1] += translate_y;
+                let (color, height) = match kind {
+                    VcsChangeKind::Added => (VCS_ADDED_COLOR, cell_h),
+                    VcsChangeKind::Modified => (VCS_MODIFIED_COLOR, cell_h),
+                    VcsChangeKind::Deleted => (VCS_DELETED_COLOR, cell_h / 4.0),
+                };
+                drawing.draw_rect(
+                    Rect {
+                        pos,
+                        size: [gutter_w / 2.0, height],
+                    },
+                    color,
+                );
+            }
+
             let text = &buffer_id.text(app);
             for line_idx in line_first..line_after {
                 let [start, _end] = wraps[line_idx];
@@ -1137,6 +1200,35 @@ impl EditorId {
             grid1
         };
         [grid0, grid1]
+    }
+
+    // How the file's line `row` is drawn on has changed, if it has. A
+    // soft-wrapped line is one logical line over several rows, and every
+    // one of them is marked.
+    fn vcs_kind_at_row(self, app: &App, row: usize) -> Option<VcsChangeKind> {
+        let status = app.editors.vcs_status[self].as_ref()?;
+        let buffer_id = app.editors.buffer_id[self];
+        let line = buffer_id.grid_from_offset(app, app.editors.wraps[self][row][0])[1];
+        vcs_kind_at_line(status, line)
+    }
+
+    /// The line of this editor's file at `position` - relative to the
+    /// editor's own rect - if that position is in the left gutter and the
+    /// line is one this editor draws a change bar on.
+    pub(crate) fn vcs_line_at(self, app: &App, position: [f32; 2]) -> Option<usize> {
+        let status = app.editors.vcs_status[self].as_ref()?;
+        let gutter_w = app.screen_from_grid([1, 0])[0];
+        if position[0] < 0.0 || position[0] >= gutter_w {
+            return None;
+        }
+        let top_pixel = app.editors.top_pixel[self].round();
+        let row = app.grid_from_screen([0.0, position[1] + top_pixel])[1];
+        let row = usize::try_from(row).ok()?;
+        let wrap = app.editors.wraps[self].get(row)?;
+        let buffer_id = app.editors.buffer_id[self];
+        let line = buffer_id.grid_from_offset(app, wrap[0])[1];
+        vcs_kind_at_line(status, line)?;
+        Some(line)
     }
 
     fn line_up(self, app: &App, point: CursorPoint) -> Option<CursorPoint> {

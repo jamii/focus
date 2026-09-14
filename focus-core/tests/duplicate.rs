@@ -32,7 +32,7 @@ fn app_with_files() -> (App, MockIO, WindowId) {
     insert_file(&mut io, "/repo/two.rs", "beta\ndelta\n");
     insert_file(&mut io, "/repo/sub/three.rs", "gamma\n");
     insert_file(&mut io, FISH_HISTORY_PATH, "- cmd: make test\n- cmd: ls\n");
-    io.git_roots.push(PathBuf::from("/repo"));
+    io.repo_roots.push(PathBuf::from("/repo"));
     (app, io, window_id)
 }
 

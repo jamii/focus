@@ -107,6 +107,16 @@ pub trait IO {
     /// no containing repo.
     fn repo_root(&mut self, dir: &Path) -> PathBuf;
 
+    /// The changes in the working-copy revision of the repo containing
+    /// `dir`, as `jj show @` would show them. Err if `dir` is not in a
+    /// repo we can read, or the read failed; the diff page shows the
+    /// message.
+    fn vcs_change(&mut self, dir: &Path) -> std::io::Result<VcsChange>;
+    /// Line-level status of the working-copy file `path`, against the same
+    /// base as `vcs_change`. None if the file is unchanged, not in a repo,
+    /// or unreadable - the gutter then shows nothing.
+    fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus>;
+
     /// Spawn `command` as a shell command in `dir`, with stdout and stderr
     /// merged into one stream. `args` are passed to the shell as `$argv`,
     /// so text can be handed over without any quoting.
@@ -161,6 +171,83 @@ pub struct RepoMatch {
     /// Text of the line containing the start of the match, without the
     /// trailing newline, truncated to the line limit.
     pub line_text: BString,
+}
+
+/// A revision's changes, as `jj show @` would show them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsChange {
+    pub root: PathBuf,
+    /// Short change id, as jj renders it.
+    pub change_id: BString,
+    /// Short commit id.
+    pub commit_id: BString,
+    /// "name <email> (timestamp)".
+    pub author: BString,
+    pub description: BString,
+    pub files: Vec<VcsFile>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsFile {
+    pub relative_path: PathBuf,
+    pub kind: VcsFileKind,
+    /// True for a file we won't diff, so `hunks` is empty.
+    pub binary: bool,
+    pub hunks: Vec<VcsHunk>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VcsFileKind {
+    Added,
+    Deleted,
+    Modified,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsHunk {
+    /// 0-based line ranges covered by this hunk in the old and new file.
+    pub old_lines: Range<usize>,
+    pub new_lines: Range<usize>,
+    /// The hunk's lines, in render order.
+    pub lines: Vec<VcsLine>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsLine {
+    pub kind: VcsLineKind,
+    /// The line, without its trailing newline.
+    pub text: BString,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VcsLineKind {
+    Context,
+    Removed,
+    Added,
+}
+
+/// Line-level status of one working-copy file, against the same base as
+/// `VcsChange`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsFileStatus {
+    /// Sorted and non-overlapping, in 0-based lines of the working-copy
+    /// file.
+    pub ranges: Vec<VcsLineRange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsLineRange {
+    /// An empty range `n..n` means lines were deleted just before line n,
+    /// so there is no line of our own to mark.
+    pub lines: Range<usize>,
+    pub kind: VcsChangeKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VcsChangeKind {
+    Added,
+    Modified,
+    Deleted,
 }
 
 const FONT_SIZE_INIT: f32 = 16.0;
