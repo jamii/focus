@@ -437,13 +437,37 @@ M file.txt
   +working copy
 "
     );
-    // ... and `@` is the revision that was checked out.
+    // ... and `@` is a new empty change on top of the revision, not the
+    // revision itself: typing in the editor makes a change of its own
+    // rather than amending an old one.
     let revisions = poller.revisions(&root).unwrap();
+    assert_eq!(revisions.len(), 3, "{revisions:?}");
     let checked_out = revisions
         .iter()
         .find(|revision| revision.is_working_copy)
         .unwrap();
-    assert_eq!(checked_out.change_id, base.change_id);
+    assert_eq!(checked_out.description, "");
+    assert_ne!(checked_out.change_id, base.change_id);
+    let change = poller
+        .change(&root, checked_out.change_id.as_bstr())
+        .unwrap();
+    assert_eq!(render(&change), "description: \n");
+}
+
+#[test]
+fn checking_out_the_same_revision_twice_changes_nothing_the_second_time() {
+    let root = repo_with_base("checkout_twice", &[("file.txt", "base\n")]);
+    let (_, base) = revisions(&root);
+    let revision = VcsRevisionId::Change(base.change_id);
+
+    let mut poller = Poller::new();
+    poller.checkout(&root, &revision).unwrap();
+    let after_first = poller.revisions(&root).unwrap();
+    poller.checkout(&root, &revision).unwrap();
+
+    // The second jump finds `@` already sitting on the revision, so it
+    // does not pile another empty change on top of it.
+    assert_eq!(poller.revisions(&root).unwrap(), after_first);
 }
 
 #[test]

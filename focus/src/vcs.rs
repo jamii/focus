@@ -595,8 +595,11 @@ impl Loaded {
         Ok(change_of(root, &commit, files))
     }
 
-    // Record the working copy, move `@` to `commit`, and update the files
-    // on disk to match - what `jj edit` does.
+    // Put a revision's files in the working copy, by making a new empty
+    // change on top of it - `jj new <revision>`, not `jj edit`. Landing
+    // on the revision itself would mean that typing in the editor amends
+    // it, which is not what looking at a line of it should do, and jj
+    // refuses it outright for an immutable revision.
     fn checkout(&mut self, change_id: &BStr) -> Result<(), String> {
         // Recording first is what makes this safe: our polling snapshots
         // are deliberately not recorded, so the changes made since the
@@ -606,20 +609,32 @@ impl Loaded {
         let commit = resolve(&repo, change_id)?;
         let name = self.workspace.workspace_name().to_owned();
         let old_commit = wc_commit(&repo, &name)?;
-        if old_commit.id() == commit.id() {
+        // Already looking at it: `@` is the revision itself, or the
+        // empty change a previous jump into it left on top.
+        if old_commit.id() == commit.id() || is_empty_child_of(&old_commit, &commit) {
             return Ok(());
         }
 
         let mut tx = repo.start_transaction();
-        block_on(tx.repo_mut().edit(name, &commit)).map_err(|error| error.to_string())?;
-        block_on(tx.repo_mut().rebase_descendants()).map_err(|error| error.to_string())?;
-        let repo = block_on(tx.commit(format!("edit commit {}", commit.id().hex())))
-            .map_err(|error| error.to_string())?;
-
-        block_on(
-            self.workspace
-                .check_out(repo.op_id().clone(), Some(&old_commit.tree()), &commit),
+        let mut_repo = tx.repo_mut();
+        let new_commit = block_on(
+            mut_repo
+                .new_commit(vec![commit.id().clone()], commit.tree())
+                .write(),
         )
+        .map_err(|error| error.to_string())?;
+        // Moving `@` abandons the change being left if it is empty and
+        // undescribed - jj does that on every command, and only for a
+        // change nothing else points at and nothing sits on top of.
+        block_on(mut_repo.edit(name, &new_commit)).map_err(|error| error.to_string())?;
+        block_on(mut_repo.rebase_descendants()).map_err(|error| error.to_string())?;
+        let repo = block_on(tx.commit("new empty commit")).map_err(|error| error.to_string())?;
+
+        block_on(self.workspace.check_out(
+            repo.op_id().clone(),
+            Some(&old_commit.tree()),
+            &new_commit,
+        ))
         .map_err(|error| error.to_string())?;
         Ok(())
     }
@@ -705,6 +720,14 @@ fn resolve(repo: &Arc<ReadonlyRepo>, change_id: &BStr) -> Result<Commit, String>
     repo.store()
         .get_commit(commit_id)
         .map_err(|error| error.to_string())
+}
+
+// `@` is an empty change sitting on top of `commit`: the state a previous
+// jump into that revision left behind.
+fn is_empty_child_of(wc_commit: &Commit, commit: &Commit) -> bool {
+    wc_commit.parent_ids().len() == 1
+        && &wc_commit.parent_ids()[0] == commit.id()
+        && wc_commit.tree().tree_ids_and_labels() == commit.tree().tree_ids_and_labels()
 }
 
 fn change_of(root: &Path, commit: &Commit, files: Vec<VcsFile>) -> VcsChange {
