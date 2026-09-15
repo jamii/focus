@@ -570,10 +570,17 @@ pub struct Pages {
 pub const BACKGROUND_COLOR: [u8; 4] = ...;
 pub const TEXT_COLOR: [u8; 4] = ...;
 pub const HIGHLIGHT_COLOR: [u8; 4] = ...;
+pub const COMMENT_COLOR: [u8; 4] = ...;
 pub const MULTI_CURSOR_COLOR: [u8; 4] = ...;
 pub const VCS_ADDED_COLOR: [u8; 4] = ...;
 pub const VCS_MODIFIED_COLOR: [u8; 4] = ...;
 pub const VCS_DELETED_COLOR: [u8; 4] = ...;
+pub const EMPHASIS_RED: [u8; 4] = ...;
+pub const EMPHASIS_YELLOW: [u8; 4] = ...;
+pub const EMPHASIS_GREEN: [u8; 4] = ...;
+pub const MARKUP_CODE_COLOR: [u8; 4] = ...;
+pub const MARKUP_EMPHASIS_COLOR: [u8; 4] = ...;
+pub const MARKUP_STRONG_COLOR: [u8; 4] = ...;
 
 ## pub mod focus_core::window
 

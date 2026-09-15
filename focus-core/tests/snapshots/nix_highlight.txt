@@ -1,0 +1,44 @@
+ { pkgs ? import <nixpkgs> { } }:  # a comment
+ aabbbbacaccccccacccccccccaaaaaacaaaaaaaaaaaaa
+ /* a block comment */
+ aaaaaaaaaaaaaaaaaaaaa
+ let
+ ccc
+   pkg-name = "focus";
+ aaddddddddacacccccccc
+   script = ''
+ aaeeeeeeacacc
+     echo ${pkg-name}
+ cccccccccccccccccccc
+   '';
+ ccccc
+ in
+ cc
+ if pkgs == null then throw "no pkgs" else
+ ccabbbbaccaffffaccccagggggacccccccccacccc
+ pkgs.mkShell { src = ./.; inherit script; buildInputs = [ pkgs.rustc ]; }
+ bbbbchhhhhhhaaaiiiacaccccacccccccaeeeeeecajjjjjjjjjjjacaaabbbbckkkkkaacaa
+
+
+
+
+
+
+
+
+
+
+ /repo/c.nix 1:1
+ ccccccccccccccc
+
+a = #999999ff
+b = #fcff99ff
+c = #e6e6e6ff
+d = #a7ff99ff
+e = #fc99ffff
+f = #ff99f5ff
+g = #ff0000ff
+h = #ffc099ff
+i = #f5ff99ff
+j = #b899ffff
+k = #ec99ffff

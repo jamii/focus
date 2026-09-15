@@ -5,6 +5,10 @@ edition = "2024"
 
 [dependencies]
 bstr = "1"
+# markdown-rs: a CommonMark and GFM parser that is two crates all told,
+# needs no build script, and has no unsafe in it. Focus wants the tree and
+# the byte offsets on it, not the HTML everything else is for.
+markdown = "1"
 similar = { version = "3", features = ["bytes"] }
 
 [dev-dependencies]

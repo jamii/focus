@@ -6,6 +6,7 @@ pub mod fuzz;
 mod fuzz_gen;
 mod fuzzy;
 pub mod input;
+pub(crate) mod language;
 pub(crate) mod map;
 pub mod page;
 pub mod style;

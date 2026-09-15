@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime};
 use bstr::{BStr, BString, ByteSlice};
 
 use crate::app::{App, IO};
+use crate::language::{self, Highlight, Language, Span};
 use crate::map::Map;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
@@ -15,6 +16,8 @@ pub struct Buffers {
 
     source: Map<BufferId, Source>,
     text: Map<BufferId, BString>,
+    /// Where this buffer's colours come from, kept in step with `text`.
+    highlight: Map<BufferId, Highlight>,
     newlines: Map<BufferId, Vec<usize>>,
     last_modified_time: Map<BufferId, Duration>,
     undos: Map<BufferId, Vec<Vec<Vec<Edit>>>>,
@@ -73,6 +76,7 @@ impl Buffers {
             buffer_count: 0,
             source: Map::new(),
             text: Map::new(),
+            highlight: Map::new(),
             newlines: Map::new(),
             last_modified_time: Map::new(),
             undos: Map::new(),
@@ -142,6 +146,7 @@ pub(crate) fn copy(app: &mut App, buffer_id: BufferId) -> BufferId {
         }
     };
     let text = app.buffers.text[buffer_id].clone();
+    let highlight = app.buffers.highlight[buffer_id].clone();
     let newlines = app.buffers.newlines[buffer_id].clone();
     let last_modified_time = app.buffers.last_modified_time[buffer_id];
     let undos = app.buffers.undos[buffer_id].clone();
@@ -150,6 +155,7 @@ pub(crate) fn copy(app: &mut App, buffer_id: BufferId) -> BufferId {
     let last_center_offset = app.buffers.last_center_offset[buffer_id];
     let copy_id = insert(app, source);
     app.buffers.text[copy_id] = text;
+    app.buffers.highlight[copy_id] = highlight;
     app.buffers.newlines[copy_id] = newlines;
     app.buffers.last_modified_time[copy_id] = last_modified_time;
     app.buffers.undos[copy_id] = undos;
@@ -160,10 +166,21 @@ pub(crate) fn copy(app: &mut App, buffer_id: BufferId) -> BufferId {
 }
 
 fn insert(app: &mut App, source: Source) -> BufferId {
+    // A buffer's language comes from its path and never changes, so this
+    // is the only place it is decided. Everything else - scratch buffers,
+    // input fields, generated output - starts out with no colours, and a
+    // page that wants to colour its own output calls `set_spans`.
+    let language = match &source {
+        Source::File(file) => Language::from_path(&file.absolute_path),
+        Source::Scratch | Source::Generated => None,
+    };
     let buffer_id = BufferId(app.buffers.buffer_count);
     app.buffers.buffer_count += 1;
     app.buffers.source.insert(buffer_id, source);
     app.buffers.text.insert(buffer_id, "".into());
+    app.buffers
+        .highlight
+        .insert(buffer_id, Highlight::new(language, "".into()));
     app.buffers.newlines.insert(buffer_id, vec![]);
     app.buffers
         .last_modified_time
@@ -179,6 +196,7 @@ pub(crate) fn assert_invariants(app: &App) {
     let buffers = &app.buffers;
     assert_eq!(buffers.source.len(), buffers.buffer_count);
     assert_eq!(buffers.text.len(), buffers.buffer_count);
+    assert_eq!(buffers.highlight.len(), buffers.buffer_count);
     assert_eq!(buffers.newlines.len(), buffers.buffer_count);
     assert_eq!(buffers.last_modified_time.len(), buffers.buffer_count);
     assert_eq!(buffers.undos.len(), buffers.buffer_count);
@@ -188,6 +206,7 @@ pub(crate) fn assert_invariants(app: &App) {
     for buffer_id in (0..buffers.buffer_count).map(BufferId) {
         buffers.source[buffer_id].assert_invariants();
         let text = &buffers.text[buffer_id];
+        buffers.highlight[buffer_id].assert_invariants(text.as_bstr());
         let newlines = &buffers.newlines[buffer_id];
         assert_eq!(text.chars().filter(|c| *c == '\n').count(), newlines.len());
         for offset in newlines {
@@ -222,6 +241,99 @@ pub(crate) fn assert_invariants(app: &App) {
 impl BufferId {
     pub fn text(self, app: &App) -> &BStr {
         app.buffers.text[self].as_bstr()
+    }
+
+    /// The colour of every byte in `range`, as the longest runs of one
+    /// colour that cover it exactly. `out` is cleared first, and is meant
+    /// to be reused across the lines of a frame.
+    pub(crate) fn color_runs(
+        self,
+        app: &App,
+        range: std::ops::Range<usize>,
+        out: &mut Vec<(std::ops::Range<usize>, [u8; 4])>,
+    ) {
+        app.buffers.highlight[self].color_runs(self.text(app), range, out);
+    }
+
+    /// How far the line covering `line` should be indented. An empty
+    /// range is a line about to be created, as Enter does. Zero for a
+    /// buffer with no language: there is nothing to work it out from.
+    pub(crate) fn ideal_indent(self, app: &App, line: std::ops::Range<usize>) -> usize {
+        match &app.buffers.highlight[self] {
+            Highlight::Language { language, tokens } => {
+                tokens.ideal_indent(self.text(app), line, *language)
+            }
+            Highlight::Document { .. } => language::document_indent(self.text(app), line.start),
+            Highlight::Plain | Highlight::Spans(_) => 0,
+        }
+    }
+
+    /// Whether `line` leads with something that decides where the line
+    /// itself goes: a bracket, or a word that opens or closes a block.
+    /// Such a line is re-indented as it is typed, because what it leads
+    /// with is not known until it has been. Every other line stays where
+    /// it was put - which matters most in Python, where the indent of a
+    /// line is the only thing saying which block it is in.
+    pub(crate) fn leads_with_indent_marker(self, app: &App, line: std::ops::Range<usize>) -> bool {
+        let Highlight::Language { language, .. } = &app.buffers.highlight[self] else {
+            return false;
+        };
+        let text = self.text(app)[line].trim_ascii_start();
+        // A quote too: a line that closes a string running over several
+        // lines is back under the language's rules, and where it goes is
+        // not known until the closing quote is there.
+        if matches!(text.first(), Some(b')' | b']' | b'}' | b'{' | b'\'' | b'"')) {
+            return true;
+        }
+        let word_len = text
+            .iter()
+            .take_while(|byte| byte.is_ascii_alphanumeric() || **byte == b'_')
+            .count();
+        if word_len == 0 {
+            return false;
+        }
+        let is_marker = |word: &[u8]| {
+            language
+                .block_keyword()
+                .iter()
+                .chain(language.block_close().iter().map(|(closer, _)| closer))
+                .any(|marker| word == marker.as_bytes())
+        };
+        // The word one character ago too, so that typing on past `else`
+        // into `elsewhere` puts the line back where it belongs rather
+        // than leaving it dedented by the word it briefly was.
+        is_marker(&text[..word_len]) || is_marker(&text[..word_len - 1])
+    }
+
+    /// Colour a generated buffer as `language`. A preview holds a copy of
+    /// somebody else's file, so the language comes from the page that put
+    /// it there rather than from a path of its own - but once set, the
+    /// colours are read from the text and kept up with it exactly as a
+    /// file's are. Cheap to call every tick: it only does the work when
+    /// the language actually changes.
+    pub(crate) fn set_language(self, app: &mut App, language: Option<Language>) {
+        assert!(!self.is_editable(app), "language on an editable buffer");
+        if app.buffers.highlight[self].language() == language {
+            return;
+        }
+        let text = app.buffers.text[self].clone();
+        app.buffers.highlight[self] = Highlight::new(language, text.as_bstr());
+    }
+
+    /// Colour the text of a generated buffer. The page that writes the
+    /// text writes the colours, in the same tick: `spans` are offsets into
+    /// the text as it is now, sorted and non-overlapping.
+    pub(crate) fn set_spans(self, app: &mut App, spans: Vec<Span>) {
+        assert!(!self.is_editable(app), "spans on an editable buffer");
+        let len = self.text(app).len();
+        assert!(
+            spans
+                .windows(2)
+                .all(|pair| pair[0].range.end <= pair[1].range.start)
+                && spans.last().is_none_or(|span| span.range.end <= len),
+            "spans must be sorted, non-overlapping and inside the text"
+        );
+        app.buffers.highlight[self] = Highlight::Spans(spans);
     }
 
     pub(crate) fn source(self, app: &App) -> &Source {
@@ -431,6 +543,30 @@ impl BufferId {
             // `\n` is a single byte in any encoding this editor sees, so a
             // byte scan finds the same offsets as a char scan.
             app.buffers.newlines[self] = app.buffers.text[self].find_iter(b"\n").collect();
+        }
+
+        // Colours follow the text. A buffer that gets them from its own
+        // text reads it again from scratch: this is the one place the
+        // text changes, so there is no way to forget, and a keystroke's
+        // worth of work on a file is a fraction of a frame. Spans written
+        // by a page move with the text they were written for, the same
+        // way cursors do, so that output streaming into a generated
+        // buffer keeps its colours.
+        match &mut app.buffers.highlight[self] {
+            Highlight::Plain => {}
+            Highlight::Language { .. } | Highlight::Document { .. } => {
+                let (highlight, text) = (&mut app.buffers.highlight, &app.buffers.text);
+                highlight[self].refresh(text[self].as_bstr());
+            }
+            Highlight::Spans(spans) => {
+                let mut kept = Vec::with_capacity(spans.len());
+                for span in spans.drain(..) {
+                    if let Some(range) = diff.apply_range(span.range) {
+                        kept.push(Span { range, ..span });
+                    }
+                }
+                *spans = kept;
+            }
         }
 
         app.buffers.last_modified_time[self] = frame_start;

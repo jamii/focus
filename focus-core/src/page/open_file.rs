@@ -11,6 +11,7 @@ use crate::{
     editor::{self, EditorId},
     fuzzy,
     input::{ButtonState, InputEvent, Key, NamedKey},
+    language::Language,
     window::WindowId,
 };
 
@@ -104,18 +105,19 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: 
         matches!(&listing, Ok(listing) if !listing.entries.is_empty());
 
     // Update preview text: the start of the selected file, if any.
-    let preview_text = match &listing {
+    let preview_path = match &listing {
         Ok(listing) => match listing.selected(app, list_id) {
-            Some(entry) if !entry.is_dir => {
-                let path = listing.dir.join(&entry.name);
-                match io.file_read_at(&path, 0, PREVIEW_BYTES) {
-                    Ok(contents) => BString::from(contents),
-                    Err(error) => BString::from(error.to_string()),
-                }
-            }
-            _ => BString::default(),
+            Some(entry) if !entry.is_dir => Some(listing.dir.join(&entry.name)),
+            _ => None,
         },
-        Err(_) => BString::default(),
+        Err(_) => None,
+    };
+    let preview_text = match &preview_path {
+        Some(path) => match io.file_read_at(path, 0, PREVIEW_BYTES) {
+            Ok(contents) => BString::from(contents),
+            Err(error) => BString::from(error.to_string()),
+        },
+        None => BString::default(),
     };
     let preview_buffer_id = app.editors.buffer_id[preview_id];
     if preview_buffer_id.text(app) != preview_text.as_bstr() {
@@ -123,6 +125,8 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: 
         // The selection changed, so show the top of the new file.
         preview_id.cursor_reset(app);
     }
+    // A preview of a file reads like the file: whatever language it is in.
+    preview_buffer_id.set_language(app, preview_path.as_deref().and_then(Language::from_path));
 
     preview_id.tick(app, io);
     list_id.tick(app, io);

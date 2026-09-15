@@ -103,6 +103,20 @@ pub(crate) fn copy(app: &mut App, buffer_id: BufferId) -> BufferId;
 pub(crate) fn assert_invariants(app: &App);
 
 impl BufferId {
+    pub(crate) fn color_runs(
+        self,
+        app: &App,
+        range: std::ops::Range<usize>,
+        out: &mut Vec<(std::ops::Range<usize>, [u8; 4])>,
+    );
+    pub(crate) fn ideal_indent(self, app: &App, line: std::ops::Range<usize>) -> usize;
+    pub(crate) fn leads_with_indent_marker(
+        self,
+        app: &App,
+        line: std::ops::Range<usize>,
+    ) -> bool;
+    pub(crate) fn set_language(self, app: &mut App, language: Option<Language>);
+    pub(crate) fn set_spans(self, app: &mut App, spans: Vec<Span>);
     pub(crate) fn source(self, app: &App) -> &Source;
     pub(crate) fn is_editable(self, app: &App) -> bool;
     pub(crate) fn path(self, app: &App) -> Option<PathBuf>;
@@ -245,6 +259,155 @@ pub(crate) type Score = [usize; 3];
 pub(crate) fn score(name: &[u8], pattern: &[u8]) -> Option<Score>;
 
 ## pub mod focus_core::input
+
+## pub(crate) mod focus_core::language
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Language {
+    Rust,
+    Python,
+    Shell,
+    Nix,
+    Markdown,
+}
+
+#[derive(Clone)]
+pub(crate) enum Highlight {
+    Plain,
+    Language { language: Language, tokens: Tokens },
+    Document { language: Language, spans: Vec<Span> },
+    Spans(Vec<Span>),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Span {
+    pub(crate) range: Range<usize>,
+    pub(crate) color: [u8; 4],
+}
+
+#[derive(Clone)]
+pub(crate) struct Tokens {
+    /* private fields */
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum TokenKind {
+    Whitespace,
+    Comment,
+    String,
+    Number,
+    Keyword,
+    Flow(Flow),
+    Identifier,
+    Open(Bracket),
+    Close(Bracket),
+    Punctuation,
+    Error,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum IndentStyle {
+    Structure,
+    Lines,
+    Document,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Flow {
+    Return,
+    Jump,
+    Error,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Bracket {
+    Round,
+    Square,
+    Curly,
+    Word,
+}
+
+impl Language {
+    pub(crate) fn from_path(path: &Path) -> Option<Language>;
+    pub(crate) fn indent_style(self) -> IndentStyle;
+    pub(crate) fn block_close(
+        self,
+    ) -> &'static [(&'static str, &'static [&'static str])];
+    pub(crate) fn block_keyword(self) -> &'static [&'static str];
+    pub(crate) fn indent_width(self) -> usize;
+}
+
+impl Highlight {
+    pub(crate) fn new(language: Option<Language>, text: &BStr) -> Highlight;
+    pub(crate) fn language(&self) -> Option<Language>;
+    pub(crate) fn refresh(&mut self, text: &BStr);
+    pub(crate) fn assert_invariants(&self, text: &BStr);
+    pub(crate) fn color_runs(
+        &self,
+        text: &BStr,
+        range: Range<usize>,
+        out: &mut Vec<(Range<usize>, [u8; 4])>,
+    );
+}
+
+impl Tokens {
+    pub(crate) fn new(language: Language, text: &BStr) -> Tokens;
+    pub(crate) fn assert_invariants(&self, text: &BStr);
+    pub(crate) fn len(&self) -> usize;
+    pub(crate) fn range(&self, ix: usize) -> Range<usize>;
+    pub(crate) fn token_containing(&self, offset: usize) -> Option<usize>;
+    pub(crate) fn token_before(&self, offset: usize) -> Option<usize>;
+    pub(crate) fn token_after(&self, offset: usize) -> Option<usize>;
+    pub(crate) fn ideal_indent(
+        &self,
+        text: &BStr,
+        line: Range<usize>,
+        language: Language,
+    ) -> usize;
+}
+
+pub(crate) struct Lexer<'a> {
+    /* private fields */
+}
+
+impl<'a> Lexer<'a> {
+    pub(crate) fn at_end(&self) -> bool;
+    pub(crate) fn peek(&self) -> Option<u8>;
+    pub(crate) fn peek_at(&self, ahead: usize) -> Option<u8>;
+    pub(crate) fn bump(&mut self) -> Option<u8>;
+    pub(crate) fn eat(&mut self, byte: u8) -> bool;
+    pub(crate) fn eat_while(&mut self, mut f: impl FnMut(u8) -> bool);
+    pub(crate) fn starts_with(&self, prefix: &[u8]) -> bool;
+    pub(crate) fn eat_str(&mut self, prefix: &[u8]) -> bool;
+    pub(crate) fn eat_quoted(&mut self, quote: u8) -> TokenKind;
+    pub(crate) fn eat_line(&mut self);
+}
+
+pub(crate) fn document_indent(text: &BStr, offset: usize) -> usize;
+pub(crate) fn is_identifier_start(byte: u8) -> bool;
+pub(crate) fn is_identifier_continue(byte: u8) -> bool;
+pub(crate) fn bracket(byte: u8) -> Option<TokenKind>;
+
+## mod focus_core::language::markdown
+
+pub(super) fn spans(text: &BStr) -> Vec<Span>;
+pub(super) fn content_indent(text: &BStr, offset: usize) -> usize;
+
+## mod focus_core::language::nix
+
+pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind;
+
+## mod focus_core::language::python
+
+pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind;
+
+## mod focus_core::language::rust
+
+pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind;
+
+## mod focus_core::language::shell
+
+pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind;
 
 ## pub(crate) mod focus_core::map
 
@@ -799,6 +962,9 @@ pub(super) fn handle_edits(
 pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
 
 ## pub mod focus_core::style
+
+pub(crate) fn heading_color(level: usize) -> [u8; 4];
+pub(crate) const fn hsla(h: f64, s: f64, l: f64, a: f64) -> [u8; 4];
 
 ## pub mod focus_core::window
 

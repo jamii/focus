@@ -1,0 +1,12 @@
+fn f(items: &[usize]) -> usize {
+    let x = items
+        .iter()
+        .copied()
+        .sum();
+    let y = x
+        + x
+        + x;
+    g(x
+        + y);
+    y
+}

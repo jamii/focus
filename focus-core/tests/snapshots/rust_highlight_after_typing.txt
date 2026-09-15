@@ -1,0 +1,36 @@
+ // let x = 1;
+ aaaaaaaaaaaaa
+ let y = 2;
+ bbbacababb
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ /repo/sample.rs 1:1
+ bbbbbbbbbbbbbbbbbbb
+
+a = #999999ff
+b = #e6e6e6ff
+c = #ffdb99ff

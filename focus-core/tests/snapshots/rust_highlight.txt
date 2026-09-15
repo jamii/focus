@@ -1,0 +1,62 @@
+ use std::fmt; // a line comment
+ aaabcccaadddabbbbbbbbbbbbbbbbbb
+ /* a /* nested */ block comment */
+ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ pub fn main<'a>(argv: &'a [&str]) -> Result<(), Error> {
+ aaabaabeeeeaffabggggabaffbbahhhbbbaabiiiiiiabbabjjjjjabb
+     let raw = r#"a "raw" string"#;
+ bbbbaaabkkkbabaaaaaaaaaaaaaaaaaaaa
+     let bytes = b"bytes\n";
+ bbbbaaablllllbabaaaaaaaaaaa
+     let ch = '\'';
+ bbbbaaabmmbabaaaaa
+     let nums = [0xff, 1_000u64, 1.5e-9, 1..2];
+ bbbbaaabnnnnbabbaaaaabaaaaaaaaabaaaaaaabaaaaba
+     let r#match = argv.len();
+ bbbbaaabooooooobabggggapppbba
+     'outer: loop {
+ bbbbqqqqqqabaaaabb
+         if nums.is_empty() { continue }
+ bbbbbbbbaabnnnnarrrrrrrrbbbbbssssssssbb
+         break 'outer;
+ bbbbbbbbsssssbqqqqqqa
+     }
+ bbbbb
+     fn g<T: ?Sized>(t: &T) -> Result<usize, Error> { Ok(h(t)?) }
+ bbbbaabtauabavvvvvabwabaubbaabiiiiiiaxxxxxabjjjjjabbbyybzbwb{bbb
+     return;
+ bbbb||||||a
+     println!("{raw} {ch} {nums:?} {}", r#match);
+ bbbb}}}}}}}abaaaaaaaaaaaaaaaaaaaaaaaaaboooooooba
+ /repo/sample.rs 1:1
+ aaaaaaaaaaaaaaaaaaa
+
+a = #e6e6e6ff
+b = #999999ff
+c = #d399ffff
+d = #df99ffff
+e = #9eff99ff
+f = #ffb499ff
+g = #ff99e2ff
+h = #99ffa2ff
+i = #ff99e9ff
+j = #99ffb8ff
+k = #c2ff99ff
+l = #99beffff
+m = #99fcffff
+n = #ff99beff
+o = #e6ff99ff
+p = #ff99ccff
+q = #99c7ffff
+r = #ff99c7ff
+s = #ffd500ff
+t = #ff99b9ff
+u = #c4ff99ff
+v = #bd99ffff
+w = #99ffdaff
+x = #aaff99ff
+y = #fffd99ff
+z = #ff99eeff
+{ = #ff0000ff
+| = #00ff00ff
+} = #99ffb6ff

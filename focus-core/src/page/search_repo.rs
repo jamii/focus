@@ -10,6 +10,7 @@ use crate::{
     drawing::Rect,
     editor::{self, EditorId},
     input::{ButtonState, InputEvent, Key, NamedKey},
+    language::Language,
     window::{self, WindowId},
 };
 
@@ -132,14 +133,14 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: 
         Some(entry) => entry.range.start.saturating_sub(PREVIEW_BYTES / 2),
         None => 0,
     };
-    let preview_text = match &selected {
-        Some(entry) => {
-            let path = state(app, page_id).root.join(&entry.relative_path);
-            match io.file_read_at(&path, window_start, PREVIEW_BYTES) {
-                Ok(contents) => BString::from(contents),
-                Err(error) => BString::from(error.to_string()),
-            }
-        }
+    let preview_path = selected
+        .as_ref()
+        .map(|entry| state(app, page_id).root.join(&entry.relative_path));
+    let preview_text = match &preview_path {
+        Some(path) => match io.file_read_at(path, window_start, PREVIEW_BYTES) {
+            Ok(contents) => BString::from(contents),
+            Err(error) => BString::from(error.to_string()),
+        },
         None => BString::default(),
     };
     let preview_buffer_id = app.editors.buffer_id[preview_id];
@@ -147,6 +148,10 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: 
         preview_buffer_id.replace(app, preview_text.as_bstr());
         preview_id.cursor_reset(app);
     }
+    // A preview of a file reads like the file: whatever language it is in.
+    // The window it shows starts mid-file, so anything that was already
+    // open where it begins - a string, a comment - is read from there.
+    preview_buffer_id.set_language(app, preview_path.as_deref().and_then(Language::from_path));
     // The range check fails if the match no longer fits in the window -
     // because the file changed since the search, or because the match is
     // longer than half of it.

@@ -1,0 +1,45 @@
+ #!/bin/sh
+ aaaaaaaaa
+ run() {  # not ${#a} and not a#b
+ bbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+   local raw='no \ escapes here'
+ aacccccadddcccccccccccccccccccc
+   echo "$1 $(date) `pwd`" >&2
+ aaeeeeaccccccccccccccccccaccc
+   case "$1" in
+ aaccccaccccacc
+   ./build.sh | --verbose)
+ aaccffffffffacaccggggggga
+     exec ./x.sh --flag=1
+ aaaahhhhacciiiiaccjjjjcc
+     ;;
+ aaaacc
+   esac
+ aacccc
+   while :; do
+ aacccccaccacc
+     break
+ aaaakkkkk
+   done
+ aacccc
+   return 0
+ aallllllac
+ }
+ a
+ run "$@" || exit 1
+ bbbaccccaccallllac
+ /repo/c.sh 1:1
+ cccccccccccccc
+
+a = #999999ff
+b = #99bbffff
+c = #e6e6e6ff
+d = #c2ff99ff
+e = #ff99b1ff
+f = #e6ff99ff
+g = #db99ffff
+h = #99beffff
+i = #f3ff99ff
+j = #ffc999ff
+k = #ffd500ff
+l = #00ff00ff

@@ -1,0 +1,13 @@
+fn f(a: bool) -> usize
+    where
+    usize: Copy,
+{
+    if a
+        && some_receiver
+        .method_call()
+        .other_method()
+    {
+        return 1;
+    }
+    0
+}

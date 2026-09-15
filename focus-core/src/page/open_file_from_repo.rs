@@ -10,6 +10,7 @@ use crate::{
     editor::{self, EditorId},
     fuzzy,
     input::{ButtonState, InputEvent, Key, NamedKey},
+    language::Language,
     window::WindowId,
 };
 
@@ -127,8 +128,9 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: 
     app.editors.gutter_marker[list_id] = has_selection(app, page_id);
 
     // Update preview text: the start of the selected file, if any.
-    let preview_text = match selected_path(app, page_id, list_id) {
-        Some(path) => match io.file_read_at(&path, 0, PREVIEW_BYTES) {
+    let preview_path = selected_path(app, page_id, list_id);
+    let preview_text = match &preview_path {
+        Some(path) => match io.file_read_at(path, 0, PREVIEW_BYTES) {
             Ok(contents) => BString::from(contents),
             Err(error) => BString::from(error.to_string()),
         },
@@ -140,6 +142,8 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: 
         // The selection changed, so show the top of the new file.
         preview_id.cursor_reset(app);
     }
+    // A preview of a file reads like the file: whatever language it is in.
+    preview_buffer_id.set_language(app, preview_path.as_deref().and_then(Language::from_path));
 
     preview_id.tick(app, io);
     list_id.tick(app, io);

@@ -1,0 +1,72 @@
+ # A heading
+ aabbbbbbbbb
+
+
+ Some *emphasis*, some **strong**, ~~struck out~~ and `a code span`,
+ cccccaddddddddacccccccaaeeeeeeaaccaaaaaaaaaaaaaacccccfffffffffffffc
+ then [a link](https://example.com/x) and <b>raw html</b>.
+ cccccaccccccaaaaaaaaaaaaaaaaaaaaaaaacccccaaaccccccccaaaac
+
+
+ ## Deeper
+ aaagggggg
+
+
+ - a list item
+ aaccccccccccc
+   carrying on
+ ccccccccccccc
+ - [ ] a task
+ aaaaaacccccc
+
+
+ > a quote
+ aaccccccc
+
+
+ ```rust
+ aaaaaaa
+ fn f() -> usize {
+ ccahaaaccaiiiiiaa
+     let x = "a string"; // a comment
+ aaaacccajacacccccccccccaaaaaaaaaaaaa
+     x.len()
+ aaaajckkkaa
+ }
+ a
+ ```
+ aaa
+
+
+ ```notalanguage
+ aaaaaaaaaaaaaaa
+ this stays one colour
+ fffffffffffffffffffff
+ ```
+ aaa
+
+
+
+
+
+
+
+
+
+
+
+
+ /repo/c.md 1:1
+ cccccccccccccc
+
+a = #999999ff
+b = #fff0c2ff
+c = #e6e6e6ff
+d = #8cbff2ff
+e = #daa3f5ff
+f = #85e0c2ff
+g = #ffe79eff
+h = #bdff99ff
+i = #aaff99ff
+j = #99ffe0ff
+k = #ff99ccff

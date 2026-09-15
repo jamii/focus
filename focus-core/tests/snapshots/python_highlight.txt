@@ -1,0 +1,47 @@
+ import os  # a comment
+ aaaaaabccbbbbbbbbbbbbb
+ DOC = """a docstring
+ dddbabaaaaaaaaaaaaaa
+ over two lines"""
+ aaaaaaaaaaaaaaaaa
+ def f(raw=r'a\raw', fmt=f'{os.sep}', num=0x1f_00, flt=1.5e-9):
+ aaabebfffaaaaaaaaaabgggaaaaaaaaaaaaabhhhaaaaaaaaabiiiaaaaaaaba
+     for k in raw:
+ bbbbaaabjbaabfffa
+         if not k:
+ bbbbbbbbaabaaabja
+             continue
+ bbbbbbbbbbbbkkkkkkkk
+         break
+ bbbbbbbbkkkkk
+     else:
+ bbbbaaaaa
+         raise ValueError(raw)
+ bbbbbbbblllllbmmmmmmmmmmbfffb
+     yield raw
+ bbbbnnnnnbfff
+     return {'k': [1, 2], **raw}
+ bbbbnnnnnnbbaaaabbaabababaafffb
+
+
+
+
+
+
+ /repo/c.py 1:1
+ aaaaaaaaaaaaaa
+
+a = #e6e6e6ff
+b = #999999ff
+c = #99ff99ff
+d = #ff99fdff
+e = #bdff99ff
+f = #c2ff99ff
+g = #df99ffff
+h = #ffb199ff
+i = #99adffff
+j = #99ffdbff
+k = #ffd500ff
+l = #ff0000ff
+m = #99ffa3ff
+n = #00ff00ff

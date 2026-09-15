@@ -1,0 +1,34 @@
+ use std::fmt; // a line comment
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ /* a /* nested */ block comment */
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ pub fn main<'a>(argv: &'a [&str]) -> Result<(), Error> {
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+     let raw = r#"a "raw" string"#;
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+     let bytes = b"bytes\n";
+ aaaaaaaaaaaaaaaaaaaaaaaaaaa
+     let ch = '\'';
+ aaaaaaaaaaaaaaaaaa
+     let nums = [0xff, 1_000u64, 1.5e-9, 1..2];
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+     let r#match = argv.len();
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+     'outer: loop {
+ aaaaaaaaaaaaaaaaaa
+         if nums.is_empty() { continue }
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+         break 'outer;
+ aaaaaaaaaaaaaaaaaaaaa
+     }
+ aaaaa
+     fn g<T: ?Sized>(t: &T) -> Result<usize, Error> { Ok(h(t)?) }
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+     return;
+ aaaaaaaaaaa
+     println!("{raw} {ch} {nums:?} {}", r#match);
+ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ /repo/notes.txt 1:1
+ aaaaaaaaaaaaaaaaaaa
+
+a = #e6e6e6ff

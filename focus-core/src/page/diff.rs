@@ -19,6 +19,8 @@ use crate::{
     drawing::Rect,
     editor::{self, EditorId},
     input::{ButtonState, InputEvent, Key, NamedKey},
+    language::Span,
+    style::{COMMENT_COLOR, VCS_ADDED_COLOR, VCS_DELETED_COLOR},
     window::WindowId,
 };
 
@@ -112,12 +114,17 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: W
 
     // The change is re-read every frame: the working copy changes under
     // us, from this editor and from anything else running.
-    let (text, locations, read) = match io.vcs_change(&root, &revision) {
+    let (text, locations, spans, read) = match io.vcs_change(&root, &revision) {
         Ok(change) => {
-            let (text, locations) = render(&change);
-            (text, locations, true)
+            let (text, locations, spans) = render(&change);
+            (text, locations, spans, true)
         }
-        Err(error) => (BString::from(error.to_string()), Vec::new(), false),
+        Err(error) => (
+            BString::from(error.to_string()),
+            Vec::new(),
+            Vec::new(),
+            false,
+        ),
     };
 
     let buffer_id = app.editors.buffer_id[diff_id];
@@ -126,6 +133,9 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: W
         // on the line it was on rather than sending it back to the top.
         let line = buffer_id.grid_from_offset(app, diff_id.main_cursor_offset(app))[1];
         buffer_id.replace(app, text.as_bstr());
+        // The page draws its own diff, so it colours it too, rather than
+        // running a tokenizer over text that is not in any one language.
+        buffer_id.set_spans(app, spans);
         let offset = buffer_id.offset_from_grid(app, [0, line]);
         diff_id.set_cursor_offsets(app, &[offset]);
     }
@@ -331,23 +341,26 @@ pub(super) fn render_text(change: &VcsChange) -> BString {
     render(change).0
 }
 
-fn render(change: &VcsChange) -> (BString, Vec<Option<Location>>) {
+fn render(change: &VcsChange) -> (BString, Vec<Option<Location>>, Vec<Span>) {
     // One entry per page line, so that a page line's index is its index
-    // into `locations`.
-    let mut lines: Vec<(BString, Option<Location>)> = Vec::new();
-    let mut line = |content: BString, location: Option<Location>| lines.push((content, location));
+    // into `locations`. The colour is the whole line's, which is all a
+    // diff needs: added, removed, or the structure around them.
+    let mut lines: Vec<(BString, Option<Location>, Option<[u8; 4]>)> = Vec::new();
+    let mut line = |content: BString, location: Option<Location>, color: Option<[u8; 4]>| {
+        lines.push((content, location, color))
+    };
 
-    line(format!("Change:  {}", change.change_id).into(), None);
-    line(format!("Commit:  {}", change.commit_id).into(), None);
-    line(format!("Author:  {}", change.author).into(), None);
-    line(BString::default(), None);
+    line(format!("Change:  {}", change.change_id).into(), None, None);
+    line(format!("Commit:  {}", change.commit_id).into(), None, None);
+    line(format!("Author:  {}", change.author).into(), None, None);
+    line(BString::default(), None, None);
     if change.description.is_empty() {
-        line("    (no description set)".into(), None);
+        line("    (no description set)".into(), None, None);
     } else {
         for description in change.description.lines() {
             let mut content = BString::from("    ");
             content.extend_from_slice(description);
-            line(content, None);
+            line(content, None, None);
         }
     }
 
@@ -372,10 +385,18 @@ fn render(change: &VcsChange) -> (BString, Vec<Option<Location>>) {
         if file.binary {
             header.extend_from_slice(b" (binary)");
         }
-        line(BString::default(), None);
+        line(BString::default(), None, None);
         // A file with no hunks - a binary one - still opens, at its top.
         let first = file.hunks.first().map_or(0, |hunk| hunk.new_lines.start);
-        line(header, at(first));
+        line(
+            header,
+            at(first),
+            Some(match file.kind {
+                VcsFileKind::Added => VCS_ADDED_COLOR,
+                VcsFileKind::Deleted => VCS_DELETED_COLOR,
+                VcsFileKind::Modified => COMMENT_COLOR,
+            }),
+        );
 
         for hunk in &file.hunks {
             line(
@@ -388,6 +409,7 @@ fn render(change: &VcsChange) -> (BString, Vec<Option<Location>>) {
                 )
                 .into(),
                 at(hunk.new_lines.start),
+                Some(COMMENT_COLOR),
             );
 
             // The lines of the hunk, numbered down both sides at once: a
@@ -410,7 +432,15 @@ fn render(change: &VcsChange) -> (BString, Vec<Option<Location>>) {
                 content.extend_from_slice(&hunk_line.text);
                 // A removed line sits before the line it was removed
                 // from, so both kinds point at `new`.
-                line(content, at(new));
+                line(
+                    content,
+                    at(new),
+                    match hunk_line.kind {
+                        VcsLineKind::Context => None,
+                        VcsLineKind::Added => Some(VCS_ADDED_COLOR),
+                        VcsLineKind::Removed => Some(VCS_DELETED_COLOR),
+                    },
+                );
                 match hunk_line.kind {
                     VcsLineKind::Context => {
                         old += 1;
@@ -423,9 +453,25 @@ fn render(change: &VcsChange) -> (BString, Vec<Option<Location>>) {
         }
     }
 
-    let text = bstr::join("\n", lines.iter().map(|(content, _)| content)).into();
-    let locations = lines.into_iter().map(|(_, location)| location).collect();
-    (text, locations)
+    // The lines are joined with a newline each, so a line's offset is the
+    // length of everything above it plus one byte per line above it.
+    let mut spans = Vec::new();
+    let mut offset = 0;
+    for (content, _, color) in &lines {
+        if let Some(color) = *color
+            && !content.is_empty()
+        {
+            spans.push(Span {
+                range: offset..offset + content.len(),
+                color,
+            });
+        }
+        offset += content.len() + 1;
+    }
+
+    let text = bstr::join("\n", lines.iter().map(|(content, _, _)| content)).into();
+    let locations = lines.into_iter().map(|(_, location, _)| location).collect();
+    (text, locations, spans)
 }
 
 fn display_line(line: usize) -> String {

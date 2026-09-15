@@ -2,7 +2,7 @@ use std::mem::{swap, take};
 use std::ops::Range;
 use std::time::Duration;
 
-use bstr::{BStr, ByteSlice};
+use bstr::{BStr, BString, ByteSlice};
 
 use crate::input::{ButtonState, InputEvent, Key, NamedKey, ScrollPhase};
 use crate::style::BACKGROUND_COLOR;
@@ -452,10 +452,11 @@ impl EditorId {
                 match logical_key {
                     Key::Character(char) if editable => {
                         self.cursor_replace(app, char.into());
+                        self.cursor_reindent_marker_line(app);
                         flush_doing = false;
                     }
                     Key::Named(NamedKey::Enter) if editable => {
-                        self.cursor_replace(app, "\n".into());
+                        self.cursor_newline(app);
                         flush_doing = false;
                     }
                     Key::Named(NamedKey::Space) if editable => {
@@ -715,19 +716,25 @@ impl EditorId {
                 }
             }
 
-            // Draw text.
+            // Draw text. A line is drawn as the runs of one colour that
+            // make it up - one run for a line of plain text, more for a
+            // line of source - so `runs` is built once and reused down the
+            // screen rather than allocated per line.
             {
-                let text = &buffer_id.text(app);
+                let mut runs = Vec::new();
                 for line_idx in line_first..line_after {
                     let [start, end] = wraps[line_idx];
-                    let mut screen = app.screen_from_grid([0, line_idx]);
-                    screen[1] += translate_y;
-                    drawing.draw_text(
-                        app.cell_size(),
-                        &text.as_bstr()[start..end],
-                        screen,
-                        TEXT_COLOR,
-                    );
+                    buffer_id.color_runs(app, start..end, &mut runs);
+                    for (range, color) in &runs {
+                        let mut screen = app.screen_from_grid([range.start - start, line_idx]);
+                        screen[1] += translate_y;
+                        drawing.draw_text(
+                            app.cell_size(),
+                            &buffer_id.text(app)[range.clone()],
+                            screen,
+                            *color,
+                        );
+                    }
                 }
             }
 
@@ -938,6 +945,81 @@ impl EditorId {
         let cursors = &mut app.editors.cursors[self];
         if cursors.len() > 1 {
             cursors.pop();
+        }
+    }
+
+    /// Enter, with the new line indented to wherever the brackets around
+    /// the cursor say it belongs.
+    fn cursor_newline(self, app: &mut App) {
+        let buffer_id = app.editors.buffer_id[self];
+        // Every cursor's indent is worked out against the text as it is
+        // now, because `cursor_replace_each` applies all of the inserts as
+        // one batch against that same text.
+        let offsets: Vec<usize> = app.editors.cursors[self]
+            .iter()
+            .map(|cursor| cursor.range().start)
+            .collect();
+        let inserts: Vec<BString> = offsets
+            .into_iter()
+            .map(|offset| {
+                let mut insert = BString::from("\n");
+                let indent = buffer_id.ideal_indent(app, offset..offset);
+                insert.extend(std::iter::repeat_n(b' ', indent));
+                insert
+            })
+            .collect();
+        self.cursor_replace_each(app, &|ix| Some(inserts[ix].as_bstr()));
+    }
+
+    /// What a line leads with decides where the line belongs - a closing
+    /// bracket lines up with the line its opener is on, the `{` of a block
+    /// sits back where its run-on condition started, a shell `fi` steps
+    /// back out of the block it closes - and none of that is known until
+    /// it has been typed. Nothing else re-indents as you type: a line
+    /// indented by hand stays where it was put.
+    fn cursor_reindent_marker_line(self, app: &mut App) {
+        let buffer_id = app.editors.buffer_id[self];
+        let mut line_starts: Vec<usize> = app.editors.cursors[self]
+            .iter()
+            .map(|cursor| {
+                buffer_id
+                    .line_range_from_offset(app, cursor.head.offset)
+                    .start
+            })
+            .collect();
+        // Edits go to the buffer in order, and two cursors on one line
+        // would otherwise both try to fix its indent.
+        line_starts.sort();
+        line_starts.dedup();
+
+        let mut edits = Vec::new();
+        for line_start in line_starts {
+            let line = buffer_id.line_range_from_offset(app, line_start);
+            let text = buffer_id.text(app);
+            let indent = text[line.clone()]
+                .iter()
+                .take_while(|byte| **byte == b' ')
+                .count();
+            if !buffer_id.leads_with_indent_marker(app, line.clone()) {
+                continue;
+            }
+            let ideal = buffer_id.ideal_indent(app, line.clone());
+            match ideal.cmp(&indent) {
+                std::cmp::Ordering::Equal => {}
+                std::cmp::Ordering::Less => edits.push(Edit {
+                    kind: EditKind::Delete,
+                    offset: line.start,
+                    text: text[line.start..line.start + indent - ideal].into(),
+                }),
+                std::cmp::Ordering::Greater => edits.push(Edit {
+                    kind: EditKind::Insert,
+                    offset: line.start,
+                    text: BString::from(" ".repeat(ideal - indent)),
+                }),
+            }
+        }
+        if !edits.is_empty() {
+            buffer_id.apply_edits(app, &edits);
         }
     }
 
