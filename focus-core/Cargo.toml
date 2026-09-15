@@ -6,3 +6,7 @@ edition = "2024"
 [dependencies]
 bstr = "1"
 similar = { version = "3", features = ["bytes"] }
+
+[dev-dependencies]
+syn = { version = "3", features = ["full"] }
+prettyplease = "0.3"

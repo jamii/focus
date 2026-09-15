@@ -1,0 +1,830 @@
+# Items shared inside the crates
+#
+# Every module of focus-core and focus, with the items, fields and methods
+# that are visible outside their own module but are not exported from the
+# crate: `pub(crate)` and `pub(super)`, and `pub` inside a module that isn't
+# itself exported. What the crates do export is in api_public.snap, and a
+# type with both kinds of member appears in both files, carrying the members
+# that belong to each.
+#
+# Same conventions as api_public.snap: whole types, signatures for the rest.
+#
+# Update intentionally with:
+#   UPDATE_API=1 cargo test -p focus-core --test api
+
+## crate focus
+
+## pub mod focus::atlas
+
+## pub mod focus::chrome
+
+impl IO for IoReal<'_>
+
+impl grep_searcher::Sink for MatchSink<'_>
+
+impl ApplicationHandler<Incoming> for Chrome
+
+## pub mod focus::daemon
+
+## pub mod focus::render
+
+## pub mod focus::vcs
+
+## crate focus_core
+
+## pub mod focus_core::app
+
+pub struct App {
+    pub(crate) search_buffer_text: BString,
+    pub(crate) modifiers: ModifiersState,
+    pub(crate) frame_start: Duration,
+    pub(crate) frame_dt: Duration,
+    pub(crate) save_count: u64,
+    /* other fields */
+}
+
+impl App {
+    pub(crate) fn screen_from_grid(&self, grid: [usize; 2]) -> [f32; 2];
+    pub(crate) fn grid_from_screen(&self, screen: [f32; 2]) -> [i32; 2];
+}
+
+## pub mod focus_core::buffer
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct BufferId(pub(crate) usize);
+
+pub struct Buffers {
+    pub(crate) buffer_count: usize,
+    pub(crate) last_center_offset: Map<BufferId, usize>,
+    /* private fields */
+}
+
+pub(crate) enum Source {
+    Scratch,
+    File(SourceFile),
+    Generated,
+}
+
+pub(crate) struct SourceFile {
+    pub(crate) absolute_path: PathBuf,
+    /* private fields */
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SaveKind {
+    Explicit,
+    Auto,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Edit {
+    pub(crate) kind: EditKind,
+    pub(crate) offset: usize,
+    pub(crate) text: BString,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum EditKind {
+    Insert,
+    Delete,
+}
+
+pub(crate) struct OffsetDiff {
+    /* private fields */
+}
+
+impl Buffers {
+    pub(crate) fn new() -> Buffers;
+}
+
+pub(crate) fn scratch(app: &mut App) -> BufferId;
+pub(crate) fn generated(app: &mut App) -> BufferId;
+pub(crate) fn copy(app: &mut App, buffer_id: BufferId) -> BufferId;
+pub(crate) fn assert_invariants(app: &App);
+
+impl BufferId {
+    pub(crate) fn source(self, app: &App) -> &Source;
+    pub(crate) fn is_editable(self, app: &App) -> bool;
+    pub(crate) fn path(self, app: &App) -> Option<PathBuf>;
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO);
+    pub(crate) fn replace(self, app: &mut App, text: &BStr);
+    pub(crate) fn append(self, app: &mut App, text: &BStr);
+    pub(crate) fn trim_front_to(self, app: &mut App, max_len: usize);
+    pub(crate) fn apply_edits(self, app: &mut App, edits: &[Edit]);
+    pub(crate) fn save(self, app: &mut App, io: &mut dyn IO, kind: SaveKind);
+    pub(crate) fn grid_from_offset(self, app: &App, offset: usize) -> [usize; 2];
+    pub(crate) fn offset_from_grid(self, app: &App, grid: [usize; 2]) -> usize;
+    pub(crate) fn line_range_from_offset(
+        self,
+        app: &App,
+        offset: usize,
+    ) -> std::ops::Range<usize>;
+    pub(crate) fn char_next(self, app: &App, offset: usize) -> Option<usize>;
+    pub(crate) fn char_prev(self, app: &App, offset: usize) -> Option<usize>;
+    pub(crate) fn flush_doing(self, app: &mut App);
+    pub(crate) fn undo(self, app: &mut App) -> Option<usize>;
+    pub(crate) fn redo(self, app: &mut App) -> Option<usize>;
+}
+
+impl Source {
+    pub fn assert_invariants(&self);
+}
+
+impl SourceFile {
+    pub fn assert_invariants(&self);
+}
+
+impl Edit {
+    pub(crate) fn coalesce(edits: &mut Vec<Edit>);
+    pub(crate) fn undo(edits: &mut Vec<Edit>);
+}
+
+impl OffsetDiff {
+    pub(crate) fn unchanged_before(&self) -> usize;
+    pub(crate) fn apply(&self, offset: usize) -> usize;
+    pub(crate) fn apply_before(&self, offset: usize) -> usize;
+    pub(crate) fn apply_range(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Option<std::ops::Range<usize>>;
+}
+
+## pub mod focus_core::drawing
+
+impl Rect {
+    pub(crate) fn from_corners(start: [f32; 2], end: [f32; 2]) -> Self;
+    pub(crate) fn intersect(self, b: Rect) -> Rect;
+    pub(crate) fn contains(&self, pos: [f32; 2]) -> bool;
+    pub(crate) fn split_from_bottom(&self, h: f32, gap: f32) -> [Rect; 2];
+    pub(crate) fn split_from_top(&self, h: f32, gap: f32) -> [Rect; 2];
+}
+
+impl Drawing {
+    pub(crate) fn size(&self) -> [f32; 2];
+}
+
+## pub mod focus_core::editor
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct EditorId(pub(crate) usize);
+
+pub struct Editors {
+    pub(crate) editor_count: usize,
+    pub(crate) buffer_id: Map<EditorId, BufferId>,
+    pub(crate) cursors: Map<EditorId, Vec<Cursor>>,
+    pub(crate) gutter_marker: Map<EditorId, bool>,
+    pub(crate) vcs_status: Map<EditorId, Option<VcsFileStatus>>,
+    /* private fields */
+}
+
+#[derive(Clone)]
+pub(crate) struct Cursor {
+    pub(crate) head: CursorPoint,
+    pub(crate) tail: CursorPoint,
+}
+
+#[derive(Copy, Clone)]
+pub(crate) struct CursorPoint {
+    pub(crate) offset: usize,
+    pub(crate) col_wanted: Option<usize>,
+}
+
+impl Editors {
+    pub(crate) fn new() -> Editors;
+}
+
+pub(crate) fn new(app: &mut App, buffer_id: BufferId) -> EditorId;
+pub(crate) fn new_scratch(app: &mut App) -> EditorId;
+pub(crate) fn new_generated(app: &mut App) -> EditorId;
+
+pub(crate) fn new_like(
+    app: &mut App,
+    editor_id: EditorId,
+    buffer_id: BufferId,
+) -> EditorId;
+
+pub(crate) fn new_copy(app: &mut App, editor_id: EditorId) -> EditorId;
+pub(crate) fn assert_invariants(app: &App);
+
+impl EditorId {
+    pub(crate) fn set_buffer(self, app: &mut App, buffer_id: BufferId);
+    pub(crate) fn main_cursor_offset(self, app: &App) -> usize;
+    pub(crate) fn set_cursor_offsets(self, app: &mut App, offsets: &[usize]);
+    pub(crate) fn set_marked_ranges(self, app: &mut App, ranges: &[Range<usize>]);
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO);
+    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>);
+    pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing, focused: bool);
+    pub(crate) fn handle_edits(self, app: &mut App, diff: &OffsetDiff);
+    pub(crate) fn scroll_offset_into_center(self, app: &mut App, offset: usize);
+    pub(crate) fn cursor_reset(self, app: &mut App);
+    pub(crate) fn cursor_goto_buffer_end(self, app: &mut App);
+    pub(crate) fn grid_from_offset(self, app: &App, offset: usize) -> [[usize; 2]; 2];
+    pub(crate) fn vcs_line_at(self, app: &App, position: [f32; 2]) -> Option<usize>;
+}
+
+## pub mod focus_core::fuzz
+
+## mod focus_core::fuzz_gen
+
+#[derive(Debug)]
+pub(crate) struct Frng<'a> {
+    /* private fields */
+}
+
+impl<'a> Frng<'a> {
+    pub(crate) fn new(buf: &'a [u8]) -> Self;
+    pub(crate) fn bytes(&mut self, n: usize) -> Option<&[u8]>;
+    pub(crate) fn array<const N: usize>(&mut self) -> Option<[u8; N]>;
+    pub(crate) fn boolean(&mut self) -> Option<bool>;
+    pub(crate) fn weighted(&mut self, weights: &[u32]) -> Option<usize>;
+}
+
+## mod focus_core::fuzzy
+
+pub(crate) type Score = [usize; 3];
+pub(crate) fn score(name: &[u8], pattern: &[u8]) -> Option<Score>;
+
+## pub mod focus_core::input
+
+## pub(crate) mod focus_core::map
+
+pub(crate) trait MapKey: Copy + Debug {
+    fn index(self) -> usize;
+    fn from_index(index: usize) -> Self;
+}
+
+impl MapKey for BufferId
+
+impl MapKey for EditorId
+
+impl MapKey for PageId
+
+impl MapKey for WindowId
+
+pub(crate) struct Map<K, V> {
+    /* private fields */
+}
+
+impl<K, V> Default for Map<K, V>
+
+impl<K, V> Map<K, V> {
+    pub(crate) fn new() -> Self;
+    pub(crate) fn len(&self) -> usize;
+    pub(crate) fn values(&self) -> impl Iterator<Item = &V> + '_;
+}
+
+impl<K: MapKey, V> Map<K, V> {
+    pub(crate) fn keys(&self) -> impl Iterator<Item = K> + '_;
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (K, &V)> + '_;
+    pub(crate) fn insert(&mut self, key: K, value: V);
+}
+
+impl<K: MapKey, V> Index<K> for Map<K, V>
+
+impl<K: MapKey, V> IndexMut<K> for Map<K, V>
+
+## pub mod focus_core::page
+
+pub(crate) use choose_command::new as new_choose_command;
+pub(crate) use choose_dir::new as new_choose_dir;
+pub(crate) use choose_revision::new as new_choose_revision;
+pub(crate) use diff::new as new_diff;
+pub(crate) use edit::new as new_edit;
+pub(crate) use launcher::new as new_launcher;
+pub(crate) use open_buffer::new as new_open_buffer;
+pub(crate) use open_file::new as new_open_file;
+pub(crate) use open_file_from_repo::new as new_open_file_from_repo;
+pub(crate) use runner::new as new_runner;
+pub(crate) use search_buffer::new as new_search_buffer;
+pub(crate) use search_repo::new as new_search_repo;
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct PageId(pub(crate) usize);
+
+pub struct Pages {
+    pub(crate) page_count: usize,
+    pub(crate) editor_ids: Map<PageId, Vec<EditorId>>,
+    /* private fields */
+}
+
+pub(crate) const GAP: f32 = ...;
+
+impl Pages {
+    pub(crate) fn new() -> Pages;
+}
+
+pub(crate) fn assert_invariants(app: &App);
+
+impl PageId {
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO, window_id: WindowId);
+    pub(crate) fn duplicate(self, app: &mut App, io: &mut dyn IO) -> PageId;
+    pub(crate) fn tick_background(self, app: &mut App, io: &mut dyn IO);
+    pub(crate) fn input(
+        self,
+        app: &mut App,
+        io: &mut dyn IO,
+        window_id: WindowId,
+        mut event: InputEvent<'_>,
+    );
+    pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing);
+    pub(crate) fn handle_edits(
+        self,
+        app: &mut App,
+        editor_ix: usize,
+        diff: &OffsetDiff,
+    );
+    pub(crate) fn teardown(self, app: &mut App, io: &mut dyn IO);
+    pub(crate) fn current_path(self, app: &App) -> Option<PathBuf>;
+    pub(crate) fn focused_editor(self, app: &App) -> EditorId;
+    pub(crate) fn editor_for_buffer(
+        self,
+        app: &App,
+        buffer_id: BufferId,
+    ) -> Option<EditorId>;
+    pub(crate) fn current_location(self, app: &App) -> Option<(PathBuf, usize)>;
+}
+
+## mod focus_core::page::choose_command
+
+#[derive(Clone)]
+pub(super) struct State {
+    /* private fields */
+}
+
+pub(super) const EDITOR_COUNT: usize = ...;
+pub(crate) fn new(app: &mut App, io: &mut dyn IO, dir: PathBuf) -> PageId;
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+
+## mod focus_core::page::choose_dir
+
+pub(super) const EDITOR_COUNT: usize = ...;
+pub(crate) fn new(app: &mut App, _io: &mut dyn IO, dir: PathBuf) -> PageId;
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+
+## mod focus_core::page::choose_revision
+
+#[derive(Clone)]
+pub(super) struct State {
+    /* private fields */
+}
+
+pub(super) const EDITOR_COUNT: usize = ...;
+pub(crate) fn new(app: &mut App, root: PathBuf) -> PageId;
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+
+## mod focus_core::page::diff
+
+#[derive(Clone)]
+pub(super) struct State {
+    /* private fields */
+}
+
+pub(super) const EDITOR_COUNT: usize = ...;
+
+pub(crate) fn new(
+    app: &mut App,
+    root: PathBuf,
+    revision: VcsRevisionId,
+    reveal: Option<(PathBuf, usize)>,
+) -> PageId;
+
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(page_id: PageId, app: &App) -> Option<PathBuf>;
+pub(super) fn render_text(change: &VcsChange) -> BString;
+
+## mod focus_core::page::edit
+
+pub(super) const EDITOR_COUNT: usize = ...;
+pub(crate) fn new(app: &mut App, editor_id: EditorId) -> PageId;
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(page_id: PageId, app: &App) -> Option<PathBuf>;
+
+## mod focus_core::page::launcher
+
+#[derive(Clone)]
+pub(super) struct State {
+    /* private fields */
+}
+
+pub(super) const EDITOR_COUNT: usize = ...;
+pub(crate) fn new(app: &mut App, io: &mut dyn IO) -> PageId;
+pub(super) fn duplicate(page_id: PageId, app: &mut App, io: &mut dyn IO) -> PageId;
+pub(super) fn teardown(page_id: PageId, app: &mut App, io: &mut dyn IO);
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+
+## mod focus_core::page::open_buffer
+
+#[derive(Clone)]
+pub(super) struct State {
+    /* private fields */
+}
+
+pub(super) const EDITOR_COUNT: usize = ...;
+pub(crate) fn new(app: &mut App) -> PageId;
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+
+## mod focus_core::page::open_file
+
+pub(super) const EDITOR_COUNT: usize = ...;
+pub(crate) fn new(app: &mut App, dir: PathBuf) -> PageId;
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+
+## mod focus_core::page::open_file_from_repo
+
+#[derive(Clone)]
+pub(super) struct State {
+    /* private fields */
+}
+
+pub(super) const EDITOR_COUNT: usize = ...;
+pub(crate) fn new(app: &mut App, io: &mut dyn IO, dir: PathBuf) -> PageId;
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+
+## mod focus_core::page::runner
+
+#[derive(Clone)]
+pub(super) struct State {
+    /* private fields */
+}
+
+pub(super) const EDITOR_COUNT: usize = ...;
+
+pub(crate) fn new(
+    app: &mut App,
+    io: &mut dyn IO,
+    dir: PathBuf,
+    command: BString,
+) -> PageId;
+
+pub(super) fn duplicate(page_id: PageId, app: &mut App, io: &mut dyn IO) -> PageId;
+pub(super) fn tick_background(page_id: PageId, app: &mut App, io: &mut dyn IO);
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    page_id: PageId,
+    app: &mut App,
+    editor_ix: usize,
+    diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+pub(super) fn teardown(page_id: PageId, app: &mut App, io: &mut dyn IO);
+
+## mod focus_core::page::search_buffer
+
+#[derive(Clone)]
+pub(super) struct State {
+    /* private fields */
+}
+
+pub(super) const EDITOR_COUNT: usize = ...;
+
+pub(crate) fn new(
+    app: &mut App,
+    origin: PageId,
+    buffer_id: BufferId,
+    initial_offset: usize,
+) -> PageId;
+
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    page_id: PageId,
+    app: &mut App,
+    editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+
+## mod focus_core::page::search_repo
+
+#[derive(Clone)]
+pub(super) struct State {
+    /* private fields */
+}
+
+pub(super) const EDITOR_COUNT: usize = ...;
+pub(crate) fn new(app: &mut App, dir: PathBuf) -> PageId;
+pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId;
+
+pub(super) fn tick(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    _window_id: WindowId,
+);
+
+pub(super) fn input(
+    page_id: PageId,
+    app: &mut App,
+    io: &mut dyn IO,
+    window_id: WindowId,
+    event: &InputEvent<'_>,
+) -> bool;
+
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect>;
+
+pub(super) fn handle_edits(
+    _page_id: PageId,
+    _app: &mut App,
+    _editor_ix: usize,
+    _diff: &OffsetDiff,
+);
+
+pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
+
+## pub mod focus_core::style
+
+## pub mod focus_core::window
+
+pub struct Windows {
+    pub(crate) window_count: usize,
+    pub(crate) open_count: usize,
+    pub(crate) page_stack: Map<WindowId, Vec<PageId>>,
+    pub(crate) open: Map<WindowId, bool>,
+    /* private fields */
+}
+
+impl Windows {
+    pub(crate) fn new() -> Windows;
+}
+
+pub(crate) fn new(app: &mut App, page_id: PageId) -> WindowId;
+pub(crate) fn open(app: &mut App, io: &mut dyn IO, page_id: PageId) -> WindowId;
+pub(crate) fn assert_invariants(app: &App);
+
+impl WindowId {
+    pub(crate) fn current_page(self, app: &App) -> PageId;
+    pub(crate) fn push_page(self, app: &mut App, io: &mut dyn IO, page_id: PageId);
+    pub(crate) fn replace_page(self, app: &mut App, io: &mut dyn IO, page_id: PageId);
+    pub(crate) fn pop_page(self, app: &mut App, io: &mut dyn IO);
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO);
+    pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>);
+    pub(crate) fn close(self, app: &mut App, io: &mut dyn IO);
+    pub(crate) fn draw(self, app: &mut App, drawing: &mut Drawing);
+}

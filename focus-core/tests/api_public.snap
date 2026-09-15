@@ -1,0 +1,590 @@
+# Items exported from the crates
+#
+# The public API of focus-core and focus: `pub` items in modules that are
+# themselves `pub` all the way up to the crate root, with their `pub` fields
+# and methods. Everything else is in api_internal.snap.
+#
+# Types are listed in full, except for fields that are not exported;
+# functions, consts and statics are listed as signatures only, and trait
+# impls as a header line without their methods. Doc comments are stripped.
+#
+# Update intentionally with:
+#   UPDATE_API=1 cargo test -p focus-core --test api
+
+## crate focus
+
+pub const APP_ID: &str = ...;
+
+## pub mod focus::atlas
+
+#[derive(Clone, Copy)]
+pub struct Glyph {
+    pub atlas_pos: [u32; 2],
+}
+
+pub struct Atlas {
+    pub size: [u32; 2],
+    pub pixels: Vec<u8>,
+    pub glyphs: HashMap<char, Glyph>,
+    pub notdef: Glyph,
+    pub cell_size: [u32; 2],
+}
+
+impl Atlas {
+    pub fn build(font: &Font, font_size: f32) -> Self;
+    pub fn glyph(&self, ch: char) -> Glyph;
+}
+
+## pub mod focus::chrome
+
+pub fn run(listener: UnixListener);
+
+pub fn repo_search(
+    dir: &Path,
+    pattern: &BStr,
+    match_limit: usize,
+    line_limit: usize,
+) -> std::io::Result<RepoSearch>;
+
+pub fn canonical_path(path: &Path) -> PathBuf;
+
+## pub mod focus::daemon
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Request {
+    Scratch,
+    File(PathBuf),
+    Launcher,
+    Quit,
+}
+
+pub const REPLY_OK: &[u8] = ...;
+
+impl Request {
+    pub fn encode(&self) -> Vec<u8>;
+    pub fn decode(bytes: &[u8]) -> Result<Request, String>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Cli {
+    pub request: Request,
+    pub replace: bool,
+    pub foreground: bool,
+    pub daemon: bool,
+    pub no_wait: bool,
+}
+
+pub fn parse_args(args: &[OsString], cwd: &Path) -> Result<Cli, String>;
+pub fn runtime_dir() -> PathBuf;
+pub fn socket_path(runtime_dir: &Path) -> PathBuf;
+pub fn lock_path(runtime_dir: &Path) -> PathBuf;
+
+pub enum Started {
+    NothingToDo,
+    Sent(UnixStream),
+    Listening { listener: UnixListener, connection: UnixStream },
+}
+
+pub fn connect_or_start(runtime_dir: &Path, cli: &Cli) -> std::io::Result<Started>;
+pub fn wait_for_close(mut connection: UnixStream);
+pub const LISTEN_FD_VAR: &str = ...;
+pub const LISTEN_FD: RawFd = ...;
+pub fn listener_from_env() -> std::io::Result<UnixListener>;
+pub fn listener_from_fd(fd: RawFd) -> std::io::Result<UnixListener>;
+
+pub struct Incoming {
+    pub request: Request,
+    pub connection: UnixStream,
+}
+
+pub fn serve(listener: UnixListener, sink: impl Fn(Incoming) + Send + 'static);
+pub fn spawn(listener: &UnixListener) -> std::io::Result<()>;
+
+## pub mod focus::render
+
+pub struct Renderer {
+    /* private fields */
+}
+
+impl Renderer {
+    pub unsafe fn new() -> Self;
+    pub unsafe fn upload_atlas(&mut self, atlas: Atlas);
+    pub unsafe fn render(&mut self, commands: &[DrawCommand], fb_w: i32, fb_h: i32);
+}
+
+impl Drop for Renderer
+
+## pub mod focus::vcs
+
+pub struct Vcs {
+    /* private fields */
+}
+
+pub struct Poll {
+    pub change: Result<VcsChange, String>,
+    pub statuses: HashMap<PathBuf, VcsFileStatus>,
+}
+
+impl Vcs {
+    pub fn new() -> Vcs;
+    pub fn change(
+        &self,
+        root: &Path,
+        revision: &VcsRevisionId,
+    ) -> std::io::Result<VcsChange>;
+    pub fn file_status(&self, root: &Path, path: &Path) -> Option<VcsFileStatus>;
+    pub fn revisions(&self, root: &Path) -> std::io::Result<Vec<VcsRevision>>;
+    pub fn checkout(
+        &self,
+        root: &Path,
+        revision: &VcsRevisionId,
+    ) -> Option<std::io::Result<()>>;
+}
+
+impl Drop for Vcs
+
+pub struct Poller {
+    /* private fields */
+}
+
+impl Poller {
+    pub fn new() -> Poller;
+    pub fn poll(&mut self, root: &Path) -> Poll;
+    pub fn revisions(&mut self, root: &Path) -> Result<Vec<VcsRevision>, String>;
+    pub fn change(
+        &mut self,
+        root: &Path,
+        change_id: &BStr,
+    ) -> Result<VcsChange, String>;
+    pub fn checkout(
+        &mut self,
+        root: &Path,
+        revision: &VcsRevisionId,
+    ) -> Result<(), String>;
+}
+
+## crate focus_core
+
+#[macro_export]
+macro_rules! log { /* ... */ }
+
+## pub mod focus_core::app
+
+pub struct App {
+    pub windows: Windows,
+    pub pages: Pages,
+    pub editors: Editors,
+    pub buffers: Buffers,
+    /* private fields */
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WindowSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+pub const INITIAL_TITLE: &str = ...;
+pub const INITIAL_SIZE: WindowSize = ...;
+
+pub trait IO {
+    fn open_window(&mut self, window_id: WindowId, title: String, size: WindowSize);
+    fn close_window(&mut self, window_id: WindowId);
+    fn set_window_title(&mut self, window_id: WindowId, title: String);
+    fn request_redraw(&mut self, window_id: WindowId);
+    fn rebuild_atlas(&mut self, font_size: f32) -> [u32; 2];
+    fn get_clipboard_text(&mut self) -> Option<BString>;
+    fn set_clipboard_text(&mut self, text: BString);
+    fn log(&mut self, message: std::fmt::Arguments<'_>);
+    fn exit(&mut self);
+    fn file_mtime(&mut self, path: &Path) -> std::io::Result<SystemTime>;
+    fn file_read(&mut self, path: &Path) -> std::io::Result<Vec<u8>>;
+    fn file_write(
+        &mut self,
+        path: &Path,
+        contents: &[u8],
+        create: bool,
+    ) -> std::io::Result<SystemTime>;
+    fn file_read_at(
+        &mut self,
+        path: &Path,
+        offset: usize,
+        limit: usize,
+    ) -> std::io::Result<Vec<u8>>;
+    fn file_create(&mut self, path: &Path) -> std::io::Result<()>;
+    fn home_dir(&mut self) -> PathBuf;
+    fn canonical_path(&mut self, path: &Path) -> PathBuf;
+    fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>>;
+    fn repo_files(&mut self, dir: &Path) -> std::io::Result<RepoFiles>;
+    fn repo_search(
+        &mut self,
+        dir: &Path,
+        pattern: &BStr,
+        match_limit: usize,
+        line_limit: usize,
+    ) -> std::io::Result<RepoSearch>;
+    fn repo_root(&mut self, dir: &Path) -> PathBuf;
+    fn vcs_change(
+        &mut self,
+        dir: &Path,
+        revision: &VcsRevisionId,
+    ) -> std::io::Result<VcsChange>;
+    fn vcs_revisions(&mut self, dir: &Path) -> std::io::Result<Vec<VcsRevision>>;
+    fn vcs_checkout(
+        &mut self,
+        dir: &Path,
+        revision: &VcsRevisionId,
+    ) -> Option<std::io::Result<()>>;
+    fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus>;
+    fn process_spawn(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) -> ProcessId;
+    fn process_poll(&mut self, id: ProcessId) -> ProcessPoll;
+    fn process_kill(&mut self, id: ProcessId);
+    fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]);
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub struct ProcessId(pub usize);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcessPoll {
+    pub new_output: Vec<u8>,
+    pub exit_code: Option<i32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DirEntry {
+    pub name: OsString,
+    pub is_dir: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RepoFiles {
+    pub root: PathBuf,
+    pub relative_paths: Vec<PathBuf>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RepoSearch {
+    pub root: PathBuf,
+    pub matches: Vec<RepoMatch>,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RepoMatch {
+    pub relative_path: PathBuf,
+    pub line: usize,
+    pub range: Range<usize>,
+    pub line_text: BString,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum VcsRevisionId {
+    WorkingCopy,
+    Change(BString),
+}
+
+impl VcsRevisionId {
+    pub fn name(&self) -> BString;
+}
+
+pub const ID_PREFIX_LEN: usize = ...;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsRevision {
+    pub change_id: BString,
+    pub commit_id: BString,
+    pub author: BString,
+    pub description: BString,
+    pub is_working_copy: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsChange {
+    pub root: PathBuf,
+    pub change_id: BString,
+    pub commit_id: BString,
+    pub author: BString,
+    pub description: BString,
+    pub files: Vec<VcsFile>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsFile {
+    pub relative_path: PathBuf,
+    pub kind: VcsFileKind,
+    pub binary: bool,
+    pub hunks: Vec<VcsHunk>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VcsFileKind {
+    Added,
+    Deleted,
+    Modified,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsHunk {
+    pub old_lines: Range<usize>,
+    pub new_lines: Range<usize>,
+    pub lines: Vec<VcsLine>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsLine {
+    pub kind: VcsLineKind,
+    pub text: BString,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VcsLineKind {
+    Context,
+    Removed,
+    Added,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsFileStatus {
+    pub ranges: Vec<VcsLineRange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsLineRange {
+    pub lines: Range<usize>,
+    pub kind: VcsChangeKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VcsChangeKind {
+    Added,
+    Modified,
+    Deleted,
+}
+
+impl App {
+    pub fn assert_invariants(&self);
+    pub fn new(io: &mut dyn IO) -> App;
+    pub fn tick(&mut self, io: &mut dyn IO, frame_start: Duration);
+    pub fn input(
+        &mut self,
+        io: &mut dyn IO,
+        window_id: WindowId,
+        event: InputEvent<'_>,
+    );
+    pub fn draw(&mut self, window_id: WindowId, drawing: &mut Drawing);
+    pub fn cell_size(&self) -> [u32; 2];
+}
+
+## pub mod focus_core::buffer
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct BufferId(/* private fields */);
+
+pub struct Buffers {
+    /* private fields */
+}
+
+impl Buffers {
+    pub fn keys(&self) -> impl Iterator<Item = BufferId> + '_;
+}
+
+pub fn from_file(app: &mut App, io: &mut dyn IO, absolute_path: PathBuf) -> BufferId;
+
+impl BufferId {
+    pub fn text(self, app: &App) -> &BStr;
+}
+
+## pub mod focus_core::drawing
+
+pub const FULL_BLOCK: char = ...;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Rect {
+    pub pos: [f32; 2],
+    pub size: [f32; 2],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Character {
+    pub ch: char,
+    pub dst: Rect,
+    pub color: [u8; 4],
+}
+
+#[derive(Clone, Debug)]
+pub enum DrawCommand {
+    Character(Character),
+    SetClip(Rect),
+}
+
+pub struct Drawing {
+    pub commands: Vec<DrawCommand>,
+    /* private fields */
+}
+
+impl Drawing {
+    pub fn new(screen_size: [f32; 2]) -> Self;
+    pub fn push_clip_rect(&mut self, rect: Rect) -> ClipScope<'_>;
+    pub fn draw_rect(&mut self, rect: Rect, color: [u8; 4]);
+    pub fn draw_text(
+        &mut self,
+        cell_size: [u32; 2],
+        text: &BStr,
+        pos: [f32; 2],
+        color: [u8; 4],
+    );
+}
+
+pub struct ClipScope<'a> {
+    /* private fields */
+}
+
+impl<'a> std::ops::Deref for ClipScope<'a>
+
+impl<'a> std::ops::DerefMut for ClipScope<'a>
+
+impl<'a> Drop for ClipScope<'a>
+
+## pub mod focus_core::editor
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct EditorId(/* private fields */);
+
+pub struct Editors {
+    /* private fields */
+}
+
+## pub mod focus_core::fuzz
+
+pub struct MockIO {
+    pub open_windows: Vec<WindowId>,
+    pub exited: bool,
+    pub screen_size: [f32; 2],
+    pub frame_start: Duration,
+    pub mouse_position: [f32; 2],
+    pub clipboard: Option<BString>,
+    pub logs: Vec<String>,
+    pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
+    pub repo_roots: Vec<PathBuf>,
+    pub vcs_changes: HashMap<(PathBuf, VcsRevisionId), VcsChange>,
+    pub vcs_statuses: HashMap<PathBuf, VcsFileStatus>,
+    pub vcs_revisions: HashMap<PathBuf, Vec<VcsRevision>>,
+    pub vcs_checkouts: Vec<(PathBuf, VcsRevisionId)>,
+    pub vcs_checkout_pending: bool,
+    pub vcs_checkout_error: Option<String>,
+    pub system_time: SystemTime,
+    pub next_process_output: Vec<u8>,
+    pub next_process_exit_code: Option<i32>,
+    pub processes: Vec<MockProcess>,
+    pub detached: Vec<DetachedProcess>,
+}
+
+pub struct MockProcess {
+    pub dir: PathBuf,
+    pub command: BString,
+    pub args: Vec<BString>,
+    pub pending_output: Vec<u8>,
+    pub exit_code: Option<i32>,
+    pub killed: bool,
+}
+
+pub struct DetachedProcess {
+    pub dir: PathBuf,
+    pub command: BString,
+    pub args: Vec<BString>,
+}
+
+impl MockIO {
+    pub fn new() -> Self;
+}
+
+impl IO for MockIO
+
+pub fn fuzz_one(bytes: &[u8]);
+
+## pub mod focus_core::input
+
+#[derive(Clone, Debug)]
+pub enum InputEvent<'a> {
+    CloseRequested,
+    ModifiersChanged(ModifiersState),
+    Key { state: ButtonState, logical_key: Key<'a> },
+    MouseWheel { y_lines: f32 },
+    TouchpadScroll { y_pixels: f32, phase: ScrollPhase },
+    MouseButton { state: ButtonState, position: [f32; 2] },
+    MouseMoved { position: [f32; 2] },
+    FocusChanged { focused: bool },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ScrollPhase {
+    Started,
+    Moved,
+    Ended,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ButtonState {
+    Pressed,
+    Released,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NamedKey {
+    Enter,
+    Space,
+    Backspace,
+    Delete,
+    ArrowLeft,
+    ArrowRight,
+    ArrowUp,
+    ArrowDown,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Key<'a> {
+    Character(&'a str),
+    Named(NamedKey),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct ModifiersState {
+    pub control: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub super_: bool,
+}
+
+## pub mod focus_core::page
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct PageId(/* private fields */);
+
+pub struct Pages {
+    /* private fields */
+}
+
+## pub mod focus_core::style
+
+pub const BACKGROUND_COLOR: [u8; 4] = ...;
+pub const TEXT_COLOR: [u8; 4] = ...;
+pub const HIGHLIGHT_COLOR: [u8; 4] = ...;
+pub const MULTI_CURSOR_COLOR: [u8; 4] = ...;
+pub const VCS_ADDED_COLOR: [u8; 4] = ...;
+pub const VCS_MODIFIED_COLOR: [u8; 4] = ...;
+pub const VCS_DELETED_COLOR: [u8; 4] = ...;
+
+## pub mod focus_core::window
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct WindowId(pub usize);
+
+pub struct Windows {
+    /* private fields */
+}
+
+pub fn open_scratch(app: &mut App, io: &mut dyn IO) -> WindowId;
+pub fn open_launcher(app: &mut App, io: &mut dyn IO) -> WindowId;
+pub fn quit(app: &mut App, io: &mut dyn IO);
+pub fn open_edit(app: &mut App, io: &mut dyn IO, buffer_id: BufferId) -> WindowId;
