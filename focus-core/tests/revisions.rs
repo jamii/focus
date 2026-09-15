@@ -14,14 +14,15 @@ use focus_core::window::WindowId;
 mod common;
 
 // Buffer creation order: file_app makes the file buffer (0) and its status
-// bar (1); alt+2 makes the picker's search field (2) and list (3);
-// ctrl+enter there makes the diff page's buffer (4) and status bar (5);
-// ctrl+enter there opens an edit page, which shares the file buffer and
-// makes a status bar of its own (6).
-const PICKER_LIST: usize = 3;
-const DIFF: usize = 4;
-const DIFF_STATUS_BAR: usize = 5;
-const OPENED_STATUS_BAR: usize = 6;
+// bar (1); alt+2 makes the picker's preview (2), search field (3) and list
+// (4); ctrl+enter there makes the diff page's buffer (5) and status bar
+// (6); ctrl+enter there opens an edit page, which shares the file buffer
+// and makes a status bar of its own (7).
+const PICKER_PREVIEW: usize = 2;
+const PICKER_LIST: usize = 4;
+const DIFF: usize = 5;
+const DIFF_STATUS_BAR: usize = 6;
+const OPENED_STATUS_BAR: usize = 7;
 
 const ROOT: &str = "/repo";
 const PATH: &str = "/repo/file.txt";
@@ -291,6 +292,93 @@ fn the_picker_follows_the_revisions() {
 @ mzvwutvlkqwt brand new
   qpvuntsmwlqt the change under test
   kkmpptxzrspx base"
+    );
+    app.assert_invariants();
+}
+
+#[test]
+fn the_preview_shows_the_selected_revisions_change() {
+    let (mut app, mut io, window_id) = repo_app();
+
+    open_picker(&mut app, &mut io, window_id);
+
+    // The selection starts on the working copy, so that is what the
+    // preview shows - the page ctrl+2 would open, without its status bar.
+    assert_eq!(
+        buffer_text(&app, PICKER_PREVIEW),
+        "\
+Change:  qpvuntsmwlqt
+Commit:  1f2a3b4c5d6e
+Author:  Jamie <jamie@example.com> (2026-09-14 15:30:00)
+
+    the change under test
+
+M file.txt
+  @@ -1,3 +1,3 @@
+    1     1   one
+    2       - old
+          2 + two
+    3     3   three"
+    );
+    app.assert_invariants();
+}
+
+#[test]
+fn moving_the_selection_moves_the_preview() {
+    let (mut app, mut io, window_id) = repo_app();
+    open_picker(&mut app, &mut io, window_id);
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::tick(&mut app, &mut io);
+
+    let preview = buffer_text(&app, PICKER_PREVIEW);
+    assert!(preview.contains("    base"), "{preview}");
+    assert!(preview.contains("+ from the base"), "{preview}");
+    app.assert_invariants();
+}
+
+#[test]
+fn the_preview_is_what_choosing_opens() {
+    let (mut app, mut io, window_id) = repo_app();
+    open_picker(&mut app, &mut io, window_id);
+    common::control_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::tick(&mut app, &mut io);
+    let preview = buffer_text(&app, PICKER_PREVIEW);
+
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(buffer_text(&app, DIFF), preview);
+    app.assert_invariants();
+}
+
+#[test]
+fn a_revision_that_cannot_be_read_shows_the_error_in_the_preview() {
+    let (mut app, mut io, window_id) = repo_app();
+    io.vcs_changes
+        .remove(&(PathBuf::from(ROOT), VcsRevisionId::Change(BASE_ID.into())));
+    open_picker(&mut app, &mut io, window_id);
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(buffer_text(&app, PICKER_PREVIEW), "/repo: no kkmpptxzrspx");
+    app.assert_invariants();
+}
+
+#[test]
+fn filtering_the_list_moves_the_preview_with_it() {
+    let (mut app, mut io, window_id) = repo_app();
+    open_picker(&mut app, &mut io, window_id);
+
+    // One match left, and it is the one previewed.
+    common::text_input(&mut app, &mut io, window_id, "base");
+    common::tick(&mut app, &mut io);
+
+    assert!(
+        buffer_text(&app, PICKER_PREVIEW).contains("+ from the base"),
+        "{}",
+        buffer_text(&app, PICKER_PREVIEW)
     );
     app.assert_invariants();
 }

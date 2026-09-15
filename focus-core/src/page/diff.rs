@@ -324,6 +324,13 @@ fn open(app: &mut App, io: &mut dyn IO, window_id: WindowId, location: &Location
 // line up down the page.
 const NUMBER_WIDTH: usize = 5;
 
+/// The page this change would be shown on, without the locations that
+/// only this page navigates by. The revision picker previews with it, so
+/// that what you are choosing between is what you will get.
+pub(super) fn render_text(change: &VcsChange) -> BString {
+    render(change).0
+}
+
 fn render(change: &VcsChange) -> (BString, Vec<Option<Location>>) {
     // One entry per page line, so that a page line's index is its index
     // into `locations`.

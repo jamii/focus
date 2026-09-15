@@ -1,6 +1,8 @@
 // A picker over the repo's revisions, opened with alt+2. Choosing one
 // opens the diff page for it, which is the same page ctrl+2 opens for the
-// working copy.
+// working copy - and which is also what the preview shows, rendered by
+// the diff page's own code, so that choosing is done by looking at the
+// thing you are choosing.
 
 use std::path::PathBuf;
 
@@ -35,15 +37,17 @@ pub(super) struct State {
 
 #[derive(Clone, Copy)]
 struct ChooseRevisionEditors {
+    preview_id: EditorId,
     search_id: EditorId,
     list_id: EditorId,
 }
 
-pub(super) const EDITOR_COUNT: usize = 2;
+pub(super) const EDITOR_COUNT: usize = 3;
 
-const SEARCH_IX: usize = 0;
+const SEARCH_IX: usize = 1;
 
 pub(crate) fn new(app: &mut App, root: PathBuf) -> PageId {
+    let preview_id = editor::new_generated(app);
     let search_id = editor::new_scratch(app);
     let list_id = editor::new_generated(app);
     insert(
@@ -56,33 +60,62 @@ pub(crate) fn new(app: &mut App, root: PathBuf) -> PageId {
             last_pattern: None,
             error: None,
         }),
-        vec![search_id, list_id],
+        vec![preview_id, search_id, list_id],
         SEARCH_IX,
     )
 }
 
 pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId {
-    let ChooseRevisionEditors { search_id, list_id } = editors(app, page_id);
+    let ChooseRevisionEditors {
+        preview_id,
+        search_id,
+        list_id,
+    } = editors(app, page_id);
     let state = state(app, page_id).clone();
+    let preview_id = editor::new_copy(app, preview_id);
     let search_id = editor::new_copy(app, search_id);
     let list_id = editor::new_copy(app, list_id);
     let focus = app.pages.focus[page_id];
     insert(
         app,
         PageContent::ChooseRevision(state),
-        vec![search_id, list_id],
+        vec![preview_id, search_id, list_id],
         focus,
     )
 }
 
 pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: WindowId) {
-    let ChooseRevisionEditors { search_id, list_id } = editors(app, page_id);
+    let ChooseRevisionEditors {
+        preview_id,
+        search_id,
+        list_id,
+    } = editors(app, page_id);
 
     search_id.tick(app, io);
     refresh_revisions(page_id, app, io);
     refresh_list(page_id, app);
 
     app.editors.gutter_marker[list_id] = !state(app, page_id).matches.is_empty();
+
+    // Preview the selected revision's change, as its diff page would
+    // show it. Each revision is asked for while it is selected and
+    // forgotten a few seconds after, so scrolling the list does not keep
+    // the whole history being re-read.
+    let root = state(app, page_id).root.clone();
+    let preview_text = match selected_revision(app, page_id, list_id) {
+        Some(revision) => match io.vcs_change(&root, &revision_id(&revision)) {
+            Ok(change) => super::diff::render_text(&change),
+            Err(error) => BString::from(error.to_string()),
+        },
+        None => BString::default(),
+    };
+    let preview_buffer_id = app.editors.buffer_id[preview_id];
+    if preview_buffer_id.text(app) != preview_text {
+        preview_buffer_id.replace(app, preview_text.as_bstr());
+        preview_id.cursor_reset(app);
+    }
+
+    preview_id.tick(app, io);
     list_id.tick(app, io);
 }
 
@@ -121,8 +154,11 @@ pub(super) fn input(
 }
 
 pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect> {
-    let [search_rect, list_rect] = page_rect.split_from_top(cell_size[1] as f32, GAP);
-    vec![search_rect, list_rect]
+    // The same shape as the repo search: the preview above, the field you
+    // are typing in and the list you are picking from below it.
+    let [preview_rect, rest] = page_rect.split_from_bottom(page_rect.size[1] / 2.0, GAP);
+    let [search_rect, list_rect] = rest.split_from_top(cell_size[1] as f32, GAP);
+    vec![preview_rect, search_rect, list_rect]
 }
 
 pub(super) fn handle_edits(
@@ -139,10 +175,24 @@ pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf> {
 }
 
 fn editors(app: &App, page_id: PageId) -> ChooseRevisionEditors {
-    let &[search_id, list_id] = app.pages.editor_ids[page_id].as_slice() else {
+    let &[preview_id, search_id, list_id] = app.pages.editor_ids[page_id].as_slice() else {
         unreachable!()
     };
-    ChooseRevisionEditors { search_id, list_id }
+    ChooseRevisionEditors {
+        preview_id,
+        search_id,
+        list_id,
+    }
+}
+
+// The working copy is asked for as the working copy, not by id: it is the
+// one revision whose files are read off disk.
+fn revision_id(revision: &VcsRevision) -> VcsRevisionId {
+    if revision.is_working_copy {
+        VcsRevisionId::WorkingCopy
+    } else {
+        VcsRevisionId::Change(revision.change_id.clone())
+    }
 }
 
 fn state(app: &App, page_id: PageId) -> &State {
@@ -169,14 +219,7 @@ fn submit(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) 
         return;
     };
     let root = state(app, page_id).root.clone();
-    // The working copy is asked for as the working copy, not by id: it
-    // is the one revision whose files are read off disk.
-    let revision = if revision.is_working_copy {
-        VcsRevisionId::WorkingCopy
-    } else {
-        VcsRevisionId::Change(revision.change_id)
-    };
-    let page_id = new_diff(app, root, revision, None);
+    let page_id = new_diff(app, root, revision_id(&revision), None);
     window_id.replace_page(app, io, page_id);
 }
 
@@ -205,7 +248,9 @@ fn refresh_revisions(page_id: PageId, app: &mut App, io: &mut dyn IO) {
 // text. Both change together, so the list buffer's line numbers are
 // always positions in `matches`.
 fn refresh_list(page_id: PageId, app: &mut App) {
-    let ChooseRevisionEditors { search_id, list_id } = editors(app, page_id);
+    let ChooseRevisionEditors {
+        search_id, list_id, ..
+    } = editors(app, page_id);
     refresh_matches(app, page_id, search_id);
 
     let list_buffer_id = app.editors.buffer_id[list_id];
