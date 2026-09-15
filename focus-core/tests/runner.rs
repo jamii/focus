@@ -918,3 +918,51 @@ fn ctrl_q_from_the_output_skips_the_picker() {
     assert!(io.processes[0].killed);
     app.assert_invariants();
 }
+
+#[test]
+fn ctrl_f_searches_the_output_and_marks_the_match_in_it() {
+    // The output buffer is generated, so there is no file to open: the
+    // search marks the match in the runner's own output.
+    let (mut app, mut io, window_id) = runner_app("cargo build");
+    io.processes[0]
+        .pending_output
+        .extend_from_slice(b"one\nneedle\ntwo\n");
+    common::tick(&mut app, &mut io);
+    let buffers = app.buffers.keys().count();
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("f"));
+    common::text_input(&mut app, &mut io, window_id, "needle");
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+
+    // Back on the runner page - the search page and its two buffers are
+    // all that were added, and the output is still streaming.
+    assert_eq!(app.buffers.keys().count(), buffers + 2);
+    io.processes[0].pending_output.extend_from_slice(b"three\n");
+    common::tick(&mut app, &mut io);
+    assert_eq!(buffer_text(&app, OUTPUT), "one\nneedle\ntwo\nthree\n");
+    app.assert_invariants();
+}
+
+#[test]
+fn a_search_over_the_output_copied_into_a_new_window_copies_the_runner() {
+    // The runner's copy starts the command again, so its output buffer
+    // is empty and the match is gone - but the new window still gets a
+    // runner page rather than nothing.
+    let (mut app, mut io, window_id) = runner_app("cargo build");
+    io.processes[0]
+        .pending_output
+        .extend_from_slice(b"one\nneedle\n");
+    common::tick(&mut app, &mut io);
+    common::control_key(&mut app, &mut io, window_id, Key::Character("f"));
+    common::text_input(&mut app, &mut io, window_id, "needle");
+
+    common::control_shift_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(io.open_windows.len(), 2);
+    // Two processes: the original run, and the copy's.
+    assert_eq!(io.processes.len(), 2);
+    assert_eq!(io.processes[1].command, io.processes[0].command);
+    app.assert_invariants();
+}

@@ -228,3 +228,54 @@ fn the_page_follows_the_change() {
     assert_eq!(buffer_text(&app, FILE), TEXT);
     app.assert_invariants();
 }
+
+#[test]
+fn ctrl_f_searches_the_page_and_marks_the_match_in_it() {
+    let (mut app, mut io, window_id) = repo_app(Some(change()));
+    open_diff(&mut app, &mut io, window_id);
+    // file (0), status bar (1), diff (2); the search page adds its own
+    // input and list, and ctrl+enter below adds one more status bar.
+    let buffers = app.buffers.keys().count();
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("f"));
+    common::text_input(&mut app, &mut io, window_id, "seven");
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+
+    // The search popped back to the diff page and marked the match there
+    // rather than opening a page of its own, so ctrl+enter now follows
+    // the marked line to the file it came from.
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(buffer_text(&app, buffers + 2), "/repo/file.txt 7:1");
+    assert_eq!(io.open_windows.len(), 1);
+    app.assert_invariants();
+}
+
+#[test]
+fn a_search_over_the_page_copied_into_a_new_window_copies_the_page() {
+    // ctrl+shift+enter copies the search page into a window of its own,
+    // where there is no diff page under it to mark the match in. A
+    // generated buffer belongs to its page, so the page it was opened
+    // from is copied into the new window and the match marked there.
+    let (mut app, mut io, window_id) = repo_app(Some(change()));
+    open_diff(&mut app, &mut io, window_id);
+    common::control_key(&mut app, &mut io, window_id, Key::Character("f"));
+    common::text_input(&mut app, &mut io, window_id, "seven");
+
+    common::control_shift_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+    assert_eq!(io.open_windows.len(), 2);
+
+    // The copy is a working diff page with the match marked on it, so
+    // ctrl+enter there follows that line to the file it came from. The
+    // edit page it opens adds one buffer, its status bar.
+    let opened = io.open_windows[1];
+    let buffers = app.buffers.keys().count();
+    common::control_key(&mut app, &mut io, opened, Key::Named(NamedKey::Enter));
+    common::tick(&mut app, &mut io);
+
+    assert_eq!(buffer_text(&app, buffers), "/repo/file.txt 7:1");
+    app.assert_invariants();
+}

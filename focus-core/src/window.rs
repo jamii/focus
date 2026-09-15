@@ -101,7 +101,7 @@ pub(crate) fn assert_invariants(app: &App) {
 }
 
 impl WindowId {
-    fn current_page(self, app: &App) -> PageId {
+    pub(crate) fn current_page(self, app: &App) -> PageId {
         *app.windows.page_stack[self]
             .last()
             .unwrap_or_else(|| panic!("window {:?} has an empty page stack", self))
@@ -136,7 +136,7 @@ impl WindowId {
         page_id.input(app, io, self, InputEvent::FocusChanged { focused: true });
     }
 
-    fn pop_page(self, app: &mut App, io: &mut dyn IO) {
+    pub(crate) fn pop_page(self, app: &mut App, io: &mut dyn IO) {
         assert!(
             app.windows.open[self],
             "tried to pop page for closed window {:?}",

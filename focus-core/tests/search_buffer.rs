@@ -200,3 +200,19 @@ fn initial_selection_is_first_match_strictly_after_cursor() {
     assert_eq!(rows[0], 13);
     app.assert_invariants();
 }
+
+#[test]
+fn ctrl_shift_enter_opens_the_match_in_a_new_window() {
+    // The copy has no page under it to mark the match in, so it falls
+    // back to opening the file again in the new window.
+    let (mut app, mut io, window_id) = search_buffer_app("one foo two foo");
+    common::text_input(&mut app, &mut io, window_id, "foo");
+
+    common::control_shift_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    let opened = io.open_windows[1];
+    common::char_input(&mut app, &mut io, opened, 'X');
+
+    assert_eq!(io.open_windows.len(), 2);
+    assert_eq!(buffer_text(&app, TARGET), "one X two foo");
+    app.assert_invariants();
+}

@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use crate::{
     app::{App, IO},
-    buffer::OffsetDiff,
+    buffer::{BufferId, OffsetDiff},
     drawing::{Drawing, Rect},
     editor::EditorId,
-    input::{ButtonState, InputEvent},
+    input::{ButtonState, InputEvent, Key},
     map::Map,
     style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR},
     window::WindowId,
@@ -300,6 +300,25 @@ impl PageId {
             return;
         }
 
+        // Ctrl+f searches whatever editor is focused, in whatever page:
+        // a file, the runner's output, the diff page. The matches are
+        // marked in this editor, not in a page of their own - see
+        // search_buffer::select_matches.
+        if let InputEvent::Key {
+            state: ButtonState::Pressed,
+            logical_key: Key::Character("f"),
+        } = &event
+            && app.modifiers.control
+            && !app.modifiers.alt
+        {
+            let editor_id = self.focused_editor(app);
+            let buffer_id = app.editors.buffer_id[editor_id];
+            let initial_offset = editor_id.main_cursor_offset(app);
+            let page_id = new_search_buffer(app, self, buffer_id, initial_offset);
+            window_id.push_page(app, io, page_id);
+            return;
+        }
+
         let focus = app.pages.focus[self];
         let editor_rect = app.pages.editor_rects[self][focus];
 
@@ -429,6 +448,24 @@ impl PageId {
             PageContentKind::Runner => runner::current_path(self, app),
             PageContentKind::Diff => diff::current_path(self, app),
         }
+    }
+
+    pub(crate) fn focused_editor(self, app: &App) -> EditorId {
+        app.pages.editor_ids[self][app.pages.focus[self]]
+    }
+
+    /// The editor in this page showing `buffer_id`, preferring the
+    /// focused one. None if this page is not showing that buffer.
+    pub(crate) fn editor_for_buffer(self, app: &App, buffer_id: BufferId) -> Option<EditorId> {
+        let focused = self.focused_editor(app);
+        if app.editors.buffer_id[focused] == buffer_id {
+            return Some(focused);
+        }
+        let editor_ids = &app.pages.editor_ids[self];
+        editor_ids
+            .iter()
+            .copied()
+            .find(|editor_id| app.editors.buffer_id[*editor_id] == buffer_id)
     }
 
     /// The file and line the page is currently on, if it is on one: the

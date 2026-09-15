@@ -12,10 +12,14 @@ use crate::{
     window::WindowId,
 };
 
-use super::{GAP, PageContent, PageId, insert, new_edit};
+use super::{GAP, PageContent, PageId, insert};
 
 #[derive(Clone)]
 pub(super) struct State {
+    // The page ctrl+f was pressed on, which is where the matches are
+    // marked. Held so that a copy of this page in a window of its own
+    // has something to mark them in - see `select_matches`.
+    origin: PageId,
     buffer_id: BufferId,
     initial_offset: usize,
     needs_initial_selection: bool,
@@ -43,7 +47,12 @@ const PREVIEW_IX: usize = 0;
 const SEARCH_IX: usize = 1;
 const LIST_IX: usize = 2;
 
-pub(crate) fn new(app: &mut App, buffer_id: BufferId, initial_offset: usize) -> PageId {
+pub(crate) fn new(
+    app: &mut App,
+    origin: PageId,
+    buffer_id: BufferId,
+    initial_offset: usize,
+) -> PageId {
     let preview_id = editor::new(app, buffer_id);
     let search_id = editor::new_scratch(app);
     let list_id = editor::new_generated(app);
@@ -60,6 +69,7 @@ pub(crate) fn new(app: &mut App, buffer_id: BufferId, initial_offset: usize) -> 
     insert(
         app,
         PageContent::SearchBuffer(State {
+            origin,
             buffer_id,
             initial_offset,
             needs_initial_selection: true,
@@ -358,7 +368,7 @@ fn submit_selected(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: W
             .filter_map(|line| state.matches.get(line).map(|entry| entry.range.clone()))
             .collect()
     };
-    open_edit_with_ranges(app, io, window_id, state.buffer_id, &ranges);
+    select_matches(app, io, window_id, state.origin, state.buffer_id, &ranges);
 }
 
 fn submit_all(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) {
@@ -371,22 +381,56 @@ fn submit_all(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: Window
         .iter()
         .map(|entry| entry.range.clone())
         .collect();
-    open_edit_with_ranges(app, io, window_id, state.buffer_id, &ranges);
+    select_matches(app, io, window_id, state.origin, state.buffer_id, &ranges);
 }
 
-fn open_edit_with_ranges(
+// The search page sits on top of the page being searched, so the matches
+// belong to the editor it was opened from: pop back to that page and mark
+// them there. Searching a generated buffer - the runner's output, the
+// diff page - then works like searching a file, without anything having
+// to open an edit page over a buffer that cannot be edited.
+fn select_matches(
     app: &mut App,
     io: &mut dyn IO,
     window_id: WindowId,
+    origin: PageId,
     buffer_id: BufferId,
     ranges: &[Range<usize>],
 ) {
     if ranges.is_empty() {
         return;
     }
-    let editor_id = editor::new(app, buffer_id);
-    editor_id.set_marked_ranges(app, ranges);
+    window_id.pop_page(app, io);
+
+    let page_id = window_id.current_page(app);
+    let editor_id = match page_id.editor_for_buffer(app, buffer_id) {
+        Some(editor_id) => editor_id,
+        // Nothing here is showing the buffer, because this page was
+        // copied into a window of its own (ctrl+n / ctrl+shift+enter)
+        // and has no page to go back to. Copy the page it was opened
+        // from into this window, and mark the matches in the copy - a
+        // generated buffer belongs to its page, so a page is what has
+        // to be copied.
+        None => {
+            let copy_id = origin.duplicate(app, io);
+            window_id.replace_page(app, io, copy_id);
+            copy_id.focused_editor(app)
+        }
+    };
+
+    // The buffer may have been rewritten while the search page was up -
+    // a generated one is, every tick - so a match found a moment ago can
+    // be past the end of it by now. A copied page holds a copy of the
+    // buffer, which the same check covers when the copy starts empty.
+    let len = app.editors.buffer_id[editor_id].text(app).len();
+    let ranges: Vec<Range<usize>> = ranges
+        .iter()
+        .filter(|range| range.end <= len)
+        .cloned()
+        .collect();
+    if ranges.is_empty() {
+        return;
+    }
+    editor_id.set_marked_ranges(app, &ranges);
     editor_id.scroll_offset_into_center(app, ranges.last().unwrap().end);
-    let page_id = new_edit(app, editor_id);
-    window_id.replace_page(app, io, page_id);
 }

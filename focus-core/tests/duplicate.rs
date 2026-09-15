@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use focus_core::app::App;
+use focus_core::app::{App, VcsChange, VcsFile, VcsFileKind, VcsHunk, VcsLine, VcsLineKind};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{Key, NamedKey};
 use focus_core::window::{self, WindowId};
@@ -83,7 +83,42 @@ const OPENERS: &[(&str, fn(&mut App, &mut MockIO, WindowId))] = &[
         common::control_key(app, io, window_id, Key::Character("m"));
         common::alt_key(app, io, window_id, Key::Named(NamedKey::Enter));
     }),
+    ("diff", |app, io, window_id| {
+        // A scratch page has no file, so ctrl+2 asks about the home dir.
+        io.vcs_changes.insert(PathBuf::from("/"), change());
+        common::control_key(app, io, window_id, Key::Character("2"));
+    }),
 ];
+
+// One modified file, for the diff page to show.
+fn change() -> VcsChange {
+    VcsChange {
+        root: PathBuf::from("/"),
+        change_id: "qpvuntsmwlqt".into(),
+        commit_id: "1f2a3b4c5d6e".into(),
+        author: "Jamie <jamie@example.com> (2026-09-14 15:30:00)".into(),
+        description: "a change".into(),
+        files: vec![VcsFile {
+            relative_path: PathBuf::from("repo/one.rs"),
+            kind: VcsFileKind::Modified,
+            binary: false,
+            hunks: vec![VcsHunk {
+                old_lines: 0..1,
+                new_lines: 0..1,
+                lines: vec![
+                    VcsLine {
+                        kind: VcsLineKind::Removed,
+                        text: "alpha".into(),
+                    },
+                    VcsLine {
+                        kind: VcsLineKind::Added,
+                        text: "ALPHA".into(),
+                    },
+                ],
+            }],
+        }],
+    }
+}
 
 // The runner is deliberately not in OPENERS: its copy starts a fresh run,
 // so it is the one page whose copy does not render the same. See

@@ -7,7 +7,7 @@ use crate::{
     buffer::{OffsetDiff, Source, SourceFile},
     drawing::Rect,
     editor::{self, EditorId},
-    input::{ButtonState, InputEvent, Key},
+    input::{ButtonState, InputEvent},
     window::{self, WindowId},
 };
 
@@ -91,22 +91,6 @@ pub(super) fn input(
     window_id: WindowId,
     event: &InputEvent<'_>,
 ) -> bool {
-    if let InputEvent::Key {
-        state: ButtonState::Pressed,
-        logical_key: Key::Character("f"),
-    } = event
-        && app.modifiers.control
-        && !app.modifiers.alt
-        && app.pages.focus[page_id] == EDITOR_IX
-    {
-        let editor_id = editors(app, page_id).editor_id;
-        let buffer_id = app.editors.buffer_id[editor_id];
-        let initial_offset = editor_id.main_cursor_offset(app);
-        let page_id = super::new_search_buffer(app, buffer_id, initial_offset);
-        window_id.push_page(app, io, page_id);
-        return true;
-    }
-
     // A press on a change bar in the left gutter opens the diff page at
     // that hunk; with ctrl held, in a new window. A press anywhere else
     // in the gutter falls through and moves the cursor, as before.
