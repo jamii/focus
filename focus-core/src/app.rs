@@ -107,11 +107,21 @@ pub trait IO {
     /// no containing repo.
     fn repo_root(&mut self, dir: &Path) -> PathBuf;
 
-    /// The changes in the working-copy revision of the repo containing
-    /// `dir`, as `jj show @` would show them. Err if `dir` is not in a
-    /// repo we can read, or the read failed; the diff page shows the
-    /// message.
-    fn vcs_change(&mut self, dir: &Path) -> std::io::Result<VcsChange>;
+    /// The changes in `revision` of the repo containing `dir`, as `jj
+    /// show <revision>` would show them. Err if `dir` is not in a repo we
+    /// can read, the read failed, or the revision has not been read yet;
+    /// the diff page shows the message.
+    fn vcs_change(&mut self, dir: &Path, revision: &VcsRevisionId) -> std::io::Result<VcsChange>;
+    /// The revisions of the repo containing `dir`, newest first, for the
+    /// revision picker.
+    fn vcs_revisions(&mut self, dir: &Path) -> std::io::Result<Vec<VcsRevision>>;
+    /// Check `revision` out, so that its files are the ones in the working
+    /// copy. Unlike everything else here this writes: it records the
+    /// working copy first, so that nothing is lost, and then moves `@`.
+    /// Returns None while the checkout is still running and Some once it
+    /// is done, so a caller asks again every frame until it has an answer.
+    fn vcs_checkout(&mut self, dir: &Path, revision: &VcsRevisionId)
+    -> Option<std::io::Result<()>>;
     /// Line-level status of the working-copy file `path`, against the same
     /// base as `vcs_change`. None if the file is unchanged, not in a repo,
     /// or unreadable - the gutter then shows nothing.
@@ -171,6 +181,45 @@ pub struct RepoMatch {
     /// Text of the line containing the start of the match, without the
     /// trailing newline, truncated to the line limit.
     pub line_text: BString,
+}
+
+/// Which revision to show. The working copy is not just another revision:
+/// it is the one whose files are on disk, so it is read by snapshotting
+/// them rather than by reading a commit.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum VcsRevisionId {
+    WorkingCopy,
+    /// A revision by its full change id, as `vcs_revisions` reports it.
+    Change(BString),
+}
+
+impl VcsRevisionId {
+    /// How jj would name this revision on a command line.
+    pub fn name(&self) -> BString {
+        match self {
+            VcsRevisionId::WorkingCopy => BString::from("@"),
+            VcsRevisionId::Change(change_id) => {
+                change_id[..ID_PREFIX_LEN.min(change_id.len())].into()
+            }
+        }
+    }
+}
+
+/// How much of an id to show. Enough to be unique in any repo this editor
+/// is likely to be pointed at, without being unreadable.
+pub const ID_PREFIX_LEN: usize = 12;
+
+/// One revision, as the picker lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VcsRevision {
+    /// The full change id, which is also how a revision is asked for.
+    pub change_id: BString,
+    pub commit_id: BString,
+    pub author: BString,
+    /// The first line of the description, or empty.
+    pub description: BString,
+    /// True for the revision that is currently checked out.
+    pub is_working_copy: bool,
 }
 
 /// A revision's changes, as `jj show @` would show them.

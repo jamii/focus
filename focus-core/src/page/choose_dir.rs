@@ -49,7 +49,7 @@ pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> Pag
     insert(app, PageContent::ChooseDir, vec![path_id, list_id], focus)
 }
 
-pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
+pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: WindowId) {
     let ChooseDirEditors { path_id, list_id } = editors(app, page_id);
 
     path_id.tick(app, io);

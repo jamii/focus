@@ -17,7 +17,7 @@ use bstr::{BStr, BString, ByteSlice};
 use crate::app::{
     App, DirEntry, IO, ProcessId, ProcessPoll, RepoFiles, RepoMatch, RepoSearch, VcsChange,
     VcsChangeKind, VcsFile, VcsFileKind, VcsFileStatus, VcsHunk, VcsLine, VcsLineKind,
-    VcsLineRange, WindowSize,
+    VcsLineRange, VcsRevision, VcsRevisionId, WindowSize,
 };
 use crate::buffer;
 use crate::drawing::Drawing;
@@ -37,10 +37,18 @@ pub struct MockIO {
     pub logs: Vec<String>,
     pub files: HashMap<PathBuf, (Vec<u8>, SystemTime)>,
     pub repo_roots: Vec<PathBuf>,
-    // Scripted VCS state: the change of the repo at each root, and the
-    // line status of each file by absolute path.
-    pub vcs_changes: HashMap<PathBuf, VcsChange>,
+    // Scripted VCS state: the change of each revision of each repo, the
+    // line status of each file by absolute path, and the revisions each
+    // repo lists.
+    pub vcs_changes: HashMap<(PathBuf, VcsRevisionId), VcsChange>,
     pub vcs_statuses: HashMap<PathBuf, VcsFileStatus>,
+    pub vcs_revisions: HashMap<PathBuf, Vec<VcsRevision>>,
+    // Every checkout asked for, in order. While this is true, checkouts
+    // are asked for but never finish, so that a test can watch a page
+    // wait for one.
+    pub vcs_checkouts: Vec<(PathBuf, VcsRevisionId)>,
+    pub vcs_checkout_pending: bool,
+    pub vcs_checkout_error: Option<String>,
     pub system_time: SystemTime,
     pub next_process_output: Vec<u8>,
     pub next_process_exit_code: Option<i32>,
@@ -85,6 +93,10 @@ impl MockIO {
             repo_roots: Vec::new(),
             vcs_changes: HashMap::new(),
             vcs_statuses: HashMap::new(),
+            vcs_revisions: HashMap::new(),
+            vcs_checkouts: Vec::new(),
+            vcs_checkout_pending: false,
+            vcs_checkout_error: None,
             system_time: SystemTime::UNIX_EPOCH,
             next_process_output: Vec::new(),
             next_process_exit_code: None,
@@ -325,12 +337,38 @@ impl IO for MockIO {
         dir.to_path_buf()
     }
 
-    fn vcs_change(&mut self, dir: &Path) -> std::io::Result<VcsChange> {
+    fn vcs_change(&mut self, dir: &Path, revision: &VcsRevisionId) -> std::io::Result<VcsChange> {
         let root = self.repo_root(dir);
         self.vcs_changes
+            .get(&(root.clone(), revision.clone()))
+            .cloned()
+            .ok_or_else(|| {
+                std::io::Error::other(format!("{}: no {}", root.display(), revision.name()))
+            })
+    }
+
+    fn vcs_revisions(&mut self, dir: &Path) -> std::io::Result<Vec<VcsRevision>> {
+        let root = self.repo_root(dir);
+        self.vcs_revisions
             .get(&root)
             .cloned()
             .ok_or_else(|| std::io::Error::other(format!("{}: no repo", root.display())))
+    }
+
+    fn vcs_checkout(
+        &mut self,
+        dir: &Path,
+        revision: &VcsRevisionId,
+    ) -> Option<std::io::Result<()>> {
+        let root = self.repo_root(dir);
+        self.vcs_checkouts.push((root, revision.clone()));
+        if self.vcs_checkout_pending {
+            return None;
+        }
+        Some(match &self.vcs_checkout_error {
+            Some(error) => Err(std::io::Error::other(error.clone())),
+            None => Ok(()),
+        })
     }
 
     fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus> {
@@ -397,6 +435,7 @@ const A_SEARCH_REPO_PAGE: u32 = 10;
 const A_CHOOSE_COMMAND_PAGE: u32 = 10;
 const A_PROCESS_OUTPUT: u32 = 10;
 const A_DIFF_PAGE: u32 = 10;
+const A_CHOOSE_REVISION_PAGE: u32 = 10;
 const A_DUPLICATE_PAGE: u32 = 10;
 const A_OPEN_WINDOW: u32 = 5;
 
@@ -558,6 +597,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         A_DUPLICATE_PAGE,
         A_OPEN_WINDOW,
         A_DIFF_PAGE,
+        A_CHOOSE_REVISION_PAGE,
     ])?;
     match action {
         0 => {
@@ -888,6 +928,30 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         21 => {
             act_open_window(frng, app, io)?;
         }
+        23 => {
+            // Push the revision picker (alt+2).
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState {
+                    alt: true,
+                    ..ModifiersState::default()
+                }),
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::Key {
+                    state: ButtonState::Pressed,
+                    logical_key: Key::Character("2"),
+                },
+            );
+            app.input(
+                io,
+                window_id,
+                InputEvent::ModifiersChanged(ModifiersState::default()),
+            );
+        }
         22 => {
             // Push the diff page (ctrl+2).
             app.input(
@@ -915,6 +979,19 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         _ => unreachable!(),
     }
     Some(())
+}
+
+// The one revision the fuzzer's repo holds.
+const FUZZ_CHANGE_ID: &str = "qpvuntsmwlqtqpvuntsmwlqtqpvuntsm";
+
+fn fuzz_revision() -> VcsRevision {
+    VcsRevision {
+        change_id: FUZZ_CHANGE_ID.into(),
+        commit_id: BString::from("1f2a3b4c5d6e"),
+        author: BString::from("fuzz <fuzz@example.com> (2026-01-01 00:00:00)"),
+        description: BString::from("a change to fuzz"),
+        is_working_copy: true,
+    }
 }
 
 fn fuzz_change() -> VcsChange {
@@ -971,7 +1048,19 @@ pub fn fuzz_one(bytes: &[u8]) {
     // A repo over that tree, with one changed file, so the diff page and
     // the gutter bars have something to show.
     io.repo_roots.push(PathBuf::from("/"));
-    io.vcs_changes.insert(PathBuf::from("/"), fuzz_change());
+    io.vcs_changes.insert(
+        (PathBuf::from("/"), VcsRevisionId::WorkingCopy),
+        fuzz_change(),
+    );
+    io.vcs_changes.insert(
+        (
+            PathBuf::from("/"),
+            VcsRevisionId::Change(FUZZ_CHANGE_ID.into()),
+        ),
+        fuzz_change(),
+    );
+    io.vcs_revisions
+        .insert(PathBuf::from("/"), vec![fuzz_revision()]);
     io.vcs_statuses
         .insert(PathBuf::from("/fuzz.txt"), fuzz_status());
     let mut app = App::new(&mut io);

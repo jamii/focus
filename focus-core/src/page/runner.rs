@@ -159,7 +159,7 @@ pub(super) fn tick_background(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     }
 }
 
-pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
+pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: WindowId) {
     tick_background(page_id, app, io);
 
     let RunnerEditors {

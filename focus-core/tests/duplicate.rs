@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use focus_core::app::{App, VcsChange, VcsFile, VcsFileKind, VcsHunk, VcsLine, VcsLineKind};
+use focus_core::app::{
+    App, VcsChange, VcsFile, VcsFileKind, VcsHunk, VcsLine, VcsLineKind, VcsRevision, VcsRevisionId,
+};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{Key, NamedKey};
 use focus_core::window::{self, WindowId};
@@ -85,10 +87,26 @@ const OPENERS: &[(&str, fn(&mut App, &mut MockIO, WindowId))] = &[
     }),
     ("diff", |app, io, window_id| {
         // A scratch page has no file, so ctrl+2 asks about the home dir.
-        io.vcs_changes.insert(PathBuf::from("/"), change());
+        io.vcs_changes
+            .insert((PathBuf::from("/"), VcsRevisionId::WorkingCopy), change());
         common::control_key(app, io, window_id, Key::Character("2"));
     }),
+    ("choose_revision", |app, io, window_id| {
+        io.vcs_revisions
+            .insert(PathBuf::from("/"), vec![revision()]);
+        common::alt_key(app, io, window_id, Key::Character("2"));
+    }),
 ];
+
+fn revision() -> VcsRevision {
+    VcsRevision {
+        change_id: "qpvuntsmwlqtqpvuntsmwlqtqpvuntsm".into(),
+        commit_id: "1f2a3b4c5d6e7f80".into(),
+        author: "Jamie <jamie@example.com> (2026-09-14 15:30:00)".into(),
+        description: "a change".into(),
+        is_working_copy: true,
+    }
+}
 
 // One modified file, for the diff page to show.
 fn change() -> VcsChange {

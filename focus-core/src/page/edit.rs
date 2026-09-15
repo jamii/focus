@@ -3,7 +3,7 @@ use std::{os::unix::ffi::OsStrExt, path::PathBuf};
 use bstr::BStr;
 
 use crate::{
-    app::{App, IO},
+    app::{App, IO, VcsRevisionId},
     buffer::{OffsetDiff, Source, SourceFile},
     drawing::Rect,
     editor::{self, EditorId},
@@ -57,7 +57,7 @@ pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> Pag
     )
 }
 
-pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
+pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: WindowId) {
     let EditEditors {
         editor_id,
         status_bar_id,
@@ -111,7 +111,7 @@ pub(super) fn input(
                 .map(|parent| parent.to_path_buf())
                 .unwrap_or_else(|| io.home_dir());
             let root = io.repo_root(&dir);
-            let diff_page_id = new_diff(app, root, Some((path, line)));
+            let diff_page_id = new_diff(app, root, VcsRevisionId::WorkingCopy, Some((path, line)));
             if app.modifiers.control {
                 window::open(app, io, diff_page_id);
             } else {

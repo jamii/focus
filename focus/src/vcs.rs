@@ -29,9 +29,10 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use bstr::{BString, ByteSlice};
+use bstr::{BStr, BString, ByteSlice};
 use futures::StreamExt as _;
-use jj_lib::backend::Signature;
+use jj_lib::backend::{ChangeId, Signature};
+use jj_lib::commit::Commit;
 use jj_lib::config::StackedConfig;
 use jj_lib::conflict_labels::ConflictLabels;
 use jj_lib::conflicts::{ConflictMarkerStyle, ConflictMaterializeOptions, materialize_tree_value};
@@ -43,12 +44,14 @@ use jj_lib::diff_presentation::unified::{
     DiffLineType, UnifiedDiffHunk, git_diff_part, unified_diff_hunks,
 };
 use jj_lib::gitignore::GitIgnoreFile;
-use jj_lib::hex_util::encode_reverse_hex;
+use jj_lib::hex_util::{decode_reverse_hex, encode_reverse_hex};
 use jj_lib::matchers::{EverythingMatcher, NothingMatcher};
 use jj_lib::merge::Diff;
 use jj_lib::merged_tree::{MergedTree, TreeDiffEntry};
 use jj_lib::object_id::ObjectId as _;
-use jj_lib::repo::Repo as _;
+use jj_lib::ref_name::WorkspaceName;
+use jj_lib::repo::{ReadonlyRepo, Repo as _};
+use jj_lib::revset::{ResolvedRevsetExpression, RevsetExpression};
 use jj_lib::settings::UserSettings;
 use jj_lib::store::Store;
 use jj_lib::working_copy::SnapshotOptions;
@@ -56,8 +59,8 @@ use jj_lib::workspace::Workspace;
 use pollster::block_on;
 
 use focus_core::app::{
-    VcsChange, VcsChangeKind, VcsFile, VcsFileKind, VcsFileStatus, VcsHunk, VcsLine, VcsLineKind,
-    VcsLineRange,
+    ID_PREFIX_LEN, VcsChange, VcsChangeKind, VcsFile, VcsFileKind, VcsFileStatus, VcsHunk, VcsLine,
+    VcsLineKind, VcsLineRange, VcsRevision, VcsRevisionId,
 };
 
 // The shortest gap between two polls of one repo. The app asks every
@@ -81,8 +84,9 @@ const MAX_NEW_FILE_SIZE: u64 = 1024 * 1024;
 // Lines of context around each hunk of the diff page, as `jj show` uses.
 const CONTEXT_LINES: usize = 3;
 
-// How many hex digits of a change or commit id to show, as jj does.
-const ID_PREFIX_LEN: usize = 12;
+// The most revisions the picker is given. Enough to pick from; a repo
+// with more history than this is not worth reading in full every poll.
+const REVISION_LIMIT: usize = 200;
 
 /// The app's side: asking about a repo is a hash lookup and a timestamp,
 /// and answers are whatever the worker thread last produced.
@@ -98,24 +102,51 @@ struct Shared {
 }
 
 struct State {
-    // Keyed by workspace root.
-    repos: HashMap<PathBuf, RepoState>,
+    requests: HashMap<(PathBuf, Request), RequestState>,
+    // The checkout each repo was last asked for. One at a time: a
+    // checkout moves the whole working copy, so a second one replaces
+    // the first rather than queueing behind it.
+    checkouts: HashMap<PathBuf, Checkout>,
     exit: bool,
 }
 
-#[derive(Default)]
-struct RepoState {
-    // When the app last asked about this repo.
-    wanted: Option<Instant>,
-    // When the worker last finished polling it, and what it found. The
-    // result is shared rather than copied: the app clones out of it
-    // without holding the lock.
-    polled: Option<Instant>,
-    took: Duration,
-    result: Option<Arc<Poll>>,
+/// Something the app wants read, repeatedly, from one repo.
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum Request {
+    /// The working copy: its change, and the per-file line statuses.
+    WorkingCopy,
+    /// The revisions the picker lists.
+    Revisions,
+    /// One revision's change, by full change id.
+    Change(BString),
 }
 
-/// What one poll of a repo found.
+/// What a request last produced.
+enum Answer {
+    WorkingCopy(Poll),
+    Revisions(Result<Vec<VcsRevision>, String>),
+    Change(Result<VcsChange, String>),
+}
+
+#[derive(Default)]
+struct RequestState {
+    // When the app last asked for this.
+    wanted: Option<Instant>,
+    // When the worker last answered it, and what it found. The answer is
+    // shared rather than copied: the app clones out of it without
+    // holding the lock.
+    polled: Option<Instant>,
+    took: Duration,
+    answer: Option<Arc<Answer>>,
+}
+
+struct Checkout {
+    revision: VcsRevisionId,
+    // None while it is still running.
+    result: Option<Result<(), String>>,
+}
+
+/// What one poll of a repo's working copy found.
 pub struct Poll {
     pub change: Result<VcsChange, String>,
     /// Keyed by absolute path. Only files with changed lines are in here.
@@ -126,7 +157,8 @@ impl Vcs {
     pub fn new() -> Vcs {
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
-                repos: HashMap::new(),
+                requests: HashMap::new(),
+                checkouts: HashMap::new(),
                 exit: false,
             }),
             wake: Condvar::new(),
@@ -144,11 +176,37 @@ impl Vcs {
         }
     }
 
-    /// The working-copy revision's change, as `jj show @` would show it -
-    /// as of the worker's last poll of this repo.
-    pub fn change(&self, root: &Path) -> std::io::Result<VcsChange> {
-        match self.result(root) {
-            Some(poll) => poll.change.clone().map_err(std::io::Error::other),
+    /// A revision's change, as `jj show <revision>` would show it - as of
+    /// the worker's last read of it.
+    pub fn change(&self, root: &Path, revision: &VcsRevisionId) -> std::io::Result<VcsChange> {
+        let request = match revision {
+            VcsRevisionId::WorkingCopy => Request::WorkingCopy,
+            VcsRevisionId::Change(change_id) => Request::Change(change_id.clone()),
+        };
+        match self.answer(root, request).as_deref() {
+            Some(Answer::WorkingCopy(poll)) => poll.change.clone().map_err(std::io::Error::other),
+            Some(Answer::Change(change)) => change.clone().map_err(std::io::Error::other),
+            Some(Answer::Revisions(_)) => unreachable!(),
+            None => Err(std::io::Error::other(format!(
+                "reading {} ...",
+                revision.name()
+            ))),
+        }
+    }
+
+    /// Line status of one working-copy file, against the same base.
+    pub fn file_status(&self, root: &Path, path: &Path) -> Option<VcsFileStatus> {
+        match self.answer(root, Request::WorkingCopy).as_deref() {
+            Some(Answer::WorkingCopy(poll)) => poll.statuses.get(path).cloned(),
+            _ => None,
+        }
+    }
+
+    /// The repo's revisions, newest first.
+    pub fn revisions(&self, root: &Path) -> std::io::Result<Vec<VcsRevision>> {
+        match self.answer(root, Request::Revisions).as_deref() {
+            Some(Answer::Revisions(revisions)) => revisions.clone().map_err(std::io::Error::other),
+            Some(_) => unreachable!(),
             None => Err(std::io::Error::other(format!(
                 "reading {} ...",
                 root.display()
@@ -156,26 +214,50 @@ impl Vcs {
         }
     }
 
-    /// Line status of one working-copy file, against the same base.
-    pub fn file_status(&self, root: &Path, path: &Path) -> Option<VcsFileStatus> {
-        self.result(root)?.statuses.get(path).cloned()
+    /// Ask for `revision` to be checked out, and report how it went. None
+    /// while it is still running, so the caller asks again next frame.
+    pub fn checkout(&self, root: &Path, revision: &VcsRevisionId) -> Option<std::io::Result<()>> {
+        let mut state = self.shared.state.lock().unwrap();
+        let checkout = state
+            .checkouts
+            .entry(root.to_path_buf())
+            .or_insert_with(|| Checkout {
+                revision: revision.clone(),
+                result: None,
+            });
+        // A request for a different revision than the one last checked
+        // out here starts again: the answer to "is it checked out yet" is
+        // about this revision, not the last one.
+        if &checkout.revision != revision {
+            checkout.revision = revision.clone();
+            checkout.result = None;
+        }
+        let result = checkout.result.clone();
+        drop(state);
+        if result.is_none() {
+            self.shared.wake.notify_all();
+        }
+        result.map(|result| result.map_err(std::io::Error::other))
     }
 
-    /// The latest poll of `root`, and a note to the worker that the app is
-    /// still interested. None until the first poll of a repo lands.
-    fn result(&self, root: &Path) -> Option<Arc<Poll>> {
+    /// The latest answer to a request, and a note to the worker that the
+    /// app is still interested. None until the first answer lands.
+    fn answer(&self, root: &Path, request: Request) -> Option<Arc<Answer>> {
         let mut state = self.shared.state.lock().unwrap();
-        let repo = state.repos.entry(root.to_path_buf()).or_default();
-        let first = repo.wanted.is_none();
-        repo.wanted = Some(Instant::now());
-        let result = repo.result.clone();
+        let entry = state
+            .requests
+            .entry((root.to_path_buf(), request))
+            .or_default();
+        let first = entry.wanted.is_none();
+        entry.wanted = Some(Instant::now());
+        let answer = entry.answer.clone();
         drop(state);
-        // The worker may be waiting until some other repo is due, so wake
-        // it for a repo it has not seen before.
+        // The worker may be waiting until some other request is due, so
+        // wake it for one it has not seen before.
         if first {
             self.shared.wake.notify_all();
         }
-        result
+        answer
     }
 }
 
@@ -193,33 +275,51 @@ impl Drop for Vcs {
 
 // What the worker should do next.
 enum Next {
-    // Poll this repo now.
-    Poll(PathBuf),
+    // Check this revision out. Checkouts go first: they are a user
+    // waiting on a keypress, not a background read.
+    Checkout(PathBuf, VcsRevisionId),
+    // Answer this request now.
+    Poll(PathBuf, Request),
     // Nothing is due yet; the soonest is this far off.
     Wait(Duration),
-    // No repo is wanted at all.
+    // Nothing is wanted at all.
     Idle,
 }
 
 impl State {
     fn next(&mut self, now: Instant) -> Next {
-        // Forget repos nobody has asked about recently. The worker drops
-        // their workspaces to match.
-        self.repos.retain(|_, repo| {
-            repo.wanted
+        // Forget what nobody has asked about recently. The worker drops
+        // the matching workspaces to match.
+        self.requests.retain(|_, request| {
+            request
+                .wanted
                 .is_some_and(|wanted| now.duration_since(wanted) < IDLE_TIMEOUT)
         });
+
+        // A finished checkout is remembered only while something is
+        // still reading the repo, so that asking for the same revision
+        // again does not get the last checkout's answer.
+        let live: Vec<PathBuf> = self.requests.keys().map(|(root, _)| root.clone()).collect();
+        self.checkouts
+            .retain(|root, checkout| checkout.result.is_none() || live.contains(root));
+
+        for (root, checkout) in &self.checkouts {
+            if checkout.result.is_none() {
+                return Next::Checkout(root.clone(), checkout.revision.clone());
+            }
+        }
+
         let mut soonest: Option<Duration> = None;
-        for (root, repo) in &self.repos {
-            let Some(polled) = repo.polled else {
-                return Next::Poll(root.clone());
+        for ((root, request), state) in &self.requests {
+            let Some(polled) = state.polled else {
+                return Next::Poll(root.clone(), request.clone());
             };
-            // A slow repo is polled less often, so polling can't eat a
-            // core no matter how big the change is.
-            let gap = POLL_INTERVAL.max(repo.took * POLL_BACKOFF);
+            // A slow read happens less often, so polling can't eat a core
+            // no matter how big the change is.
+            let gap = POLL_INTERVAL.max(state.took * POLL_BACKOFF);
             let due = polled + gap;
             match due.checked_duration_since(now) {
-                None => return Next::Poll(root.clone()),
+                None => return Next::Poll(root.clone(), request.clone()),
                 Some(wait) => soonest = Some(soonest.map_or(wait, |s: Duration| s.min(wait))),
             }
         }
@@ -234,14 +334,14 @@ impl State {
 fn run(shared: &Shared) {
     let mut poller = Poller::new();
     loop {
-        let root = {
+        let next = {
             let mut state = shared.state.lock().unwrap();
             loop {
                 if state.exit {
                     return;
                 }
                 match state.next(Instant::now()) {
-                    Next::Poll(root) => break root,
+                    next @ (Next::Checkout(..) | Next::Poll(..)) => break next,
                     Next::Wait(wait) => {
                         state = shared.wake.wait_timeout(state, wait).unwrap().0;
                     }
@@ -250,28 +350,63 @@ fn run(shared: &Shared) {
             }
         };
 
-        let started = Instant::now();
-        // jj-lib panics on some inputs it considers impossible. A panic
-        // here would leave the thread dead and every later ask waiting
-        // for a result that will never come, so it becomes an error the
-        // diff page can show instead.
-        let poll = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| poller.poll(&root)))
-            .unwrap_or_else(|payload| Poll {
-                change: Err(format!("{}: {}", root.display(), panic_message(&*payload))),
-                statuses: HashMap::new(),
-            });
-        let took = started.elapsed();
+        match next {
+            Next::Checkout(root, revision) => {
+                let result = guarded(&root, || poller.checkout(&root, &revision))
+                    .unwrap_or_else(|panicked| Err(panicked));
+                let mut state = shared.state.lock().unwrap();
+                if let Some(checkout) = state.checkouts.get_mut(&root)
+                    && checkout.revision == revision
+                {
+                    checkout.result = Some(result);
+                }
+            }
+            Next::Poll(root, request) => {
+                let started = Instant::now();
+                let answer = answer(&mut poller, &root, &request);
+                let took = started.elapsed();
 
-        let mut state = shared.state.lock().unwrap();
-        if let Some(repo) = state.repos.get_mut(&root) {
-            repo.polled = Some(Instant::now());
-            repo.took = took;
-            repo.result = Some(Arc::new(poll));
+                let mut state = shared.state.lock().unwrap();
+                if let Some(entry) = state.requests.get_mut(&(root.clone(), request)) {
+                    entry.polled = Some(Instant::now());
+                    entry.took = took;
+                    entry.answer = Some(Arc::new(answer));
+                }
+                // Repos `State::next` has forgotten don't need their
+                // workspaces kept open either.
+                poller.retain(|root| {
+                    state.requests.keys().any(|(wanted, _)| wanted == root)
+                        || state.checkouts.contains_key(root)
+                });
+            }
+            Next::Wait(_) | Next::Idle => unreachable!(),
         }
-        // Repos `State::next` has forgotten don't need their workspaces
-        // kept open either.
-        poller.retain(|root| state.repos.contains_key(root));
     }
+}
+
+fn answer(poller: &mut Poller, root: &Path, request: &Request) -> Answer {
+    match request {
+        Request::WorkingCopy => Answer::WorkingCopy(
+            guarded(root, || poller.poll(root)).unwrap_or_else(|panicked| Poll {
+                change: Err(panicked),
+                statuses: HashMap::new(),
+            }),
+        ),
+        Request::Revisions => {
+            Answer::Revisions(guarded(root, || poller.revisions(root)).unwrap_or_else(Err))
+        }
+        Request::Change(change_id) => Answer::Change(
+            guarded(root, || poller.change(root, change_id.as_bstr())).unwrap_or_else(Err),
+        ),
+    }
+}
+
+// jj-lib panics on some inputs it considers impossible. A panic here would
+// leave the thread dead and every later ask waiting for an answer that
+// will never come, so it becomes an error the page can show instead.
+fn guarded<T>(root: &Path, work: impl FnOnce() -> T) -> Result<T, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(work))
+        .map_err(|payload| format!("{}: {}", root.display(), panic_message(&*payload)))
 }
 
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
@@ -328,6 +463,35 @@ impl Poller {
         }
     }
 
+    /// The repo's revisions, newest first, for the picker.
+    pub fn revisions(&mut self, root: &Path) -> Result<Vec<VcsRevision>, String> {
+        self.loaded(root)?.revisions()
+    }
+
+    /// One revision's change: the commit against its parent. No snapshot,
+    /// because these files are not the ones on disk.
+    pub fn change(&mut self, root: &Path, change_id: &BStr) -> Result<VcsChange, String> {
+        self.loaded(root)?.change(root, change_id)
+    }
+
+    /// Check a revision out, so that its files are the ones on disk. The
+    /// one thing in here that writes to the repo.
+    pub fn checkout(&mut self, root: &Path, revision: &VcsRevisionId) -> Result<(), String> {
+        let VcsRevisionId::Change(change_id) = revision else {
+            // The working copy is already checked out, by definition.
+            return Ok(());
+        };
+        self.loaded(root)?.checkout(change_id.as_bstr())
+    }
+
+    fn loaded(&mut self, root: &Path) -> Result<&mut Loaded, String> {
+        self.loaded
+            .entry(root.to_path_buf())
+            .or_insert_with(|| Loaded::load(root))
+            .as_mut()
+            .ok_or_else(|| format!("{}: not a jj repo", root.display()))
+    }
+
     fn retain(&mut self, keep: impl Fn(&Path) -> bool) {
         self.loaded.retain(|root, _| keep(root));
     }
@@ -374,15 +538,121 @@ impl Loaded {
             block_on(wc_commit.parent_tree(repo.as_ref())).map_err(|error| error.to_string())?;
 
         let (files, statuses) = read_diff(repo.store(), root, &parent_tree, &new_tree)?;
-        let change = VcsChange {
-            root: root.to_path_buf(),
-            change_id: encode_reverse_hex(wc_commit.change_id().as_bytes())[..ID_PREFIX_LEN].into(),
-            commit_id: wc_commit.id().hex()[..ID_PREFIX_LEN].into(),
-            author: author_text(wc_commit.author()),
-            description: wc_commit.description().into(),
-            files,
+        Ok((change_of(root, &wc_commit, files), statuses))
+    }
+
+    fn revisions(&mut self) -> Result<Vec<VcsRevision>, String> {
+        let repo = block_on(self.workspace.repo_loader().load_at_head())
+            .map_err(|error| error.to_string())?;
+        let name = self.workspace.workspace_name().to_owned();
+        let wc_id = repo.view().get_wc_commit_id(&name).cloned();
+        let root_id = repo.store().root_commit_id().clone();
+
+        // Every visible revision, newest first, which is the order the
+        // revset streams them in. jj's own log picks a cleverer set; a
+        // picker with a search field does not need one.
+        let expression: Arc<ResolvedRevsetExpression> = RevsetExpression::all();
+        let revset = expression
+            .evaluate(repo.as_ref())
+            .map_err(|error| error.to_string())?;
+
+        block_on(async {
+            let mut revisions = Vec::new();
+            let mut stream = revset.stream();
+            while let Some(commit_id) = stream.next().await {
+                let commit_id = commit_id.map_err(|error| error.to_string())?;
+                // The root commit is jj's own, not a revision anyone is
+                // working on.
+                if commit_id == root_id {
+                    continue;
+                }
+                let commit = repo
+                    .store()
+                    .get_commit(&commit_id)
+                    .map_err(|error| error.to_string())?;
+                revisions.push(VcsRevision {
+                    change_id: encode_reverse_hex(commit.change_id().as_bytes()).into(),
+                    commit_id: commit.id().hex().into(),
+                    author: author_text(commit.author()),
+                    description: commit.description().lines().next().unwrap_or("").into(),
+                    is_working_copy: Some(&commit_id) == wc_id.as_ref(),
+                });
+                if revisions.len() >= REVISION_LIMIT {
+                    break;
+                }
+            }
+            Ok(revisions)
+        })
+    }
+
+    fn change(&mut self, root: &Path, change_id: &BStr) -> Result<VcsChange, String> {
+        let repo = block_on(self.workspace.repo_loader().load_at_head())
+            .map_err(|error| error.to_string())?;
+        let commit = resolve(&repo, change_id)?;
+        let parent_tree =
+            block_on(commit.parent_tree(repo.as_ref())).map_err(|error| error.to_string())?;
+        let (files, _statuses) = read_diff(repo.store(), root, &parent_tree, &commit.tree())?;
+        Ok(change_of(root, &commit, files))
+    }
+
+    // Record the working copy, move `@` to `commit`, and update the files
+    // on disk to match - what `jj edit` does.
+    fn checkout(&mut self, change_id: &BStr) -> Result<(), String> {
+        // Recording first is what makes this safe: our polling snapshots
+        // are deliberately not recorded, so the changes made since the
+        // last real jj command exist only as files on disk, and checking
+        // out would write over them.
+        let repo = self.record_snapshot()?;
+        let commit = resolve(&repo, change_id)?;
+        let name = self.workspace.workspace_name().to_owned();
+        let old_commit = wc_commit(&repo, &name)?;
+        if old_commit.id() == commit.id() {
+            return Ok(());
+        }
+
+        let mut tx = repo.start_transaction();
+        block_on(tx.repo_mut().edit(name, &commit)).map_err(|error| error.to_string())?;
+        block_on(tx.repo_mut().rebase_descendants()).map_err(|error| error.to_string())?;
+        let repo = block_on(tx.commit(format!("edit commit {}", commit.id().hex())))
+            .map_err(|error| error.to_string())?;
+
+        block_on(
+            self.workspace
+                .check_out(repo.op_id().clone(), Some(&old_commit.tree()), &commit),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    // Snapshot the working copy and write it down: a new tree for `@`, an
+    // operation recording it, and an updated working-copy state. This is
+    // what every jj command does, and the only time we do it.
+    fn record_snapshot(&mut self) -> Result<Arc<ReadonlyRepo>, String> {
+        let repo = block_on(self.workspace.repo_loader().load_at_head())
+            .map_err(|error| error.to_string())?;
+        let name = self.workspace.workspace_name().to_owned();
+        let old_commit = wc_commit(&repo, &name)?;
+
+        let mut locked_ws = block_on(self.workspace.start_working_copy_mutation())
+            .map_err(|error| error.to_string())?;
+        let (tree, _stats) = block_on(locked_ws.locked_wc().snapshot(&snapshot_options()))
+            .map_err(|error| error.to_string())?;
+
+        let repo = if tree.tree_ids_and_labels() == old_commit.tree().tree_ids_and_labels() {
+            repo
+        } else {
+            let mut tx = repo.start_transaction();
+            let mut_repo = tx.repo_mut();
+            let new_commit = block_on(mut_repo.rewrite_commit(&old_commit).set_tree(tree).write())
+                .map_err(|error| error.to_string())?;
+            mut_repo
+                .set_wc_commit(name.clone(), new_commit.id().clone())
+                .map_err(|error| error.to_string())?;
+            block_on(mut_repo.rebase_descendants()).map_err(|error| error.to_string())?;
+            block_on(tx.commit("snapshot working copy")).map_err(|error| error.to_string())?
         };
-        Ok((change, statuses))
+        block_on(locked_ws.finish(repo.op_id().clone())).map_err(|error| error.to_string())?;
+        Ok(repo)
     }
 
     // Snapshot the working copy into a tree, and drop the lock without
@@ -390,20 +660,61 @@ impl Loaded {
     fn snapshot(&mut self) -> Result<MergedTree, String> {
         let mut locked_ws = block_on(self.workspace.start_working_copy_mutation())
             .map_err(|error| error.to_string())?;
-        let options = SnapshotOptions {
-            // Only the user's global excludes file would go here; the
-            // in-tree .gitignores are read by the snapshotter itself.
-            base_ignores: GitIgnoreFile::empty(),
-            progress: None,
-            // jj's default `snapshot.auto-track` is `all()`, so a new file
-            // shows up as added without being tracked first.
-            start_tracking_matcher: &EverythingMatcher,
-            force_tracking_matcher: &NothingMatcher,
-            max_new_file_size: MAX_NEW_FILE_SIZE,
-        };
-        let (tree, _stats) = block_on(locked_ws.locked_wc().snapshot(&options))
+        let (tree, _stats) = block_on(locked_ws.locked_wc().snapshot(&snapshot_options()))
             .map_err(|error| error.to_string())?;
         Ok(tree)
+    }
+}
+
+fn snapshot_options<'a>() -> SnapshotOptions<'a> {
+    SnapshotOptions {
+        // Only the user's global excludes file would go here; the in-tree
+        // .gitignores are read by the snapshotter itself.
+        base_ignores: GitIgnoreFile::empty(),
+        progress: None,
+        // jj's default `snapshot.auto-track` is `all()`, so a new file
+        // shows up as added without being tracked first.
+        start_tracking_matcher: &EverythingMatcher,
+        force_tracking_matcher: &NothingMatcher,
+        max_new_file_size: MAX_NEW_FILE_SIZE,
+    }
+}
+
+fn wc_commit(repo: &Arc<ReadonlyRepo>, name: &WorkspaceName) -> Result<Commit, String> {
+    let commit_id = repo
+        .view()
+        .get_wc_commit_id(name)
+        .ok_or_else(|| "no working-copy commit".to_string())?;
+    repo.store()
+        .get_commit(commit_id)
+        .map_err(|error| error.to_string())
+}
+
+// The commit a full change id names. A change can have several commits
+// after a rewrite; the first visible one is the current version of it.
+fn resolve(repo: &Arc<ReadonlyRepo>, change_id: &BStr) -> Result<Commit, String> {
+    let bytes =
+        decode_reverse_hex(change_id).ok_or_else(|| format!("{change_id}: not a change id"))?;
+    let targets = block_on(repo.resolve_change_id(&ChangeId::new(bytes)))
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("{change_id}: no such revision"))?;
+    let (_, commit_id) = targets
+        .visible_with_offsets()
+        .next()
+        .ok_or_else(|| format!("{change_id}: revision is hidden"))?;
+    repo.store()
+        .get_commit(commit_id)
+        .map_err(|error| error.to_string())
+}
+
+fn change_of(root: &Path, commit: &Commit, files: Vec<VcsFile>) -> VcsChange {
+    VcsChange {
+        root: root.to_path_buf(),
+        change_id: encode_reverse_hex(commit.change_id().as_bytes())[..ID_PREFIX_LEN].into(),
+        commit_id: commit.id().hex()[..ID_PREFIX_LEN].into(),
+        author: author_text(commit.author()),
+        description: commit.description().into(),
+        files,
     }
 }
 

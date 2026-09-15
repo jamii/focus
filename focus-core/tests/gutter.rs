@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use focus_core::app::{App, VcsChange, VcsChangeKind, VcsFileStatus, VcsLineRange};
+use focus_core::app::{App, VcsChange, VcsChangeKind, VcsFileStatus, VcsLineRange, VcsRevisionId};
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{ButtonState, Key, ModifiersState};
@@ -32,7 +32,7 @@ fn file_app(text: &str, ranges: Vec<VcsLineRange>) -> (App, MockIO, WindowId) {
     io.vcs_statuses
         .insert(PathBuf::from(PATH), VcsFileStatus { ranges });
     io.vcs_changes.insert(
-        PathBuf::from(ROOT),
+        (PathBuf::from(ROOT), VcsRevisionId::WorkingCopy),
         VcsChange {
             root: PathBuf::from(ROOT),
             change_id: "qpvuntsmwlqt".into(),

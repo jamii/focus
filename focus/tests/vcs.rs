@@ -9,8 +9,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use bstr::ByteSlice as _;
 use focus::vcs::{Poller, Vcs};
-use focus_core::app::{VcsChange, VcsFileKind, VcsLineKind};
+use focus_core::app::{VcsChange, VcsFileKind, VcsLineKind, VcsRevision, VcsRevisionId};
 use jj_lib::config::StackedConfig;
 use jj_lib::gitignore::GitIgnoreFile;
 use jj_lib::matchers::{EverythingMatcher, NothingMatcher};
@@ -354,6 +355,125 @@ fn polling_does_not_write_operations() {
     assert_eq!(before, ops());
 }
 
+// Revisions other than the working copy.
+
+// The revisions of a repo built by `repo_with_base`: the change under
+// test, and the base commit under it.
+fn revisions(root: &Path) -> (VcsRevision, VcsRevision) {
+    let revisions = Poller::new().revisions(root).unwrap();
+    assert_eq!(revisions.len(), 2, "{revisions:?}");
+    let working_copy = revisions[0].clone();
+    let base = revisions[1].clone();
+    assert!(working_copy.is_working_copy);
+    assert!(!base.is_working_copy);
+    (working_copy, base)
+}
+
+#[test]
+fn revisions_are_listed_newest_first() {
+    let root = repo_with_base("revisions", &[("file.txt", "base\n")]);
+
+    let (working_copy, base) = revisions(&root);
+
+    assert_eq!(working_copy.description, "the change under test");
+    assert_eq!(base.description, "base");
+    // A change id is the full reverse hex, which is what asks for it.
+    assert_eq!(working_copy.change_id.len(), 32);
+    assert_ne!(working_copy.change_id, base.change_id);
+}
+
+#[test]
+fn another_revision_shows_its_own_change() {
+    let root = repo_with_base("other_revision", &[("file.txt", "base\n")]);
+    // An edit in the working copy, which the base revision knows nothing
+    // about: its change is the files it added.
+    std::fs::write(root.join("file.txt"), "changed\n").unwrap();
+    let (_, base) = revisions(&root);
+
+    let change = Poller::new()
+        .change(&root, base.change_id.as_bstr())
+        .unwrap();
+
+    assert_eq!(
+        render(&change),
+        "\
+description: base
+A file.txt
+  @@ -0,0 +0,1 @@
+  +base
+"
+    );
+}
+
+#[test]
+fn checking_out_a_revision_records_the_working_copy_first() {
+    let root = repo_with_base("checkout", &[("file.txt", "base\n")]);
+    std::fs::write(root.join("file.txt"), "working copy\n").unwrap();
+    let (working_copy, base) = revisions(&root);
+
+    let mut poller = Poller::new();
+    poller
+        .checkout(&root, &VcsRevisionId::Change(base.change_id.clone()))
+        .unwrap();
+
+    // The base revision's files are the ones on disk now.
+    assert_eq!(
+        std::fs::read_to_string(root.join("file.txt")).unwrap(),
+        "base\n"
+    );
+    // The edit that was in the working copy was recorded before the
+    // checkout wrote over it, so it is still in the revision it was made
+    // in. Polling never records, so this is the one thing that does.
+    let change = poller
+        .change(&root, working_copy.change_id.as_bstr())
+        .unwrap();
+    assert_eq!(
+        render(&change),
+        "\
+description: the change under test
+M file.txt
+  @@ -0,1 +0,1 @@
+  -base
+  +working copy
+"
+    );
+    // ... and `@` is the revision that was checked out.
+    let revisions = poller.revisions(&root).unwrap();
+    let checked_out = revisions
+        .iter()
+        .find(|revision| revision.is_working_copy)
+        .unwrap();
+    assert_eq!(checked_out.change_id, base.change_id);
+}
+
+#[test]
+fn checking_out_the_revision_already_checked_out_does_nothing() {
+    let root = repo_with_base("checkout_noop", &[("file.txt", "base\n")]);
+    let (working_copy, _) = revisions(&root);
+    let ops = || {
+        std::fs::read_dir(root.join(".jj/repo/op_store/operations"))
+            .unwrap()
+            .count()
+    };
+
+    let before = ops();
+    Poller::new()
+        .checkout(&root, &VcsRevisionId::Change(working_copy.change_id))
+        .unwrap();
+
+    // Recording an unchanged working copy writes no operation, and there
+    // is nothing to check out.
+    assert_eq!(before, ops());
+}
+
+#[test]
+fn checking_out_the_working_copy_is_nothing_to_do() {
+    let root = repo_with_base("checkout_wc", &[("file.txt", "base\n")]);
+    Poller::new()
+        .checkout(&root, &VcsRevisionId::WorkingCopy)
+        .unwrap();
+}
+
 // The worker thread. Everything above drives `Poller` directly; these two
 // go through the front end the editor uses.
 
@@ -378,11 +498,14 @@ fn the_worker_thread_answers_in_the_background() {
     let vcs = Vcs::new();
     // Nothing has been polled yet, so the first ask says so rather than
     // blocking.
-    let error = vcs.change(&root).unwrap_err().to_string();
+    let error = vcs
+        .change(&root, &VcsRevisionId::WorkingCopy)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("reading"), "{error}");
     assert_eq!(vcs.file_status(&root, &root.join("file.txt")), None);
 
-    let change = eventually(|| vcs.change(&root).ok());
+    let change = eventually(|| vcs.change(&root, &VcsRevisionId::WorkingCopy).ok());
     assert_eq!(
         render(&change),
         "\
@@ -404,12 +527,12 @@ fn the_worker_thread_keeps_up_with_the_working_copy() {
     let root = repo_with_base("threaded_updates", &[("file.txt", "one\n")]);
 
     let vcs = Vcs::new();
-    eventually(|| vcs.change(&root).ok());
+    eventually(|| vcs.change(&root, &VcsRevisionId::WorkingCopy).ok());
 
     for line in ["two", "three"] {
         std::fs::write(root.join("file.txt"), format!("{line}\n")).unwrap();
         let text = eventually(|| {
-            let change = vcs.change(&root).ok()?;
+            let change = vcs.change(&root, &VcsRevisionId::WorkingCopy).ok()?;
             let hunk = change.files.first()?.hunks.first()?;
             let added = hunk.lines.iter().find(|l| l.text == line.as_bytes())?;
             Some(added.text.to_string())
@@ -438,7 +561,7 @@ fn time_polls(root: &Path, polls: usize) -> (Duration, Vec<Duration>) {
 // produced, which is what `vcs_change` costs per frame.
 fn time_asks(root: &Path, asks: usize) -> Vec<Duration> {
     let vcs = Vcs::new();
-    let change = eventually(|| vcs.change(root).ok());
+    let change = eventually(|| vcs.change(root, &VcsRevisionId::WorkingCopy).ok());
     let bytes: usize = change
         .files
         .iter()
@@ -450,7 +573,7 @@ fn time_asks(root: &Path, asks: usize) -> Vec<Duration> {
     let mut times = Vec::new();
     for _ in 0..asks {
         let started = Instant::now();
-        vcs.change(root).unwrap();
+        vcs.change(root, &VcsRevisionId::WorkingCopy).unwrap();
         times.push(started.elapsed());
     }
     times

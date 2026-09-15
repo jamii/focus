@@ -91,7 +91,7 @@ pub(super) fn teardown(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     }
 }
 
-pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
+pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: WindowId) {
     let LauncherEditors { search_id, list_id } = editors(app, page_id);
 
     poll_commands(page_id, app, io);

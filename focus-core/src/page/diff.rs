@@ -1,5 +1,5 @@
-// The changes in the working-copy revision, as `jj show @` would show
-// them, and a way into the files they are in.
+// The changes in one revision, as `jj show <revision>` would show them,
+// and a way into the files they are in.
 //
 // The page renders the diff itself rather than showing a diff tool's
 // output, so that every page line's place in the working copy is known
@@ -11,10 +11,10 @@
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use bstr::{BStr, BString, ByteSlice};
+use bstr::{BString, ByteSlice};
 
 use crate::{
-    app::{App, IO, VcsChange, VcsFileKind, VcsLineKind},
+    app::{App, IO, VcsChange, VcsFileKind, VcsLineKind, VcsRevisionId},
     buffer::{self, OffsetDiff},
     drawing::Rect,
     editor::{self, EditorId},
@@ -27,11 +27,18 @@ use super::{GAP, PageContent, PageId, insert, new_edit};
 #[derive(Clone)]
 pub(super) struct State {
     root: PathBuf,
+    revision: VcsRevisionId,
     locations: Vec<Option<Location>>,
     // Where to put the cursor once there is a rendered page to scroll:
     // the hunk a gutter bar was clicked on, or the file and line ctrl+2
     // was pressed on. Cleared by the tick that resolves it.
     reveal: Option<(PathBuf, usize)>,
+    // Where ctrl+enter is going, once the revision holding it has been
+    // checked out. Only ever set for a revision that is not the working
+    // copy: those files are already on disk.
+    jump: Option<Location>,
+    // What went wrong with the last checkout, for the status bar.
+    error: Option<BString>,
 }
 
 // Where a line of the page came from.
@@ -56,19 +63,23 @@ pub(super) const EDITOR_COUNT: usize = 2;
 
 const DIFF_IX: usize = 0;
 
-// What the page is showing. Only one revision for now; when other
-// revisions can be shown this becomes the command that produced the page.
-const STATUS_TEXT: &str = "jj show @";
-
-pub(crate) fn new(app: &mut App, root: PathBuf, reveal: Option<(PathBuf, usize)>) -> PageId {
+pub(crate) fn new(
+    app: &mut App,
+    root: PathBuf,
+    revision: VcsRevisionId,
+    reveal: Option<(PathBuf, usize)>,
+) -> PageId {
     let diff_id = editor::new_generated(app);
     let status_bar_id = editor::new_generated(app);
     insert(
         app,
         PageContent::Diff(State {
             root,
+            revision,
             locations: Vec::new(),
             reveal,
+            jump: None,
+            error: None,
         }),
         vec![diff_id, status_bar_id],
         DIFF_IX,
@@ -91,16 +102,17 @@ pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> Pag
     )
 }
 
-pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
+pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) {
     let DiffEditors {
         diff_id,
         status_bar_id,
     } = editors(app, page_id);
     let root = state(app, page_id).root.clone();
+    let revision = state(app, page_id).revision.clone();
 
     // The change is re-read every frame: the working copy changes under
     // us, from this editor and from anything else running.
-    let (text, locations, read) = match io.vcs_change(&root) {
+    let (text, locations, read) = match io.vcs_change(&root, &revision) {
         Ok(change) => {
             let (text, locations) = render(&change);
             (text, locations, true)
@@ -134,9 +146,55 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
     app.editors.gutter_marker[diff_id] = !state(app, page_id).locations.is_empty();
     diff_id.tick(app, io);
 
+    // A jump waits for the revision to be checked out - there is nothing
+    // on disk to open until then - and is the last thing this page does.
+    let waiting = poll_jump(page_id, app, io, window_id);
+
+    let status_text = status_text(app, page_id, waiting);
     let status_bar_buffer_id = app.editors.buffer_id[status_bar_id];
-    status_bar_buffer_id.replace(app, BStr::new(STATUS_TEXT.as_bytes()));
+    status_bar_buffer_id.replace(app, status_text.as_bstr());
     status_bar_id.tick(app, io);
+}
+
+// The page is showing a revision, and how it got there.
+fn status_text(app: &App, page_id: PageId, waiting: bool) -> BString {
+    let state = state(app, page_id);
+    if let Some(error) = &state.error {
+        return error.clone();
+    }
+    let name = state.revision.name();
+    if waiting {
+        BString::from(format!("checking out {name} ..."))
+    } else {
+        BString::from(format!("jj show {name}"))
+    }
+}
+
+// Ask for the checkout the pending jump is waiting on, and take the jump
+// once it lands. True while it is still running.
+fn poll_jump(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) -> bool {
+    let state = state(app, page_id);
+    let (Some(location), root, revision) = (
+        state.jump.clone(),
+        state.root.clone(),
+        state.revision.clone(),
+    ) else {
+        return false;
+    };
+    match io.vcs_checkout(&root, &revision) {
+        None => true,
+        Some(Ok(())) => {
+            state_mut(app, page_id).jump = None;
+            open(app, io, window_id, &location);
+            false
+        }
+        Some(Err(error)) => {
+            let state = state_mut(app, page_id);
+            state.jump = None;
+            state.error = Some(BString::from(error.to_string()));
+            false
+        }
+    }
 }
 
 pub(super) fn input(
@@ -237,7 +295,21 @@ fn submit(page_id: PageId, app: &mut App, io: &mut dyn IO, window_id: WindowId) 
     if !location.openable {
         return;
     }
-    let buffer_id = buffer::from_file(app, io, location.path);
+    if state(app, page_id).revision == VcsRevisionId::WorkingCopy {
+        open(app, io, window_id, &location);
+        return;
+    }
+    // Another revision's files are not the ones on disk, so there is
+    // nothing to jump into until it has been checked out. `poll_jump`
+    // asks for that, and opens the file once it is there.
+    let state = state_mut(app, page_id);
+    state.jump = Some(location);
+    state.error = None;
+}
+
+// Replace this page with the file the location is in, at that line.
+fn open(app: &mut App, io: &mut dyn IO, window_id: WindowId, location: &Location) {
+    let buffer_id = buffer::from_file(app, io, location.path.clone());
     // Load the file now, so the line can be found in it.
     buffer_id.tick(app, io);
     let editor_id = editor::new(app, buffer_id);

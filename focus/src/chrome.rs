@@ -30,7 +30,7 @@ use winit::window::Window;
 
 use focus_core::app::{
     App, DirEntry, INITIAL_SIZE, INITIAL_TITLE, IO, ProcessId, ProcessPoll, RepoFiles, RepoMatch,
-    RepoSearch, VcsChange, VcsFileStatus, WindowSize,
+    RepoSearch, VcsChange, VcsFileStatus, VcsRevision, VcsRevisionId, WindowSize,
 };
 use focus_core::buffer;
 use focus_core::drawing::Drawing;
@@ -315,9 +315,23 @@ impl IO for IoReal<'_> {
         repo_root(dir)
     }
 
-    fn vcs_change(&mut self, dir: &Path) -> std::io::Result<VcsChange> {
+    fn vcs_change(&mut self, dir: &Path, revision: &VcsRevisionId) -> std::io::Result<VcsChange> {
         let root = repo_root(dir);
-        self.backend.vcs.change(&root)
+        self.backend.vcs.change(&root, revision)
+    }
+
+    fn vcs_revisions(&mut self, dir: &Path) -> std::io::Result<Vec<VcsRevision>> {
+        let root = repo_root(dir);
+        self.backend.vcs.revisions(&root)
+    }
+
+    fn vcs_checkout(
+        &mut self,
+        dir: &Path,
+        revision: &VcsRevisionId,
+    ) -> Option<std::io::Result<()>> {
+        let root = repo_root(dir);
+        self.backend.vcs.checkout(&root, revision)
     }
 
     fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus> {

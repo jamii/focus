@@ -2,7 +2,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::{BStr, BString};
-use focus_core::app::{App, IO, RepoFiles, RepoSearch, VcsChange, VcsFileStatus, WindowSize};
+use focus_core::app::{
+    App, IO, RepoFiles, RepoSearch, VcsChange, VcsFileStatus, VcsRevision, VcsRevisionId,
+    WindowSize,
+};
 use focus_core::buffer;
 use focus_core::input::{ButtonState, InputEvent, Key, ModifiersState, NamedKey};
 use focus_core::window::{self, WindowId};
@@ -129,8 +132,20 @@ impl IO for ErrorIO {
         self.inner.repo_root(dir)
     }
 
-    fn vcs_change(&mut self, dir: &Path) -> std::io::Result<VcsChange> {
-        self.inner.vcs_change(dir)
+    fn vcs_change(&mut self, dir: &Path, revision: &VcsRevisionId) -> std::io::Result<VcsChange> {
+        self.inner.vcs_change(dir, revision)
+    }
+
+    fn vcs_revisions(&mut self, dir: &Path) -> std::io::Result<Vec<VcsRevision>> {
+        self.inner.vcs_revisions(dir)
+    }
+
+    fn vcs_checkout(
+        &mut self,
+        dir: &Path,
+        revision: &VcsRevisionId,
+    ) -> Option<std::io::Result<()>> {
+        self.inner.vcs_checkout(dir, revision)
     }
 
     fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus> {

@@ -3,7 +3,9 @@
 
 use std::path::PathBuf;
 
-use focus_core::app::{App, VcsChange, VcsFile, VcsFileKind, VcsHunk, VcsLine, VcsLineKind};
+use focus_core::app::{
+    App, VcsChange, VcsFile, VcsFileKind, VcsHunk, VcsLine, VcsLineKind, VcsRevisionId,
+};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{Key, NamedKey};
 use focus_core::window::WindowId;
@@ -78,7 +80,8 @@ fn repo_app(change: Option<VcsChange>) -> (App, MockIO, WindowId) {
     let (mut app, mut io, window_id) = common::file_app(PathBuf::from(PATH), TEXT);
     io.repo_roots.push(PathBuf::from(ROOT));
     if let Some(change) = change {
-        io.vcs_changes.insert(PathBuf::from(ROOT), change);
+        io.vcs_changes
+            .insert((PathBuf::from(ROOT), VcsRevisionId::WorkingCopy), change);
     }
     common::tick(&mut app, &mut io);
     (app, io, window_id)
@@ -220,7 +223,7 @@ fn a_repo_that_cannot_be_read_shows_the_error() {
 
     open_diff(&mut app, &mut io, window_id);
 
-    assert_eq!(buffer_text(&app, DIFF), "/repo: no repo");
+    assert_eq!(buffer_text(&app, DIFF), "/repo: no @");
     app.assert_invariants();
 }
 
@@ -232,7 +235,8 @@ fn the_page_follows_the_change() {
 
     let mut changed = change();
     changed.files[0].hunks[0].lines[2] = line(VcsLineKind::Added, "TWO AND A HALF");
-    io.vcs_changes.insert(PathBuf::from(ROOT), changed);
+    io.vcs_changes
+        .insert((PathBuf::from(ROOT), VcsRevisionId::WorkingCopy), changed);
     common::tick(&mut app, &mut io);
 
     assert!(buffer_text(&app, DIFF).contains("+ TWO AND A HALF"));

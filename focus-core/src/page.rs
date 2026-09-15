@@ -13,6 +13,7 @@ use crate::{
 
 mod choose_command;
 mod choose_dir;
+mod choose_revision;
 mod diff;
 mod edit;
 mod launcher;
@@ -25,6 +26,7 @@ mod search_repo;
 
 pub(crate) use choose_command::new as new_choose_command;
 pub(crate) use choose_dir::new as new_choose_dir;
+pub(crate) use choose_revision::new as new_choose_revision;
 pub(crate) use diff::new as new_diff;
 pub(crate) use edit::new as new_edit;
 pub(crate) use launcher::new as new_launcher;
@@ -61,6 +63,7 @@ enum PageContent {
     ChooseDir,
     Runner(runner::State),
     Diff(diff::State),
+    ChooseRevision(choose_revision::State),
 }
 
 #[derive(Clone, Copy)]
@@ -76,6 +79,7 @@ enum PageContentKind {
     ChooseDir,
     Runner,
     Diff,
+    ChooseRevision,
 }
 
 impl PageContent {
@@ -92,6 +96,7 @@ impl PageContent {
             PageContent::ChooseDir => PageContentKind::ChooseDir,
             PageContent::Runner(_) => PageContentKind::Runner,
             PageContent::Diff(_) => PageContentKind::Diff,
+            PageContent::ChooseRevision(_) => PageContentKind::ChooseRevision,
         }
     }
 }
@@ -163,6 +168,9 @@ pub(crate) fn assert_invariants(app: &App) {
             }
             PageContentKind::Runner => assert!(editor_ids.len() == runner::EDITOR_COUNT),
             PageContentKind::Diff => assert!(editor_ids.len() == diff::EDITOR_COUNT),
+            PageContentKind::ChooseRevision => {
+                assert!(editor_ids.len() == choose_revision::EDITOR_COUNT)
+            }
         }
         for editor_id in editor_ids {
             assert!(editor_id.0 < app.editors.editor_count);
@@ -187,19 +195,22 @@ pub(crate) fn assert_invariants(app: &App) {
 }
 
 impl PageId {
-    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO) {
+    pub(crate) fn tick(self, app: &mut App, io: &mut dyn IO, window_id: WindowId) {
         match app.pages.content[self].kind() {
-            PageContentKind::SearchBuffer => search_buffer::tick(self, app, io),
-            PageContentKind::SearchRepo => search_repo::tick(self, app, io),
-            PageContentKind::Edit => edit::tick(self, app, io),
-            PageContentKind::Launcher => launcher::tick(self, app, io),
-            PageContentKind::OpenBuffer => open_buffer::tick(self, app, io),
-            PageContentKind::OpenFile => open_file::tick(self, app, io),
-            PageContentKind::OpenFileFromRepo => open_file_from_repo::tick(self, app, io),
-            PageContentKind::ChooseCommand => choose_command::tick(self, app, io),
-            PageContentKind::ChooseDir => choose_dir::tick(self, app, io),
-            PageContentKind::Runner => runner::tick(self, app, io),
-            PageContentKind::Diff => diff::tick(self, app, io),
+            PageContentKind::SearchBuffer => search_buffer::tick(self, app, io, window_id),
+            PageContentKind::SearchRepo => search_repo::tick(self, app, io, window_id),
+            PageContentKind::Edit => edit::tick(self, app, io, window_id),
+            PageContentKind::Launcher => launcher::tick(self, app, io, window_id),
+            PageContentKind::OpenBuffer => open_buffer::tick(self, app, io, window_id),
+            PageContentKind::OpenFile => open_file::tick(self, app, io, window_id),
+            PageContentKind::OpenFileFromRepo => {
+                open_file_from_repo::tick(self, app, io, window_id)
+            }
+            PageContentKind::ChooseCommand => choose_command::tick(self, app, io, window_id),
+            PageContentKind::ChooseDir => choose_dir::tick(self, app, io, window_id),
+            PageContentKind::Runner => runner::tick(self, app, io, window_id),
+            PageContentKind::Diff => diff::tick(self, app, io, window_id),
+            PageContentKind::ChooseRevision => choose_revision::tick(self, app, io, window_id),
         }
     }
 
@@ -220,6 +231,7 @@ impl PageId {
             PageContentKind::ChooseDir => choose_dir::duplicate(self, app, io),
             PageContentKind::Runner => runner::duplicate(self, app, io),
             PageContentKind::Diff => diff::duplicate(self, app, io),
+            PageContentKind::ChooseRevision => choose_revision::duplicate(self, app, io),
         }
     }
 
@@ -238,7 +250,8 @@ impl PageId {
             | PageContentKind::OpenFileFromRepo
             | PageContentKind::ChooseCommand
             | PageContentKind::ChooseDir
-            | PageContentKind::Diff => {}
+            | PageContentKind::Diff
+            | PageContentKind::ChooseRevision => {}
         }
     }
 
@@ -295,6 +308,9 @@ impl PageId {
             PageContentKind::ChooseDir => choose_dir::input(self, app, io, window_id, &event),
             PageContentKind::Runner => runner::input(self, app, io, window_id, &event),
             PageContentKind::Diff => diff::input(self, app, io, window_id, &event),
+            PageContentKind::ChooseRevision => {
+                choose_revision::input(self, app, io, window_id, &event)
+            }
         };
         if handled {
             return;
@@ -360,6 +376,7 @@ impl PageId {
                 PageContentKind::ChooseDir => choose_dir::layout(page_rect, cell_size),
                 PageContentKind::Runner => runner::layout(page_rect, cell_size),
                 PageContentKind::Diff => diff::layout(page_rect, cell_size),
+                PageContentKind::ChooseRevision => choose_revision::layout(page_rect, cell_size),
             };
         }
 
@@ -410,6 +427,9 @@ impl PageId {
             PageContentKind::ChooseDir => choose_dir::handle_edits(self, app, editor_ix, diff),
             PageContentKind::Runner => runner::handle_edits(self, app, editor_ix, diff),
             PageContentKind::Diff => self::diff::handle_edits(self, app, editor_ix, diff),
+            PageContentKind::ChooseRevision => {
+                choose_revision::handle_edits(self, app, editor_ix, diff)
+            }
         }
     }
 
@@ -430,7 +450,8 @@ impl PageId {
             | PageContentKind::OpenFileFromRepo
             | PageContentKind::ChooseCommand
             | PageContentKind::ChooseDir
-            | PageContentKind::Diff => {}
+            | PageContentKind::Diff
+            | PageContentKind::ChooseRevision => {}
         }
     }
 
@@ -447,6 +468,7 @@ impl PageId {
             PageContentKind::ChooseDir => choose_dir::current_path(self, app),
             PageContentKind::Runner => runner::current_path(self, app),
             PageContentKind::Diff => diff::current_path(self, app),
+            PageContentKind::ChooseRevision => choose_revision::current_path(self, app),
         }
     }
 

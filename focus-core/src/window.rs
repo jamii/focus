@@ -1,4 +1,4 @@
-use crate::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO};
+use crate::app::{App, INITIAL_SIZE, INITIAL_TITLE, IO, VcsRevisionId};
 use crate::buffer::BufferId;
 use crate::drawing::Drawing;
 use crate::editor;
@@ -165,7 +165,7 @@ impl WindowId {
         for page_id in hidden {
             page_id.tick_background(app, io);
         }
-        page_id.tick(app, io);
+        page_id.tick(app, io, self);
     }
 
     pub(crate) fn input(self, app: &mut App, io: &mut dyn IO, event: InputEvent<'_>) {
@@ -231,7 +231,8 @@ impl WindowId {
                             .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
                             .unwrap_or_else(|| io.home_dir());
                         let root = io.repo_root(&dir);
-                        let diff_page_id = page::new_diff(app, root, reveal);
+                        let diff_page_id =
+                            page::new_diff(app, root, VcsRevisionId::WorkingCopy, reveal);
                         self.push_page(app, io, diff_page_id);
                         true
                     }
@@ -274,6 +275,19 @@ impl WindowId {
                             .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
                             .unwrap_or_else(|| io.home_dir());
                         let page_id = page::new_search_repo(app, dir);
+                        self.push_page(app, io, page_id);
+                        true
+                    }
+                    Key::Character("2") => {
+                        // The revision picker for the repo the current
+                        // page is in.
+                        let page_id = self.current_page(app);
+                        let dir = page_id
+                            .current_path(app)
+                            .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+                            .unwrap_or_else(|| io.home_dir());
+                        let root = io.repo_root(&dir);
+                        let page_id = page::new_choose_revision(app, root);
                         self.push_page(app, io, page_id);
                         true
                     }

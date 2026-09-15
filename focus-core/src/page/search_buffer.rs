@@ -103,7 +103,7 @@ pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> Pag
     )
 }
 
-pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
+pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: WindowId) {
     let SearchBufferEditors {
         preview_id,
         search_id,
