@@ -11,14 +11,15 @@ use focus_core::window::WindowId;
 mod common;
 
 // Buffer creation order: file_app makes the file buffer (0) and the status
-// bar buffer (1); ctrl+2 then makes the diff page's buffer (2); ctrl+enter
-// replaces the page under it with a new edit page, which shares the file
-// buffer and makes a status bar of its own (3). The first status bar stops
-// being updated as soon as the diff page is pushed over it, so what the
-// page ctrl+enter opened is showing is buffer 3.
+// bar buffer (1); ctrl+2 then makes the diff page's buffer (2) and its
+// status bar (3); ctrl+enter replaces the page under it with a new edit
+// page, which shares the file buffer and makes a status bar of its own
+// (4). The first status bar stops being updated as soon as the diff page
+// is pushed over it, so what the page ctrl+enter opened is showing is
+// buffer 4.
 const FILE: usize = 0;
 const DIFF: usize = 2;
-const OPENED_STATUS_BAR: usize = 3;
+const OPENED_STATUS_BAR: usize = 4;
 
 const ROOT: &str = "/repo";
 const PATH: &str = "/repo/file.txt";
@@ -123,6 +124,16 @@ M file.txt
           7 + seven
     7     8   eight"
     );
+    app.assert_invariants();
+}
+
+#[test]
+fn the_status_bar_says_what_the_page_is_showing() {
+    let (mut app, mut io, window_id) = repo_app(Some(change()));
+
+    open_diff(&mut app, &mut io, window_id);
+
+    assert_eq!(buffer_text(&app, DIFF + 1), "jj show @");
     app.assert_invariants();
 }
 

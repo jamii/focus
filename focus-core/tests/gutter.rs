@@ -46,10 +46,9 @@ fn file_app(text: &str, ranges: Vec<VcsLineRange>) -> (App, MockIO, WindowId) {
     (app, io, window_id)
 }
 
-// The change bar in each row of the left gutter, as (row, kind, how tall
-// it is as a fraction of a cell).
-fn gutter_bars(app: &App, drawing: &Drawing) -> Vec<(usize, &'static str, f32)> {
-    let [cell_w, cell_h] = [app.cell_size()[0] as f32, app.cell_size()[1] as f32];
+// Every change bar drawn, as (x, top pixel, kind, height in pixels).
+fn bars(app: &App, drawing: &Drawing) -> Vec<(f32, f32, &'static str, f32)> {
+    let cell_w = app.cell_size()[0] as f32;
     let mut bars = Vec::new();
     for command in &drawing.commands {
         let DrawCommand::Character(character) = command else {
@@ -62,17 +61,38 @@ fn gutter_bars(app: &App, drawing: &Drawing) -> Vec<(usize, &'static str, f32)> 
             _ => continue,
         };
         assert_eq!(character.ch, FULL_BLOCK);
-        assert_eq!(character.dst.pos[0], 0.0);
         // Half a cell wide, so the wrap and cursor markers drawn over the
         // bars stay readable.
         assert_eq!(character.dst.size[0], cell_w / 2.0);
         bars.push((
-            (character.dst.pos[1] / cell_h).round() as usize,
+            character.dst.pos[0],
+            character.dst.pos[1],
             kind,
-            character.dst.size[1] / cell_h,
+            character.dst.size[1],
         ));
     }
     bars
+}
+
+// The change bar in each row of the left gutter, as (row, kind, how tall
+// it is as a fraction of a cell).
+fn gutter_bars(app: &App, drawing: &Drawing) -> Vec<(usize, &'static str, f32)> {
+    let cell_h = app.cell_size()[1] as f32;
+    bars(app, drawing)
+        .into_iter()
+        .filter(|(x, ..)| *x == 0.0)
+        .map(|(_, y, kind, height)| ((y / cell_h).round() as usize, kind, height / cell_h))
+        .collect()
+}
+
+// The change marks in the right-gutter scrollbar, as (top pixel, kind,
+// height in pixels). Not rows: the whole file is scaled into the gutter.
+fn scrollbar_marks(app: &App, drawing: &Drawing) -> Vec<(f32, &'static str, f32)> {
+    bars(app, drawing)
+        .into_iter()
+        .filter(|(x, ..)| *x > 0.0)
+        .map(|(_, y, kind, height)| (y, kind, height))
+        .collect()
 }
 
 fn draw(app: &mut App, window_id: WindowId) -> Drawing {
@@ -253,5 +273,102 @@ fn keys_still_reach_the_editor_with_a_bar_under_the_cursor() {
     common::tick(&mut app, &mut io);
 
     assert_eq!(buffer_text(&app, 0), "zone\ntwo\nthree\nfour\nfive\n");
+    app.assert_invariants();
+}
+
+// A file long enough that the scrollbar has to scale it down, with one
+// changed line halfway through it.
+const LONG_LINES: usize = 100;
+const CHANGED_LINE: usize = 50;
+
+fn long_file_app() -> (App, MockIO, WindowId) {
+    let text: String = (0..LONG_LINES).map(|i| format!("line {i}\n")).collect();
+    file_app(
+        &text,
+        vec![range(
+            CHANGED_LINE..CHANGED_LINE + 1,
+            VcsChangeKind::Modified,
+        )],
+    )
+}
+
+// The editor's viewport, which is the page minus its status bar row.
+fn viewport(app: &App) -> [f32; 2] {
+    let [cell_w, cell_h] = [app.cell_size()[0] as f32, app.cell_size()[1] as f32];
+    [
+        cell_w * (WRAP_CHARS + 2) as f32,
+        cell_h * ROWS as f32 - cell_h - 1.0,
+    ]
+}
+
+#[test]
+fn the_scrollbar_shows_changes_that_are_scrolled_out_of_view() {
+    let (mut app, mut io, window_id) = long_file_app();
+    common::tick(&mut app, &mut io);
+
+    let drawing = draw(&mut app, window_id);
+
+    // The change is far below the viewport, so the left gutter shows
+    // nothing and the scrollbar shows it anyway.
+    assert_eq!(gutter_bars(&app, &drawing), vec![]);
+    let marks = scrollbar_marks(&app, &drawing);
+    assert_eq!(marks.len(), 1, "{marks:?}");
+    let (y, kind, height) = marks[0];
+    assert_eq!(kind, "modified");
+    // Halfway down the file, so halfway down the scrollbar.
+    let expected = viewport(&app)[1] * CHANGED_LINE as f32 / (LONG_LINES + 1) as f32;
+    assert!((y - expected).abs() < 1.0, "{y} is not about {expected}");
+    // One line of a hundred is less than a pixel; it is drawn anyway.
+    assert_eq!(height, 2.0);
+    app.assert_invariants();
+}
+
+#[test]
+fn the_scrollbar_marks_sit_in_the_right_gutter() {
+    let (mut app, mut io, window_id) = long_file_app();
+    common::tick(&mut app, &mut io);
+
+    let drawing = draw(&mut app, window_id);
+
+    let cell_w = app.cell_size()[0] as f32;
+    let marks: Vec<f32> = bars(&app, &drawing)
+        .into_iter()
+        .filter(|(x, ..)| *x > 0.0)
+        .map(|(x, ..)| x)
+        .collect();
+    // The outer half of the last cell of the row.
+    assert_eq!(marks, vec![viewport(&app)[0] - cell_w / 2.0]);
+    app.assert_invariants();
+}
+
+#[test]
+fn pressing_the_scrollbar_scrolls_there() {
+    let (mut app, mut io, window_id) = long_file_app();
+    draw(&mut app, window_id);
+    let [viewport_w, viewport_h] = viewport(&app);
+
+    // Halfway down the scrollbar is halfway down the file.
+    let cell_w = app.cell_size()[0] as f32;
+    let position = [viewport_w - cell_w / 2.0, viewport_h / 2.0];
+    common::mouse_enter(&mut app, &mut io, window_id);
+    common::mouse_moved(&mut app, &mut io, window_id, position);
+    common::mouse_button(&mut app, &mut io, window_id, ButtonState::Pressed, position);
+    common::mouse_button(
+        &mut app,
+        &mut io,
+        window_id,
+        ButtonState::Released,
+        position,
+    );
+    common::tick(&mut app, &mut io);
+
+    // The changed line is now on screen, so the left gutter marks it.
+    let drawing = draw(&mut app, window_id);
+    let gutter = gutter_bars(&app, &drawing);
+    assert_eq!(gutter.len(), 1, "{gutter:?}");
+    assert_eq!(gutter[0].1, "modified");
+    // ... and the cursor stayed where it was, at the top of the file: a
+    // press on the scrollbar scrolls, it does not move the cursor.
+    assert_eq!(buffer_text(&app, 1), "/repo/file.txt 1:1");
     app.assert_invariants();
 }

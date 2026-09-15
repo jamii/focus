@@ -61,6 +61,9 @@ const WHEEL_SCROLL_PIXELS: f32 = 128.0;
 // Per frame, while a selection drag is held off the top or bottom of the
 // viewport.
 const DRAG_SCROLL_PIXELS: f32 = 32.0;
+// The shortest a change bar in the scrollbar can be drawn. A long file
+// squeezes most changes into less than a pixel otherwise.
+const VCS_SCROLLBAR_MIN_H: f32 = 2.0;
 // Momentum, once the fingers leave the pad: the scroll speed decays by a
 // factor of e every COAST_TAU, so a flick coasts for around a second.
 const COAST_TAU: f32 = 0.3;
@@ -471,7 +474,15 @@ impl EditorId {
                 }
             }
             InputEvent::MouseButton { state, position } => match state {
-                ButtonState::Pressed => self.cursor_begin_drag(app, position),
+                ButtonState::Pressed => {
+                    let gutter_w = app.screen_from_grid([1, 0])[0];
+                    let viewport_w = app.editors.last_draw_size[self][0];
+                    if viewport_w > gutter_w && position[0] >= viewport_w - gutter_w {
+                        self.scroll_to_scrollbar(app, position);
+                    } else {
+                        self.cursor_begin_drag(app, position);
+                    }
+                }
                 ButtonState::Released => app.editors.is_dragging[self] = false,
             },
             // A wheel notch is a jump, not a gesture: it scrolls the
@@ -642,6 +653,32 @@ impl EditorId {
                 },
                 HIGHLIGHT_COLOR,
             );
+
+            // The same change bars as the left gutter, but scaled into
+            // the scrollbar, so every change in the file is visible at
+            // once however long the file is. The whole file squeezed
+            // into a few hundred pixels makes most changes less than a
+            // pixel tall, hence the minimum height.
+            if let Some(status) = &app.editors.vcs_status[self] {
+                let scale = viewport_h_f / total_h;
+                for range in &status.ranges {
+                    let rows = self.rows_from_lines(app, &range.lines);
+                    let y = app.screen_from_grid([0, rows.start])[1] * scale;
+                    let end_y = app.screen_from_grid([0, rows.end])[1] * scale;
+                    let color = match range.kind {
+                        VcsChangeKind::Added => VCS_ADDED_COLOR,
+                        VcsChangeKind::Modified => VCS_MODIFIED_COLOR,
+                        VcsChangeKind::Deleted => VCS_DELETED_COLOR,
+                    };
+                    drawing.draw_rect(
+                        Rect {
+                            pos: [gutter_w / 2.0, y],
+                            size: [gutter_w / 2.0, (end_y - y).max(VCS_SCROLLBAR_MIN_H)],
+                        },
+                        color,
+                    );
+                }
+            }
         }
 
         // Text region: marks, text, cursors.
@@ -1210,6 +1247,33 @@ impl EditorId {
         let buffer_id = app.editors.buffer_id[self];
         let line = buffer_id.grid_from_offset(app, app.editors.wraps[self][row][0])[1];
         vcs_kind_at_line(status, line)
+    }
+
+    // Which of this editor's rows a range of the file's lines is drawn
+    // on. An empty range - a deletion, which has no lines of its own -
+    // gives an empty row range at the row it sits before.
+    fn rows_from_lines(self, app: &App, lines: &Range<usize>) -> Range<usize> {
+        let buffer_id = app.editors.buffer_id[self];
+        let row_of = |line: usize| {
+            let offset = buffer_id.offset_from_grid(app, [0, line]);
+            self.grid_from_offset(app, offset)[1][1]
+        };
+        row_of(lines.start)..row_of(lines.end)
+    }
+
+    // A press in the right gutter scrolls the view there: the gutter is
+    // a scrollbar, so the whole file is laid out down it, and the place
+    // pressed is centred in the viewport.
+    fn scroll_to_scrollbar(self, app: &mut App, position: [f32; 2]) {
+        let viewport_h = app.editors.last_draw_size[self][1];
+        if viewport_h <= 0.0 {
+            return;
+        }
+        let rows = app.editors.wraps[self].len();
+        let total_h = app.screen_from_grid([0, rows])[1].max(viewport_h);
+        self.stop_coasting(app);
+        app.editors.top_pixel[self] = position[1] / viewport_h * total_h - viewport_h / 2.0;
+        self.clamp_top_pixel(app);
     }
 
     /// The line of this editor's file at `position` - relative to the

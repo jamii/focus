@@ -11,7 +11,7 @@
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use bstr::{BString, ByteSlice};
+use bstr::{BStr, BString, ByteSlice};
 
 use crate::{
     app::{App, IO, VcsChange, VcsFileKind, VcsLineKind},
@@ -22,7 +22,7 @@ use crate::{
     window::WindowId,
 };
 
-use super::{PageContent, PageId, insert, new_edit};
+use super::{GAP, PageContent, PageId, insert, new_edit};
 
 #[derive(Clone)]
 pub(super) struct State {
@@ -46,12 +46,23 @@ struct Location {
     openable: bool,
 }
 
-pub(super) const EDITOR_COUNT: usize = 1;
+#[derive(Clone, Copy)]
+struct DiffEditors {
+    diff_id: EditorId,
+    status_bar_id: EditorId,
+}
+
+pub(super) const EDITOR_COUNT: usize = 2;
 
 const DIFF_IX: usize = 0;
 
+// What the page is showing. Only one revision for now; when other
+// revisions can be shown this becomes the command that produced the page.
+const STATUS_TEXT: &str = "jj show @";
+
 pub(crate) fn new(app: &mut App, root: PathBuf, reveal: Option<(PathBuf, usize)>) -> PageId {
     let diff_id = editor::new_generated(app);
+    let status_bar_id = editor::new_generated(app);
     insert(
         app,
         PageContent::Diff(State {
@@ -59,20 +70,32 @@ pub(crate) fn new(app: &mut App, root: PathBuf, reveal: Option<(PathBuf, usize)>
             locations: Vec::new(),
             reveal,
         }),
-        vec![diff_id],
+        vec![diff_id, status_bar_id],
         DIFF_IX,
     )
 }
 
 pub(super) fn duplicate(page_id: PageId, app: &mut App, _io: &mut dyn IO) -> PageId {
-    let diff_id = editors(app, page_id);
+    let DiffEditors {
+        diff_id,
+        status_bar_id,
+    } = editors(app, page_id);
     let state = state(app, page_id).clone();
     let diff_id = editor::new_copy(app, diff_id);
-    insert(app, PageContent::Diff(state), vec![diff_id], DIFF_IX)
+    let status_bar_id = editor::new_copy(app, status_bar_id);
+    insert(
+        app,
+        PageContent::Diff(state),
+        vec![diff_id, status_bar_id],
+        DIFF_IX,
+    )
 }
 
 pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
-    let diff_id = editors(app, page_id);
+    let DiffEditors {
+        diff_id,
+        status_bar_id,
+    } = editors(app, page_id);
     let root = state(app, page_id).root.clone();
 
     // The change is re-read every frame: the working copy changes under
@@ -110,6 +133,10 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO) {
 
     app.editors.gutter_marker[diff_id] = !state(app, page_id).locations.is_empty();
     diff_id.tick(app, io);
+
+    let status_bar_buffer_id = app.editors.buffer_id[status_bar_id];
+    status_bar_buffer_id.replace(app, BStr::new(STATUS_TEXT.as_bytes()));
+    status_bar_id.tick(app, io);
 }
 
 pub(super) fn input(
@@ -132,8 +159,9 @@ pub(super) fn input(
     false
 }
 
-pub(super) fn layout(page_rect: Rect, _cell_size: [u32; 2]) -> Vec<Rect> {
-    vec![page_rect]
+pub(super) fn layout(page_rect: Rect, cell_size: [u32; 2]) -> Vec<Rect> {
+    let [diff_rect, status_bar_rect] = page_rect.split_from_bottom(cell_size[1] as f32, GAP);
+    vec![diff_rect, status_bar_rect]
 }
 
 pub(super) fn handle_edits(
@@ -149,11 +177,14 @@ pub(super) fn current_path(page_id: PageId, app: &App) -> Option<PathBuf> {
     Some(location(page_id, app)?.path)
 }
 
-fn editors(app: &App, page_id: PageId) -> EditorId {
-    let &[diff_id] = app.pages.editor_ids[page_id].as_slice() else {
+fn editors(app: &App, page_id: PageId) -> DiffEditors {
+    let &[diff_id, status_bar_id] = app.pages.editor_ids[page_id].as_slice() else {
         unreachable!()
     };
-    diff_id
+    DiffEditors {
+        diff_id,
+        status_bar_id,
+    }
 }
 
 fn state(app: &App, page_id: PageId) -> &State {
@@ -172,7 +203,7 @@ fn state_mut(app: &mut App, page_id: PageId) -> &mut State {
 
 // Where the main cursor's line came from, if it came from anywhere.
 fn location(page_id: PageId, app: &App) -> Option<Location> {
-    let diff_id = editors(app, page_id);
+    let diff_id = editors(app, page_id).diff_id;
     let buffer_id = app.editors.buffer_id[diff_id];
     let line = buffer_id.grid_from_offset(app, diff_id.main_cursor_offset(app))[1];
     state(app, page_id).locations.get(line)?.clone()
