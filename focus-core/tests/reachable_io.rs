@@ -68,8 +68,14 @@ fn reachable_ambient_io_matches_snapshot() {
 }
 
 fn assert_dependency_lock_matches(workspace_dir: &Path, fixture_dir: &Path) {
-    let workspace = dependency_tree(workspace_dir);
-    let fixture = dependency_tree(fixture_dir);
+    // The fixture asks for focus-core without default features, so the
+    // workspace has to be asked the same way - otherwise the two trees
+    // differ by the markdown parser rather than by a version, which is
+    // what this is actually looking for. Cargo will only select features
+    // for a package inside its own workspace, so the flag goes on one
+    // side and the fixture's own manifest does the job on the other.
+    let workspace = dependency_tree(workspace_dir, &["--no-default-features"]);
+    let fixture = dependency_tree(fixture_dir, &[]);
     assert_eq!(
         workspace, fixture,
         "the reachability fixture must analyze the versions in the workspace \
@@ -77,7 +83,7 @@ fn assert_dependency_lock_matches(workspace_dir: &Path, fixture_dir: &Path) {
     );
 }
 
-fn dependency_tree(manifest_dir: &Path) -> Vec<String> {
+fn dependency_tree(manifest_dir: &Path, extra: &[&str]) -> Vec<String> {
     let output = cargo(manifest_dir)
         .args([
             "tree",
@@ -91,6 +97,7 @@ fn dependency_tree(manifest_dir: &Path) -> Vec<String> {
             "--package",
             "focus-core",
         ])
+        .args(extra)
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", command_output(&output));

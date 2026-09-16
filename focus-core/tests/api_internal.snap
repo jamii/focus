@@ -390,8 +390,17 @@ pub(crate) fn bracket(byte: u8) -> Option<TokenKind>;
 
 ## mod focus_core::language::markdown
 
+#[cfg(feature = "markdown")]
 pub(super) fn spans(text: &BStr) -> Vec<Span>;
+
+#[cfg(not(feature = "markdown"))]
+pub(super) fn spans(_text: &BStr) -> Vec<Span>;
+
 pub(super) fn content_indent(text: &BStr, offset: usize) -> usize;
+
+## mod focus_core::language::markdown::parse
+
+pub(super) fn spans(text: &BStr) -> Vec<Span>;
 
 ## mod focus_core::language::nix
 
@@ -963,7 +972,9 @@ pub(super) fn current_path(_page_id: PageId, _app: &App) -> Option<PathBuf>;
 
 ## pub mod focus_core::style
 
+#[cfg(feature = "markdown")]
 pub(crate) fn heading_color(level: usize) -> [u8; 4];
+
 pub(crate) const fn hsla(h: f64, s: f64, l: f64, a: f64) -> [u8; 4];
 
 ## pub mod focus_core::window

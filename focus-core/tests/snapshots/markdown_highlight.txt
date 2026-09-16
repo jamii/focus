@@ -15,7 +15,7 @@
  - a list item
  aaccccccccccc
    carrying on
- ccccccccccccc
+ aaccccccccccc
  - [ ] a task
  aaaaaacccccc
 

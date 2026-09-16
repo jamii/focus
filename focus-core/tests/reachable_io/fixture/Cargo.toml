@@ -4,8 +4,16 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
+# Without default features, which leaves out markdown colouring and with it
+# the only dependency in the tree that has a build script. Cackle proxies
+# every build script through a shim starting `#!/bin/bash`, which fails
+# outright on a machine that has no `/bin/bash` - and there is no way to
+# tell it not to. What goes unanalysed is pulldown-cmark and the one
+# function that calls it, which take a `&str` and return colours: no I/O to
+# find. Everything focus-core does with a file, a process or a socket is
+# still built here and still checked.
 [dependencies]
-focus-core = { path = "../../../" }
+focus-core = { path = "../../../", default-features = false }
 
 # Keep this fixture independent from the parent workspace so Cackle analyzes
 # only the core reachability root and its dependencies.

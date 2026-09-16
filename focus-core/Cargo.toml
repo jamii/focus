@@ -3,12 +3,21 @@ name = "focus-core"
 version = "0.0.0"
 edition = "2024"
 
+[features]
+default = ["markdown"]
+# Colouring markdown, which is the only thing here that needs a parser
+# rather than a tokenizer. Kept behind a feature so that the ambient-I/O
+# reachability fixture can build without it - see the comment in
+# focus-core/tests/reachable_io/fixture/Cargo.toml for why it has to.
+markdown = ["dep:pulldown-cmark"]
+
 [dependencies]
 bstr = "1"
-# markdown-rs: a CommonMark and GFM parser that is two crates all told,
-# needs no build script, and has no unsafe in it. Focus wants the tree and
-# the byte offsets on it, not the HTML everything else is for.
-markdown = "1"
+# `html` and its escaping crate render markdown to a web page, which is
+# not what it is here for: focus only wants the parse and its offsets.
+# markdown-rs was tried instead - two crates and no build script - but its
+# parse is quadratic: 20s on a 2MB document against this one's 28ms.
+pulldown-cmark = { version = "0.13", default-features = false, optional = true }
 similar = { version = "3", features = ["bytes"] }
 
 [dev-dependencies]

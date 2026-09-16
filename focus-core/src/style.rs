@@ -28,6 +28,7 @@ pub const MARKUP_STRONG_COLOR: [u8; 4] = hsla(280.0, 0.8, 0.8, 1.0);
 
 /// Headings share one colour and dim as they get deeper, so that the shape
 /// of a document reads off the page without six unrelated hues on it.
+#[cfg(feature = "markdown")]
 pub(crate) fn heading_color(level: usize) -> [u8; 4] {
     hsla(45.0, 1.0, 0.88 - 0.07 * (level.min(6) - 1) as f64, 1.0)
 }

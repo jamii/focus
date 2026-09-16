@@ -188,6 +188,9 @@ pkgs.mkShell { src = ./.; inherit script; buildInputs = [ pkgs.rustc ]; }
 // Markdown is parsed rather than tokenized, and its parts nest: the marks
 // show through grey at the edges of what they mark, and a fenced block is
 // coloured as whatever language it names.
+// Colours only exist with the parser behind them; the reachability
+// fixture builds without it, and so can anyone else.
+#[cfg(feature = "markdown")]
 #[test]
 fn markdown_is_colored_by_what_it_marks() {
     let text = "\
