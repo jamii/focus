@@ -1255,3 +1255,95 @@ fn keys_with_control_and_alt_do_not_trigger_editor_shortcuts() {
     assert_eq!(common::text(&app), "abX");
     app.assert_invariants();
 }
+
+// A file rather than a scratch buffer: the comment keys need a language to
+// know what a comment looks like, and that comes from the path.
+fn rust_app(text: &str) -> (App, MockIO, WindowId) {
+    let (mut app, mut io, window_id) =
+        common::file_app(std::path::PathBuf::from("/repo/sample.rs"), text);
+    // The file is read from disk on the first tick, not when the buffer is
+    // made.
+    common::tick(&mut app, &mut io);
+    (app, io, window_id)
+}
+
+const COMMENT_SAMPLE: &str = "fn main() {\n    let x = 1;\n\n    dbg!(x);\n}\n";
+
+#[test]
+fn ctrl_slash_comments_the_line_the_cursor_is_on() {
+    let (mut app, mut io, window_id) = rust_app(COMMENT_SAMPLE);
+
+    move_down(&mut app, &mut io, window_id, 1);
+    common::control_key(&mut app, &mut io, window_id, Key::Character("/"));
+
+    assert_eq!(
+        common::text(&app),
+        "fn main() {\n    // let x = 1;\n\n    dbg!(x);\n}\n"
+    );
+    app.assert_invariants();
+}
+
+// Every line of the selection, each commented at its own indent, and the
+// blank line left alone. Ctrl+shift+/ puts it all back.
+#[test]
+fn ctrl_slash_comments_and_uncomments_a_selection() {
+    let (mut app, mut io, window_id) = rust_app(COMMENT_SAMPLE);
+
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
+    move_down(&mut app, &mut io, window_id, 4);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("l"));
+    common::control_key(&mut app, &mut io, window_id, Key::Character("/"));
+
+    assert_eq!(
+        common::text(&app),
+        "// fn main() {\n    // let x = 1;\n\n    // dbg!(x);\n// }\n"
+    );
+    app.assert_invariants();
+
+    // Shift+/ is `?` on the layout this is written on.
+    common::control_shift_key(&mut app, &mut io, window_id, Key::Character("?"));
+
+    assert_eq!(common::text(&app), COMMENT_SAMPLE);
+    app.assert_invariants();
+}
+
+// Uncommenting a selection that is only partly commented takes the
+// comments off the lines that have them and leaves the rest alone.
+#[test]
+fn ctrl_shift_slash_skips_lines_that_are_not_commented() {
+    let (mut app, mut io, window_id) = rust_app("// one\ntwo\n//three\n");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
+    move_down(&mut app, &mut io, window_id, 2);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("l"));
+    common::control_shift_key(&mut app, &mut io, window_id, Key::Character("/"));
+
+    assert_eq!(common::text(&app), "one\ntwo\nthree\n");
+    app.assert_invariants();
+}
+
+#[test]
+fn comment_keys_use_the_comment_of_the_buffers_language() {
+    let (mut app, mut io, window_id) =
+        common::file_app(std::path::PathBuf::from("/repo/sample.py"), "x = 1\n");
+    common::tick(&mut app, &mut io);
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("/"));
+
+    assert_eq!(common::text(&app), "# x = 1\n");
+    app.assert_invariants();
+}
+
+// A scratch buffer has no language, so there is nothing to comment with
+// and the key does nothing.
+#[test]
+fn comment_keys_do_nothing_in_a_buffer_with_no_language() {
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::text_input(&mut app, &mut io, window_id, "abc");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("/"));
+    common::control_shift_key(&mut app, &mut io, window_id, Key::Character("?"));
+
+    assert_eq!(common::text(&app), "abc");
+    app.assert_invariants();
+}

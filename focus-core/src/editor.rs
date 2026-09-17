@@ -430,6 +430,8 @@ impl EditorId {
                         let buffer_id = app.editors.buffer_id[self];
                         buffer_id.save(app, io, SaveKind::Explicit);
                     }
+                    Key::Character("/") if editable => self.cursor_comment(app),
+                    Key::Character("?") if editable => self.cursor_uncomment(app),
                     Key::Character("z") if editable => self.undo(app),
                     Key::Character("Z") if editable => self.redo(app),
                     _ => flush_doing = false,
@@ -1023,6 +1025,94 @@ impl EditorId {
         }
     }
 
+    /// The lines the cursors are on, in order and with no repeats. A
+    /// marked cursor takes every line its selection touches - the byte
+    /// after the selection is not part of it, so a selection ending at a
+    /// line start leaves that line alone.
+    fn cursor_lines(self, app: &App) -> Vec<Range<usize>> {
+        let buffer_id = app.editors.buffer_id[self];
+        let marked = app.editors.marked[self];
+        let mut lines: Vec<Range<usize>> = Vec::new();
+        for cursor in &app.editors.cursors[self] {
+            let range = if marked {
+                cursor.range()
+            } else {
+                cursor.head.offset..cursor.head.offset
+            };
+            let last = if range.end > range.start {
+                range.end - 1
+            } else {
+                range.start
+            };
+            let mut offset = range.start;
+            loop {
+                let line = buffer_id.line_range_from_offset(app, offset);
+                lines.push(line.clone());
+                if line.end >= last {
+                    break;
+                }
+                // Past the newline the line ended at.
+                offset = line.end + 1;
+            }
+        }
+        // Two cursors on one line would otherwise comment it twice.
+        lines.sort_by_key(|line| line.start);
+        lines.dedup_by_key(|line| line.start);
+        lines
+    }
+
+    /// Ctrl+/: write the language's line comment in front of every line
+    /// the cursors are on. It goes at the line's own indent rather than
+    /// at the left margin, so the code keeps its shape, and a blank line
+    /// is left alone - a comment marker on nothing is noise.
+    fn cursor_comment(self, app: &mut App) {
+        let buffer_id = app.editors.buffer_id[self];
+        let Some(comment) = buffer_id.line_comment(app) else {
+            return;
+        };
+        let text = buffer_id.text(app);
+        let mut edits = Vec::new();
+        for line in self.cursor_lines(app) {
+            let indent = indent_width(&text[line.clone()]);
+            if line.start + indent == line.end {
+                continue;
+            }
+            edits.push(Edit {
+                kind: EditKind::Insert,
+                offset: line.start + indent,
+                text: BString::from(format!("{comment} ")),
+            });
+        }
+        buffer_id.apply_edits(app, &edits);
+    }
+
+    /// Ctrl+shift+/: take the line comment back off the lines the cursors
+    /// are on, along with the space it was written with. Lines that were
+    /// not commented are left as they are, so uncommenting a selection
+    /// that is only partly commented does what it looks like it should.
+    fn cursor_uncomment(self, app: &mut App) {
+        let buffer_id = app.editors.buffer_id[self];
+        let Some(comment) = buffer_id.line_comment(app) else {
+            return;
+        };
+        let text = buffer_id.text(app);
+        let mut edits = Vec::new();
+        for line in self.cursor_lines(app) {
+            let start = line.start + indent_width(&text[line.clone()]);
+            let rest = &text[start..line.end];
+            if !rest.starts_with(comment.as_bytes()) {
+                continue;
+            }
+            let len = comment.len() + usize::from(rest[comment.len()..].starts_with(b" "));
+            edits.push(Edit {
+                kind: EditKind::Delete,
+                offset: start,
+                text: text[start..start + len].into(),
+            });
+        }
+        buffer_id.apply_edits(app, &edits);
+    }
+
     fn cursor_replace(self, app: &mut App, insert: &BStr) {
         self.cursor_replace_each(app, &|_| Some(insert))
     }
@@ -1461,6 +1551,11 @@ impl CursorPoint {
             col_wanted: None,
         }
     }
+}
+
+/// How many spaces a line leads with.
+fn indent_width(line: &BStr) -> usize {
+    line.iter().take_while(|byte| **byte == b' ').count()
 }
 
 fn wraps_from_text(text: &BStr, wrap_chars: usize) -> Vec<[usize; 2]> {

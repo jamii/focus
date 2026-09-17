@@ -268,6 +268,13 @@ impl BufferId {
         }
     }
 
+    /// How the buffer's language starts a line comment. None for a
+    /// buffer with no language, and for a language that has no such
+    /// comment: there is nothing to comment it with.
+    pub(crate) fn line_comment(self, app: &App) -> Option<&'static str> {
+        app.buffers.highlight[self].language()?.line_comment()
+    }
+
     /// Whether `line` leads with something that decides where the line
     /// itself goes: a bracket, or a word that opens or closes a block.
     /// Such a line is re-indented as it is typed, because what it leads

@@ -296,6 +296,17 @@ impl Language {
         }
     }
 
+    /// How the language starts a comment that runs to the end of the
+    /// line: what ctrl+/ writes and ctrl+shift+/ takes away. Markdown
+    /// has none - its comments are HTML, which needs a closer too.
+    pub(crate) fn line_comment(self) -> Option<&'static str> {
+        match self {
+            Language::Rust => Some("//"),
+            Language::Python | Language::Shell | Language::Nix => Some("#"),
+            Language::Markdown => None,
+        }
+    }
+
     pub(crate) fn indent_width(self) -> usize {
         match self {
             Language::Rust | Language::Python => 4,

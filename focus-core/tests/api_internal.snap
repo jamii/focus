@@ -110,6 +110,7 @@ impl BufferId {
         out: &mut Vec<(std::ops::Range<usize>, [u8; 4])>,
     );
     pub(crate) fn ideal_indent(self, app: &App, line: std::ops::Range<usize>) -> usize;
+    pub(crate) fn line_comment(self, app: &App) -> Option<&'static str>;
     pub(crate) fn leads_with_indent_marker(
         self,
         app: &App,
@@ -334,6 +335,7 @@ impl Language {
         self,
     ) -> &'static [(&'static str, &'static [&'static str])];
     pub(crate) fn block_keyword(self) -> &'static [&'static str];
+    pub(crate) fn line_comment(self) -> Option<&'static str>;
     pub(crate) fn indent_width(self) -> usize;
 }
 
