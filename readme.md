@@ -39,8 +39,8 @@ Language specific:
 - [x] Smart indent
 - [x] Manual indent (esp python)
 - [x] Paren matching
+- [x] Formatting
 - [ ] Completion UI
-- [ ] Formatting
 
 Language server:
 

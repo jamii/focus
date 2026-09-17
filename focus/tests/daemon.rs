@@ -539,3 +539,76 @@ fn a_relative_path_resolves_against_the_clients_cwd() {
         assert_eq!(focus::chrome::canonical_path(&path), work.join("foo"));
     }
 }
+
+// The daemon inherits its listener on a fd the client deliberately left
+// open across the exec. Everything the daemon goes on to spawn - a runner
+// command, a formatter - inherits whatever it has open, so the socket has
+// to be closed off again the moment the daemon owns it. A child that
+// outlives the daemon while holding the listening socket is worse than a
+// dead daemon: the socket is still bound, so clients connect, queue a
+// request nobody will read, and wait for a reply that cannot come.
+#[test]
+fn a_child_of_the_daemon_does_not_inherit_the_listening_socket() {
+    let dir = runtime_dir("child-fd");
+    let socket = socket_path(&dir);
+    let listener = UnixListener::bind(&socket).unwrap();
+    let fd = listener.as_raw_fd();
+    // As the client leaves it for the exec into the daemon.
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFD);
+        assert_ne!(flags, -1);
+        assert_ne!(
+            libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC),
+            -1
+        );
+    }
+    std::mem::forget(listener);
+
+    let listener = listener_from_fd(fd).unwrap();
+
+    // Which socket to look for in the child, by inode. Looking at what
+    // the child holds rather than at whether the socket still answers:
+    // the tests in this binary run in threads of one process, and any of
+    // them forking while the flag above is off would inherit this socket
+    // too and answer for it.
+    let mut stat = unsafe { std::mem::zeroed::<libc::stat>() };
+    assert_eq!(unsafe { libc::fstat(fd, &mut stat) }, 0);
+    let socket_fd = format!("socket:[{}]", stat.st_ino);
+
+    // `spawn` returns once the child has exec'd - std waits on a pipe
+    // that closes then - so this is the fd table of `sleep` rather than
+    // of the fork that is about to become it.
+    let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+    let held: Vec<PathBuf> = std::fs::read_dir(format!("/proc/{}/fd", child.id()))
+        .unwrap()
+        .filter_map(|entry| std::fs::read_link(entry.unwrap().path()).ok())
+        .filter(|target| target.as_os_str() == socket_fd.as_str())
+        .collect();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    drop(listener);
+
+    assert!(
+        held.is_empty(),
+        "a child of the daemon is holding the listening socket open, so \
+         clients will connect to a daemon that is not there and wait for ever"
+    );
+}
+
+// And if one somehow does - or a daemon wedges with its listener still
+// open - the client gives up rather than waiting for a reply that is not
+// coming, and reports the daemon gone so a new one is started.
+#[test]
+fn a_socket_that_nobody_answers_is_a_daemon_presumed_gone() {
+    let dir = runtime_dir("unanswered");
+    let socket = socket_path(&dir);
+    // Bound, listening, and never accepted from.
+    let _listener = UnixListener::bind(&socket).unwrap();
+
+    let started = connect_or_start(&dir, &cli(Request::File(PathBuf::from("/a.txt")))).unwrap();
+
+    assert!(
+        matches!(started, Started::Listening { .. }),
+        "a socket nobody answers should be treated as a dead daemon"
+    );
+}

@@ -53,11 +53,26 @@ pub struct MockIO {
     pub next_process_output: Vec<u8>,
     pub next_process_exit_code: Option<i32>,
     pub processes: Vec<MockProcess>,
+    /// What `process_run` gives back, by command. A command with nothing
+    /// here fails as though it were not installed.
+    pub process_run_outputs: BTreeMap<BString, Vec<u8>>,
+    /// Every `process_run` asked for, in order.
+    pub process_runs: Vec<ProcessRun>,
     pub detached: Vec<DetachedProcess>,
 }
 
 // A scripted process: tests push bytes into `pending_output` and set
 // `exit_code`; `process_poll` drains the former and reports the latter.
+/// One call to `process_run`, kept so that a test can see what was asked
+/// for as well as what came back.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcessRun {
+    pub dir: PathBuf,
+    pub command: BString,
+    pub args: Vec<BString>,
+    pub stdin: BString,
+}
+
 pub struct MockProcess {
     pub dir: PathBuf,
     pub command: BString,
@@ -101,6 +116,8 @@ impl MockIO {
             next_process_output: Vec::new(),
             next_process_exit_code: None,
             processes: Vec::new(),
+            process_run_outputs: BTreeMap::new(),
+            process_runs: Vec::new(),
             detached: Vec::new(),
         }
     }
@@ -401,6 +418,30 @@ impl IO for MockIO {
         // Match the real impl: a killed process reports an exit on later polls.
         if process.exit_code.is_none() {
             process.exit_code = Some(-1);
+        }
+    }
+
+    fn process_run(
+        &mut self,
+        dir: &Path,
+        command: &BStr,
+        args: &[&BStr],
+        stdin: &BStr,
+    ) -> std::io::Result<Vec<u8>> {
+        self.process_runs.push(ProcessRun {
+            dir: dir.to_path_buf(),
+            command: command.to_owned(),
+            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            stdin: stdin.to_owned(),
+        });
+        match self.process_run_outputs.get(command) {
+            Some(output) => Ok(output.clone()),
+            // Nothing queued: the command is not on this machine, which
+            // is what a missing formatter looks like.
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no such command",
+            )),
         }
     }
 

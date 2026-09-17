@@ -270,7 +270,7 @@ fn list_gutter_marks_nothing_without_a_selection() {
     common::text_input(&mut app, &mut io, window_id, "nomatch");
     common::tick(&mut app, &mut io);
     let drawing = common::draw(&mut app, window_id, 40, 20);
-    assert_eq!(marker_rows(&app, &drawing), vec![]);
+    assert_eq!(marker_rows(&app, &drawing), Vec::<usize>::new());
     app.assert_invariants();
 }
 

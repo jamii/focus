@@ -127,6 +127,20 @@ pub trait IO {
     /// or unreadable - the gutter then shows nothing.
     fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus>;
 
+    // Two kinds of process, and the difference is who wrote the command.
+    //
+    // `process_spawn`, `process_poll`, `process_kill` and
+    // `process_spawn_detached` run what somebody typed - a runner
+    // command, a launcher entry - through a shell, with the streams
+    // merged the way a terminal merges them, and report back over frames
+    // so the editor keeps drawing while it runs.
+    //
+    // `process_run` runs a program focus chose itself, as a function from
+    // text to text. None of the four above can stand in for it: they give
+    // the command no stdin, they merge stderr into the output - which for
+    // a formatter means a warning ends up in the file - and they answer
+    // over frames, where a save needs its answer before it writes.
+
     /// Spawn `command` as a shell command in `dir`, with stdout and stderr
     /// merged into one stream. `args` are passed to the shell as `$argv`,
     /// so text can be handed over without any quoting.
@@ -139,6 +153,23 @@ pub trait IO {
     /// discarded and the process is reaped when it exits. There is no
     /// ProcessId, so nothing can poll or kill it.
     fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]);
+    /// Run `command` in `dir` with `stdin` on its input, wait for it, and
+    /// give back what it wrote to stdout. Not through a shell, and waited
+    /// for rather than polled: this is for a program used as a function
+    /// from text to text - a formatter - where there is nothing to do
+    /// until the answer comes back.
+    ///
+    /// An error if it could not be run at all, or if it exited unhappily,
+    /// with whatever it said on stderr as the message. A formatter that
+    /// cannot parse what it was given exits unhappily, so that is not an
+    /// exceptional case: it is how it says no.
+    fn process_run(
+        &mut self,
+        dir: &Path,
+        command: &BStr,
+        args: &[&BStr],
+        stdin: &BStr,
+    ) -> std::io::Result<Vec<u8>>;
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]

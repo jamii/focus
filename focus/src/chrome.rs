@@ -47,6 +47,11 @@ const FONT: &[u8] = include_bytes!("../deps/FiraCode-Regular.ttf");
 
 const TARGET_FRAME: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
+/// How long `run_process` waits for a command to finish before killing
+/// it. Generous: rustfmt on a large file is well under a second, and the
+/// only thing this is here to catch is a command that has stopped.
+const PROCESS_DEADLINE: Duration = Duration::from_secs(10);
+
 /// Run the daemon: serve `listener` on a second thread, and turn every
 /// request it reads into a window on this one.
 pub fn run(listener: UnixListener) {
@@ -102,8 +107,6 @@ struct Backend {
     clipboard: arboard::Clipboard,
     last_mouse_position: PhysicalPosition<f64>,
     processes: Vec<ProcessState>,
-    // One-shot processes nobody polls, reaped by reap_detached.
-    detached: Vec<std::process::Child>,
     // The connection each window's request arrived on, held open until
     // the window closes so that a waiting client blocks until then.
     waiting: HashMap<WindowId, UnixStream>,
@@ -357,6 +360,16 @@ impl IO for IoReal<'_> {
 
     fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) {
         self.backend.process_spawn_detached(dir, command, args)
+    }
+
+    fn process_run(
+        &mut self,
+        dir: &Path,
+        command: &BStr,
+        args: &[&BStr],
+        stdin: &BStr,
+    ) -> std::io::Result<Vec<u8>> {
+        run_process(dir, command, args, stdin)
     }
 }
 
@@ -732,7 +745,6 @@ impl Backend {
             clipboard,
             last_mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
             processes: Vec::new(),
-            detached: Vec::new(),
             waiting: HashMap::new(),
             vcs: Vcs::new(),
         };
@@ -785,11 +797,6 @@ impl Backend {
     // Drop the one-shot processes that have finished, so they don't linger
     // as zombies. Called whenever the app touches the process API, which is
     // every frame while a command is running.
-    fn reap_detached(&mut self) {
-        self.detached
-            .retain_mut(|child| matches!(child.try_wait(), Ok(None)));
-    }
-
     fn resize_surface(&mut self, window_id: WindowId, size: PhysicalSize<u32>) {
         let Some(state) = self.windows.get(&window_id) else {
             return;
@@ -801,7 +808,6 @@ impl Backend {
     }
 
     fn process_spawn(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) -> ProcessId {
-        self.reap_detached();
         let output = Arc::new(Mutex::new(Vec::new()));
         let state = match spawn_fish(dir, command, args) {
             Ok((child, pipe)) => {
@@ -833,7 +839,6 @@ impl Backend {
     }
 
     fn process_poll(&mut self, id: ProcessId) -> ProcessPoll {
-        self.reap_detached();
         let process = &mut self.processes[id.0];
         // Reap the shell as soon as it exits, whether or not its pipe is
         // still held open by something it left behind.
@@ -892,13 +897,21 @@ impl Backend {
     }
 
     fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) {
-        self.reap_detached();
         let spawned = fish_command(dir, command, args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn();
         match spawned {
-            Ok(child) => self.detached.push(child),
+            // Waited for on a thread that exists only to do that. The
+            // process is nobody's business once it is started - it
+            // outlives the window that started it, and may outlive the
+            // daemon - but somebody has to reap it, or it stays a zombie
+            // for as long as focus runs.
+            Ok(mut child) => {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+            }
             Err(error) => eprintln!("failed to spawn fish: {}", error),
         }
     }
@@ -925,6 +938,71 @@ fn fish_command(dir: &Path, command: &BStr, args: &[&BStr]) -> std::process::Com
 // Run `command` under fish with stdout and stderr sharing a single pipe, so
 // the two streams are merged by the kernel in write order rather than by
 // racing reader threads.
+/// Run `command` to completion with `stdin` on its input, and give back
+/// its stdout. Run directly rather than through a shell: the command and
+/// its arguments come from focus rather than from anything typed, and a
+/// shell in the middle would only be another thing to quote for.
+///
+/// stdin is written from a thread of its own. A pipe holds about 64KB, so
+/// a file any bigger than that would otherwise deadlock: the child stops
+/// reading its input once its own output has filled the pipe nobody is
+/// draining, and both ends wait for the other.
+fn run_process(
+    dir: &Path,
+    command: &BStr,
+    args: &[&BStr],
+    stdin: &BStr,
+) -> std::io::Result<Vec<u8>> {
+    use std::io::Write;
+    use std::os::unix::ffi::OsStrExt;
+
+    let mut child = std::process::Command::new(std::ffi::OsStr::from_bytes(command))
+        .args(
+            args.iter()
+                .map(|arg| std::ffi::OsStr::from_bytes(arg.as_ref())),
+        )
+        .current_dir(dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    let mut pipe = child.stdin.take().expect("stdin is piped");
+    let text = stdin.to_vec();
+    let writer = std::thread::spawn(move || pipe.write_all(&text));
+
+    // Waited for on a thread, so that a command which never exits is a
+    // save that does not get formatted rather than an editor that never
+    // draws another frame. This runs on the UI thread: whatever happens
+    // out there, it has to end.
+    let pid = child.id();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || sender.send(child.wait_with_output()));
+    let output = match receiver.recv_timeout(PROCESS_DEADLINE) {
+        Ok(output) => output?,
+        Err(_) => {
+            // Safety: a pid of our own child, which has not been reaped -
+            // the thread above still holds it - so it cannot have been
+            // reused for somebody else's process.
+            unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+            return Err(std::io::Error::other(format!(
+                "{command} did not finish within {PROCESS_DEADLINE:?}"
+            )));
+        }
+    };
+    // The write fails if the child stopped reading, which is what a
+    // formatter does when it does not like what it is being given. What
+    // it exited with is the answer either way.
+    let _ = writer.join();
+
+    if !output.status.success() {
+        return Err(std::io::Error::other(
+            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        ));
+    }
+    Ok(output.stdout)
+}
+
 fn spawn_fish(
     dir: &Path,
     command: &BStr,
@@ -1093,5 +1171,74 @@ fn translate_modifiers(state: winit::keyboard::ModifiersState) -> ModifiersState
         alt: state.alt_key(),
         shift: state.shift_key(),
         super_: state.super_key(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// stdin in, stdout out. `cat` rather than a formatter, because what
+    /// is being checked here is the plumbing.
+    #[test]
+    fn run_process_feeds_stdin_and_gives_back_stdout() {
+        let out = run_process(Path::new("/"), BStr::new("cat"), &[], BStr::new("hello")).unwrap();
+        assert_eq!(out, b"hello");
+    }
+
+    /// More text than a pipe holds, which is where writing stdin from
+    /// this thread would wedge: the child stops reading its input once
+    /// its own output has filled a pipe nobody is draining yet.
+    #[test]
+    fn run_process_handles_more_than_a_pipe_holds() {
+        let text = "x".repeat(4 << 20);
+        let out = run_process(Path::new("/"), BStr::new("cat"), &[], BStr::new(&text)).unwrap();
+        assert_eq!(out.len(), text.len());
+    }
+
+    /// An unhappy exit is an error carrying whatever it said, which is
+    /// how a formatter says it could not parse what it was given.
+    #[test]
+    fn run_process_reports_an_unhappy_exit() {
+        let error = run_process(
+            Path::new("/"),
+            BStr::new("sh"),
+            &[BStr::new("-c"), BStr::new("echo nope >&2; exit 1")],
+            BStr::new(""),
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "nope");
+    }
+
+    /// A command that is not installed, which is the other way a
+    /// formatter can be unavailable.
+    #[test]
+    fn run_process_reports_a_command_that_is_not_there() {
+        let error = run_process(
+            Path::new("/"),
+            BStr::new("focus-no-such-command"),
+            &[],
+            BStr::new(""),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    /// The real rustfmt, run the way saving a file runs it. Skipped
+    /// rather than failed where it is not installed - which is also what
+    /// saving does with it. The comment is the point: keeping those is
+    /// why this is a program rather than a crate.
+    #[test]
+    fn rustfmt_formats_a_file_and_keeps_its_comments() {
+        let text = "// A note.\nfn  f( x:u8 )->u8{x+1}\n";
+        let Ok(out) = run_process(
+            Path::new("/"),
+            BStr::new("rustfmt"),
+            &[BStr::new("--edition"), BStr::new("2024")],
+            BStr::new(text),
+        ) else {
+            return;
+        };
+        assert_eq!(out, b"// A note.\nfn f(x: u8) -> u8 {\n    x + 1\n}\n");
     }
 }

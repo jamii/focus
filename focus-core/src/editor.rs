@@ -265,6 +265,14 @@ impl EditorId {
             for point in [&cursor.head, &cursor.tail] {
                 assert!(point.offset <= text.len());
             }
+            // A tail is where a selection started. With no selection
+            // there is nothing for it to say, and anything reading it as
+            // one end of a range - which is how the range of a cursor is
+            // read - would be reading a selection that is not there.
+            assert!(
+                app.editors.marked[self] || cursor.head.offset == cursor.tail.offset,
+                "unmarked cursor with a tail of its own"
+            );
         }
 
         // Wraps: incremental updates must match a full recompute.
@@ -915,12 +923,12 @@ impl EditorId {
     }
 
     fn toggle_mark(self, app: &mut App) {
-        let marked = !app.editors.marked[self];
-        app.editors.marked[self] = marked;
-        if marked {
-            for cursor in &mut app.editors.cursors[self] {
-                cursor.tail = cursor.head;
-            }
+        app.editors.marked[self] = !app.editors.marked[self];
+        // Marking starts a selection where the cursor is, and unmarking
+        // ends one and leaves the cursor where its head was. Either way
+        // the tail belongs at the head.
+        for cursor in &mut app.editors.cursors[self] {
+            cursor.tail = cursor.head;
         }
     }
 
@@ -1276,7 +1284,9 @@ impl EditorId {
         Edit::coalesce(&mut edits);
         app.editors.cursors[self] = cursors;
         buffer_id.apply_edits(app, &edits);
+        // Editing a selection is the end of it, and of its tails.
         app.editors.marked[self] = false;
+        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1303,7 +1313,9 @@ impl EditorId {
         }
         Edit::coalesce(&mut edits);
         buffer_id.apply_edits(app, &edits);
+        // Editing a selection is the end of it, and of its tails.
         app.editors.marked[self] = false;
+        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1331,7 +1343,9 @@ impl EditorId {
         }
         Edit::coalesce(&mut edits);
         buffer_id.apply_edits(app, &edits);
+        // Editing a selection is the end of it, and of its tails.
         app.editors.marked[self] = false;
+        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1429,6 +1443,7 @@ impl EditorId {
             );
         }
         app.editors.cursors[self] = cursors;
+        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1443,6 +1458,7 @@ impl EditorId {
             );
         }
         app.editors.cursors[self] = cursors;
+        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1450,6 +1466,7 @@ impl EditorId {
         for cursor in &mut app.editors.cursors[self] {
             cursor.head = CursorPoint::new(0);
         }
+        self.cursor_collapse_tails(app);
         self.scroll_offset_into_view(app, 0);
     }
 
@@ -1470,7 +1487,23 @@ impl EditorId {
         for cursor in &mut app.editors.cursors[self] {
             cursor.head = CursorPoint::new(end);
         }
+        self.cursor_collapse_tails(app);
         self.scroll_offset_into_center(app, end);
+    }
+
+    /// Bring every tail up to its head, unless there is a selection to
+    /// keep. `tail` is where a selection started, so it means nothing
+    /// when there is no selection - and left where it was, `range()`
+    /// reads it as a selection that is not there. Every movement ends
+    /// with this; everything that makes a cursor already sets the two
+    /// together.
+    fn cursor_collapse_tails(self, app: &mut App) {
+        if app.editors.marked[self] {
+            return;
+        }
+        for cursor in &mut app.editors.cursors[self] {
+            cursor.tail = cursor.head;
+        }
     }
 
     fn cursor_move(self, app: &mut App, direction: Direction) {
@@ -1501,6 +1534,7 @@ impl EditorId {
             };
         }
         app.editors.cursors[self] = cursors;
+        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 

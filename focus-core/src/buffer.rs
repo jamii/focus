@@ -1,10 +1,11 @@
 use std::mem::take;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::{BStr, BString, ByteSlice};
 
 use crate::app::{App, IO};
+use crate::format;
 use crate::language::{self, Highlight, Language, Pair, Span};
 use crate::map::Map;
 
@@ -646,18 +647,37 @@ impl BufferId {
         let frame_start = app.frame_start;
         let last_modified_time = app.buffers.last_modified_time[self];
         let create = kind == SaveKind::Explicit;
+        // Nothing to write: not a file, or nothing typed since the last
+        // time it was written.
+        let Source::File(SourceFile { last_save_time, .. }) = &app.buffers.source[self] else {
+            return;
+        };
+        if last_modified_time <= *last_save_time {
+            return;
+        }
+
+        // Reformat first, so that what lands on disk and what is on
+        // screen are the same text. It goes in as an edit like any other
+        // - cursors move with it and it can be undone - with the typing
+        // that led up to it closed off first, so that undoing the
+        // formatting does not undo the last word as well.
+        self.flush_doing(app);
+        let language = app.buffers.highlight[self].language();
+        // Where the file is: what a formatter run as a program is run in,
+        // so that a config file beside the source is the one it reads.
+        let dir = self
+            .path(app)
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .unwrap_or_else(|| PathBuf::from("/"));
+        if let Some(formatted) = format::format(io, language, &dir, self.text(app)) {
+            self.replace(app, formatted.as_bstr());
+            self.flush_doing(app);
+        }
+
         let write_result = {
-            let Source::File(SourceFile {
-                absolute_path,
-                last_save_time,
-                ..
-            }) = &app.buffers.source[self]
-            else {
-                return;
+            let Source::File(SourceFile { absolute_path, .. }) = &app.buffers.source[self] else {
+                unreachable!("just checked");
             };
-            if last_modified_time <= *last_save_time {
-                return;
-            }
             io.file_write(absolute_path, &app.buffers.text[self], create)
         };
         match write_result {

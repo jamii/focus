@@ -2,6 +2,7 @@ pub mod app;
 pub mod buffer;
 pub mod drawing;
 pub mod editor;
+mod format;
 pub mod fuzz;
 mod fuzz_gen;
 mod fuzzy;

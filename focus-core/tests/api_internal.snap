@@ -241,6 +241,15 @@ impl EditorId {
     pub(crate) fn vcs_line_at(self, app: &App, position: [f32; 2]) -> Option<usize>;
 }
 
+## mod focus_core::format
+
+pub(crate) fn format(
+    io: &mut dyn IO,
+    language: Option<Language>,
+    dir: &Path,
+    text: &BStr,
+) -> Option<BString>;
+
 ## pub mod focus_core::fuzz
 
 ## mod focus_core::fuzz_gen

@@ -177,6 +177,16 @@ impl IO for ErrorIO {
         self.inner.process_kill(id)
     }
 
+    fn process_run(
+        &mut self,
+        dir: &Path,
+        command: &BStr,
+        args: &[&BStr],
+        stdin: &BStr,
+    ) -> std::io::Result<Vec<u8>> {
+        self.inner.process_run(dir, command, args, stdin)
+    }
+
     fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]) {
         self.inner.process_spawn_detached(dir, command, args)
     }
@@ -795,4 +805,197 @@ fn from_file_reuses_existing_buffer_for_an_unnormalized_path() {
     assert_eq!(first, second);
     assert_eq!(first, third);
     app.assert_invariants();
+}
+
+// Saving a file in a language with a formatter reformats it first, so
+// that what is on disk and what is on screen are the same text.
+#[test]
+fn saving_nix_formats_it() {
+    let path = PathBuf::from("/tmp/focus-buffer-format-test.nix");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "{foo=1;}\n");
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    // Inside the braces, where a second attribute goes.
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    move_left(&mut app, &mut io, window_id, 2);
+    common::text_input(&mut app, &mut io, window_id, "bar=2;");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
+
+    let formatted = "{\n  foo = 1;\n  bar = 2;\n}\n";
+    assert_eq!(common::text(&app), formatted);
+    assert_eq!(io.files.get(&path).unwrap().0, formatted.as_bytes());
+    app.assert_invariants();
+}
+
+// The reformatting goes in as a diff against what was there rather than
+// as a new file, so a cursor comes out where the text it was sitting in
+// went: still just after `barX`, one indent to the left of where it was.
+//
+// A reformat that leaves nothing in common to line up against - a whole
+// file written as one line with no spaces in it - diffs as a replacement
+// of the lot, and a cursor in it has nowhere to land but the end.
+#[test]
+fn a_cursor_survives_the_formatting_of_a_save() {
+    let path = PathBuf::from("/tmp/focus-buffer-format-cursor-test.nix");
+    let (mut app, mut io, window_id) =
+        common::file_app(path.clone(), "{\n  foo = 1;\n    bar = 2;\n}\n");
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    // Just after `bar`, on the over-indented line.
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    move_left(&mut app, &mut io, window_id, 8);
+    common::text_input(&mut app, &mut io, window_id, "X");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
+    // The save moved the line; carry on typing where the cursor was.
+    common::text_input(&mut app, &mut io, window_id, "Y");
+
+    assert_eq!(common::text(&app), "{\n  foo = 1;\n  barXY = 2;\n}\n");
+    app.assert_invariants();
+}
+
+// A file is saved half-written far more often than finished, and a
+// formatter has nothing to say about code that is not code yet.
+#[test]
+fn saving_nix_that_does_not_parse_writes_it_as_typed() {
+    let path = PathBuf::from("/tmp/focus-buffer-format-broken-test.nix");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "{foo=1;}\n");
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    move_left(&mut app, &mut io, window_id, 2);
+    common::text_input(&mut app, &mut io, window_id, "bar=");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
+
+    let as_typed = "{foo=1;bar=}\n";
+    assert_eq!(common::text(&app), as_typed);
+    assert_eq!(io.files.get(&path).unwrap().0, as_typed.as_bytes());
+    app.assert_invariants();
+}
+
+// The other language with a formatter. Python's indent is the program
+// rather than its layout, which is why `ctrl+tab` will not touch it - but
+// a real formatter knows that and reformats it anyway.
+#[test]
+fn saving_python_formats_it() {
+    let path = PathBuf::from("/tmp/focus-buffer-format-python-test.py");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "x = 1\n");
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::text_input(&mut app, &mut io, window_id, "def f(a,b):\n");
+    common::text_input(&mut app, &mut io, window_id, "return {  \"k\":a }\n");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
+
+    let formatted = "x = 1\n\n\ndef f(a, b):\n    return {\"k\": a}\n";
+    assert_eq!(common::text(&app), formatted);
+    assert_eq!(io.files.get(&path).unwrap().0, formatted.as_bytes());
+    app.assert_invariants();
+}
+
+// Rust has no formatter to link, so saving one runs `rustfmt` over it:
+// the file goes in on stdin and what comes back is what is written. The
+// mock stands in for rustfmt here - that it is run at all, with the
+// file's text and in the file's own directory, is what this checks.
+#[test]
+fn saving_rust_runs_rustfmt_over_it() {
+    let path = PathBuf::from("/tmp/focus-buffer-format-rust-test.rs");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "// A note.\nfn  f( ) { }\n");
+    let formatted = "// A note.\nfn f() {}\nfn g() {}\n";
+    io.process_run_outputs
+        .insert("rustfmt".into(), formatted.into());
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::text_input(&mut app, &mut io, window_id, "fn g(){}");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
+
+    assert_eq!(common::text(&app), formatted);
+    assert_eq!(io.files.get(&path).unwrap().0, formatted.as_bytes());
+    let run = io.process_runs.last().unwrap();
+    assert_eq!(run.command, "rustfmt");
+    assert_eq!(run.args, ["--edition", "2024"]);
+    assert_eq!(run.dir, PathBuf::from("/tmp"));
+    assert_eq!(run.stdin, "// A note.\nfn  f( ) { }\nfn g(){}");
+    app.assert_invariants();
+}
+
+// rustfmt exits unhappily when it cannot parse what it is given, and is
+// not there at all on a machine that has not installed it. Either way the
+// file is saved the way it was typed.
+#[test]
+fn saving_rust_without_rustfmt_writes_it_as_typed() {
+    let path = PathBuf::from("/tmp/focus-buffer-format-no-rustfmt-test.rs");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "fn  f( ) { }\n");
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::text_input(&mut app, &mut io, window_id, "fn  g( ) { }");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
+
+    let as_typed = "fn  f( ) { }\nfn  g( ) { }";
+    assert_eq!(common::text(&app), as_typed);
+    assert_eq!(io.files.get(&path).unwrap().0, as_typed.as_bytes());
+    app.assert_invariants();
+}
+
+// Shell has no formatter at all, so nothing is even run for it.
+#[test]
+fn saving_a_language_with_no_formatter_writes_it_as_typed() {
+    let path = PathBuf::from("/tmp/focus-buffer-format-shell-test.sh");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "echo  hello\n");
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::text_input(&mut app, &mut io, window_id, "echo   there");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
+
+    let as_typed = "echo  hello\necho   there";
+    assert_eq!(common::text(&app), as_typed);
+    assert_eq!(io.files.get(&path).unwrap().0, as_typed.as_bytes());
+    assert!(io.process_runs.is_empty());
+    app.assert_invariants();
+}
+
+// Undo after a save takes the formatting off, and the typing that led up
+// to it is a step of its own behind that.
+#[test]
+fn undo_after_a_save_takes_back_the_formatting_first() {
+    let path = PathBuf::from("/tmp/focus-buffer-format-undo-test.nix");
+    let (mut app, mut io, window_id) = common::file_app(path.clone(), "{foo=1;}\n");
+    common::tick(&mut app, &mut io);
+
+    io.frame_start += Duration::from_secs(1);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    move_left(&mut app, &mut io, window_id, 2);
+    common::text_input(&mut app, &mut io, window_id, "bar=2;");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("s"));
+    assert_eq!(common::text(&app), "{\n  foo = 1;\n  bar = 2;\n}\n");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
+    assert_eq!(common::text(&app), "{foo=1;bar=2;}\n");
+
+    common::control_key(&mut app, &mut io, window_id, Key::Character("z"));
+    assert_eq!(common::text(&app), "{foo=1;}\n");
+    app.assert_invariants();
+}
+
+fn move_left(app: &mut App, io: &mut focus_core::fuzz::MockIO, window_id: WindowId, count: usize) {
+    for _ in 0..count {
+        common::control_key(app, io, window_id, Key::Character("j"));
+    }
 }

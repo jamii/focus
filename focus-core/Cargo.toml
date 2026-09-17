@@ -4,12 +4,18 @@ version = "0.0.0"
 edition = "2024"
 
 [features]
-default = ["markdown"]
+default = ["markdown", "nix-fmt", "python-fmt"]
 # Colouring markdown, which is the only thing here that needs a parser
 # rather than a tokenizer. Kept behind a feature so that the ambient-I/O
 # reachability fixture can build without it - see the comment in
 # focus-core/tests/reachable_io/fixture/Cargo.toml for why it has to.
 markdown = ["dep:pulldown-cmark"]
+# Reformatting Nix on save. Behind a feature for the same reason markdown
+# is, and off in the reachability fixture.
+nix-fmt = ["dep:nixfmt_rs"]
+# Reformatting Python on save. The heaviest thing in the tree by far, and
+# the easiest to turn off: take it out of `default` above.
+python-fmt = ["dep:ruff_python_formatter"]
 
 [dependencies]
 bstr = "1"
@@ -18,6 +24,22 @@ bstr = "1"
 # markdown-rs was tried instead - two crates and no build script - but its
 # parse is quadratic: 20s on a 2MB document against this one's 28ms.
 pulldown-cmark = { version = "0.13", default-features = false, optional = true }
+# nixfmt, which is what `nix fmt` runs and what RFC 166 specifies, ported
+# to Rust. Checked against the Haskell original over 3000 files from the
+# store: byte for byte the same on every one. Without its `cli` feature it
+# is a pure `&str -> Result<String>` with two small dependencies, no build
+# script and no unsafe; nixpkgs-fmt was the other candidate and brings
+# clap, ignore and serde_json along for a command line we do not run, and
+# alejandra installs a global allocator into whatever links it.
+nixfmt_rs = { version = "0.5", default-features = false, optional = true }
+# Ruff's formatter, which is the one everybody's Python is already
+# formatted by, published from the same release as the `ruff` everyone
+# runs. A 0.0.x version is an exact pin: the formatter's rules move
+# between releases, and moving them is a decision to take deliberately
+# rather than on a `cargo update`. It costs about 160 crates - salsa,
+# clap, regex, tracing - because that is what the real thing is built
+# out of.
+ruff_python_formatter = { version = "0.0.14", optional = true }
 similar = { version = "3", features = ["bytes"] }
 
 [dev-dependencies]

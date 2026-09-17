@@ -240,6 +240,13 @@ pub trait IO {
     fn process_poll(&mut self, id: ProcessId) -> ProcessPoll;
     fn process_kill(&mut self, id: ProcessId);
     fn process_spawn_detached(&mut self, dir: &Path, command: &BStr, args: &[&BStr]);
+    fn process_run(
+        &mut self,
+        dir: &Path,
+        command: &BStr,
+        args: &[&BStr],
+        stdin: &BStr,
+    ) -> std::io::Result<Vec<u8>>;
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
@@ -477,7 +484,17 @@ pub struct MockIO {
     pub next_process_output: Vec<u8>,
     pub next_process_exit_code: Option<i32>,
     pub processes: Vec<MockProcess>,
+    pub process_run_outputs: BTreeMap<BString, Vec<u8>>,
+    pub process_runs: Vec<ProcessRun>,
     pub detached: Vec<DetachedProcess>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcessRun {
+    pub dir: PathBuf,
+    pub command: BString,
+    pub args: Vec<BString>,
+    pub stdin: BString,
 }
 
 pub struct MockProcess {

@@ -1433,3 +1433,21 @@ fn ctrl_tab_reindents_the_cursors_line() {
     assert_eq!(common::text(&app), "fn f() {\n    let x = 1;\n        }\n");
     app.assert_invariants();
 }
+
+// Enter indents against where the cursor is, which is not always where it
+// has been. `tail` is where a selection started and says nothing when
+// there is no selection, so a cursor moved forward without selecting
+// anything must not read as a selection running back to the last place it
+// was left - which is what made Enter work out its indent at the top of a
+// file after a jump to the bottom of one.
+#[test]
+fn enter_indents_at_the_cursor_after_it_has_been_moved() {
+    let (mut app, mut io, window_id) = rust_app("fn f() {\n");
+
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    common::text_input(&mut app, &mut io, window_id, "x");
+
+    assert_eq!(common::text(&app), "fn f() {\n\n    x");
+    app.assert_invariants();
+}

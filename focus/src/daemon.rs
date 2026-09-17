@@ -17,6 +17,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use crate::APP_ID;
 
@@ -286,12 +287,23 @@ fn lock(runtime_dir: &Path) -> std::io::Result<File> {
 /// a broken pipe, or a clean EOF where the reply should have been,
 /// depending on how far the exchange got.
 fn send_request(stream: &mut UnixStream, request: &Request) -> std::io::Result<bool> {
+    // A healthy daemon answers from its listening thread the moment it
+    // accepts, so this is only ever a wait on something that has gone
+    // wrong - and waiting on that for ever is an editor that hangs on the
+    // command line with nothing to show for it. Out of time is one more
+    // way of learning the daemon is gone, and the caller starts a new one
+    // over the top.
+    stream.set_read_timeout(Some(REPLY_TIMEOUT))?;
     match write_request(stream, request).and_then(|()| read_reply(stream)) {
         Ok(()) => Ok(true),
         Err(error)
             if matches!(
                 error.kind(),
-                ErrorKind::ConnectionReset | ErrorKind::BrokenPipe | ErrorKind::UnexpectedEof
+                ErrorKind::ConnectionReset
+                    | ErrorKind::BrokenPipe
+                    | ErrorKind::UnexpectedEof
+                    | ErrorKind::WouldBlock
+                    | ErrorKind::TimedOut
             ) =>
         {
             Ok(false)
@@ -328,6 +340,12 @@ fn read_reply(stream: &UnixStream) -> std::io::Result<()> {
 
 /// The fd the client dup'd its listener onto, named in the environment so
 /// the daemon can find it after the exec.
+/// How long a client waits for a daemon to acknowledge its request. The
+/// answer comes from the daemon's listening thread rather than its UI
+/// thread, so it does not wait on a frame, a file or a formatter: this is
+/// long enough that nothing healthy hits it.
+const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub const LISTEN_FD_VAR: &str = "FOCUS_LISTEN_FD";
 pub const LISTEN_FD: RawFd = 3;
 
@@ -351,6 +369,24 @@ pub fn listener_from_fd(fd: RawFd) -> std::io::Result<UnixListener> {
     // hand-typed `--daemon` gets.
     let listener = unsafe { UnixListener::from_raw_fd(fd) };
     listener.local_addr()?;
+
+    // The client cleared FD_CLOEXEC so that this fd would live through
+    // the exec into here. Put it back now that it has. Without it every
+    // process the daemon spawns - a runner command, a formatter - is
+    // handed the listening socket, and one of them outliving the daemon
+    // leaves the socket bound with nobody accepting on it: clients
+    // connect, their requests queue in a backlog that is never read, and
+    // they wait for a reply that cannot come. That is not recoverable by
+    // killing focus, because the process holding the socket open is not
+    // focus.
+    //
+    // Safety: the fd is open and owned by `listener`.
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFD);
+        if flags == -1 || libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) == -1 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
     Ok(listener)
 }
 
