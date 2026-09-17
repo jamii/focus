@@ -221,18 +221,21 @@ this stays one colour
     color_check_rows("markdown_highlight", "c.md", text, 30);
 }
 
-// Enter lines a new line up with what the line above is saying, past any
-// list or quote marker on it. Nothing ever steps back out: a document has
-// no blocks to close, so leaving a list is the writer's to do.
+// Enter lines a new line up with the marker of the line above rather than
+// with its text, so that the next `-` can be typed where the last one was.
+// The nested item shows it: its lines stay at the indent the writer put it
+// at, not two further in under its own text. Nothing ever steps back out:
+// a document has no blocks to close, so leaving a list is the writer's to
+// do.
 #[test]
-fn enter_lines_up_with_the_item_above() {
+fn enter_lines_up_with_the_marker_above() {
     let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/repo/n.md"), "");
     common::tick(&mut app, &mut io);
     common::text_input(
         &mut app,
         &mut io,
         window_id,
-        "# Notes\n\nprose\n\n- an item\nwrapped\n- another\n\n1.  numbered\nwrapped\n\n> quoted\nmore\n",
+        "# Notes\n\nprose\n\n- an item\n- another\n\n  - nested\nwrapped\n\n1.  numbered\n2.  next\n\n> quoted\n> more\n",
     );
     check("markdown_indent", &common::text(&app));
 }

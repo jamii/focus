@@ -398,7 +398,7 @@ pub(super) fn spans(text: &BStr) -> Vec<Span>;
 #[cfg(not(feature = "markdown"))]
 pub(super) fn spans(_text: &BStr) -> Vec<Span>;
 
-pub(super) fn content_indent(text: &BStr, offset: usize) -> usize;
+pub(super) fn next_line_indent(text: &BStr, offset: usize) -> usize;
 
 ## mod focus_core::language::markdown::parse
 

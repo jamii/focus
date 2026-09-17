@@ -3,12 +3,13 @@
 prose
 
 - an item
+- another
+
+  - nested
   wrapped
-  - another
-    
-1.  numbered
-    wrapped
-    
-> quoted
-  more
   
+1.  numbered
+2.  next
+
+> quoted
+> more

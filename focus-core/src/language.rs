@@ -993,10 +993,10 @@ impl<'a> Lexer<'a> {
     }
 }
 
-/// Where a new line at `offset` goes in a document: alongside whatever
-/// the line above is saying, past any list or quote marker on it.
+/// Where a new line at `offset` goes in a document: at the indent of the
+/// line above, which is where a list item's own marker sits.
 pub(crate) fn document_indent(text: &BStr, offset: usize) -> usize {
-    markdown::content_indent(text, offset)
+    markdown::next_line_indent(text, offset)
 }
 
 /// The offset the line holding `offset` starts at.

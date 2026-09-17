@@ -1300,7 +1300,7 @@ fn ctrl_slash_comments_and_uncomments_a_selection() {
     );
     app.assert_invariants();
 
-    // Shift+/ is `?` on the layout this is written on.
+    // Shift+/ arrives as `?`.
     common::control_shift_key(&mut app, &mut io, window_id, Key::Character("?"));
 
     assert_eq!(common::text(&app), COMMENT_SAMPLE);
@@ -1316,7 +1316,7 @@ fn ctrl_shift_slash_skips_lines_that_are_not_commented() {
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
     move_down(&mut app, &mut io, window_id, 2);
     common::alt_key(&mut app, &mut io, window_id, Key::Character("l"));
-    common::control_shift_key(&mut app, &mut io, window_id, Key::Character("/"));
+    common::control_shift_key(&mut app, &mut io, window_id, Key::Character("?"));
 
     assert_eq!(common::text(&app), "one\ntwo\nthree\n");
     app.assert_invariants();

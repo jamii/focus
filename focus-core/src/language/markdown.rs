@@ -213,43 +213,24 @@ mod parse {
     }
 }
 
-/// Where a new line under the one holding `offset` belongs: alongside what
-/// that line is saying, which is past any list or quote marker on it. A
-/// document has no blocks to close, so nothing ever steps back out - that
-/// is the writer's to do.
-pub(super) fn content_indent(text: &BStr, offset: usize) -> usize {
+/// Where a new line under the one holding `offset` belongs: at the same
+/// indent as that line. A list item's marker sits at that indent, so the
+/// new line starts where the next `-` goes rather than where the item's
+/// text does - what starts the next item is typing its marker, and a line
+/// that carries the item on instead is two spaces the writer adds. A
+/// document has no blocks to close, so nothing ever steps back out -
+/// leaving a list is the writer's to do.
+pub(super) fn next_line_indent(text: &BStr, offset: usize) -> usize {
     let start = text[..offset].rfind_byte(b'\n').map_or(0, |ix| ix + 1);
     let line = &text[start..];
-    let mut pos = line.iter().take_while(|byte| **byte == b' ').count();
+    let indent = line.iter().take_while(|byte| **byte == b' ').count();
 
     // A line with nothing on it ends the block above, so the next line
     // starts over at the left. The spaces Enter left on it are not
     // content - nothing has been written there to line up with.
-    if matches!(line.get(pos), None | Some(b'\n')) {
+    if matches!(line.get(indent), None | Some(b'\n')) {
         return 0;
     }
 
-    // `- `, `* `, `+ `, `> `, `1. `, `1) `: a marker, and then the space
-    // after it that puts the content where it starts.
-    let marker = match line.get(pos) {
-        Some(b'-' | b'*' | b'+' | b'>') => 1,
-        Some(byte) if byte.is_ascii_digit() => {
-            let digits = line[pos..]
-                .iter()
-                .take_while(|byte| byte.is_ascii_digit())
-                .count();
-            match line.get(pos + digits) {
-                Some(b'.' | b')') => digits + 1,
-                _ => return pos,
-            }
-        }
-        _ => return pos,
-    };
-    if line.get(pos + marker) != Some(&b' ') {
-        return pos;
-    }
-    pos += marker;
-    // Everything up to the content, however much space was left after the
-    // marker, so that `-   foo` lines up under the `foo`.
-    pos + line[pos..].iter().take_while(|byte| **byte == b' ').count()
+    indent
 }
