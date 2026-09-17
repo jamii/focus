@@ -35,10 +35,10 @@ Language specific:
 - [x] Nix
 - [x] Markdown
 - [x] Highlighting
-- [ ] Comment/uncomment
+- [x] Comment/uncomment
 - [x] Smart indent
-- [ ] Manual indent (esp python)
-- [ ] Paren matching
+- [x] Manual indent (esp python)
+- [x] Paren matching
 - [ ] Completion UI
 - [ ] Formatting
 

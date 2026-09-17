@@ -268,6 +268,34 @@ impl BufferId {
         }
     }
 
+    /// How far one step of indent is in this buffer's language. Four
+    /// spaces for a buffer with no language to ask: it is the commonest,
+    /// and nothing here knows better.
+    pub(crate) fn indent_width(self, app: &App) -> usize {
+        app.buffers.highlight[self]
+            .language()
+            .map_or(4, Language::indent_width)
+    }
+
+    /// Whether the indent of a line here is worked out from the code, so
+    /// that putting every line where the rules say is a reformatting
+    /// rather than a rewriting.
+    pub(crate) fn indent_is_determined(self, app: &App) -> bool {
+        app.buffers.highlight[self]
+            .language()
+            .is_some_and(Language::indent_is_determined)
+    }
+
+    /// Whether the line starting at `offset` carries on a string or a
+    /// block comment from the line above, where the indent is text rather
+    /// than layout.
+    pub(crate) fn inside_multiline_token(self, app: &App, offset: usize) -> bool {
+        match &app.buffers.highlight[self] {
+            Highlight::Language { tokens, .. } => tokens.inside_multiline_token(offset),
+            Highlight::Plain | Highlight::Document { .. } | Highlight::Spans(_) => false,
+        }
+    }
+
     /// The pair of tokens around a cursor at `offset` - brackets, or the
     /// quotes of the string it is in. None for a buffer whose colours do
     /// not come from a tokenizer: there is no structure to read.

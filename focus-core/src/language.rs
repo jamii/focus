@@ -334,6 +334,20 @@ impl Language {
         }
     }
 
+    /// Whether the indent of a line is worked out from the code rather
+    /// than being part of it. Python's indent is the program - a dedent
+    /// is the only thing that closes a block - and a document's belongs
+    /// to whoever wrote it; putting either back from the rules alone
+    /// would be changing what it says. The three that are left are the
+    /// three the retyping tests write out from nothing and get back
+    /// exactly.
+    pub(crate) fn indent_is_determined(self) -> bool {
+        match self {
+            Language::Rust | Language::Nix | Language::Shell => true,
+            Language::Python | Language::Markdown => false,
+        }
+    }
+
     pub(crate) fn indent_width(self) -> usize {
         match self {
             Language::Rust | Language::Python => 4,
@@ -612,6 +626,21 @@ impl Tokens {
     fn is_mismatched(&self, ix: usize) -> bool {
         self.paren_match[ix].is_none()
             && matches!(self.kind[ix], TokenKind::Open(_) | TokenKind::Close(_))
+    }
+
+    /// Whether `offset` is inside a token rather than at the start of
+    /// one, for the tokens that can hold more than one line: a string, a
+    /// block comment, or one of either left unterminated. What is inside
+    /// one is text rather than code, so the spaces at the front of a line
+    /// in it are part of what it says.
+    pub(crate) fn inside_multiline_token(&self, offset: usize) -> bool {
+        let Some(ix) = self.token_before(offset) else {
+            return false;
+        };
+        matches!(
+            self.kind[ix],
+            TokenKind::String { .. } | TokenKind::Comment | TokenKind::Error
+        ) && self.range(ix).contains(&offset)
     }
 
     /// The pair of tokens the cursor at `offset` sits between: the quotes

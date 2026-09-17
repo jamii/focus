@@ -1,0 +1,27 @@
+# Nix laid out the way an indenter has to reproduce it. The test types it
+# back in with all of the indentation stripped off.
+{
+  pkgs ? import <nixpkgs> { },
+}:
+
+let
+  version = "1.2.3";
+  deps = [
+    pkgs.rustc
+    pkgs.cargo
+  ];
+in
+pkgs.stdenv.mkDerivation {
+  pname = "focus";
+  inherit version;
+  src = ./.;
+  buildInputs = deps;
+  installPhase = ''
+mkdir -p $out/bin
+cp target/release/focus $out/bin/
+'';
+  meta = {
+    description = "an editor";
+    platforms = pkgs.lib.platforms.linux;
+  };
+}

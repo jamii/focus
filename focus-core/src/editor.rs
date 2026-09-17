@@ -432,6 +432,7 @@ impl EditorId {
                     }
                     Key::Character("/") if editable => self.cursor_comment(app),
                     Key::Character("?") if editable => self.cursor_uncomment(app),
+                    Key::Named(NamedKey::Tab) if editable => self.cursor_reindent(app),
                     Key::Character("z") if editable => self.undo(app),
                     Key::Character("Z") if editable => self.redo(app),
                     _ => flush_doing = false,
@@ -456,6 +457,21 @@ impl EditorId {
                         self.cursor_replace(app, char.into());
                         self.cursor_reindent_marker_line(app);
                         flush_doing = false;
+                    }
+                    Key::Named(NamedKey::Tab) if editable => {
+                        if app.modifiers.shift {
+                            self.cursor_dedent(app);
+                        } else if app.editors.marked[self] {
+                            self.cursor_indent(app);
+                        } else {
+                            // Nothing is selected, so there is no line
+                            // being moved: the spaces go in at the cursor
+                            // like any other typing, and group with it.
+                            let width = app.editors.buffer_id[self].indent_width(app);
+                            let spaces = " ".repeat(width);
+                            self.cursor_replace(app, spaces.as_str().into());
+                            flush_doing = false;
+                        }
                     }
                     Key::Named(NamedKey::Enter) if editable => {
                         self.cursor_newline(app);
@@ -1124,6 +1140,98 @@ impl EditorId {
             });
         }
         buffer_id.apply_edits(app, &edits);
+    }
+
+    /// Tab with a selection: one more step of indent in front of every
+    /// line it covers. A line with nothing on it is left alone - an
+    /// indent on an empty line is trailing whitespace, not layout.
+    fn cursor_indent(self, app: &mut App) {
+        let buffer_id = app.editors.buffer_id[self];
+        let indent = BString::from(" ".repeat(buffer_id.indent_width(app)));
+        let text = buffer_id.text(app);
+        let mut edits = Vec::new();
+        for line in self.cursor_lines(app) {
+            if text[line.clone()].iter().all(|byte| *byte == b' ') {
+                continue;
+            }
+            edits.push(Edit {
+                kind: EditKind::Insert,
+                offset: line.start,
+                text: indent.clone(),
+            });
+        }
+        buffer_id.apply_edits(app, &edits);
+    }
+
+    /// Shift+tab: one step of indent off the front of every line the
+    /// cursors are on, as far as there is one to take off.
+    fn cursor_dedent(self, app: &mut App) {
+        let buffer_id = app.editors.buffer_id[self];
+        let width = buffer_id.indent_width(app);
+        let text = buffer_id.text(app);
+        let mut edits = Vec::new();
+        for line in self.cursor_lines(app) {
+            let taken = indent_width(&text[line.clone()]).min(width);
+            if taken == 0 {
+                continue;
+            }
+            edits.push(Edit {
+                kind: EditKind::Delete,
+                offset: line.start,
+                text: text[line.start..line.start + taken].into(),
+            });
+        }
+        buffer_id.apply_edits(app, &edits);
+    }
+
+    /// Ctrl+tab: put every line the cursors cover where the indent rules
+    /// say it goes, in languages where those rules say everything. One
+    /// line at a time from the top, rather than all of the edits worked
+    /// out at once the way the rest of these do it: a line is indented
+    /// against the lines above it as they are now, so a line this has
+    /// just moved is what the next one lines up against.
+    fn cursor_reindent(self, app: &mut App) {
+        let buffer_id = app.editors.buffer_id[self];
+        if !buffer_id.indent_is_determined(app) {
+            return;
+        }
+        // Line numbers rather than offsets: an edit moves every offset
+        // after it, but only the indent changes, so the lines stay where
+        // they are.
+        let lines: Vec<usize> = self
+            .cursor_lines(app)
+            .iter()
+            .map(|line| buffer_id.grid_from_offset(app, line.start)[1])
+            .collect();
+        for line_ix in lines {
+            let line_start = buffer_id.offset_from_grid(app, [0, line_ix]);
+            let line = buffer_id.line_range_from_offset(app, line_start);
+            let text = buffer_id.text(app);
+            let indent = indent_width(&text[line.clone()]);
+            // A line with nothing on it would only get an indent of
+            // trailing spaces, and a line carrying on a string or a block
+            // comment is holding text, where the spaces at the front are
+            // part of what it says.
+            if line.start + indent == line.end || buffer_id.inside_multiline_token(app, line.start)
+            {
+                continue;
+            }
+            let ideal = buffer_id.ideal_indent(app, line.clone());
+            let edit = match ideal.cmp(&indent) {
+                std::cmp::Ordering::Equal => continue,
+                std::cmp::Ordering::Less => Edit {
+                    kind: EditKind::Delete,
+                    offset: line.start,
+                    text: text[line.start..line.start + indent - ideal].into(),
+                },
+                std::cmp::Ordering::Greater => Edit {
+                    kind: EditKind::Insert,
+                    offset: line.start,
+                    text: BString::from(" ".repeat(ideal - indent)),
+                },
+            };
+            buffer_id.apply_edits(app, &[edit]);
+        }
     }
 
     fn cursor_replace(self, app: &mut App, insert: &BStr) {

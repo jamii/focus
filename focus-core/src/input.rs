@@ -48,6 +48,7 @@ pub enum ButtonState {
 pub enum NamedKey {
     Enter,
     Space,
+    Tab,
     Backspace,
     Delete,
     ArrowLeft,

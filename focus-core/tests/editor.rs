@@ -1347,3 +1347,89 @@ fn comment_keys_do_nothing_in_a_buffer_with_no_language() {
     assert_eq!(common::text(&app), "abc");
     app.assert_invariants();
 }
+
+#[test]
+fn tab_inserts_an_indent_at_the_cursor() {
+    let (mut app, mut io, window_id) = rust_app("fn f() {\nlet x = 1;\n}\n");
+
+    move_down(&mut app, &mut io, window_id, 1);
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+
+    assert_eq!(common::text(&app), "fn f() {\n    let x = 1;\n}\n");
+    app.assert_invariants();
+}
+
+// Four spaces in Rust, two in markdown: one step of whatever the language
+// indents by. A file in no language at all gets four.
+#[test]
+fn tab_inserts_one_step_of_the_languages_indent() {
+    let (mut app, mut io, window_id) =
+        common::file_app(std::path::PathBuf::from("/repo/notes.md"), "- a\n");
+    common::tick(&mut app, &mut io);
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+    assert_eq!(common::text(&app), "  - a\n");
+    app.assert_invariants();
+
+    let (mut app, mut io, window_id) = common::scratch_app();
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+    assert_eq!(common::text(&app), "    ");
+    app.assert_invariants();
+}
+
+// With a selection there are lines being moved rather than a cursor to
+// type at, so tab moves all of them - and leaves the blank one alone,
+// where an indent would only be trailing spaces.
+#[test]
+fn tab_and_shift_tab_move_every_line_of_the_selection() {
+    let (mut app, mut io, window_id) = rust_app("fn f() {\n    let x = 1;\n\n    dbg!(x);\n}\n");
+
+    move_down(&mut app, &mut io, window_id, 1);
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
+    move_down(&mut app, &mut io, window_id, 2);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("l"));
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+
+    assert_eq!(
+        common::text(&app),
+        "fn f() {\n        let x = 1;\n\n        dbg!(x);\n}\n"
+    );
+    app.assert_invariants();
+
+    // The selection is still there, so it can be moved back again.
+    common::shift_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+    common::shift_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+
+    assert_eq!(common::text(&app), "fn f() {\nlet x = 1;\n\ndbg!(x);\n}\n");
+    app.assert_invariants();
+
+    // A third takes off what is there, which is nothing.
+    common::shift_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+
+    assert_eq!(common::text(&app), "fn f() {\nlet x = 1;\n\ndbg!(x);\n}\n");
+    app.assert_invariants();
+}
+
+// Shift+tab is about the line, not about where the cursor is on it.
+#[test]
+fn shift_tab_takes_the_indent_off_the_cursors_line() {
+    let (mut app, mut io, window_id) = rust_app("fn f() {\n        let x = 1;\n}\n");
+
+    move_down(&mut app, &mut io, window_id, 1);
+    move_right(&mut app, &mut io, window_id, 12);
+    common::shift_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+
+    assert_eq!(common::text(&app), "fn f() {\n    let x = 1;\n}\n");
+    app.assert_invariants();
+}
+
+// Ctrl+tab with nothing selected is one line: the one the cursor is on.
+#[test]
+fn ctrl_tab_reindents_the_cursors_line() {
+    let (mut app, mut io, window_id) = rust_app("fn f() {\nlet x = 1;\n        }\n");
+
+    move_down(&mut app, &mut io, window_id, 1);
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+
+    assert_eq!(common::text(&app), "fn f() {\n    let x = 1;\n        }\n");
+    app.assert_invariants();
+}

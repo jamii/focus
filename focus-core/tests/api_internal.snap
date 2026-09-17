@@ -110,6 +110,9 @@ impl BufferId {
         out: &mut Vec<(std::ops::Range<usize>, [u8; 4])>,
     );
     pub(crate) fn ideal_indent(self, app: &App, line: std::ops::Range<usize>) -> usize;
+    pub(crate) fn indent_width(self, app: &App) -> usize;
+    pub(crate) fn indent_is_determined(self, app: &App) -> bool;
+    pub(crate) fn inside_multiline_token(self, app: &App, offset: usize) -> bool;
     pub(crate) fn enclosing_pair(self, app: &App, offset: usize) -> Option<Pair>;
     pub(crate) fn line_comment(self, app: &App) -> Option<&'static str>;
     pub(crate) fn leads_with_indent_marker(
@@ -343,6 +346,7 @@ impl Language {
     ) -> &'static [(&'static str, &'static [&'static str])];
     pub(crate) fn block_keyword(self) -> &'static [&'static str];
     pub(crate) fn line_comment(self) -> Option<&'static str>;
+    pub(crate) fn indent_is_determined(self) -> bool;
     pub(crate) fn indent_width(self) -> usize;
 }
 
@@ -367,6 +371,7 @@ impl Tokens {
     pub(crate) fn token_containing(&self, offset: usize) -> Option<usize>;
     pub(crate) fn token_before(&self, offset: usize) -> Option<usize>;
     pub(crate) fn token_after(&self, offset: usize) -> Option<usize>;
+    pub(crate) fn inside_multiline_token(&self, offset: usize) -> bool;
     pub(crate) fn enclosing_pair(&self, offset: usize) -> Option<Pair>;
     pub(crate) fn ideal_indent(
         &self,

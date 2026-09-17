@@ -626,14 +626,15 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         1 => {
             // Named key (Enter, Space, Backspace, Delete, plus a few
             // others to exercise unhandled-key paths).
-            let named = match frng.u8_bounded(0, 7)? {
+            let named = match frng.u8_bounded(0, 8)? {
                 0 => NamedKey::Enter,
                 1 => NamedKey::Space,
                 2 => NamedKey::Backspace,
                 3 => NamedKey::Delete,
-                4 => NamedKey::ArrowLeft,
-                5 => NamedKey::ArrowRight,
-                6 => NamedKey::ArrowUp,
+                4 => NamedKey::Tab,
+                5 => NamedKey::ArrowLeft,
+                6 => NamedKey::ArrowRight,
+                7 => NamedKey::ArrowUp,
                 _ => NamedKey::ArrowDown,
             };
             let state = if frng.boolean()? {

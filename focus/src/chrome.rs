@@ -1076,6 +1076,7 @@ fn translate_named(named: WinitNamedKey) -> Option<NamedKey> {
     Some(match named {
         WinitNamedKey::Enter => NamedKey::Enter,
         WinitNamedKey::Space => NamedKey::Space,
+        WinitNamedKey::Tab => NamedKey::Tab,
         WinitNamedKey::Backspace => NamedKey::Backspace,
         WinitNamedKey::Delete => NamedKey::Delete,
         WinitNamedKey::ArrowLeft => NamedKey::ArrowLeft,

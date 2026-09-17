@@ -374,6 +374,71 @@ fn indent_reproduces_nix() {
     retype("sample.nix", include_str!("fixtures/indent.nix"));
 }
 
+// Ctrl+tab over a selection puts every line where the rules say it goes.
+// The same three files the retyping tests write out from nothing, with
+// every indent stripped off and put back in one keystroke instead: if the
+// rules determine the indent at all, these are the files they determine.
+#[test]
+fn reformat_restores_rust() {
+    reformat("sample.rs", include_str!("fixtures/indent.rs"));
+}
+
+// Nix is the one of the three with a string that runs over lines, and
+// that is the one place reformatting differs from typing the file in:
+// what is inside a string is text, so the spaces at the front of it are
+// part of what it says and are left exactly where they are. Everything
+// outside one comes back.
+#[test]
+fn reformat_restores_nix_outside_its_strings() {
+    let stripped = strip_indent(include_str!("fixtures/indent.nix"));
+    check("reformat_nix", &reformatted("sample.nix", &stripped));
+}
+
+#[test]
+fn reformat_restores_shell() {
+    reformat("sample.sh", include_str!("fixtures/indent.sh"));
+}
+
+// Python's indent is the program rather than its layout, so there is
+// nothing to work it out from and ctrl+tab leaves it alone. A document is
+// the same: the indent is the writer's.
+#[test]
+fn reformat_leaves_python_alone() {
+    let stripped = strip_indent(include_str!("fixtures/indent.py"));
+    assert_eq!(reformatted("sample.py", &stripped), stripped);
+}
+
+#[test]
+fn reformat_leaves_markdown_alone() {
+    let stripped = strip_indent(include_str!("fixtures/sample.md"));
+    assert_eq!(reformatted("notes.md", &stripped), stripped);
+}
+
+fn strip_indent(formatted: &str) -> String {
+    formatted
+        .lines()
+        .map(|line| format!("{}\n", line.trim_start()))
+        .collect()
+}
+
+/// Open `text` as `name`, select all of it, and press ctrl+tab.
+fn reformatted(name: &str, text: &str) -> String {
+    let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/repo").join(name), text);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("k"));
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Tab));
+    app.assert_invariants();
+    common::text(&app)
+}
+
+/// Strip every indent off `formatted`, reformat the lot, and require the
+/// file back exactly.
+fn reformat(name: &str, formatted: &str) {
+    assert_eq!(reformatted(name, &strip_indent(formatted)), formatted);
+}
+
 /// Type `formatted` into a new file called `name`, with every line's
 /// indentation stripped off, and require the file back exactly.
 ///
