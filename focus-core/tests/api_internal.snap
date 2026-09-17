@@ -110,6 +110,7 @@ impl BufferId {
         out: &mut Vec<(std::ops::Range<usize>, [u8; 4])>,
     );
     pub(crate) fn ideal_indent(self, app: &App, line: std::ops::Range<usize>) -> usize;
+    pub(crate) fn enclosing_pair(self, app: &App, offset: usize) -> Option<Pair>;
     pub(crate) fn line_comment(self, app: &App) -> Option<&'static str>;
     pub(crate) fn leads_with_indent_marker(
         self,
@@ -280,6 +281,12 @@ pub(crate) enum Highlight {
     Spans(Vec<Span>),
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(crate) struct Pair {
+    pub(crate) open: Range<usize>,
+    pub(crate) close: Range<usize>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Span {
     pub(crate) range: Range<usize>,
@@ -295,7 +302,7 @@ pub(crate) struct Tokens {
 pub(crate) enum TokenKind {
     Whitespace,
     Comment,
-    String,
+    String { open: u8, close: Option<u8> },
     Number,
     Keyword,
     Flow(Flow),
@@ -360,6 +367,7 @@ impl Tokens {
     pub(crate) fn token_containing(&self, offset: usize) -> Option<usize>;
     pub(crate) fn token_before(&self, offset: usize) -> Option<usize>;
     pub(crate) fn token_after(&self, offset: usize) -> Option<usize>;
+    pub(crate) fn enclosing_pair(&self, offset: usize) -> Option<Pair>;
     pub(crate) fn ideal_indent(
         &self,
         text: &BStr,
@@ -381,7 +389,7 @@ impl<'a> Lexer<'a> {
     pub(crate) fn eat_while(&mut self, mut f: impl FnMut(u8) -> bool);
     pub(crate) fn starts_with(&self, prefix: &[u8]) -> bool;
     pub(crate) fn eat_str(&mut self, prefix: &[u8]) -> bool;
-    pub(crate) fn eat_quoted(&mut self, quote: u8) -> TokenKind;
+    pub(crate) fn eat_quoted(&mut self, quote: u8, open: u8) -> TokenKind;
     pub(crate) fn eat_line(&mut self);
 }
 

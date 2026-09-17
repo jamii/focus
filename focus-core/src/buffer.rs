@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime};
 use bstr::{BStr, BString, ByteSlice};
 
 use crate::app::{App, IO};
-use crate::language::{self, Highlight, Language, Span};
+use crate::language::{self, Highlight, Language, Pair, Span};
 use crate::map::Map;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
@@ -265,6 +265,16 @@ impl BufferId {
             }
             Highlight::Document { .. } => language::document_indent(self.text(app), line.start),
             Highlight::Plain | Highlight::Spans(_) => 0,
+        }
+    }
+
+    /// The pair of tokens around a cursor at `offset` - brackets, or the
+    /// quotes of the string it is in. None for a buffer whose colours do
+    /// not come from a tokenizer: there is no structure to read.
+    pub(crate) fn enclosing_pair(self, app: &App, offset: usize) -> Option<Pair> {
+        match &app.buffers.highlight[self] {
+            Highlight::Language { tokens, .. } => tokens.enclosing_pair(offset),
+            Highlight::Plain | Highlight::Document { .. } | Highlight::Spans(_) => None,
         }
     }
 

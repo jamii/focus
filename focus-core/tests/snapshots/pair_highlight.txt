@@ -1,0 +1,171 @@
+### fn f() { foo(ba|r, baz) }
+ fn f() { foo(bar, baz) }
+             G        G
+ /repo/sample.rs 1:16
+
+
+### fn f() { foo(|bar, baz) }
+ fn f() { foo(bar, baz) }
+             G        G
+ /repo/sample.rs 1:14
+
+
+### fn f() { foo(bar, baz|) }
+ fn f() { foo(bar, baz) }
+             G        G
+ /repo/sample.rs 1:22
+
+
+### fn f() { foo|(bar, baz) }
+ fn f() { foo(bar, baz) }
+        G               G
+ /repo/sample.rs 1:13
+
+
+### fn f() { foo(bar, baz)| }
+ fn f() { foo(bar, baz) }
+        G               G
+ /repo/sample.rs 1:23
+
+
+### fn f() { outer(inner(|x)) }
+ fn f() { outer(inner(x)) }
+                     G G
+ /repo/sample.rs 1:22
+
+
+### fn f() { outer(inner(x)|) }
+ fn f() { outer(inner(x)) }
+               G        G
+ /repo/sample.rs 1:24
+
+
+### fn f() { foo(ba|r] }
+ fn f() { foo(bar] }
+        G    R   R G
+ /repo/sample.rs 1:16
+
+
+### fn f()| { foo(bar] }
+ fn f() { foo(bar] }
+             R   R
+ /repo/sample.rs 1:7
+
+
+### fn f() { foo(a] b|c) }
+ fn f() { foo(a] bc) }
+             G R   G
+ /repo/sample.rs 1:18
+
+
+### fn f() { vec![0u8; (w * [ h|) as usize]; }
+ fn f() { vec![0u8; (w * [ h) as usize]; }
+                    G    R  G
+ /repo/sample.rs 1:28
+
+
+### fn f() { foo(ba|r }
+ fn f() { foo(bar }
+        G    R    G
+ /repo/sample.rs 1:16
+
+
+### fn f() { ba|r) }
+ fn f() { bar) }
+        G    R G
+ /repo/sample.rs 1:12
+
+
+### fn f() {
+###     // no|te (here
+### }
+ fn f() {
+        G
+     // note (here
+
+ }
+ G
+ /repo/sample.rs 2:10
+
+
+### fn f() { let s = "he|llo"; }
+ fn f() { let s = "hello"; }
+                  G     G
+ /repo/sample.rs 1:21
+
+
+### fn f() { let s = r#"he|llo"#; }
+ fn f() { let s = r#"hello"#; }
+                  GGG     GG
+ /repo/sample.rs 1:23
+
+
+### fn f() { let s = "he|llo }
+ fn f() { let s = "hello }
+        R         RRRRRRRR
+ /repo/sample.rs 1:21
+
+
+### fn f() { let s = "(he|llo"; }
+ fn f() { let s = "(hello"; }
+                  G      G
+ /repo/sample.rs 1:22
+
+
+### fn f() { let v: Vec<Hash|Map<K, V>> = x; }
+ fn f() { let v: Vec<HashMap<K, V>> = x; }
+                    G             G
+ /repo/sample.rs 1:25
+
+
+### fn f() { let v: Vec<HashMap<K|, V>> = x; }
+ fn f() { let v: Vec<HashMap<K, V>> = x; }
+                            G    G
+ /repo/sample.rs 1:30
+
+
+### fn f() { foo::<T|>(); }
+ fn f() { foo::<T>(); }
+               G G
+ /repo/sample.rs 1:17
+
+
+### fn f() { let b = a < b |&& c > d; }
+ fn f() { let b = a < b && c > d; }
+        G                         G
+ /repo/sample.rs 1:24
+
+
+### x = f"""he|llo"""
+ x = f"""hello"""
+     GGGG     GGG
+ /repo/sample.py 1:11
+
+
+### def f():
+###     return [1, |2]
+ def f():
+
+     return [1, 2]
+            G    G
+ /repo/sample.py 2:16
+
+
+### let x = |1; in x
+ let x = 1; in x
+ GGG        GG
+ /repo/sample.nix 1:9
+
+
+### case $x in
+###   a) fo|o;;
+### esac
+ case $x in
+
+   a) foo;;
+
+ esac
+
+ /repo/sample.sh 2:8
+
+

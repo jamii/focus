@@ -15,6 +15,7 @@ use focus_core::app::{
 use focus_core::drawing::{DrawCommand, Drawing, FULL_BLOCK};
 use focus_core::fuzz::MockIO;
 use focus_core::input::{Key, NamedKey};
+use focus_core::style::{PAREN_MATCH_COLOR, UNMATCHED_COLOR};
 use focus_core::window::WindowId;
 
 mod common;
@@ -526,4 +527,145 @@ fn check(name: &str, actual: &str) {
         expected, actual,
         "{name} changed; rerun with UPDATE_SNAPSHOTS=1 to accept"
     );
+}
+
+// `G` marks a character drawn in the colour of the pair around the
+// cursor, `R` one drawn in the colour of a token with nothing to pair
+// with - which is the same wherever the cursor is.
+fn pair_screen(app: &App, drawing: &Drawing) -> String {
+    let [cell_w, cell_h] = [app.cell_size()[0] as f32, app.cell_size()[1] as f32];
+    let mut cells: BTreeMap<(usize, usize), char> = BTreeMap::new();
+    let mut marks: BTreeMap<(usize, usize), char> = BTreeMap::new();
+    for command in &drawing.commands {
+        let DrawCommand::Character(c) = command else {
+            continue;
+        };
+        // Cursors, gutter bars and the scrollbar are fills, not glyphs.
+        if c.ch == FULL_BLOCK {
+            continue;
+        }
+        let row = (c.dst.pos[1] / cell_h).round() as usize;
+        let col = (c.dst.pos[0] / cell_w).round() as usize;
+        cells.insert((row, col), c.ch);
+        match c.color {
+            PAREN_MATCH_COLOR => marks.insert((row, col), 'G'),
+            UNMATCHED_COLOR => marks.insert((row, col), 'R'),
+            _ => None,
+        };
+    }
+
+    let rows = cells.keys().chain(marks.keys()).map(|(row, _)| *row).max();
+    let mut out = String::new();
+    for row in 0..=rows.unwrap_or(0) {
+        let width = cells
+            .range((row, 0)..(row + 1, 0))
+            .chain(marks.range((row, 0)..(row + 1, 0)))
+            .map(|((_, col), _)| *col + 1)
+            .max()
+            .unwrap_or(0);
+        let line: String = (0..width)
+            .map(|col| cells.get(&(row, col)).copied().unwrap_or(' '))
+            .collect();
+        let mark: String = (0..width)
+            .map(|col| marks.get(&(row, col)).copied().unwrap_or(' '))
+            .collect();
+        if line.trim().is_empty() && mark.trim().is_empty() {
+            continue;
+        }
+        writeln!(out, "{}", line.trim_end()).unwrap();
+        writeln!(out, "{}", mark.trim_end()).unwrap();
+    }
+    out
+}
+
+// `|` in the sample says where the cursor goes; it is taken out of the
+// text before the file is opened.
+fn pair_case(out: &mut String, name: &str, sample: &str) {
+    for line in sample.lines() {
+        writeln!(out, "### {line}").unwrap();
+    }
+    let offset = sample.find('|').expect("no cursor in the sample");
+    let text = sample.replacen('|', "", 1);
+    let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/repo").join(name), &text);
+    common::tick(&mut app, &mut io);
+    common::alt_key(&mut app, &mut io, window_id, Key::Character("i"));
+    for _ in 0..offset {
+        common::control_key(&mut app, &mut io, window_id, Key::Character("l"));
+    }
+    // So that the status bar at the foot of the snapshot says where the
+    // cursor ended up, as a check on the case having done what it says.
+    common::tick(&mut app, &mut io);
+    let drawing = common::draw(&mut app, window_id, WRAP_CHARS, ROWS);
+    out.push_str(&pair_screen(&app, &drawing));
+    out.push('\n');
+}
+
+// Where the cursor is, what is around it. The cursor sits between
+// characters, so a bracket it is only next to is not one it is inside.
+// The red of a token with nothing to pair with is in here too, to show
+// that it is the same red whether the cursor is by it or not.
+#[test]
+fn the_pair_around_the_cursor_is_highlighted() {
+    let mut out = String::new();
+    for sample in [
+        // Inside the pair, either end of it, and outside it.
+        "fn f() { foo(ba|r, baz) }",
+        "fn f() { foo(|bar, baz) }",
+        "fn f() { foo(bar, baz|) }",
+        "fn f() { foo|(bar, baz) }",
+        "fn f() { foo(bar, baz)| }",
+        // The innermost pair, and the one outside it once the cursor has
+        // stepped out of the inner one.
+        "fn f() { outer(inner(|x)) }",
+        "fn f() { outer(inner(x)|) }",
+        // A `(` that meets a `]` is two brackets that pair with nothing,
+        // red on their own account - the same red with the cursor
+        // somewhere else entirely.
+        "fn f() { foo(ba|r] }",
+        "fn f()| { foo(bar] }",
+        // A stray bracket that closed nothing is not what the cursor is
+        // in: the pair around it is the one that does pair up.
+        "fn f() { foo(a] b|c) }",
+        // The `[` in the middle is the typo, and the only token drawn
+        // as one: the `(` and `)` either side of it pair up over the top
+        // of it, and so do the `[` and `]` outside those.
+        "fn f() { vec![0u8; (w * [ h|) as usize]; }",
+        // One end with nothing to pair with at all: red, and the pair
+        // around the cursor is whatever does pair up.
+        "fn f() { foo(ba|r }",
+        "fn f() { ba|r) }",
+        // A comment is one token, so the brackets written in it are not
+        // brackets: the pair around the cursor is the one around the
+        // comment.
+        "fn f() {\n    // no|te (here\n}",
+        // The quotes of the string the cursor is in, however long they
+        // are, and the opening one on its own while the string is still
+        // being typed.
+        "fn f() { let s = \"he|llo\"; }",
+        "fn f() { let s = r#\"he|llo\"#; }",
+        "fn f() { let s = \"he|llo }",
+        // A bracket inside a string is part of the string, not a bracket.
+        "fn f() { let s = \"(he|llo\"; }",
+        // Angle brackets, when they are brackets.
+        "fn f() { let v: Vec<Hash|Map<K, V>> = x; }",
+        "fn f() { let v: Vec<HashMap<K|, V>> = x; }",
+        "fn f() { foo::<T|>(); }",
+        // Spaced, so comparisons: the pair around the cursor is the
+        // block, not the `<` and `>` either side of it.
+        "fn f() { let b = a < b |&& c > d; }",
+    ] {
+        pair_case(&mut out, "sample.rs", sample);
+    }
+    for sample in [
+        "x = f\"\"\"he|llo\"\"\"\n",
+        "def f():\n    return [1, |2]\n",
+    ] {
+        pair_case(&mut out, "sample.py", sample);
+    }
+    // Nix's `let ... in` is a bracket pair made of words.
+    pair_case(&mut out, "sample.nix", "let x = |1; in x\n");
+    // Every shell `case` pattern ends with a `)` that never had a `(`, so
+    // it is not a bracket around anything.
+    pair_case(&mut out, "sample.sh", "case $x in\n  a) fo|o;;\nesac\n");
+    check("pair_highlight", &out);
 }

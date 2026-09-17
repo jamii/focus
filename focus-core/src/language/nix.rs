@@ -28,7 +28,7 @@ pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind {
         return kind;
     }
     match byte {
-        b'"' => lexer.eat_quoted(b'"'),
+        b'"' => lexer.eat_quoted(b'"', 1),
         byte if byte.is_ascii_whitespace() => {
             lexer.eat_while(|byte| byte.is_ascii_whitespace());
             TokenKind::Whitespace
@@ -80,10 +80,16 @@ fn indented_string(lexer: &mut Lexer) -> TokenKind {
                 lexer.bump();
                 continue;
             }
-            return TokenKind::String;
+            return TokenKind::String {
+                open: 2,
+                close: Some(2),
+            };
         }
     }
-    TokenKind::Error
+    TokenKind::String {
+        open: 2,
+        close: None,
+    }
 }
 
 /// A bare path - `./foo`, `/nix/store/x`, `~/.config`, `<nixpkgs>` - which
@@ -99,7 +105,10 @@ fn path(lexer: &mut Lexer) -> Option<TokenKind> {
         }
         if ahead > 1 && lexer.peek_at(ahead) == Some(b'>') {
             lexer.pos += ahead + 1;
-            return Some(TokenKind::String);
+            return Some(TokenKind::String {
+                open: 1,
+                close: Some(1),
+            });
         }
         return None;
     }
@@ -112,7 +121,12 @@ fn path(lexer: &mut Lexer) -> Option<TokenKind> {
     };
     lexer.pos += leads;
     lexer.eat_while(is_path_byte);
-    Some(TokenKind::String)
+    // A bare path is a string with nothing around it, so there is no pair
+    // of quotes to find the cursor inside.
+    Some(TokenKind::String {
+        open: 0,
+        close: Some(0),
+    })
 }
 
 fn is_punctuation(byte: u8) -> bool {

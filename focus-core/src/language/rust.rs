@@ -23,7 +23,7 @@ pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind {
         return kind;
     }
     match byte {
-        b'"' => lexer.eat_quoted(b'"'),
+        b'"' => lexer.eat_quoted(b'"', 1),
         b'\'' => quote(lexer),
         byte if byte.is_ascii_whitespace() => {
             lexer.eat_while(|byte| byte.is_ascii_whitespace());
@@ -44,12 +44,22 @@ pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind {
         // reason it is worth seeing. `?Sized` is a bound rather than a
         // question, and is the only `?` with a name straight after it.
         b'?' if !lexer.peek().is_some_and(is_identifier_start) => TokenKind::Flow(Flow::Error),
+        // A token of its own, because a `<` is sometimes the bracket
+        // around a generic argument list and sometimes a comparison, and
+        // which one it is is settled per byte once the whole file has
+        // been read. Glued into a run of punctuation there would be
+        // nothing to pair up.
+        b'<' | b'>' => TokenKind::Punctuation,
         _ => {
             // Run punctuation together, so that `::`, `->` and `=>` read
             // as one thing - but stop before a comment, which starts with
             // punctuation too.
             while let Some(byte) = lexer.peek() {
-                if !is_punctuation(byte) || lexer.starts_with(b"//") || lexer.starts_with(b"/*") {
+                if !is_punctuation(byte)
+                    || matches!(byte, b'<' | b'>')
+                    || lexer.starts_with(b"//")
+                    || lexer.starts_with(b"/*")
+                {
                     break;
                 }
                 lexer.bump();
@@ -94,7 +104,7 @@ fn prefixed(lexer: &mut Lexer) -> Option<TokenKind> {
         match lexer.peek_at(prefix + hashes) {
             Some(b'"') => {
                 lexer.pos += prefix + hashes + 1;
-                return Some(raw_string(lexer, hashes));
+                return Some(raw_string(lexer, hashes, (prefix + hashes + 1) as u8));
             }
             // `r#match` is a name that happens to spell a keyword.
             Some(byte) if prefix == 1 && hashes == 1 && is_identifier_start(byte) => {
@@ -109,12 +119,12 @@ fn prefixed(lexer: &mut Lexer) -> Option<TokenKind> {
     match lexer.peek_at(prefix) {
         Some(b'"') => {
             lexer.pos += prefix + 1;
-            Some(lexer.eat_quoted(b'"'))
+            Some(lexer.eat_quoted(b'"', (prefix + 1) as u8))
         }
         // `b'x'`, but never `c'x'`: there is no such literal.
         Some(b'\'') if lexer.peek() == Some(b'b') => {
             lexer.pos += prefix + 1;
-            Some(char_literal(lexer))
+            Some(char_literal(lexer, (prefix + 1) as u8))
         }
         _ => None,
     }
@@ -122,7 +132,7 @@ fn prefixed(lexer: &mut Lexer) -> Option<TokenKind> {
 
 /// A raw string whose opening `r##"` has been consumed: it ends at the
 /// first `"` followed by the same number of `#`.
-fn raw_string(lexer: &mut Lexer, hashes: usize) -> TokenKind {
+fn raw_string(lexer: &mut Lexer, hashes: usize, open: u8) -> TokenKind {
     while let Some(byte) = lexer.bump() {
         if byte != b'"' {
             continue;
@@ -133,10 +143,13 @@ fn raw_string(lexer: &mut Lexer, hashes: usize) -> TokenKind {
         }
         if found == hashes {
             lexer.pos += hashes;
-            return TokenKind::String;
+            return TokenKind::String {
+                open,
+                close: Some(1 + hashes as u8),
+            };
         }
     }
-    TokenKind::Error
+    TokenKind::String { open, close: None }
 }
 
 /// Whatever follows a `'` that has already been consumed. `'a'` is a
@@ -150,7 +163,10 @@ fn quote(lexer: &mut Lexer) -> TokenKind {
         }
         if lexer.peek_at(ahead) == Some(b'\'') {
             lexer.pos += ahead + 1;
-            return TokenKind::String;
+            return TokenKind::String {
+                open: 1,
+                close: Some(1),
+            };
         }
         lexer.pos += ahead;
         // A lifetime or a loop label, lexed as one identifier with the
@@ -159,23 +175,29 @@ fn quote(lexer: &mut Lexer) -> TokenKind {
         // to search the repo for.
         return TokenKind::Identifier;
     }
-    char_literal(lexer)
+    char_literal(lexer, 1)
 }
 
-/// A character literal whose opening quote has been consumed.
-fn char_literal(lexer: &mut Lexer) -> TokenKind {
+/// A character literal whose opening quote has been consumed. `open` is
+/// how long that quote was: one byte for `'x'`, two for `b'x'`.
+fn char_literal(lexer: &mut Lexer, open: u8) -> TokenKind {
     while let Some(byte) = lexer.bump() {
         match byte {
             b'\\' => {
                 lexer.bump();
             }
-            b'\'' => return TokenKind::String,
+            b'\'' => {
+                return TokenKind::String {
+                    open,
+                    close: Some(1),
+                };
+            }
             // An unclosed `'` is a typo, not the rest of the file.
             b'\n' => break,
             _ => {}
         }
     }
-    TokenKind::Error
+    TokenKind::String { open, close: None }
 }
 
 /// A number whose first digit has been consumed. Suffixes and bases are

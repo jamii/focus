@@ -19,7 +19,7 @@ pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind {
         return kind;
     }
     match byte {
-        b'"' | b'\'' => string(lexer, byte),
+        b'"' | b'\'' => string(lexer, byte, 0),
         byte if byte.is_ascii_whitespace() => {
             lexer.eat_while(|byte| byte.is_ascii_whitespace());
             TokenKind::Whitespace
@@ -57,13 +57,15 @@ fn prefixed(lexer: &mut Lexer) -> Option<TokenKind> {
         return None;
     }
     lexer.pos += len + 1;
-    Some(string(lexer, quote))
+    Some(string(lexer, quote, len as u8))
 }
 
 /// A string whose opening quote has been consumed. Three quotes in a row
 /// open a triple-quoted string, which runs over as many lines as it likes;
 /// a single one ends at the matching quote or at the end of the line.
-fn string(lexer: &mut Lexer, quote: u8) -> TokenKind {
+/// `prefix` is how many letters were in front of the quote - the `rb` of
+/// `rb'...'` - which are part of the opening delimiter.
+fn string(lexer: &mut Lexer, quote: u8, prefix: u8) -> TokenKind {
     let triple = lexer.peek() == Some(quote) && lexer.peek_at(1) == Some(quote);
     if triple {
         lexer.pos += 2;
@@ -75,10 +77,16 @@ fn string(lexer: &mut Lexer, quote: u8) -> TokenKind {
                 && lexer.peek_at(1) == Some(quote)
             {
                 lexer.pos += 2;
-                return TokenKind::String;
+                return TokenKind::String {
+                    open: prefix + 3,
+                    close: Some(3),
+                };
             }
         }
-        return TokenKind::Error;
+        return TokenKind::String {
+            open: prefix + 3,
+            close: None,
+        };
     }
     while let Some(byte) = lexer.bump() {
         match byte {
@@ -86,11 +94,19 @@ fn string(lexer: &mut Lexer, quote: u8) -> TokenKind {
                 lexer.bump();
             }
             b'\n' => break,
-            byte if byte == quote => return TokenKind::String,
+            byte if byte == quote => {
+                return TokenKind::String {
+                    open: prefix + 1,
+                    close: Some(1),
+                };
+            }
             _ => {}
         }
     }
-    TokenKind::Error
+    TokenKind::String {
+        open: prefix + 1,
+        close: None,
+    }
 }
 
 /// A number whose first digit has been consumed. Bases and suffixes are

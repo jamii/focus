@@ -19,7 +19,7 @@ use std::path::Path;
 use bstr::{BStr, ByteSlice};
 
 use crate::style::{
-    COMMENT_COLOR, EMPHASIS_GREEN, EMPHASIS_RED, EMPHASIS_YELLOW, TEXT_COLOR, hsla,
+    COMMENT_COLOR, EMPHASIS_GREEN, EMPHASIS_RED, EMPHASIS_YELLOW, TEXT_COLOR, UNMATCHED_COLOR, hsla,
 };
 
 mod markdown;
@@ -65,6 +65,16 @@ pub(crate) enum Highlight {
     Spans(Vec<Span>),
 }
 
+/// The two ends of whatever the cursor is inside: a pair of brackets, or
+/// the quotes around a string. Always two ends that belong together - a
+/// token with nothing to pair with is not one end of anything, and says
+/// so in its own colour wherever the cursor happens to be.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(crate) struct Pair {
+    pub(crate) open: Range<usize>,
+    pub(crate) close: Range<usize>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Span {
     pub(crate) range: Range<usize>,
@@ -92,7 +102,17 @@ pub(crate) struct Tokens {
 pub(crate) enum TokenKind {
     Whitespace,
     Comment,
-    String,
+    /// A string, and how long the quotes around it are: `open` bytes at
+    /// the front and `close` at the back, which is what the pair around
+    /// the cursor highlights. They are not the same length - Rust's
+    /// `r#"..."#` opens with three bytes and closes with two - and they
+    /// are not always there: a Nix path is a string with no quotes at
+    /// all, and a string still being typed has no closing quote yet,
+    /// which is what `None` says.
+    String {
+        open: u8,
+        close: Option<u8>,
+    },
     Number,
     Keyword,
     /// A keyword that moves control somewhere else. Worth telling apart
@@ -182,6 +202,13 @@ impl Language {
     /// than news.
     fn brackets_must_pair(self) -> bool {
         !matches!(self, Language::Shell)
+    }
+
+    /// Whether `<` and `>` are sometimes brackets. Rust writes generic
+    /// arguments in them; every other language here writes only
+    /// comparisons with them.
+    fn has_angle_brackets(self) -> bool {
+        matches!(self, Language::Rust)
     }
 
     /// Whether reading the text gives tokens. Markdown gives coloured
@@ -466,17 +493,23 @@ impl Tokens {
         let mut paren_parent = vec![None; kind.len()];
         let mut stack: Vec<usize> = Vec::new();
         for ix in 0..kind.len() {
-            // A closing bracket only pairs with an opening one of its own
-            // kind. A stray `)` - a shell `case` pattern, a typo - is then
-            // left unpaired and drawn red, rather than closing whatever
-            // happened to be open and taking the structure of everything
-            // below it with it.
+            // A closing bracket pairs with the nearest opening one of its
+            // own kind, which is not always the innermost one still open.
+            // In `vec![0u8; (w * [ h) as usize];` the middle `[` is the
+            // typo, and the `(` and `)` either side of it are a pair that
+            // says so: the brackets left open inside the one that just
+            // closed are the ones that went wrong, and they are what ends
+            // up drawn red. A closing bracket with no opening one of its
+            // kind anywhere still open - a shell `case` pattern, a stray
+            // `)` - pairs with nothing and closes nothing, rather than
+            // taking the structure of everything below it with it.
             if let TokenKind::Close(closing) = kind[ix]
-                && stack.last().is_some_and(|open_ix| {
+                && let Some(pos) = stack.iter().rposition(|open_ix| {
                     matches!(kind[*open_ix], TokenKind::Open(opening) if opening == closing)
                 })
             {
-                let open_ix = stack.pop().expect("just checked");
+                let open_ix = stack[pos];
+                stack.truncate(pos);
                 paren_match[ix] = Some(open_ix);
                 paren_match[open_ix] = Some(ix);
             }
@@ -484,6 +517,10 @@ impl Tokens {
             if matches!(kind[ix], TokenKind::Open(_)) {
                 stack.push(ix);
             }
+        }
+
+        if language.has_angle_brackets() {
+            pair_angles(&kind, &start, text, &mut paren_match);
         }
 
         let tokens = Tokens {
@@ -518,6 +555,12 @@ impl Tokens {
                 match (self.kind[open_ix], self.kind[close_ix]) {
                     (TokenKind::Open(opening), TokenKind::Close(closing)) => {
                         assert_eq!(opening, closing)
+                    }
+                    // Angle brackets stay the punctuation they look like,
+                    // and pair up anyway.
+                    (TokenKind::Punctuation, TokenKind::Punctuation) => {
+                        assert_eq!(&text[self.range(open_ix)], "<");
+                        assert_eq!(&text[self.range(close_ix)], ">");
                     }
                     kinds => panic!("paired {:?}", kinds),
                 }
@@ -571,13 +614,70 @@ impl Tokens {
             && matches!(self.kind[ix], TokenKind::Open(_) | TokenKind::Close(_))
     }
 
+    /// The pair of tokens the cursor at `offset` sits between: the quotes
+    /// of the string it is in, or else the nearest bracket around it and
+    /// the one it pairs with. The cursor sits between characters, so a
+    /// bracket it is merely next to is not around it: `foo(bar)|` finds
+    /// whatever encloses all of that, not the pair it has just left.
+    ///
+    /// Only tokens that found a partner: a bracket with nothing to pair
+    /// with is not one end of anything, and is already drawn in the
+    /// colour that says so.
+    pub(crate) fn enclosing_pair(&self, offset: usize) -> Option<Pair> {
+        // Inside a string, the quotes around it are nearer than any
+        // bracket, and the brackets written inside one are not tokens for
+        // the search below to find.
+        if let Some(ix) = self.token_containing(offset)
+            && let TokenKind::String {
+                open,
+                close: Some(close),
+            } = self.kind[ix]
+            && open > 0
+            && close > 0
+        {
+            let token = self.range(ix);
+            if token.start < offset && offset < token.end {
+                return Some(Pair {
+                    open: token.start..token.start + open as usize,
+                    close: token.end - close as usize..token.end,
+                });
+            }
+        }
+
+        // Backwards to the nearest bracket still open where the cursor
+        // is, stepping over the pairs that closed on the way in one jump
+        // each. Which end of its pair a token is is the side its partner
+        // is on.
+        let mut ix = self.token_before(offset);
+        while let Some(candidate) = ix {
+            if let Some(match_ix) = self.paren_match[candidate] {
+                if match_ix < candidate {
+                    // A pair that has already closed is not around the
+                    // cursor, and nor is anything inside it.
+                    ix = match_ix.checked_sub(1);
+                    continue;
+                }
+                // An opening bracket the cursor is partway through - the
+                // `le` of Nix's `let` - is not open around it yet.
+                if self.range(candidate).end <= offset {
+                    return Some(Pair {
+                        open: self.range(candidate),
+                        close: self.range(match_ix),
+                    });
+                }
+            }
+            ix = candidate.checked_sub(1);
+        }
+        None
+    }
+
     fn color(&self, text: &BStr, ix: usize, language: Language) -> [u8; 4] {
         match self.kind[ix] {
             // Brackets are structure, not content: greyed out, unless they
             // are the ones that have gone wrong.
             TokenKind::Open(bracket) | TokenKind::Close(bracket) => {
                 if self.is_mismatched(ix) && language.brackets_must_pair() {
-                    EMPHASIS_RED
+                    UNMATCHED_COLOR
                 } else if bracket == Bracket::Word {
                     // These are words, and read as the keywords they are.
                     TEXT_COLOR
@@ -586,7 +686,10 @@ impl Tokens {
                 }
             }
             TokenKind::Comment | TokenKind::Whitespace => COMMENT_COLOR,
-            TokenKind::Error => EMPHASIS_RED,
+            // A string with no closing quote has run off the end of what
+            // was meant to be in it, the same way a stray byte or an
+            // unclosed block comment has: nothing to pair with.
+            TokenKind::String { close: None, .. } | TokenKind::Error => UNMATCHED_COLOR,
             TokenKind::Flow(Flow::Return) => EMPHASIS_GREEN,
             TokenKind::Flow(Flow::Jump) => EMPHASIS_YELLOW,
             TokenKind::Flow(Flow::Error) => EMPHASIS_RED,
@@ -594,9 +697,10 @@ impl Tokens {
             // it appears. Not semantic - nothing here knows what a name
             // means - but enough to pick one out of a page.
             TokenKind::Identifier => ident_color(&text[self.range(ix)]),
-            TokenKind::String | TokenKind::Number | TokenKind::Keyword | TokenKind::Punctuation => {
-                TEXT_COLOR
-            }
+            TokenKind::String { .. }
+            | TokenKind::Number
+            | TokenKind::Keyword
+            | TokenKind::Punctuation => TEXT_COLOR,
         }
     }
 
@@ -626,7 +730,7 @@ impl Tokens {
         // it and falls through to the rules below.
         if let Some(above_end) = line.start.checked_sub(1)
             && let Some(ix) = self.token_before(line.start)
-            && matches!(self.kind[ix], TokenKind::String | TokenKind::Error)
+            && matches!(self.kind[ix], TokenKind::String { .. } | TokenKind::Error)
         {
             let token = self.range(ix);
             let ends_on_this_line = token.end > line.start && token.end <= line.end;
@@ -641,7 +745,11 @@ impl Tokens {
             // Still being typed, so it has not met its closing quote and
             // everything below is inside it: the line it opened on is
             // what the text hangs off.
-            if self.kind[ix] == TokenKind::Error && token.start >= above {
+            if matches!(
+                self.kind[ix],
+                TokenKind::Error | TokenKind::String { close: None, .. }
+            ) && token.start >= above
+            {
                 return indent + language.indent_width();
             }
         }
@@ -974,17 +1082,22 @@ impl<'a> Lexer<'a> {
         found
     }
 
-    /// Read to the end of a `"`-quoted string whose opening quote has
-    /// already been consumed. `Error` if it runs off the end of the text.
-    pub(crate) fn eat_quoted(&mut self, quote: u8) -> TokenKind {
+    /// Read to the end of a quoted string whose opening quote has already
+    /// been consumed. `open` is how long that quote was, counting any
+    /// prefix in front of it: `"` is one byte, `b"` and shell's `$'` are
+    /// two. Unterminated if it runs off the end of the text.
+    pub(crate) fn eat_quoted(&mut self, quote: u8, open: u8) -> TokenKind {
         while let Some(byte) = self.bump() {
             if byte == b'\\' {
                 self.bump();
             } else if byte == quote {
-                return TokenKind::String;
+                return TokenKind::String {
+                    open,
+                    close: Some(1),
+                };
             }
         }
-        TokenKind::Error
+        TokenKind::String { open, close: None }
     }
 
     /// Read to the end of the line, for a line comment.
@@ -997,6 +1110,102 @@ impl<'a> Lexer<'a> {
 /// line above, which is where a list item's own marker sits.
 pub(crate) fn document_indent(text: &BStr, offset: usize) -> usize {
     markdown::next_line_indent(text, offset)
+}
+
+/// Rust writes a generic argument list in `<` and `>`, and writes
+/// comparisons with the same two bytes: `a<b, c>(d)` is a call with type
+/// arguments or it is two comparisons, and only something that knows what
+/// `a` is can say which. The guess here is the one rustfmt makes safe to
+/// take - a comparison is written with spaces around it, a generic
+/// argument list is written tight against the name in front of it - plus
+/// the things a list cannot do: leave the brackets it started in, cross a
+/// `;`, or hold a block.
+///
+/// Pairing only. These stay punctuation tokens, so a `<` that finds
+/// nothing is left alone rather than drawn as an error the way an
+/// unpaired bracket is, and none of them are structure to indent by: a
+/// generic argument list is not a block.
+fn pair_angles(
+    kind: &[TokenKind],
+    start: &[usize],
+    text: &BStr,
+    paren_match: &mut [Option<usize>],
+) {
+    // The `<`s that could still turn out to be brackets, and the bracket
+    // depth each was seen at.
+    let mut candidates: Vec<(usize, usize)> = Vec::new();
+    let mut depth: usize = 0;
+    for ix in 0..kind.len() {
+        match kind[ix] {
+            TokenKind::Open(bracket) => {
+                depth += 1;
+                // `if a<b {` - a list holds types, never a block.
+                if bracket == Bracket::Curly {
+                    candidates.clear();
+                }
+            }
+            TokenKind::Close(bracket) => {
+                depth = depth.saturating_sub(1);
+                if bracket == Bracket::Curly {
+                    candidates.clear();
+                } else {
+                    // A list cannot reach out of the brackets it opened
+                    // in: `foo(a<b) > c`.
+                    candidates.retain(|(_, candidate_depth)| *candidate_depth <= depth);
+                }
+            }
+            TokenKind::Punctuation => {
+                let token = &text[start[ix]..start[ix + 1]];
+                if token == "<" {
+                    if opens_angle(text, start[ix]) {
+                        candidates.push((ix, depth));
+                    }
+                } else if token == ">" {
+                    // The innermost `<` still open at this depth. The
+                    // ones after it never found a `>` of their own, and a
+                    // list cannot close out of order.
+                    if closes_angle(text, start[ix])
+                        && let Some(pos) = candidates
+                            .iter()
+                            .rposition(|(_, candidate_depth)| *candidate_depth == depth)
+                    {
+                        let (open_ix, _) = candidates[pos];
+                        candidates.truncate(pos);
+                        paren_match[open_ix] = Some(ix);
+                        paren_match[ix] = Some(open_ix);
+                    }
+                } else if token.contains(&b';') {
+                    // The statement the `<` was in has ended without it.
+                    // Only at its own depth: the `;` of `Vec<[u8; 4]>` is
+                    // inside the brackets of an array type.
+                    candidates.retain(|(_, candidate_depth)| *candidate_depth < depth);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// A `<` that opens a generic argument list rather than comparing: tight
+/// against the name or the `::` in front of it, and not the first byte of
+/// `<<` or `<=`.
+fn opens_angle(text: &BStr, pos: usize) -> bool {
+    let before = pos.checked_sub(1).map(|ix| text[ix]);
+    before.is_some_and(|byte| is_identifier_continue(byte) || byte == b':')
+        && !matches!(
+            text.get(pos + 1),
+            None | Some(b'<' | b'=' | b' ' | b'\t' | b'\n')
+        )
+}
+
+/// A `>` that closes one: tight against something a type can end with -
+/// a name, `)`, `]`, or the `>` of the list inside this one - and not the
+/// first byte of `>=`. The `>` of `->` and of `=>` fails the first test,
+/// which is what keeps a return type from closing a list.
+fn closes_angle(text: &BStr, pos: usize) -> bool {
+    let before = pos.checked_sub(1).map(|ix| text[ix]);
+    before.is_some_and(|byte| is_identifier_continue(byte) || matches!(byte, b')' | b']' | b'>'))
+        && text.get(pos + 1) != Some(&b'=')
 }
 
 /// The offset the line holding `offset` starts at.
@@ -1021,5 +1230,153 @@ pub(crate) fn bracket(byte: u8) -> Option<TokenKind> {
         b']' => Some(TokenKind::Close(Bracket::Square)),
         b'}' => Some(TokenKind::Close(Bracket::Curly)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Which `<` and `>` were read as brackets, marked under the line
+    /// they are on.
+    fn angle_marks(source: &str) -> String {
+        let text = BStr::new(source.as_bytes());
+        let tokens = Tokens::new(Language::Rust, text);
+        let paired: Vec<usize> = (0..tokens.len())
+            .filter(|ix| {
+                tokens.kind[*ix] == TokenKind::Punctuation && tokens.paren_match[*ix].is_some()
+            })
+            .map(|ix| tokens.start[ix])
+            .collect();
+        let mut out = String::new();
+        let mut line_start = 0;
+        for line in source.lines() {
+            let marks: String = (0..line.len())
+                .map(|col| {
+                    if paired.contains(&(line_start + col)) {
+                        line.as_bytes()[col] as char
+                    } else {
+                        ' '
+                    }
+                })
+                .collect();
+            out.push_str(line);
+            out.push('\n');
+            out.push_str(marks.trim_end());
+            out.push('\n');
+            line_start += line.len() + 1;
+        }
+        out
+    }
+
+    /// Rust's `<` and `>` are brackets when they hold a generic argument
+    /// list and comparisons the rest of the time, told apart by how they
+    /// are written rather than by what the names in them mean. Two lines
+    /// here are the guess going wrong, and both are lines rustfmt would
+    /// not leave as they are: `a<b && c>d` reads as a generic argument
+    /// list because a comparison is normally spaced, and `<T as Trait>`
+    /// is missed because nothing precedes its `<` to hold it to.
+    #[test]
+    fn angle_brackets_pair_when_they_are_written_like_brackets() {
+        assert_eq!(angle_marks(ANGLE_SAMPLE), ANGLE_MARKS);
+    }
+
+    const ANGLE_SAMPLE: &str = "\
+let v: Vec<HashMap<K, V>> = Vec::new();
+let spaced = a < b && c > d;
+let tight = a<b && c>d;
+foo::<T>();
+if x<y { g(); }
+fn f<T: Into<U>>(t: T) -> Result<T, E> { h::<u8>() }
+let s = Foo::<'a, T>::new();
+let shifted = a << 2 >> 1;
+let cmp = a <= b >= c;
+let arr: Vec<[u8; 4]> = vec![];
+let q = <T as Trait>::f();
+let f: Box<dyn Fn(i32) -> i32> = todo!();
+";
+
+    const ANGLE_MARKS: &str = "\
+let v: Vec<HashMap<K, V>> = Vec::new();
+          <       <    >>
+let spaced = a < b && c > d;
+
+let tight = a<b && c>d;
+             <      >
+foo::<T>();
+     < >
+if x<y { g(); }
+
+fn f<T: Into<U>>(t: T) -> Result<T, E> { h::<u8>() }
+    <       < >>                <    >      <  >
+let s = Foo::<'a, T>::new();
+             <     >
+let shifted = a << 2 >> 1;
+
+let cmp = a <= b >= c;
+
+let arr: Vec<[u8; 4]> = vec![];
+            <       >
+let q = <T as Trait>::f();
+
+let f: Box<dyn Fn(i32) -> i32> = todo!();
+          <                  >
+";
+
+    /// Whatever the text and wherever the cursor, the pair around it is
+    /// either nothing or two ends of the text the cursor is between.
+    /// Driven over every offset of each sample, including the offsets
+    /// inside a quote and between two bytes of one token.
+    #[test]
+    fn the_pair_around_the_cursor_is_around_the_cursor() {
+        let samples: &[(Language, &str)] = &[
+            (Language::Rust, "fn f() { g(x[1], \"s\") }"),
+            // Brackets that pair with nothing, in every arrangement.
+            (Language::Rust, "((()"),
+            (Language::Rust, ")))("),
+            (Language::Rust, "(]"),
+            (Language::Rust, "([)]"),
+            // Quotes of every length, terminated and not.
+            (Language::Rust, "let s = r##\"a\"#b\"##;"),
+            (Language::Rust, "let s = \"unterminated"),
+            (Language::Rust, "let c = b'x'; let l = 'a; let e = '"),
+            (Language::Python, "x = f\"\"\"a{b}c\"\"\" + 'y'"),
+            (Language::Python, "x = \"\"\"unterminated"),
+            // Words as brackets, and a `)` that closes nothing.
+            (Language::Nix, "let x = { y = [ 1 ]; }; in x"),
+            (Language::Shell, "case $x in\n  a) f;;\n  b) g;;\nesac"),
+            // The brackets left open inside one that closed.
+            (Language::Rust, "vec![0u8; (w * [ h) as usize];"),
+            (Language::Rust, "fn f() { g(x; }"),
+            // Angle brackets, which pair up without being brackets.
+            (Language::Rust, ANGLE_SAMPLE),
+            (Language::Rust, "a<b<c<d"),
+            (Language::Rust, "a>b>c>d"),
+            (Language::Rust, "Vec<T>"),
+            // Nothing to find at all.
+            (Language::Rust, ""),
+            (Language::Rust, "plain words"),
+        ];
+        for (language, text) in samples {
+            let text = BStr::new(text.as_bytes());
+            let tokens = Tokens::new(*language, text);
+            for offset in 0..=text.len() {
+                let Some(Pair { open, close }) = tokens.enclosing_pair(offset) else {
+                    continue;
+                };
+                // Two ends, in order, with the cursor between them - or
+                // partway along one of them, since `r##"` is four bytes
+                // the cursor can be inside.
+                assert!(
+                    open.start < open.end
+                        && open.end <= close.start
+                        && close.start < close.end
+                        && close.end <= text.len()
+                        && open.start <= offset
+                        && offset <= close.end,
+                    "{text:?} at {offset}: {open:?} and {close:?}"
+                );
+            }
+        }
     }
 }

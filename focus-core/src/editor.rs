@@ -12,8 +12,8 @@ use crate::{
     drawing::{Drawing, Rect},
     map::Map,
     style::{
-        HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, TEXT_COLOR, VCS_ADDED_COLOR, VCS_DELETED_COLOR,
-        VCS_MODIFIED_COLOR,
+        HIGHLIGHT_COLOR, MULTI_CURSOR_COLOR, PAREN_MATCH_COLOR, TEXT_COLOR, VCS_ADDED_COLOR,
+        VCS_DELETED_COLOR, VCS_MODIFIED_COLOR,
     },
 };
 
@@ -723,10 +723,23 @@ impl EditorId {
             // line of source - so `runs` is built once and reused down the
             // screen rather than allocated per line.
             {
+                // The two ends of whatever the cursor is inside are drawn
+                // in place of the colour the tokenizer gave them. Only
+                // the main cursor: several cursors sitting in several
+                // pairs is more than the eye can read, and the main one
+                // is the cursor the view follows.
+                let pair = focused
+                    .then(|| buffer_id.enclosing_pair(app, cursors.last().unwrap().head.offset))
+                    .flatten();
                 let mut runs = Vec::new();
                 for line_idx in line_first..line_after {
                     let [start, end] = wraps[line_idx];
                     buffer_id.color_runs(app, start..end, &mut runs);
+                    if let Some(pair) = &pair {
+                        for range in [&pair.open, &pair.close] {
+                            recolor_runs(&mut runs, range, PAREN_MATCH_COLOR);
+                        }
+                    }
                     for (range, color) in &runs {
                         let mut screen = app.screen_from_grid([range.start - start, line_idx]);
                         screen[1] += translate_y;
@@ -1556,6 +1569,28 @@ impl CursorPoint {
 /// How many spaces a line leads with.
 fn indent_width(line: &BStr) -> usize {
     line.iter().take_while(|byte| **byte == b' ').count()
+}
+
+/// Recolour the part of `runs` that `range` covers, splitting the runs it
+/// lands in the middle of. Runs stay in order, non-overlapping and
+/// covering the same text, which is what drawing them expects. Only ever
+/// called for the line or two the pair around the cursor is on, so the
+/// insert in the middle of a line's runs costs nothing worth saving.
+fn recolor_runs(runs: &mut Vec<(Range<usize>, [u8; 4])>, range: &Range<usize>, color: [u8; 4]) {
+    for ix in (0..runs.len()).rev() {
+        let (run, run_color) = runs[ix].clone();
+        let covered = run.start.max(range.start)..run.end.min(range.end);
+        if covered.start >= covered.end {
+            continue;
+        }
+        runs[ix] = (covered.clone(), color);
+        if covered.end < run.end {
+            runs.insert(ix + 1, (covered.end..run.end, run_color));
+        }
+        if run.start < covered.start {
+            runs.insert(ix, (run.start..covered.start, run_color));
+        }
+    }
 }
 
 fn wraps_from_text(text: &BStr, wrap_chars: usize) -> Vec<[usize; 2]> {

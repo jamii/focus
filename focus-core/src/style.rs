@@ -10,7 +10,18 @@ pub const MULTI_CURSOR_COLOR: [u8; 4] = hsla(150.0, 1.0, 0.5, 1.0);
 pub const VCS_ADDED_COLOR: [u8; 4] = hsla(120.0, 1.0, 0.5, 1.0);
 pub const VCS_MODIFIED_COLOR: [u8; 4] = hsla(210.0, 1.0, 0.5, 1.0);
 pub const VCS_DELETED_COLOR: [u8; 4] = hsla(0.0, 1.0, 0.5, 1.0);
-// pub const PAREN_MATCH_COLOR: [u8; 4] = hsla(150.0, 1.0, 0.5, 0.3);
+// A token with nothing to pair with: a bracket that never closed, a
+// string or a comment with no end, a byte that is not anything. What is
+// wrong with it has nothing to do with where the cursor is, so this does
+// not change when the cursor moves.
+pub const UNMATCHED_COLOR: [u8; 4] = hsla(0.0, 1.0, 0.8, 1.0);
+
+// The pair of tokens around the cursor - brackets, or the quotes of the
+// string it is in - drawn in place of the colour they would have had.
+// Both of these are the saturation and lightness the names are drawn at,
+// so that they read as two more colours of the same palette rather than
+// as emphasis over the top of it.
+pub const PAREN_MATCH_COLOR: [u8; 4] = hsla(120.0, 1.0, 0.8, 1.0);
 
 // Where control leaves: a `return` that ends a function, a `break` that
 // leaves a loop, a `?` that leaves with an error. Saturated, because the

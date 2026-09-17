@@ -17,7 +17,7 @@ pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind {
     }
     // `$'...'` takes escapes where a plain `'...'` does not.
     if lexer.eat_str(b"$'") {
-        return lexer.eat_quoted(b'\'');
+        return lexer.eat_quoted(b'\'', 2);
     }
 
     let start = lexer.pos;
@@ -31,12 +31,18 @@ pub(super) fn next_token(lexer: &mut Lexer) -> TokenKind {
         b'\'' => {
             lexer.eat_while(|byte| byte != b'\'');
             if lexer.bump().is_none() {
-                return TokenKind::Error;
+                return TokenKind::String {
+                    open: 1,
+                    close: None,
+                };
             }
-            TokenKind::String
+            TokenKind::String {
+                open: 1,
+                close: Some(1),
+            }
         }
-        b'"' => lexer.eat_quoted(b'"'),
-        b'`' => lexer.eat_quoted(b'`'),
+        b'"' => lexer.eat_quoted(b'"', 1),
+        b'`' => lexer.eat_quoted(b'`', 1),
         byte if byte.is_ascii_whitespace() => {
             lexer.eat_while(|byte| byte.is_ascii_whitespace());
             TokenKind::Whitespace
