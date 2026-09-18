@@ -41,6 +41,15 @@ nixfmt_rs = { version = "0.5", default-features = false, optional = true }
 # out of.
 ruff_python_formatter = { version = "0.0.14", optional = true }
 similar = { version = "3", features = ["bytes"] }
+# Dates, for the markdown key that writes today's as a heading: the type
+# the IO layer hands over and the formatting that turns it into
+# `2026 Sep 17`. No `local-offset` - which timezone the machine is in is
+# the backend's to answer, and time's own `now_local` refuses to answer it
+# from a process with threads in it.
+time = { version = "0.3.55", default-features = false, features = [
+    "formatting",
+    "macros",
+] }
 
 [dev-dependencies]
 syn = { version = "3", features = ["full"] }

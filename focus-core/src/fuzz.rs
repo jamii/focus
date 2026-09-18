@@ -13,6 +13,8 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::{BStr, BString, ByteSlice};
+use time::Date;
+use time::macros::date;
 
 use crate::app::{
     App, DirEntry, IO, ProcessId, ProcessPoll, RepoFiles, RepoMatch, RepoSearch, VcsChange,
@@ -50,6 +52,9 @@ pub struct MockIO {
     pub vcs_checkout_pending: bool,
     pub vcs_checkout_error: Option<String>,
     pub system_time: SystemTime,
+    /// What `local_date` gives back. Scripted, like everything else here,
+    /// so that a test that inserts the date knows what it will get.
+    pub local_date: Date,
     pub next_process_output: Vec<u8>,
     pub next_process_exit_code: Option<i32>,
     pub processes: Vec<MockProcess>,
@@ -113,6 +118,7 @@ impl MockIO {
             vcs_checkout_pending: false,
             vcs_checkout_error: None,
             system_time: SystemTime::UNIX_EPOCH,
+            local_date: date!(1970 - 01 - 01),
             next_process_output: Vec::new(),
             next_process_exit_code: None,
             processes: Vec::new(),
@@ -207,6 +213,10 @@ impl IO for MockIO {
             self.files.insert(path.to_path_buf(), (Vec::new(), mtime));
         }
         Ok(())
+    }
+
+    fn local_date(&mut self) -> Date {
+        self.local_date
     }
 
     // The mock filesystem is a synthetic tree rooted at "/", so that is

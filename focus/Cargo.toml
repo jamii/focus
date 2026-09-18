@@ -24,6 +24,8 @@ jj-lib = "=0.45.1"
 futures = "0.3"
 # Runs jj-lib's async API on this thread, so async stays at the boundary.
 pollster = "1"
+# The date type focus-core asks for, built here out of localtime_r.
+time = { version = "0.3.55", default-features = false }
 
 [dev-dependencies]
 png = "0.17"

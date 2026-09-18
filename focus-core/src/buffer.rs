@@ -307,6 +307,13 @@ impl BufferId {
         }
     }
 
+    /// The language this buffer is in, for the keys that only one
+    /// language has: ctrl+3 writes the date as a heading in markdown.
+    /// None for a buffer whose colours do not come from a language.
+    pub(crate) fn language(self, app: &App) -> Option<Language> {
+        app.buffers.highlight[self].language()
+    }
+
     /// How the buffer's language starts a line comment. None for a
     /// buffer with no language, and for a language that has no such
     /// comment: there is nothing to comment it with.

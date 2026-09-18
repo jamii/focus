@@ -213,6 +213,7 @@ pub trait IO {
         limit: usize,
     ) -> std::io::Result<Vec<u8>>;
     fn file_create(&mut self, path: &Path) -> std::io::Result<()>;
+    fn local_date(&mut self) -> Date;
     fn home_dir(&mut self) -> PathBuf;
     fn canonical_path(&mut self, path: &Path) -> PathBuf;
     fn dir_list(&mut self, path: &Path) -> std::io::Result<Vec<DirEntry>>;
@@ -482,6 +483,7 @@ pub struct MockIO {
     pub vcs_checkout_pending: bool,
     pub vcs_checkout_error: Option<String>,
     pub system_time: SystemTime,
+    pub local_date: Date,
     pub next_process_output: Vec<u8>,
     pub next_process_exit_code: Option<i32>,
     pub processes: Vec<MockProcess>,

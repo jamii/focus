@@ -9,16 +9,16 @@
 #   UPDATE_REACHABLE_IO=1 cargo test -p focus-core --test reachable_io
 
 random_hash_seed:
-- focus-core | focus-core/src/fuzz.rs:107:20
+- focus-core | focus-core/src/fuzz.rs:112:20
   focus_core::fuzz::MockIO::new
   -> std::collections::hash::map::HashMap<…>::new<…>
-- focus-core | focus-core/src/fuzz.rs:109:26
+- focus-core | focus-core/src/fuzz.rs:114:26
   focus_core::fuzz::MockIO::new
   -> std::collections::hash::map::HashMap<…>::new<…>
-- focus-core | focus-core/src/fuzz.rs:110:27
+- focus-core | focus-core/src/fuzz.rs:115:27
   focus_core::fuzz::MockIO::new
   -> std::collections::hash::map::HashMap<…>::new<…>
-- focus-core | focus-core/src/fuzz.rs:111:28
+- focus-core | focus-core/src/fuzz.rs:116:28
   focus_core::fuzz::MockIO::new
   -> std::collections::hash::map::HashMap<…>::new<…>
 - focus-core | focus-core/src/page/choose_command.rs:318:38

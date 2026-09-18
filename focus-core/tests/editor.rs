@@ -4,6 +4,7 @@ use focus_core::fuzz::MockIO;
 use focus_core::input::{ButtonState, Key, ModifiersState, NamedKey, ScrollPhase};
 use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
 use focus_core::window::WindowId;
+use time::macros::date;
 
 mod common;
 
@@ -1449,5 +1450,33 @@ fn enter_indents_at_the_cursor_after_it_has_been_moved() {
     common::text_input(&mut app, &mut io, window_id, "x");
 
     assert_eq!(common::text(&app), "fn f() {\n\n    x");
+    app.assert_invariants();
+}
+
+// Ctrl+3 writes the day's heading - the key that carries `#`, writing a
+// `#`. Markdown only: in any other language 3 is a digit and the key does
+// nothing, so it stays free for that language to use.
+#[test]
+fn ctrl_3_inserts_todays_date_as_a_markdown_heading() {
+    let (mut app, mut io, window_id) =
+        common::file_app(std::path::PathBuf::from("/repo/notes.md"), "");
+    common::tick(&mut app, &mut io);
+
+    io.local_date = date!(2026 - 09 - 17);
+    common::control_key(&mut app, &mut io, window_id, Key::Character("3"));
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    // A single-digit day is padded, so the headings line up.
+    io.local_date = date!(2026 - 10 - 07);
+    common::control_key(&mut app, &mut io, window_id, Key::Character("3"));
+
+    assert_eq!(common::text(&app), "# 2026 Sep 17\n# 2026 Oct 07");
+    app.assert_invariants();
+}
+
+#[test]
+fn ctrl_3_does_nothing_outside_markdown() {
+    let (mut app, mut io, window_id) = rust_app("");
+    common::control_key(&mut app, &mut io, window_id, Key::Character("3"));
+    assert_eq!(common::text(&app), "");
     app.assert_invariants();
 }

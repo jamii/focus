@@ -156,6 +156,10 @@ impl IO for ErrorIO {
         self.inner.canonical_path(path)
     }
 
+    fn local_date(&mut self) -> time::Date {
+        self.inner.local_date()
+    }
+
     fn home_dir(&mut self) -> PathBuf {
         self.inner.home_dir()
     }

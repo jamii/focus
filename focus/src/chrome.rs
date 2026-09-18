@@ -20,6 +20,7 @@ use glutin::prelude::*;
 use glutin::surface::{Surface, SwapInterval, WindowSurface};
 use glutin_winit::{DisplayBuilder, GlWindow};
 use raw_window_handle::HasWindowHandle;
+use time::{Date, Month};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{StartCause, TouchPhase, WindowEvent};
@@ -365,6 +366,19 @@ impl IO for IoReal<'_> {
     fn vcs_file_status(&mut self, path: &Path) -> Option<VcsFileStatus> {
         let root = repo_root(path.parent()?);
         self.backend.vcs.file_status(&root, path)
+    }
+
+    // localtime_r reads /etc/localtime and $TZ, so this is the date in
+    // the timezone the machine is set to, not UTC. time's own
+    // `now_local` is no use here: on unix it refuses to work out the
+    // offset from a process that has threads, and this one has several.
+    fn local_date(&mut self) -> Date {
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        let now = unsafe { libc::time(std::ptr::null_mut()) };
+        unsafe { libc::localtime_r(&now, &mut tm) };
+        let month = Month::try_from(tm.tm_mon as u8 + 1).expect("localtime_r gives month 0..=11");
+        Date::from_calendar_date(tm.tm_year + 1900, month, tm.tm_mday as u8)
+            .expect("localtime_r gives a real date")
     }
 
     fn home_dir(&mut self) -> PathBuf {

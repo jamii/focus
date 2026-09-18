@@ -194,8 +194,24 @@ allow_unsafe = true
 [pkg.regex-automata]
 allow_unsafe = true
 
+[pkg.powerfmt]
+allow_unsafe = true
+
+[pkg.deranged]
+allow_unsafe = true
+
+[pkg.time]
+allow_unsafe = true
+
 # bstr exposes an optional serde feature. Cackle validates the package graph,
 # including optional proc-macro dependencies, even though this fixture doesn't
 # enable that feature.
 [pkg.serde_derive]
 allow_proc_macro = true
+
+# `date!` and `format_description!` are proc macros: they turn a date and a
+# format written in the source into constants, at compile time, and so are
+# not reachable from the running program at all.
+[pkg.time-macros]
+allow_proc_macro = true
+allow_unsafe = true

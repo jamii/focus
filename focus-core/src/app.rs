@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use bstr::{BStr, BString};
+use time::Date;
 
 use crate::buffer::{self, Buffers};
 use crate::drawing::Drawing;
@@ -82,6 +83,10 @@ pub trait IO {
     /// Create the file, and any missing parent dirs, if it does not already
     /// exist. Does not truncate an existing file.
     fn file_create(&mut self, path: &Path) -> std::io::Result<()>;
+
+    /// Today's date where the user is. Ambient, like the clock, so it
+    /// comes through here rather than being read in the editor.
+    fn local_date(&mut self) -> Date;
 
     fn home_dir(&mut self) -> PathBuf;
     /// Resolve `path` to the one name the filesystem knows the file by:

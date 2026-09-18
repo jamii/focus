@@ -3,8 +3,12 @@ use std::ops::Range;
 use std::time::Duration;
 
 use bstr::{BStr, BString, ByteSlice};
+use time::Date;
+use time::format_description::BorrowedFormatItem;
+use time::macros::format_description;
 
 use crate::input::{ButtonState, InputEvent, Key, NamedKey, ScrollPhase};
+use crate::language::Language;
 use crate::style::BACKGROUND_COLOR;
 use crate::{
     app::{App, IO, VcsChangeKind, VcsFileStatus},
@@ -437,6 +441,13 @@ impl EditorId {
                     Key::Character("s") if editable => {
                         let buffer_id = app.editors.buffer_id[self];
                         buffer_id.save(app, io, SaveKind::Explicit);
+                    }
+                    Key::Character("3")
+                        if editable
+                            && app.editors.buffer_id[self].language(app)
+                                == Some(Language::Markdown) =>
+                    {
+                        self.cursor_insert_date(app, io)
                     }
                     Key::Character("/") if editable => self.cursor_comment(app),
                     Key::Character("?") if editable => self.cursor_uncomment(app),
@@ -1370,6 +1381,14 @@ impl EditorId {
         self.cursor_replace(app, "".into());
     }
 
+    /// Ctrl+3 in markdown: today's date as a heading - `# 2026 Sep 17` -
+    /// at the cursor. On the key that carries `#` because that is what it
+    /// writes: it is the line a day's notes start with.
+    fn cursor_insert_date(self, app: &mut App, io: &mut dyn IO) {
+        let heading = format!("# {}", format_date(io.local_date()));
+        self.cursor_replace(app, heading.as_str().into());
+    }
+
     fn cursor_paste(self, app: &mut App, io: &mut dyn IO) {
         let Some(text) = io.get_clipboard_text() else {
             return;
@@ -1706,6 +1725,15 @@ impl CursorPoint {
             col_wanted: None,
         }
     }
+}
+
+/// `2026 Sep 17`: year first so that a list of dates sorts, and the month
+/// named so there is no guessing which of the numbers it is.
+fn format_date(date: Date) -> String {
+    const FORMAT: &[BorrowedFormatItem<'_>] =
+        format_description!("[year] [month repr:short] [day]");
+    date.format(FORMAT)
+        .expect("a date formats into a String without failing")
 }
 
 /// How many spaces a line leads with.

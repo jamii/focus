@@ -114,6 +114,7 @@ impl BufferId {
     pub(crate) fn indent_is_determined(self, app: &App) -> bool;
     pub(crate) fn inside_multiline_token(self, app: &App, offset: usize) -> bool;
     pub(crate) fn enclosing_pair(self, app: &App, offset: usize) -> Option<Pair>;
+    pub(crate) fn language(self, app: &App) -> Option<Language>;
     pub(crate) fn line_comment(self, app: &App) -> Option<&'static str>;
     pub(crate) fn leads_with_indent_marker(
         self,
