@@ -52,6 +52,12 @@ fn parse_args_snapshot() {
         ("/home/j", &["--daemon", "--no-wait"]),
         ("/home/j", &["--replace", "notes.txt"]),
         ("/home/j", &["--foreground", "--launcher"]),
+        // --foreground has no daemon to replace, wait for or quit.
+        ("/home/j", &["--foreground", "--no-wait"]),
+        ("/home/j", &["--foreground", "--quit"]),
+        // --foreground implies --replace: it cannot be the daemon while
+        // another one holds the socket.
+        ("/home/j", &["--foreground"]),
         ("/home/j", &["--daemon"]),
         ("/home/j", &["--daemon", "--replace"]),
         ("/home/j", &["--daemon", "notes.txt"]),
@@ -496,6 +502,10 @@ fn waiting_blocks_until_the_daemon_closes_the_connection() {
     // The reply has already been read, so without waiting the client
     // would be free to exit here.
     assert!(!closed.load(Ordering::SeqCst));
+    // And nothing is going to cut the wait short. The handshake reads
+    // under a deadline, and a deadline left on this connection would end
+    // the wait on its own, with the window still open.
+    assert_eq!(connection.read_timeout().unwrap(), None);
 
     wait_for_close(connection);
 
@@ -575,10 +585,21 @@ fn a_child_of_the_daemon_does_not_inherit_the_listening_socket() {
     assert_eq!(unsafe { libc::fstat(fd, &mut stat) }, 0);
     let socket_fd = format!("socket:[{}]", stat.st_ino);
 
-    // `spawn` returns once the child has exec'd - std waits on a pipe
-    // that closes then - so this is the fd table of `sleep` rather than
-    // of the fork that is about to become it.
+    // Close-on-exec closes on exec, and `spawn` can return before the
+    // child gets that far - it is a copy of this process until then, and
+    // a copy holds everything. Its name is what changes at the exec, so
+    // wait for that before reading what it is left holding.
     let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+    let comm = format!("/proc/{}/comm", child.id());
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::fs::read_to_string(&comm).unwrap_or_default().trim() != "sleep" {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the child never exec'd"
+        );
+        thread::sleep(Duration::from_millis(1));
+    }
+
     let held: Vec<PathBuf> = std::fs::read_dir(format!("/proc/{}/fd", child.id()))
         .unwrap()
         .filter_map(|entry| std::fs::read_link(entry.unwrap().path()).ok())

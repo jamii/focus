@@ -80,8 +80,15 @@ pub struct Cli {
     pub request: Request,
     /// Quit the running daemon, if any, before starting a new one.
     pub replace: bool,
-    /// Run the daemon in this process rather than detaching one, and apply
-    /// the request directly. For debugging and profiling.
+    /// Open this request in a window of this process, and nothing else:
+    /// no socket, no daemon, nothing to connect to. For debugging and
+    /// profiling, where the point is to have the thing in the terminal
+    /// that started it, under whatever is watching it.
+    ///
+    /// A daemon already running is left entirely alone - its windows stay
+    /// open and it keeps the socket - and this process never becomes one:
+    /// the next `focus` starts or reaches a daemon as though this were
+    /// not here.
     pub foreground: bool,
     /// Internal: this process *is* the freshly spawned daemon, and takes
     /// its listener from `FOCUS_LISTEN_FD`.
@@ -145,6 +152,16 @@ pub fn parse_args(args: &[OsString], cwd: &Path) -> Result<Cli, String> {
     }
     if cli.daemon && (cli.replace || cli.foreground || cli.no_wait || request_arg.is_some()) {
         return Err("--daemon takes no other arguments".to_string());
+    }
+    // `--foreground` never talks to a daemon, so the flags that are
+    // about one have nothing to act on. Saying so beats quietly ignoring
+    // them, which is what made the flag confusing in the first place.
+    if cli.foreground && (cli.replace || cli.no_wait || cli.request == Request::Quit) {
+        return Err(
+            "--foreground runs on its own: there is no daemon for --replace, --no-wait \
+             or --quit to act on"
+                .to_string(),
+        );
     }
     Ok(cli)
 }
@@ -294,7 +311,14 @@ fn send_request(stream: &mut UnixStream, request: &Request) -> std::io::Result<b
     // way of learning the daemon is gone, and the caller starts a new one
     // over the top.
     stream.set_read_timeout(Some(REPLY_TIMEOUT))?;
-    match write_request(stream, request).and_then(|()| read_reply(stream)) {
+    let handshake = write_request(stream, request).and_then(|()| read_reply(stream));
+    // The deadline was for the handshake. What the caller does with this
+    // connection next is hold it open until the window closes, which is
+    // as long as somebody leaves it open for - `focus` is `$EDITOR`, and
+    // an editor that returns while the file is still open is worse than
+    // one that hangs.
+    stream.set_read_timeout(None)?;
+    match handshake {
         Ok(()) => Ok(true),
         Err(error)
             if matches!(
@@ -395,7 +419,10 @@ pub fn listener_from_fd(fd: RawFd) -> std::io::Result<UnixListener> {
 /// wait for it by reading to EOF.
 pub struct Incoming {
     pub request: Request,
-    pub connection: UnixStream,
+    /// The client waiting on this request, if there is one. None for a
+    /// request made in this process by `--foreground`, which has no
+    /// client and no socket behind it.
+    pub connection: Option<UnixStream>,
 }
 
 /// Serve requests off `listener` forever, handing each to `sink`.
@@ -429,7 +456,7 @@ pub fn serve(listener: UnixListener, sink: impl Fn(Incoming) + Send + 'static) {
                     let _ = stream.write_all(REPLY_OK);
                     sink(Incoming {
                         request,
-                        connection: stream,
+                        connection: Some(stream),
                     });
                 }
                 Err(message) => {

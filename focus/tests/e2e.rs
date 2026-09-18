@@ -114,33 +114,55 @@ fn daemon_lifecycle() {
 // The dev loop: `--foreground` makes *this* process the daemon, so it can
 // be run under a debugger or profiler and killed to restart.
 #[test]
-fn foreground_runs_the_daemon_in_the_client_process() {
+fn foreground_runs_on_its_own_without_a_daemon() {
     if !sway_available() {
         eprintln!("skipping: sway is not on PATH");
         return;
     }
     let sway = Sway::start_named("foreground");
 
+    // A daemon first, so that there is something for the foreground
+    // process to leave alone.
+    sway.focus(&["--no-wait", "a.txt"]);
+    assert!(sway.wait_for_windows(1));
+    let daemon = sway.daemon_pid().expect("a daemon should be running");
+
     let mut foreground = Command::new(FOCUS)
-        .args(["--foreground", "a.txt"])
+        .args(["--foreground", "b.txt"])
         .current_dir(&sway.dir)
         .envs(sway.env())
         .spawn()
         .unwrap();
 
-    assert!(sway.wait_for_windows(1));
-    // No detached daemon: the window belongs to the process we started.
-    assert!(sway.daemon_pids().is_empty());
+    // Its own window out of its own process: no second daemon, and the
+    // first one untouched.
+    assert!(
+        sway.wait_for_windows(2),
+        "no foreground window appeared; daemon log:\n{}",
+        sway.log()
+    );
+    assert_eq!(sway.daemon_pid(), Some(daemon));
     assert!(
         foreground.try_wait().unwrap().is_none(),
         "it should still be running"
     );
 
-    // And --replace evicts it, exactly as it evicts a detached one.
-    sway.focus(&["--replace", "--quit"]);
+    // And nothing can reach it: quitting the daemon takes the daemon's
+    // window and leaves this one where it is.
+    sway.focus(&["--quit"]);
+    assert!(sway.wait_for_windows(1));
+    assert!(
+        foreground.try_wait().unwrap().is_none(),
+        "--quit stopped a process that is not a daemon"
+    );
+
+    // Closing its window ends it, though: with nothing listening for a
+    // request that could open another, there is nothing left for it to
+    // do. A daemon in the same state waits for the next client.
+    sway.swaymsg(&["[app_id=\"focus-debug\"] kill"]);
     assert!(
         sway.wait_for(|| foreground.try_wait().unwrap().is_some()),
-        "--replace did not stop the foreground daemon"
+        "the foreground process outlived its last window"
     );
 }
 

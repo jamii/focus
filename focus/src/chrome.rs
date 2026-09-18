@@ -64,9 +64,30 @@ pub fn run(listener: UnixListener) {
         // there is nothing left to deliver to.
         let _ = proxy.send_event(incoming);
     });
+    run_loop(event_loop, Vec::new(), false);
+}
+
+/// Run `request` in a window of this process, serving nothing: there is
+/// no listener, so nothing can reach this process and it is not a daemon.
+/// A daemon already running keeps its socket and its windows.
+pub fn run_foreground(request: Request) {
+    let event_loop = EventLoop::<Incoming>::with_user_event().build().unwrap();
+    event_loop.set_control_flow(ControlFlow::Wait);
+    run_loop(
+        event_loop,
+        vec![Incoming {
+            request,
+            connection: None,
+        }],
+        true,
+    );
+}
+
+fn run_loop(event_loop: EventLoop<Incoming>, pending: Vec<Incoming>, foreground: bool) {
     let mut chrome = Chrome::Init(Init {
         resumed: false,
-        pending: Vec::new(),
+        pending,
+        foreground,
     });
     event_loop.run_app(&mut chrome).unwrap();
 }
@@ -83,6 +104,9 @@ enum Chrome {
 struct Init {
     resumed: bool,
     pending: Vec<Incoming>,
+    /// Nothing is being served, so no request will ever arrive: when the
+    /// last window closes there is nothing left to wait for.
+    foreground: bool,
 }
 
 struct Running {
@@ -90,6 +114,7 @@ struct Running {
     backend: Backend,
     first_frame: Instant,
     last_frame: Instant,
+    foreground: bool,
 }
 
 struct WindowState {
@@ -573,6 +598,7 @@ impl Chrome {
             backend,
             first_frame: now,
             last_frame: now,
+            foreground: init.foreground,
         };
         for incoming in pending {
             running.request(event_loop, incoming);
@@ -611,8 +637,11 @@ impl Running {
         };
         // Hold the connection until that window closes: dropping it is
         // how a waiting client learns it is done. A quit has no window,
-        // so its client is released as the daemon goes down.
-        if let Some(window_id) = window_id {
+        // so its client is released as the daemon goes down - and a
+        // `--foreground` request has no client to release at all.
+        if let Some(window_id) = window_id
+            && let Some(connection) = connection
+        {
             self.backend.waiting.insert(window_id, connection);
         }
     }
@@ -657,10 +686,17 @@ impl Running {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // A daemon whose windows are all closed has nothing to tick,
-        // draw or animate: idle until a request wakes it, rather than
-        // spinning at the frame rate for as long as it lives.
         if self.backend.windows.is_empty() {
+            // Nothing is listening for a request that could open another
+            // window, so there is nothing left to do at all. A daemon
+            // would wait here; this has no way of ever being woken.
+            if self.foreground {
+                event_loop.exit();
+                return;
+            }
+            // A daemon whose windows are all closed has nothing to tick,
+            // draw or animate: idle until a request wakes it, rather than
+            // spinning at the frame rate for as long as it lives.
             event_loop.set_control_flow(ControlFlow::Wait);
             return;
         }

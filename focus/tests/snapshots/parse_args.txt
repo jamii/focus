@@ -15,7 +15,7 @@
 /home/j $ focus --replace
   Ok(Cli { request: Scratch, replace: true, foreground: false, daemon: false, no_wait: false })
 /home/j $ focus --replace --foreground
-  Ok(Cli { request: Scratch, replace: true, foreground: true, daemon: false, no_wait: false })
+  Err("--foreground runs on its own: there is no daemon for --replace, --no-wait or --quit to act on")
 /home/j $ focus --no-wait
   Ok(Cli { request: Scratch, replace: false, foreground: false, daemon: false, no_wait: true })
 /home/j $ focus --no-wait notes.txt
@@ -26,6 +26,12 @@
   Ok(Cli { request: File("/home/j/notes.txt"), replace: true, foreground: false, daemon: false, no_wait: false })
 /home/j $ focus --foreground --launcher
   Ok(Cli { request: Launcher, replace: false, foreground: true, daemon: false, no_wait: false })
+/home/j $ focus --foreground --no-wait
+  Err("--foreground runs on its own: there is no daemon for --replace, --no-wait or --quit to act on")
+/home/j $ focus --foreground --quit
+  Err("--foreground runs on its own: there is no daemon for --replace, --no-wait or --quit to act on")
+/home/j $ focus --foreground
+  Ok(Cli { request: Scratch, replace: false, foreground: true, daemon: false, no_wait: false })
 /home/j $ focus --daemon
   Ok(Cli { request: Scratch, replace: false, foreground: false, daemon: true, no_wait: false })
 /home/j $ focus --daemon --replace

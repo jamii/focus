@@ -26,6 +26,14 @@ fn main() -> ExitCode {
         };
     }
 
+    // Before any of the daemon machinery: this process opens a window of
+    // its own and never touches the socket, so whatever is running stays
+    // running and nothing can reach this.
+    if cli.foreground {
+        focus::chrome::run_foreground(cli.request);
+        return ExitCode::SUCCESS;
+    }
+
     match daemon::connect_or_start(&daemon::runtime_dir(), &cli) {
         Ok(Started::NothingToDo) => ExitCode::SUCCESS,
         // A daemon was already running and has the request.
@@ -34,13 +42,6 @@ fn main() -> ExitCode {
             listener,
             connection,
         }) => {
-            if cli.foreground {
-                // This process is the daemon, so there is nothing to wait
-                // for and nobody to read our end of the request.
-                drop(connection);
-                focus::chrome::run(listener);
-                return ExitCode::SUCCESS;
-            }
             if let Err(error) = daemon::spawn(&listener) {
                 return fail(&format!("could not start the daemon: {error}"));
             }

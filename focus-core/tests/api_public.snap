@@ -38,6 +38,7 @@ impl Atlas {
 ## pub mod focus::chrome
 
 pub fn run(listener: UnixListener);
+pub fn run_foreground(request: Request);
 
 pub fn repo_search(
     dir: &Path,
@@ -94,7 +95,7 @@ pub fn listener_from_fd(fd: RawFd) -> std::io::Result<UnixListener>;
 
 pub struct Incoming {
     pub request: Request,
-    pub connection: UnixStream,
+    pub connection: Option<UnixStream>,
 }
 
 pub fn serve(listener: UnixListener, sink: impl Fn(Incoming) + Send + 'static);
