@@ -61,6 +61,7 @@ Testing:
 - [ ] Replayable history of live sessions, for later debugging
 - [x] Test that IO functions are not reachable from focus-core build
 - [ ] Max out fuzzer coverage
+- [ ] Figure out how to effectively test daemonization and timeouts
 
 Arch:
 
