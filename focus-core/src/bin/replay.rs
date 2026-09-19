@@ -5,6 +5,16 @@
 // Run with RUST_BACKTRACE=1 to see where the panic originated.
 
 use std::io::Read;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
+
+// The same clock the honggfuzz target passes in, so that a crash from the
+// frame-budget assertion replays here. See `focus_core::fuzz::Clock`.
+static START: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+fn now() -> Duration {
+    START.elapsed()
+}
 
 fn hex_decode(s: &str) -> Vec<u8> {
     let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
@@ -28,6 +38,7 @@ fn main() {
         hex_decode(&s)
     };
     eprintln!("replaying {} bytes", bytes.len());
-    focus_core::fuzz::fuzz_one(&bytes);
+    LazyLock::force(&START);
+    focus_core::fuzz::fuzz_one_with_clock(&bytes, now);
     eprintln!("no crash");
 }

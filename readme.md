@@ -71,7 +71,7 @@ Perf:
 
 - [x] Don't store undo for readonly buffers
 - [ ] Test that fuzzer actions take at most linear time in buffer size
-- [ ] Test that fuzzer actions never take longer than frame budget
+- [x] Test that fuzzer actions never take longer than frame budget
 
 ## wishlist
 

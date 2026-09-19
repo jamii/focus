@@ -510,12 +510,11 @@ fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> 
 // still tick, and still sees files change underneath it, so the
 // windowless step below runs these too.
 
-fn act_tick(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
+fn act_tick(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option<()> {
     // Advance time by a fuzzer-chosen delta in [0, ~1s].
     let delta_us = frng.u32_bounded(0, 1_000_000)?;
     io.frame_start += Duration::from_micros(delta_us as u64);
-    let frame_start = io.frame_start;
-    app.tick(io, frame_start);
+    tick(app, io, clock);
     Some(())
 }
 
@@ -528,11 +527,7 @@ fn act_file_modify(frng: &mut Frng, io: &mut MockIO) -> Option<()> {
     if !paths.is_empty() {
         let path_index = frng.usize_bounded(0, paths.len() - 1)?;
         let path = paths.swap_remove(path_index);
-        let len = frng.usize_bounded(0, 64)?;
-        let mut contents = Vec::with_capacity(len);
-        for _ in 0..len {
-            contents.push(frng.u8_bounded(0x20, 0x7e)?);
-        }
+        let contents = random_file_contents(frng)?;
         let mtime = io
             .files
             .get(&path)
@@ -541,6 +536,34 @@ fn act_file_modify(frng: &mut Frng, io: &mut MockIO) -> Option<()> {
         io.files.insert(path, (contents, mtime));
     }
     Some(())
+}
+
+// What a file changing on disk turns into. Usually short, but one time
+// in eight a file of the size the performance model is about - there is
+// no point promising a frame budget up to MAX_TEXT_BYTES if the fuzzer
+// only ever produces sixty bytes.
+//
+// A big file is a short random unit repeated, because the fuzzer cannot
+// spend a byte of input per byte of file. That also makes its lines
+// repetitive, which is a real enough shape - logs, csv, generated code -
+// and a hard one for anything that has to diff it.
+fn random_file_contents(frng: &mut Frng) -> Option<Vec<u8>> {
+    let len = if frng.u8_bounded(0, 7)? == 0 {
+        frng.usize_bounded(0, MAX_TEXT_BYTES)?
+    } else {
+        frng.usize_bounded(0, 64)?
+    };
+    let unit_len = frng.usize_bounded(1, 32)?;
+    let mut unit = Vec::with_capacity(unit_len);
+    for _ in 0..unit_len {
+        // Mostly printable ascii, with newlines so that files have lines
+        // rather than being one enormous one.
+        unit.push(match frng.u8_bounded(0, 7)? {
+            0 => b'\n',
+            _ => frng.u8_bounded(0x20, 0x7e)?,
+        });
+    }
+    Some(unit.into_iter().cycle().take(len).collect())
 }
 
 fn act_file_delete(frng: &mut Frng, io: &mut MockIO) -> Option<()> {
@@ -598,10 +621,176 @@ fn act_open_window(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()
     Some(())
 }
 
+// The performance model: with no more than MAX_WINDOWS windows open and
+// no more than MAX_TEXT_BYTES of text loaded, every input, tick and draw
+// finishes inside FRAME_BUDGET.
+//
+// A frame at 60Hz is 16.6ms, so a call slower than the budget has dropped
+// a frame all by itself, before the renderer has drawn anything. The mock
+// IO does no real work, so what is being measured is the editor's own
+// compute.
+//
+// The limits are what bound the promise. The fuzzer will happily open a
+// thousand windows or paste its way to a gigabyte, and being slow there
+// is not a bug - it is a state no session reaches. Every call is still
+// timed, but one that runs outside the limits cannot fail the run.
+pub const FRAME_BUDGET: Duration = Duration::from_millis(16);
+pub const MAX_WINDOWS: usize = 8;
+pub const MAX_TEXT_BYTES: usize = 200_000;
+
+/// Reads a monotonic clock, as a time since some fixed point.
+///
+/// Reading a real clock is ambient I/O, and focus-core does none - see
+/// `tests/reachable_io.rs`, whose snapshot is generated from `fuzz_one`.
+/// So the clock comes in from outside: `fuzz_one` passes one that never
+/// moves and therefore never trips the budget, while the honggfuzz target
+/// and `replay` pass one built on `Instant`.
+pub type Clock = fn() -> Duration;
+
+/// A clock for callers that don't want the budget checked.
+fn stopped_clock() -> Duration {
+    Duration::ZERO
+}
+
+const CONTROL: ModifiersState = ModifiersState {
+    control: true,
+    alt: false,
+    shift: false,
+    super_: false,
+};
+
+const ALT: ModifiersState = ModifiersState {
+    control: false,
+    alt: true,
+    shift: false,
+    super_: false,
+};
+
+// Every input, tick and draw the harness makes goes through one of the
+// three functions below, so that all of them are timed.
+
+fn input(app: &mut App, io: &mut MockIO, clock: Clock, window_id: WindowId, event: InputEvent) {
+    // A copy for the failure message: the call consumes the event, and
+    // an event is a couple of words.
+    let copy = event.clone();
+    let before = Load::of(app);
+    let start = clock();
+    app.input(io, window_id, event);
+    let elapsed = clock().saturating_sub(start);
+    check_budget(app, before, elapsed, format_args!("input {copy:?}"));
+}
+
+fn draw(app: &mut App, io: &mut MockIO, clock: Clock, window_id: WindowId) {
+    // Allocating the command list is the renderer's cost, not the
+    // editor's, so it sits outside the timer.
+    let mut drawing = Drawing::new(io.screen_size);
+    let before = Load::of(app);
+    let start = clock();
+    app.draw(window_id, &mut drawing);
+    let elapsed = clock().saturating_sub(start);
+    check_budget(
+        app,
+        before,
+        elapsed,
+        format_args!("draw at {:?}", io.screen_size),
+    );
+}
+
+fn tick(app: &mut App, io: &mut MockIO, clock: Clock) {
+    let frame_start = io.frame_start;
+    let before = Load::of(app);
+    let start = clock();
+    app.tick(io, frame_start);
+    let elapsed = clock().saturating_sub(start);
+    check_budget(app, before, elapsed, format_args!("tick"));
+}
+
+/// How much the app was holding: what the performance model's limits are
+/// limits on.
+#[derive(Clone, Copy)]
+struct Load {
+    windows: usize,
+    text_bytes: usize,
+}
+
+impl Load {
+    fn of(app: &App) -> Load {
+        Load {
+            windows: app.windows.open_count,
+            text_bytes: app
+                .buffers
+                .keys()
+                .map(|buffer_id| buffer_id.text(app).len())
+                .sum(),
+        }
+    }
+}
+
+// Takes its message as `Arguments` rather than a `String`, because this
+// runs on every input the fuzzer sends and only the failing one needs
+// formatting.
+fn check_budget(app: &App, before: Load, elapsed: Duration, what: std::fmt::Arguments<'_>) {
+    if elapsed <= FRAME_BUDGET {
+        return;
+    }
+    // The limits have to hold on both sides of the call. An operation
+    // that shrinks the text - a file reloading over a buffer that was
+    // holding a lot of it - did its work on the bigger of the two, and
+    // measuring only what is left would put it inside the model on the
+    // strength of what it threw away.
+    let after = Load::of(app);
+    let windows = before.windows.max(after.windows);
+    let text_bytes = before.text_bytes.max(after.text_bytes);
+    if windows > MAX_WINDOWS || text_bytes > MAX_TEXT_BYTES {
+        return;
+    }
+    panic!(
+        "{what} took {elapsed:?}, over the {FRAME_BUDGET:?} frame budget\n\
+         {windows} open windows, {} pages, {} buffers, {text_bytes} bytes of text",
+        app.pages.page_count, app.buffers.buffer_count,
+    );
+}
+
+// A modified keypress: the modifiers go down, the key is pressed, and the
+// modifiers come back up, which is the sequence a real keyboard sends.
+fn chord(
+    app: &mut App,
+    io: &mut MockIO,
+    clock: Clock,
+    window_id: WindowId,
+    modifiers: ModifiersState,
+    key: &str,
+) {
+    input(
+        app,
+        io,
+        clock,
+        window_id,
+        InputEvent::ModifiersChanged(modifiers),
+    );
+    input(
+        app,
+        io,
+        clock,
+        window_id,
+        InputEvent::Key {
+            state: ButtonState::Pressed,
+            logical_key: Key::Character(key),
+        },
+    );
+    input(
+        app,
+        io,
+        clock,
+        window_id,
+        InputEvent::ModifiersChanged(ModifiersState::default()),
+    );
+}
+
 // Each step: perform one randomly chosen action. Returns Some(()) if
 // more entropy is available; None when the buffer is exhausted (Frng
 // signals end-of-stream as None).
-fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
+fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option<()> {
     // Closing the last window leaves a live daemon waiting for a request,
     // not a dead app, so the run continues with only the actions that need
     // no window - one of which opens one again.
@@ -614,7 +803,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             A_OPEN_WINDOW,
         ])?;
         return match action {
-            0 => act_tick(frng, app, io),
+            0 => act_tick(frng, app, io, clock),
             1 => act_file_modify(frng, io),
             2 => act_file_delete(frng, io),
             3 => act_file_create(frng, io),
@@ -672,7 +861,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                 state: ButtonState::Pressed,
                 logical_key: Key::Character(s),
             };
-            app.input(io, window_id, event);
+            input(app, io, clock, window_id, event);
         }
         1 => {
             // Named key (Enter, Space, Backspace, Delete, plus a few
@@ -693,8 +882,10 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
             } else {
                 ButtonState::Released
             };
-            app.input(
+            input(
+                app,
                 io,
+                clock,
                 window_id,
                 InputEvent::Key {
                     state,
@@ -711,13 +902,13 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                 shift: bits & 0b0100 != 0,
                 super_: bits & 0b1000 != 0,
             };
-            app.input(io, window_id, InputEvent::ModifiersChanged(m));
+            input(app, io, clock, window_id, InputEvent::ModifiersChanged(m));
         }
         3 => {
-            app.input(io, window_id, InputEvent::CloseRequested);
+            input(app, io, clock, window_id, InputEvent::CloseRequested);
         }
         4 => {
-            act_tick(frng, app, io)?;
+            act_tick(frng, app, io, clock)?;
         }
         5 => {
             // Draw at a fuzzer-chosen screen size.
@@ -727,8 +918,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                     frng.u32_bounded(0, 4000)? as f32,
                 ];
             }
-            let mut drawing = Drawing::new(io.screen_size);
-            app.draw(window_id, &mut drawing);
+            draw(app, io, clock, window_id);
         }
         6 => {
             // Scrolling. Either a mouse wheel notch, or one step of a
@@ -748,12 +938,18 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                     },
                 },
             };
-            app.input(io, window_id, event);
+            input(app, io, clock, window_id, event);
         }
         7 => {
             let position = random_mouse_pos(frng, io.screen_size)?;
             io.mouse_position = position;
-            app.input(io, window_id, InputEvent::MouseMoved { position });
+            input(
+                app,
+                io,
+                clock,
+                window_id,
+                InputEvent::MouseMoved { position },
+            );
         }
         8 => {
             let state = if frng.boolean()? {
@@ -762,14 +958,22 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
                 ButtonState::Released
             };
             let position = io.mouse_position;
-            app.input(io, window_id, InputEvent::MouseButton { state, position });
+            input(
+                app,
+                io,
+                clock,
+                window_id,
+                InputEvent::MouseButton { state, position },
+            );
         }
         9 => {
             act_file_modify(frng, io)?;
         }
         10 => {
-            app.input(
+            input(
+                app,
                 io,
+                clock,
                 window_id,
                 InputEvent::FocusChanged {
                     focused: frng.boolean()?,
@@ -782,151 +986,31 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         12 => {
             // Push the FileOpen page (ctrl+o). Enter and ctrl+enter are then
             // reachable via A_MODIFIERS + A_KEY_NAMED.
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState {
-                    control: true,
-                    ..ModifiersState::default()
-                }),
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::Key {
-                    state: ButtonState::Pressed,
-                    logical_key: Key::Character("o"),
-                },
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState::default()),
-            );
+            chord(app, io, clock, window_id, CONTROL, "o");
         }
         13 => {
             // Push the repo file search page (ctrl+p).
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState {
-                    control: true,
-                    ..ModifiersState::default()
-                }),
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::Key {
-                    state: ButtonState::Pressed,
-                    logical_key: Key::Character("p"),
-                },
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState::default()),
-            );
+            chord(app, io, clock, window_id, CONTROL, "p");
         }
         14 => {
             // Push the open buffer page (alt+p).
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState {
-                    alt: true,
-                    ..ModifiersState::default()
-                }),
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::Key {
-                    state: ButtonState::Pressed,
-                    logical_key: Key::Character("p"),
-                },
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState::default()),
-            );
+            chord(app, io, clock, window_id, ALT, "p");
         }
         15 => {
             // Push the search buffer page (ctrl+f).
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState {
-                    control: true,
-                    ..ModifiersState::default()
-                }),
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::Key {
-                    state: ButtonState::Pressed,
-                    logical_key: Key::Character("f"),
-                },
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState::default()),
-            );
+            chord(app, io, clock, window_id, CONTROL, "f");
         }
         16 => {
             act_file_create(frng, io)?;
         }
         17 => {
             // Switch the window to the repo search page (alt+f).
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState {
-                    alt: true,
-                    ..ModifiersState::default()
-                }),
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::Key {
-                    state: ButtonState::Pressed,
-                    logical_key: Key::Character("f"),
-                },
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState::default()),
-            );
+            chord(app, io, clock, window_id, ALT, "f");
         }
         18 => {
             // Push the dir picker (ctrl+m), which leads to the command
             // picker and then the runner page via enter chords.
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState {
-                    control: true,
-                    ..ModifiersState::default()
-                }),
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::Key {
-                    state: ButtonState::Pressed,
-                    logical_key: Key::Character("m"),
-                },
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState::default()),
-            );
+            chord(app, io, clock, window_id, CONTROL, "m");
         }
         19 => {
             // Feed output / an exit code to a random spawned process, so
@@ -955,78 +1039,18 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO) -> Option<()> {
         20 => {
             // Open a copy of the current page in a new window (ctrl+n), so
             // every page kind gets duplicated under random input.
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState {
-                    control: true,
-                    ..ModifiersState::default()
-                }),
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::Key {
-                    state: ButtonState::Pressed,
-                    logical_key: Key::Character("n"),
-                },
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState::default()),
-            );
+            chord(app, io, clock, window_id, CONTROL, "n");
         }
         21 => {
             act_open_window(frng, app, io)?;
         }
-        23 => {
-            // Push the revision picker (alt+2).
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState {
-                    alt: true,
-                    ..ModifiersState::default()
-                }),
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::Key {
-                    state: ButtonState::Pressed,
-                    logical_key: Key::Character("2"),
-                },
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState::default()),
-            );
-        }
         22 => {
             // Push the diff page (ctrl+2).
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState {
-                    control: true,
-                    ..ModifiersState::default()
-                }),
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::Key {
-                    state: ButtonState::Pressed,
-                    logical_key: Key::Character("2"),
-                },
-            );
-            app.input(
-                io,
-                window_id,
-                InputEvent::ModifiersChanged(ModifiersState::default()),
-            );
+            chord(app, io, clock, window_id, CONTROL, "2");
+        }
+        23 => {
+            // Push the revision picker (alt+2).
+            chord(app, io, clock, window_id, ALT, "2");
         }
         _ => unreachable!(),
     }
@@ -1088,7 +1112,15 @@ fn fuzz_status() -> VcsFileStatus {
     }
 }
 
+/// Drive the editor with `bytes`, without checking the frame budget:
+/// with no clock there is nothing to check it against.
 pub fn fuzz_one(bytes: &[u8]) {
+    fuzz_one_with_clock(bytes, stopped_clock);
+}
+
+/// Drive the editor with `bytes`, timing every input, tick and draw
+/// against `clock` and panicking on the first one over the frame budget.
+pub fn fuzz_one_with_clock(bytes: &[u8], clock: Clock) {
     let mut frng = Frng::new(bytes);
     let mut io = MockIO::new();
     let initial_path = PathBuf::from("/fuzz.txt");
@@ -1119,7 +1151,7 @@ pub fn fuzz_one(bytes: &[u8]) {
     let buffer_id = buffer::from_file(&mut app, &mut io, initial_path);
     window::open_edit(&mut app, &mut io, buffer_id);
 
-    while step(&mut frng, &mut app, &mut io).is_some() {
+    while step(&mut frng, &mut app, &mut io, clock).is_some() {
         if io.exited {
             break;
         }
