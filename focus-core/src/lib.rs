@@ -1,5 +1,6 @@
 pub mod app;
 pub mod buffer;
+mod diff;
 pub mod drawing;
 pub mod editor;
 mod format;

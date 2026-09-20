@@ -1030,15 +1030,26 @@ impl OffsetDiff {
     }
 }
 
+/// The edits that turn `old` into `new`, word by word.
+///
+/// The diff is ours rather than `similar`'s so that it can be bounded by
+/// a budget counted in work: see `crate::diff`. `similar` still does the
+/// tokenizing, which is the part with no surprises in it.
 fn diff_text(old: &BStr, new: &BStr) -> Vec<Edit> {
-    let diff = similar::TextDiff::configure()
-        .algorithm(similar::Algorithm::Histogram)
-        .diff_words(old.as_bytes(), new.as_bytes());
+    use similar::DiffableStr;
 
-    // DiffOp ranges are token indices, not byte offsets. Build a prefix sum of
+    // Via the slices rather than `as_bytes`, which both bstr and
+    // similar's DiffableStr define for `[u8]`.
+    let old_bytes: &[u8] = old;
+    let new_bytes: &[u8] = new;
+    let old_tokens = old_bytes.tokenize_words();
+    let new_tokens = new_bytes.tokenize_words();
+
+    // Op ranges are token indices, not byte offsets. Build a prefix sum of
     // token byte lengths so we can translate a token index into a byte offset.
-    let byte_offsets = |tokens: &mut dyn Iterator<Item = &[u8]>| {
-        let mut offsets = vec![0];
+    let byte_offsets = |tokens: &[&[u8]]| {
+        let mut offsets = Vec::with_capacity(tokens.len() + 1);
+        offsets.push(0);
         let mut acc = 0;
         for token in tokens {
             acc += token.len();
@@ -1046,33 +1057,32 @@ fn diff_text(old: &BStr, new: &BStr) -> Vec<Edit> {
         }
         offsets
     };
-    let old_offsets = byte_offsets(&mut diff.iter_old_slices());
-    let new_offsets = byte_offsets(&mut diff.iter_new_slices());
+    let old_offsets = byte_offsets(&old_tokens);
+    let new_offsets = byte_offsets(&new_tokens);
 
     let mut edits = Vec::new();
-    for op in diff.ops() {
-        let (tag, old_range, new_range) = op.as_tag_tuple();
-        let old_start = old_offsets[old_range.start];
-        let old_end = old_offsets[old_range.end];
-        let new_start = new_offsets[new_range.start];
-        let new_end = new_offsets[new_range.end];
-        match tag {
-            similar::DiffTag::Equal => {}
-            similar::DiffTag::Delete => {
+    for op in crate::diff::diff(&old_tokens, &new_tokens, crate::diff::DEFAULT_BUDGET) {
+        let old_start = old_offsets[op.old.start];
+        let old_end = old_offsets[op.old.end];
+        let new_start = new_offsets[op.new.start];
+        let new_end = new_offsets[op.new.end];
+        match op.kind {
+            crate::diff::OpKind::Equal => {}
+            crate::diff::OpKind::Delete => {
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: old_start,
                     text: old[old_start..old_end].into(),
                 });
             }
-            similar::DiffTag::Insert => {
+            crate::diff::OpKind::Insert => {
                 edits.push(Edit {
                     kind: EditKind::Insert,
                     offset: old_start,
                     text: new[new_start..new_end].into(),
                 });
             }
-            similar::DiffTag::Replace => {
+            crate::diff::OpKind::Replace => {
                 edits.push(Edit {
                     kind: EditKind::Insert,
                     offset: old_start,

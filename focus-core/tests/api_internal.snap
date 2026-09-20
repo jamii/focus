@@ -169,6 +169,31 @@ impl OffsetDiff {
     ) -> Option<std::ops::Range<usize>>;
 }
 
+## mod focus_core::diff
+
+pub(crate) const DEFAULT_BUDGET: usize = ...;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum OpKind {
+    Equal,
+    Delete,
+    Insert,
+    Replace,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Op {
+    pub(crate) kind: OpKind,
+    pub(crate) old: Range<usize>,
+    pub(crate) new: Range<usize>,
+}
+
+pub(crate) fn diff(old: &[&[u8]], new: &[&[u8]], budget: usize) -> Vec<Op>;
+
+impl Index<isize> for V
+
+impl IndexMut<isize> for V
+
 ## pub mod focus_core::drawing
 
 impl Rect {
