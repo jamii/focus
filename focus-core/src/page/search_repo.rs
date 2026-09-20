@@ -22,7 +22,12 @@ pub(super) struct State {
     root: PathBuf,
     matches: Vec<RepoMatch>,
     list_text: BString,
-    last_pattern: Option<BString>,
+    /// The pattern `matches` and `list_text` are the answer to, or None
+    /// when they are not an answer to anything - nothing typed yet, or a
+    /// search still running. Set only beside the results it belongs to:
+    /// recording a pattern whose results were thrown away would make
+    /// typing back to that pattern look like it was already answered.
+    answered_pattern: Option<BString>,
 }
 
 #[derive(Clone, Copy)]
@@ -77,7 +82,7 @@ pub(crate) fn new(app: &mut App, dir: PathBuf) -> PageId {
             dir,
             matches: Vec::new(),
             list_text: BString::default(),
-            last_pattern: None,
+            answered_pattern: None,
         }),
         vec![preview_id, search_id, list_id],
         SEARCH_IX,
@@ -265,13 +270,13 @@ fn refresh_matches(app: &mut App, io: &mut dyn IO, page_id: PageId, search_id: E
     app.search_buffer_text = pattern.clone();
 
     let state = state(app, page_id);
-    if state.last_pattern.as_ref() == Some(&pattern) {
+    if state.answered_pattern.as_ref() == Some(&pattern) {
         return;
     }
 
     let dir = state.dir.clone();
-    let (root, matches, list_text) = if pattern.is_empty() {
-        (None, Vec::new(), BString::default())
+    let (answered_pattern, root, matches, list_text) = if pattern.is_empty() {
+        (Some(pattern), None, Vec::new(), BString::default())
     } else {
         match io.repo_search(&dir, pattern.as_bstr(), MATCH_LIMIT, LINE_LIMIT) {
             Some(Ok(RepoSearch {
@@ -280,28 +285,27 @@ fn refresh_matches(app: &mut App, io: &mut dyn IO, page_id: PageId, search_id: E
                 truncated,
             })) => {
                 let list_text = matches_text(&matches, truncated);
-                (Some(root), matches, list_text)
+                (Some(pattern), Some(root), matches, list_text)
             }
             Some(Err(error)) => (
+                Some(pattern),
                 None,
                 Vec::new(),
                 BString::from(format!("{}: {}", dir.display(), error)),
             ),
-            // Still searching. The pattern is not recorded, so this runs
-            // again next frame, and the list says what it is waiting for
-            // rather than going blank or holding the matches of a pattern
-            // that is no longer in the box.
-            None => {
-                let state = state_mut(app, page_id);
-                state.matches = Vec::new();
-                state.list_text = BString::from(SEARCHING);
-                return;
-            }
+            // Still searching. The list says what it is waiting for
+            // rather than going blank or holding the matches of a
+            // pattern that is no longer in the box - and no pattern is
+            // recorded, because there are no results for one: this runs
+            // again next frame, and backspacing to a pattern whose
+            // search never finished asks for it again rather than
+            // waiting forever on results that were thrown away.
+            None => (None, None, Vec::new(), BString::from(SEARCHING)),
         }
     };
 
     let state = state_mut(app, page_id);
-    state.last_pattern = Some(pattern);
+    state.answered_pattern = answered_pattern;
     state.matches = matches;
     state.list_text = list_text;
     if let Some(root) = root {

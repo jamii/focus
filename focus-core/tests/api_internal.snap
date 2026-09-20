@@ -69,6 +69,7 @@ pub(crate) enum Source {
 
 pub(crate) struct SourceFile {
     pub(crate) absolute_path: PathBuf,
+    pub(crate) save_error: Option<String>,
     /* private fields */
 }
 

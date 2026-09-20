@@ -278,6 +278,12 @@ fn error_tick(app: &mut App, io: &mut ErrorIO) {
     app.tick(io, frame_start);
 }
 
+// The edit page's status bar: the generated buffer made right after the
+// file's own.
+fn status_bar_text(app: &App) -> String {
+    app.buffers.keys().nth(1).unwrap().text(app).to_string()
+}
+
 #[test]
 fn text_input_builds_scratch_buffer() {
     let (mut app, mut io, window_id) = common::scratch_app();
@@ -359,9 +365,8 @@ fn typing_before_the_first_load_is_not_undoable_after_it() {
     // delete the keystroke from the loaded text.
     let path = PathBuf::from("/tmp/focus-buffer-first-load-undo-test.txt");
     let (mut app, mut io, window_id) = common::file_app(path.clone(), "");
-    // The file exists but has never been loaded (mtime at the epoch).
-    io.files
-        .insert(path.clone(), (b"".to_vec(), SystemTime::UNIX_EPOCH));
+    // Nothing on disk yet, so there is nothing for the buffer to load.
+    io.files.remove(&path);
     common::char_input(&mut app, &mut io, window_id, 'x');
     assert_eq!(common::text(&app), "x");
     // A quiet second moves the keystroke from `doing` onto the undo stack.
@@ -612,12 +617,24 @@ fn explicit_save_error_leaves_file_dirty_until_next_successful_save() {
         io.inner.logs,
         ["error saving /tmp/focus-buffer-explicit-save-error-test.txt: permission denied"]
     );
+    // And the log is not the only place it says so.
+    error_tick(&mut app, &mut io);
+    assert_eq!(
+        status_bar_text(&app),
+        "error saving /tmp/focus-buffer-explicit-save-error-test.txt: permission denied"
+    );
 
     io.file_write_error = None;
     io.inner.frame_start += Duration::from_secs(1);
     error_tick(&mut app, &mut io);
     error_control_key(&mut app, &mut io, window_id, Key::Character("s"));
     assert_eq!(io.inner.files.get(&path).unwrap().0, b"before after");
+    // The save worked, so the status bar goes back to the cursor.
+    error_tick(&mut app, &mut io);
+    assert_eq!(
+        status_bar_text(&app),
+        "/tmp/focus-buffer-explicit-save-error-test.txt 1:13"
+    );
     app.assert_invariants();
 }
 

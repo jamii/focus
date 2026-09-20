@@ -26,6 +26,9 @@ Tools:
 - [x] Navigation stack
 - [x] Runner
 - [ ] Search errors
+- [ ] Bound in-buffer search results - one long line of matches builds a
+      list quadratic in its length (known failure, reproduced by
+      `focus-core/tests/review_regressions.rs`)
 
 Language specific:
 

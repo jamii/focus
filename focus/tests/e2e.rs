@@ -10,6 +10,7 @@
 // Skipped, not failed, when sway is not on PATH.
 
 use std::collections::HashMap;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -237,6 +238,75 @@ fn the_daemon_runs_without_ld_library_path() {
     );
 }
 
+#[test]
+fn failed_save_preserves_the_previous_file_contents() {
+    let sway = Sway::start_named("failed-save");
+    let path = sway.dir.join("a.txt");
+
+    let mut client = Command::new(FOCUS);
+    client
+        .args(["--no-wait", "a.txt"])
+        .current_dir(&sway.dir)
+        .envs(sway.env());
+    // Inherited across both execs. A write past RLIMIT_FSIZE must return
+    // EFBIG rather than terminating the daemon with SIGXFSZ.
+    unsafe {
+        client.pre_exec(|| {
+            if libc::signal(libc::SIGXFSZ, libc::SIG_IGN) == libc::SIG_ERR {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    assert!(client.status().unwrap().success());
+    assert!(sway.wait_for_windows(1), "{}", sway.log());
+    let pid = sway.daemon_pid().unwrap();
+
+    // Positive control: real keyboard input and the normal save path work.
+    sway.wtype(&["saved-"]);
+    sway.wtype(&["-M", "ctrl", "-k", "s", "-m", "ctrl"]);
+    let original = b"saved-hello\n";
+    assert!(sway.wait_for(|| std::fs::read(&path).unwrap() == original));
+
+    let limit = libc::rlimit {
+        rlim_cur: 512,
+        rlim_max: 512,
+    };
+    // Only the daemon identified in this test's private runtime is limited.
+    assert_eq!(
+        unsafe {
+            libc::prlimit(
+                pid as libc::pid_t,
+                libc::RLIMIT_FSIZE,
+                &limit,
+                std::ptr::null_mut(),
+            )
+        },
+        0,
+        "{}",
+        std::io::Error::last_os_error()
+    );
+    sway.wtype(&[&"x".repeat(1024)]);
+    sway.wtype(&["-M", "ctrl", "-k", "s", "-m", "ctrl"]);
+    assert!(
+        sway.wait_for(|| sway.log().contains("error saving")),
+        "the real save did not report the injected write failure: {}",
+        sway.log()
+    );
+    assert_eq!(
+        sway.daemon_pid(),
+        Some(pid),
+        "the write error must be recoverable"
+    );
+    let after = std::fs::read(&path).unwrap();
+    assert!(
+        after == original,
+        "failed save replaced the {}-byte original with {} bytes",
+        original.len(),
+        after.len()
+    );
+}
+
 // A headless sway, its runtime dir, and everything spawned into it. The
 // Drop impl runs even when an assertion fails, so a panicking test does
 // not leave a compositor and a daemon behind.
@@ -327,6 +397,23 @@ impl Sway {
             .output()
             .unwrap();
         String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    fn wtype(&self, args: &[&str]) {
+        // Wait on both sides of the key sequence so it cannot share the load
+        // or save frame (those are separate regressions in focus-core).
+        let output = Command::new("wtype")
+            .args(["-s", "100"])
+            .args(args)
+            .args(["-s", "100"])
+            .envs(self.env())
+            .output()
+            .expect("wtype is required; enter nix-shell ./shell.nix");
+        assert!(
+            output.status.success(),
+            "wtype failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     fn window_count(&self) -> usize {

@@ -78,7 +78,16 @@ pub(super) fn tick(page_id: PageId, app: &mut App, io: &mut dyn IO, _window_id: 
             BStr::new(absolute_path.as_os_str().as_bytes())
         }
     };
-    let status_text = format!("{} {}:{}", source, grid[0][1] + 1, grid[0][0] + 1);
+    // A save that failed says so here instead of where the cursor is:
+    // the edit exists only in the editor until one works, and nothing
+    // else on screen would say so.
+    let status_text = match buffer_id.source(app) {
+        Source::File(SourceFile {
+            save_error: Some(error),
+            ..
+        }) => error.clone(),
+        _ => format!("{} {}:{}", source, grid[0][1] + 1, grid[0][0] + 1),
+    };
     status_bar_buffer_id.replace(app, BStr::new(status_text.as_bytes()));
 
     status_bar_id.tick(app, io);

@@ -4,6 +4,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::take;
 use std::num::NonZeroU32;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -257,11 +258,7 @@ impl IO for IoReal<'_> {
         contents: &[u8],
         create: bool,
     ) -> std::io::Result<SystemTime> {
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).truncate(true).create(create);
-        let mut f = opts.open(path)?;
-        f.write_all(contents)?;
-        f.metadata()?.modified()
+        file_write(path, contents, create)
     }
 
     fn file_read_at(
@@ -1118,6 +1115,93 @@ pub fn canonical_path(path: &Path) -> PathBuf {
             Err(_) => path.to_path_buf(),
         },
         _ => path.to_path_buf(),
+    }
+}
+
+/// Write `contents` to `path`, as `IO::file_write` describes.
+///
+/// Stage the new contents beside the file and rename them over it,
+/// rather than truncating the file and writing into it. A write that
+/// stops half way - the disk full, a file size limit, the machine losing
+/// power - then leaves the previous contents whole, where truncating
+/// first leaves a file that is neither version. It also means no other
+/// program ever reads a half-written file.
+///
+/// Two costs, both deliberate. The file becomes a new inode, so hard
+/// links to it stop following its contents. And it needs a writable
+/// directory, not just a writable file - a save into a read-only
+/// directory now fails and says so rather than writing.
+pub fn file_write(path: &Path, contents: &[u8], create: bool) -> std::io::Result<SystemTime> {
+    let existing = std::fs::metadata(path);
+    if !create
+        && existing
+            .as_ref()
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+    {
+        return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+    }
+    let temp = temp_path(path);
+    let staged = (|| -> std::io::Result<SystemTime> {
+        let mut file = create_temp(&temp, existing.is_ok())?;
+        // The rename replaces the inode, so the staged file has to
+        // carry the mode of the file it is replacing. A chmod rather
+        // than a create mode, because open() takes the umask out of the
+        // mode it is given and chmod does not.
+        if let Ok(existing) = &existing {
+            file.set_permissions(existing.permissions())?;
+        }
+        file.write_all(contents)?;
+        // On disk before it takes the file's name, so that a crash in
+        // between leaves the old contents rather than an empty file
+        // with the right name.
+        file.sync_all()?;
+        let mtime = file.metadata()?.modified()?;
+        drop(file);
+        std::fs::rename(&temp, path)?;
+        Ok(mtime)
+    })();
+    if staged.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    staged
+}
+
+// Where `file_write` stages a save: beside the file, so the rename that
+// replaces it is within one filesystem, hidden, and named after the
+// daemon that wrote it, so two editors saving the same file cannot stage
+// into one another's file.
+fn temp_path(path: &Path) -> PathBuf {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(path.file_name().unwrap_or_else(|| OsStr::new("focus")));
+    name.push(format!(".focus-{}.tmp", std::process::id()));
+    match path.parent() {
+        Some(parent) => parent.join(name),
+        None => PathBuf::from(name),
+    }
+}
+
+// A new staging file. `create_new`, so that a save never writes through
+// something already sitting at that name - a symlink another user
+// planted in a shared directory, say. Only this daemon's own leftover,
+// from a save that was killed before it could clean up, is removed and
+// retried.
+//
+// One that is replacing a file starts private, and the caller then
+// chmods it to that file's mode: a private file's contents are never
+// briefly more readable than the file itself. One that is creating a
+// file has no mode to copy, and gets the usual create mode.
+fn create_temp(temp: &Path, replacing: bool) -> std::io::Result<std::fs::File> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    if replacing {
+        opts.mode(0o600);
+    }
+    match opts.open(temp) {
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            std::fs::remove_file(temp)?;
+            opts.open(temp)
+        }
+        result => result,
     }
 }
 

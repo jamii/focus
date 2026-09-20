@@ -71,6 +71,8 @@ pkgs.mkShell {
     # `swaymsg -t get_tree` it asserts against. Unwrapped, because the
     # wrapper insists on a dbus session.
     pkgs.sway-unwrapped
+    # Send keyboard input to focus under the headless compositor.
+    pkgs.wtype
   ];
 
   LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath graphicsLibs;

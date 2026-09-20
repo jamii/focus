@@ -21,6 +21,11 @@ pub struct Buffers {
     highlight: Map<BufferId, Highlight>,
     newlines: Map<BufferId, Vec<usize>>,
     last_modified_time: Map<BufferId, Duration>,
+    /// Bumped by every edit, and never reset. What "modified since the
+    /// last save" is decided by: a frame can hold a load, a save and any
+    /// number of keystrokes, and they all carry the same `frame_start`,
+    /// so a time cannot tell those apart.
+    revision: Map<BufferId, u64>,
     undos: Map<BufferId, Vec<Vec<Vec<Edit>>>>,
     doing: Map<BufferId, Vec<Vec<Edit>>>,
     redos: Map<BufferId, Vec<Vec<Vec<Edit>>>>,
@@ -41,9 +46,18 @@ pub(crate) enum Source {
 
 pub(crate) struct SourceFile {
     pub(crate) absolute_path: PathBuf,
-    last_load_mtime: SystemTime,
-    last_save_time: Duration,
+    /// The mtime the file had when its contents were last read or
+    /// written. None until it has been read for the first time.
+    last_io_mtime: Option<SystemTime>,
+    /// The buffer revision that was last written to (or read from) the
+    /// file. Equal to the buffer's revision means clean: there is
+    /// nothing to write, and a change on disk can be loaded over it.
+    saved_revision: u64,
     deleted_since_last_save: bool,
+    /// Why the last save did not happen, until one does. A save that
+    /// fails leaves the only copy of the edit in the editor, so this
+    /// goes in the status bar rather than only in the log.
+    pub(crate) save_error: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,6 +94,7 @@ impl Buffers {
             highlight: Map::new(),
             newlines: Map::new(),
             last_modified_time: Map::new(),
+            revision: Map::new(),
             undos: Map::new(),
             doing: Map::new(),
             redos: Map::new(),
@@ -126,9 +141,10 @@ pub fn from_file(app: &mut App, io: &mut dyn IO, absolute_path: PathBuf) -> Buff
         app,
         Source::File(SourceFile {
             absolute_path,
-            last_load_mtime: SystemTime::UNIX_EPOCH,
-            last_save_time: Duration::ZERO,
+            last_io_mtime: None,
+            saved_revision: 0,
             deleted_since_last_save: false,
+            save_error: None,
         }),
     )
 }
@@ -150,6 +166,7 @@ pub(crate) fn copy(app: &mut App, buffer_id: BufferId) -> BufferId {
     let highlight = app.buffers.highlight[buffer_id].clone();
     let newlines = app.buffers.newlines[buffer_id].clone();
     let last_modified_time = app.buffers.last_modified_time[buffer_id];
+    let revision = app.buffers.revision[buffer_id];
     let undos = app.buffers.undos[buffer_id].clone();
     let doing = app.buffers.doing[buffer_id].clone();
     let redos = app.buffers.redos[buffer_id].clone();
@@ -159,6 +176,7 @@ pub(crate) fn copy(app: &mut App, buffer_id: BufferId) -> BufferId {
     app.buffers.highlight[copy_id] = highlight;
     app.buffers.newlines[copy_id] = newlines;
     app.buffers.last_modified_time[copy_id] = last_modified_time;
+    app.buffers.revision[copy_id] = revision;
     app.buffers.undos[copy_id] = undos;
     app.buffers.doing[copy_id] = doing;
     app.buffers.redos[copy_id] = redos;
@@ -186,6 +204,7 @@ fn insert(app: &mut App, source: Source) -> BufferId {
     app.buffers
         .last_modified_time
         .insert(buffer_id, Duration::ZERO);
+    app.buffers.revision.insert(buffer_id, 0);
     app.buffers.undos.insert(buffer_id, vec![]);
     app.buffers.doing.insert(buffer_id, vec![]);
     app.buffers.redos.insert(buffer_id, vec![]);
@@ -200,6 +219,7 @@ pub(crate) fn assert_invariants(app: &App) {
     assert_eq!(buffers.highlight.len(), buffers.buffer_count);
     assert_eq!(buffers.newlines.len(), buffers.buffer_count);
     assert_eq!(buffers.last_modified_time.len(), buffers.buffer_count);
+    assert_eq!(buffers.revision.len(), buffers.buffer_count);
     assert_eq!(buffers.undos.len(), buffers.buffer_count);
     assert_eq!(buffers.doing.len(), buffers.buffer_count);
     assert_eq!(buffers.redos.len(), buffers.buffer_count);
@@ -420,13 +440,19 @@ impl BufferId {
             self.flush_doing(app);
         }
 
-        // Maybe reload.
-        let frame_start = app.frame_start;
-        let last_modified_time = app.buffers.last_modified_time[self];
+        // Maybe reload. Only a buffer with nothing unsaved in it: an
+        // edit is never thrown away for what is on disk.
+        let revision = app.buffers.revision[self];
         let (text, first_load) = match &mut app.buffers.source[self] {
-            Source::File(source) if last_modified_time <= source.last_save_time => {
-                let first_load = source.last_load_mtime == SystemTime::UNIX_EPOCH;
-                (source.load(io, frame_start), first_load)
+            // The first load is the file arriving rather than an
+            // external change, so it happens whatever is in the buffer:
+            // anything typed before it lands was typed into a file
+            // nobody had seen yet.
+            Source::File(source)
+                if source.last_io_mtime.is_none() || revision == source.saved_revision =>
+            {
+                let first_load = source.last_io_mtime.is_none();
+                (source.load(io), first_load)
             }
             _ => (None, false),
         };
@@ -452,6 +478,12 @@ impl BufferId {
                 }
             } else {
                 self.replace(app, text.as_bstr());
+            }
+            // The buffer now holds what is on disk, at whatever revision
+            // that load left it at.
+            let revision = app.buffers.revision[self];
+            if let Source::File(source) = &mut app.buffers.source[self] {
+                source.saved_revision = revision;
             }
         }
     }
@@ -623,7 +655,13 @@ impl BufferId {
         }
 
         app.buffers.last_modified_time[self] = frame_start;
+        app.buffers.revision[self] += 1;
 
+        // Every editor on this buffer, and every page holding one, is
+        // told where the text moved, so that their cursors and marks
+        // still point at what they pointed at. That includes the
+        // editors of pages that have been closed: nothing is ever
+        // removed from these maps, deliberately - see `page::teardown`.
         let editor_ids: Vec<_> = app
             .editors
             .buffer_id
@@ -651,15 +689,13 @@ impl BufferId {
     /// treat NotFound as an external deletion.
     /// No-op for Scratch sources or when not modified since last save.
     pub(crate) fn save(self, app: &mut App, io: &mut dyn IO, kind: SaveKind) {
-        let frame_start = app.frame_start;
-        let last_modified_time = app.buffers.last_modified_time[self];
         let create = kind == SaveKind::Explicit;
         // Nothing to write: not a file, or nothing typed since the last
         // time it was written.
-        let Source::File(SourceFile { last_save_time, .. }) = &app.buffers.source[self] else {
+        let Source::File(SourceFile { saved_revision, .. }) = &app.buffers.source[self] else {
             return;
         };
-        if last_modified_time <= *last_save_time {
+        if app.buffers.revision[self] == *saved_revision {
             return;
         }
 
@@ -689,34 +725,47 @@ impl BufferId {
         };
         match write_result {
             Ok(mtime) => {
+                // The revision as it is now: formatting above is an edit
+                // like any other, and what went to disk includes it.
+                let revision = app.buffers.revision[self];
                 if let Source::File(SourceFile {
-                    last_load_mtime,
-                    last_save_time,
+                    last_io_mtime,
+                    saved_revision,
                     deleted_since_last_save,
+                    save_error,
                     ..
                 }) = &mut app.buffers.source[self]
                 {
-                    *last_load_mtime = mtime;
-                    *last_save_time = frame_start;
+                    *last_io_mtime = Some(mtime);
+                    *saved_revision = revision;
                     *deleted_since_last_save = false;
+                    *save_error = None;
                 }
                 app.save_count += 1;
             }
             Err(err) if kind == SaveKind::Auto && err.kind() == std::io::ErrorKind::NotFound => {
                 if let Source::File(SourceFile {
                     deleted_since_last_save,
+                    save_error,
                     ..
                 }) = &mut app.buffers.source[self]
                 {
                     *deleted_since_last_save = true;
+                    *save_error = None;
                 }
             }
             Err(err) => {
-                let Source::File(SourceFile { absolute_path, .. }) = &app.buffers.source[self]
+                let Source::File(SourceFile {
+                    absolute_path,
+                    save_error,
+                    ..
+                }) = &mut app.buffers.source[self]
                 else {
                     unreachable!();
                 };
-                crate::log!(io, "error saving {}: {}", absolute_path.display(), err);
+                let message = format!("error saving {}: {}", absolute_path.display(), err);
+                *save_error = Some(message.clone());
+                crate::log!(io, "{}", message);
             }
         }
     }
@@ -827,16 +876,18 @@ impl SourceFile {
         );
     }
 
-    /// If the file's mtime has advanced past `last_load_mtime` and the buffer is
-    /// not modified, reload its contents.
-    fn load(&mut self, io: &mut dyn IO, frame_start: Duration) -> Option<BString> {
+    /// The file's contents, if its mtime is not the one they were last
+    /// read or written at. Any difference counts, in either direction: a
+    /// restored backup, a checked-out revision and an unpacked archive
+    /// all put back a file whose mtime is older than the one the editor
+    /// loaded, and that file's contents are just as new.
+    fn load(&mut self, io: &mut dyn IO) -> Option<BString> {
         let mtime = io.file_mtime(&self.absolute_path).ok()?;
-        if mtime <= self.last_load_mtime {
+        if Some(mtime) == self.last_io_mtime {
             return None;
         }
         let contents = io.file_read(&self.absolute_path).ok()?;
-        self.last_load_mtime = mtime;
-        self.last_save_time = frame_start;
+        self.last_io_mtime = Some(mtime);
         Some(contents.into())
     }
 }

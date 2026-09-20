@@ -266,6 +266,13 @@ fn refresh_matches(app: &mut App, page_id: PageId, search_id: EditorId) {
     state.list_text = list_text;
 }
 
+// Known failure: every occurrence keeps its whole source line, so a
+// long line of repeated matches costs O(matches * line) bytes - 2 KB of
+// `a` searched for `a` builds a 4 MB list. Bounding it means deciding
+// what a truncated entry looks like and how many entries are worth
+// building, so it is a change to the page rather than a patch here.
+// `review_regressions::buffer_search_bounds_results_for_a_long_repetitive_line`
+// is the reproduction, ignored until then.
 fn matches_for_buffer(app: &App, buffer_id: BufferId, pattern: &BStr) -> Vec<Match> {
     if pattern.is_empty() {
         return Vec::new();

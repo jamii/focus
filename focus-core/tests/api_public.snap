@@ -49,6 +49,12 @@ pub fn repo_search(
 
 pub fn canonical_path(path: &Path) -> PathBuf;
 
+pub fn file_write(
+    path: &Path,
+    contents: &[u8],
+    create: bool,
+) -> std::io::Result<SystemTime>;
+
 ## pub mod focus::daemon
 
 #[derive(Clone, Debug, PartialEq, Eq)]

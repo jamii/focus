@@ -565,6 +565,39 @@ fn the_worker_thread_keeps_up_with_the_working_copy() {
     }
 }
 
+#[test]
+fn revisiting_a_revision_after_editing_checks_it_out_again() {
+    let root = repo_with_base("revisit_after_edit", &[("file.txt", "base\n")]);
+    let (_, base) = revisions(&root);
+    let revision = VcsRevisionId::Change(base.change_id);
+    let vcs = Vcs::new();
+
+    // Keep the repo active, as the diff page and editor gutter do.
+    eventually(|| vcs.change(&root, &revision).ok());
+    eventually(|| {
+        let _ = vcs.change(&root, &revision);
+        vcs.checkout(&root, &revision)
+    })
+    .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("file.txt")).unwrap(),
+        "base\n"
+    );
+
+    std::fs::write(root.join("file.txt"), "new work\n").unwrap();
+    // Return to the same historical diff and jump into its file again.
+    eventually(|| {
+        let _ = vcs.change(&root, &revision);
+        vcs.checkout(&root, &revision)
+    })
+    .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("file.txt")).unwrap(),
+        "base\n",
+        "success must mean this checkout completed, not that an earlier one did"
+    );
+}
+
 // Timing, not assertions. See the comment at the top of the file.
 
 fn time_polls(root: &Path, polls: usize) -> (Duration, Vec<Duration>) {

@@ -216,6 +216,14 @@ impl Vcs {
 
     /// Ask for `revision` to be checked out, and report how it went. None
     /// while it is still running, so the caller asks again next frame.
+    ///
+    /// The entry in `checkouts` is the checkout, not the revision: the
+    /// first ask starts one, the asks after it are that caller waiting,
+    /// and taking the answer ends it. So asking again - even for the
+    /// revision that was just checked out - is a new checkout rather
+    /// than the old one's answer read twice. It has to be: the files
+    /// that checkout put in the working copy can have been edited, or
+    /// checked out over, since it said yes.
     pub fn checkout(&self, root: &Path, revision: &VcsRevisionId) -> Option<std::io::Result<()>> {
         let mut state = self.shared.state.lock().unwrap();
         let checkout = state
@@ -225,14 +233,17 @@ impl Vcs {
                 revision: revision.clone(),
                 result: None,
             });
-        // A request for a different revision than the one last checked
-        // out here starts again: the answer to "is it checked out yet" is
-        // about this revision, not the last one.
+        // A request for a different revision than the one running here
+        // replaces it: a checkout moves the whole working copy, so the
+        // answer is about this revision, not the last one.
         if &checkout.revision != revision {
             checkout.revision = revision.clone();
             checkout.result = None;
         }
-        let result = checkout.result.clone();
+        let result = checkout.result.take();
+        if result.is_some() {
+            state.checkouts.remove(root);
+        }
         drop(state);
         if result.is_none() {
             self.shared.wake.notify_all();
@@ -296,9 +307,9 @@ impl State {
                 .is_some_and(|wanted| now.duration_since(wanted) < IDLE_TIMEOUT)
         });
 
-        // A finished checkout is remembered only while something is
-        // still reading the repo, so that asking for the same revision
-        // again does not get the last checkout's answer.
+        // An answer nobody came back for - the page that asked it was
+        // closed - is dropped once the repo goes idle. A collected one
+        // is already gone: `checkout` removes it as it hands it over.
         let live: Vec<PathBuf> = self.requests.keys().map(|(root, _)| root.clone()).collect();
         self.checkouts
             .retain(|root, checkout| checkout.result.is_none() || live.contains(root));

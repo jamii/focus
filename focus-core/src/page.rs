@@ -438,6 +438,24 @@ impl PageId {
     // are single-use — each PageId is pushed into exactly one stack once and
     // nothing re-pushes a removed page — so teardown on removal is
     // unambiguous.
+    //
+    // What teardown gives back is what the page holds outside the
+    // process: the runner's shell, the launcher's child. The page
+    // itself, its editors and its buffers stay for the life of the
+    // process, and that is deliberate. Ids are dense indices into the
+    // `Map`s that hold them, so freeing one would mean renumbering
+    // every id held elsewhere - a window's page stack, a page's editor
+    // list, an editor's buffer, a search page's origin - or leaving
+    // holes and a generation in every id to tell a hole from a reuse.
+    // Buffers are shared besides: the file a closed page was showing is
+    // very often still open in another window.
+    //
+    // The cost is that a long session accumulates the text and undo
+    // history of every page it has opened, and that an edit to a shared
+    // buffer walks every editor and page ever made (`apply_edits_raw`)
+    // to move their cursors. A session that outgrows that wants an
+    // ownership model - reference-counted buffers, generational ids -
+    // rather than an ad-hoc free here.
     pub(crate) fn teardown(self, app: &mut App, io: &mut dyn IO) {
         match app.pages.content[self].kind() {
             PageContentKind::Runner => runner::teardown(self, app, io),
