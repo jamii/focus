@@ -101,13 +101,18 @@ pub trait IO {
     /// `pattern`. Returns one match per occurrence, in file order, stopping
     /// after `match_limit` matches and keeping at most `line_limit` bytes of
     /// each match's line.
+    ///
+    /// Returns None while the search is still running and Some once it is
+    /// done, so a caller asks again every frame until it has an answer.
+    /// Reading every file in a repo is not a frame's work, and this is
+    /// asked for on every keystroke.
     fn repo_search(
         &mut self,
         dir: &Path,
         pattern: &BStr,
         match_limit: usize,
         line_limit: usize,
-    ) -> std::io::Result<RepoSearch>;
+    ) -> Option<std::io::Result<RepoSearch>>;
     /// The root of the repo containing `dir`, or `dir` itself if there is
     /// no containing repo.
     fn repo_root(&mut self, dir: &Path) -> PathBuf;

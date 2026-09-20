@@ -24,18 +24,24 @@ These are also worth handing to honggfuzz as a starting corpus.
   takes every open window down with it. Long lists and long attribute
   sets are fine to 40000 terms, and deeply nested parens are declined as
   a parse error rather than crashing, so it is only the chain.
-- `slow-rust-tokenize.fuzz` - 8343 bytes. A tick takes ~55ms tokenizing
-  138kb of Rust. `language::Tokens::new` pairs a closing bracket by
-  scanning the whole stack of still-open brackets for one of its own
-  kind, and a file with many unmatched openers and a stray closer of
-  another kind makes that scan the whole stack every time: quadratic.
-  Synthetically, `"cYu\nfv-]yOB{c"` repeated takes 2.8ms at 26kb, 10.7ms
-  at 52kb, 25.9ms at 104kb and 90.8ms at 208kb - 3.5x per doubling -
-  while the same unit with the `{` replaced by a letter is linear at
-  80MB/s. Highlighting runs on every keystroke.
+
+  The fuzzer writes no `.nix` files while this stands - see
+  FUZZ_FIXTURES in focus-core/src/fuzz.rs - so this no longer reproduces
+  from the harness as it is now. It is the input that found it, kept for
+  whoever fixes or guards the formatter.
 
 ## Fixed, kept as regressions
 
+- `slow-rust-tokenize.fuzz` - 8343 bytes. Was a ~55ms tick tokenizing
+  138kb of Rust. `language::Tokens::new` paired a closing bracket by
+  scanning the whole stack of brackets still open for one of its own
+  kind, so a file with many unmatched openers and a stray closer of
+  another kind scanned the whole stack every time: quadratic, 2.8ms at
+  26kb rising to 90.8ms at 208kb. It now keeps a list per kind of bracket
+  and reads the back of it, which is linear. This also accounts for the
+  Enter keystrokes that ran to 19-27ms: an edit re-tokenizes the buffer,
+  and on 190kb of that shape Enter cost 67ms before and 5ms after.
+  `focus-core/tests/language_speed.rs` pins it.
 - `slow-reload-diff-small.fuzz` - 652 bytes. Was a ~185ms tick with 5
   windows and 41kb of text.
 - `slow-reload-diff.fuzz` - 829 bytes. Was a ~3.7s tick with 4 windows

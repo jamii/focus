@@ -46,6 +46,11 @@ const PREVIEW_BYTES: usize = 10 * 1024;
 // costs more memory than the machine has.
 const MATCH_LIMIT: usize = 1000;
 
+// What the list says while the search is still running. No match behind
+// it, like the truncation line below, so selecting it shows no preview
+// and opens nothing.
+const SEARCHING: &str = "[searching ...]";
+
 // The most bytes of each match's line to ask `repo_search` for. One minified
 // file can otherwise hold megabytes on a single line, once per match on that
 // line.
@@ -269,19 +274,29 @@ fn refresh_matches(app: &mut App, io: &mut dyn IO, page_id: PageId, search_id: E
         (None, Vec::new(), BString::default())
     } else {
         match io.repo_search(&dir, pattern.as_bstr(), MATCH_LIMIT, LINE_LIMIT) {
-            Ok(RepoSearch {
+            Some(Ok(RepoSearch {
                 root,
                 matches,
                 truncated,
-            }) => {
+            })) => {
                 let list_text = matches_text(&matches, truncated);
                 (Some(root), matches, list_text)
             }
-            Err(error) => (
+            Some(Err(error)) => (
                 None,
                 Vec::new(),
                 BString::from(format!("{}: {}", dir.display(), error)),
             ),
+            // Still searching. The pattern is not recorded, so this runs
+            // again next frame, and the list says what it is waiting for
+            // rather than going blank or holding the matches of a pattern
+            // that is no longer in the box.
+            None => {
+                let state = state_mut(app, page_id);
+                state.matches = Vec::new();
+                state.list_text = BString::from(SEARCHING);
+                return;
+            }
         }
     };
 

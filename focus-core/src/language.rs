@@ -172,6 +172,21 @@ pub(crate) enum Flow {
     Error,
 }
 
+/// How many `Bracket`s there are, for the arrays indexed by one.
+const BRACKET_KINDS: usize = 4;
+
+/// Where a bracket's own list sits in those arrays. Written out rather
+/// than cast from the enum so that adding a bracket stops compiling here
+/// instead of running off the end of an array.
+const fn bracket_index(bracket: Bracket) -> usize {
+    match bracket {
+        Bracket::Round => 0,
+        Bracket::Square => 1,
+        Bracket::Curly => 2,
+        Bracket::Word => 3,
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Bracket {
     Round,
@@ -505,7 +520,16 @@ impl Tokens {
 
         let mut paren_match = vec![None; kind.len()];
         let mut paren_parent = vec![None; kind.len()];
+        // The brackets still open, innermost last, as token indices - and
+        // alongside it, for each kind of bracket, where in that stack its
+        // own open brackets are. `open_of_kind` is what keeps this linear:
+        // finding the nearest open bracket of one kind is reading the back
+        // of its list rather than searching the stack, which matters
+        // because the search that is not there would be the whole stack
+        // every time a file has a stray closing bracket and a lot of
+        // things open - and a file being typed into is full of both.
         let mut stack: Vec<usize> = Vec::new();
+        let mut open_of_kind: [Vec<usize>; BRACKET_KINDS] = Default::default();
         for ix in 0..kind.len() {
             // A closing bracket pairs with the nearest opening one of its
             // own kind, which is not always the innermost one still open.
@@ -518,17 +542,25 @@ impl Tokens {
             // `)` - pairs with nothing and closes nothing, rather than
             // taking the structure of everything below it with it.
             if let TokenKind::Close(closing) = kind[ix]
-                && let Some(pos) = stack.iter().rposition(|open_ix| {
-                    matches!(kind[*open_ix], TokenKind::Open(opening) if opening == closing)
-                })
+                && let Some(&pos) = open_of_kind[bracket_index(closing)].last()
             {
+                // Everything above the bracket that just closed is left
+                // open and goes with it. Each one was pushed once, so
+                // taking them off one at a time is linear over the file.
+                for &open_ix in &stack[pos..] {
+                    let TokenKind::Open(opening) = kind[open_ix] else {
+                        unreachable!("only open brackets go on the stack");
+                    };
+                    open_of_kind[bracket_index(opening)].pop();
+                }
                 let open_ix = stack[pos];
                 stack.truncate(pos);
                 paren_match[ix] = Some(open_ix);
                 paren_match[open_ix] = Some(ix);
             }
             paren_parent[ix] = stack.last().copied();
-            if matches!(kind[ix], TokenKind::Open(_)) {
+            if let TokenKind::Open(opening) = kind[ix] {
+                open_of_kind[bracket_index(opening)].push(stack.len());
                 stack.push(ix);
             }
         }

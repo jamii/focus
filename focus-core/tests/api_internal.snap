@@ -28,6 +28,8 @@ impl ApplicationHandler<Incoming> for Chrome
 
 ## pub mod focus::render
 
+## pub mod focus::search
+
 ## pub mod focus::vcs
 
 ## crate focus_core

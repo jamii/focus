@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use bstr::BStr;
 use focus::chrome::repo_search;
+use focus::search::Search;
 
 // Small enough to write the test data by hand. The limits the editor asks
 // for live in focus-core's page/search_repo.rs.
@@ -68,4 +69,90 @@ fn long_match_lines_are_truncated() {
 
     assert_eq!(search.matches.len(), 1);
     assert_eq!(search.matches[0].line_text, "fooxxxxx");
+}
+
+/// Wait for `Search` to answer, the way the editor does: by asking again
+/// every frame. Gives up rather than hanging, so a search that is never
+/// answered fails the test it is in.
+fn wait_for(search: &Search, dir: &std::path::Path, pattern: &str) -> focus_core::app::RepoSearch {
+    for _ in 0..600 {
+        if let Some(answer) = search.search(dir, BStr::new(pattern), MATCH_LIMIT, LINE_LIMIT) {
+            return answer.unwrap();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    panic!("{pattern:?} was never answered");
+}
+
+/// Two search pages are two patterns wanted at once, each asking every
+/// frame. Both have to be answered: a worker that kept only the newest
+/// request would let them overwrite each other.
+#[test]
+fn two_patterns_wanted_at_once_are_both_answered() {
+    let dir = dir("concurrent");
+    std::fs::write(
+        dir.join("a.txt"),
+        b"apple
+",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("b.txt"),
+        b"banana
+",
+    )
+    .unwrap();
+    let search = Search::new();
+
+    // Ask for both before either can have been answered, then keep
+    // asking for both, as two open pages would.
+    assert!(
+        search
+            .search(&dir, BStr::new("apple"), MATCH_LIMIT, LINE_LIMIT)
+            .is_none()
+    );
+    assert!(
+        search
+            .search(&dir, BStr::new("banana"), MATCH_LIMIT, LINE_LIMIT)
+            .is_none()
+    );
+
+    let apple = wait_for(&search, &dir, "apple");
+    let banana = wait_for(&search, &dir, "banana");
+    assert_eq!(apple.matches.len(), 1);
+    assert_eq!(apple.matches[0].line_text, "apple");
+    assert_eq!(banana.matches.len(), 1);
+    assert_eq!(banana.matches[0].line_text, "banana");
+}
+
+/// An answer lasts as long as something is still asking for it, so a
+/// page goes on showing its matches rather than flipping back to
+/// searching for them.
+#[test]
+fn an_answer_that_is_still_wanted_is_kept() {
+    let dir = dir("kept");
+    std::fs::write(
+        dir.join("a.txt"),
+        b"foo
+",
+    )
+    .unwrap();
+    let search = Search::new();
+
+    wait_for(&search, &dir, "foo");
+    // Other patterns come and go in the meantime, as typing in another
+    // window would produce.
+    for n in 0..20 {
+        let pattern = format!("miss{n}");
+        search.search(&dir, BStr::new(&pattern), MATCH_LIMIT, LINE_LIMIT);
+    }
+    for _ in 0..50 {
+        assert!(
+            search
+                .search(&dir, BStr::new("foo"), MATCH_LIMIT, LINE_LIMIT)
+                .is_some(),
+            "an answer still being asked for was forgotten"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
 }

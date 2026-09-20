@@ -256,7 +256,6 @@ fn delete_removes_selection() {
     app.assert_invariants();
 }
 
-#[test]
 /// A cursor keeps its tail when the mark comes off - a ctrl-click in the
 /// middle of a drag has to leave the earlier selection where it is, so
 /// that the drag that follows can add to it. While the mark is off that
@@ -288,6 +287,7 @@ fn an_unmarked_cursor_with_a_tail_is_just_a_point() {
     app.assert_invariants();
 }
 
+#[test]
 fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcdef");

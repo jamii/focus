@@ -191,6 +191,10 @@ pub fn focus_changed(app: &mut App, io: &mut MockIO, window_id: WindowId, focuse
 }
 
 pub fn tick(app: &mut App, io: &mut MockIO) {
+    // What a worker thread would have finished between two frames. A
+    // search asked for during one tick is therefore answered by the
+    // next, which is how it behaves in the editor too.
+    io.complete_searches();
     let frame_start = io.frame_start;
     app.tick(io, frame_start);
 }

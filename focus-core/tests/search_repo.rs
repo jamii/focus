@@ -29,6 +29,15 @@ fn insert_file(io: &mut MockIO, path: &str, text: &str) {
     );
 }
 
+/// A frame, and then the one after it - which is when a search asked for
+/// during the first has come back. The backend searches on a worker
+/// thread, so matches are always a frame behind the keystroke that asked
+/// for them.
+fn tick_searched(app: &mut App, io: &mut MockIO) {
+    common::tick(app, io);
+    common::tick(app, io);
+}
+
 fn search_repo_app(files: &[(&str, &str)]) -> (App, MockIO, WindowId) {
     let (mut app, mut io, window_id) = common::scratch_app();
     for (path, text) in files {
@@ -38,11 +47,34 @@ fn search_repo_app(files: &[(&str, &str)]) -> (App, MockIO, WindowId) {
     (app, io, window_id)
 }
 
+/// Searching a repo reads every file in it, which is not a frame's work,
+/// so the backend answers when it has an answer and the page asks again
+/// until then. While it waits the list says so, and once the answer lands
+/// it appears without the pattern being retyped.
+#[test]
+fn a_search_that_is_still_running_says_so_and_then_lands() {
+    let (mut app, mut io, window_id) = search_repo_app(&[("/a.txt", "foo bar")]);
+    io.repo_search_pending = true;
+
+    common::text_input(&mut app, &mut io, window_id, "foo");
+    common::tick(&mut app, &mut io);
+    assert_eq!(buffer_text(&app, LIST), "[searching ...]");
+
+    // Asking again while it is still running changes nothing, and in
+    // particular does not settle on an empty answer.
+    common::tick(&mut app, &mut io);
+    assert_eq!(buffer_text(&app, LIST), "[searching ...]");
+
+    io.repo_search_pending = false;
+    tick_searched(&mut app, &mut io);
+    assert_eq!(buffer_text(&app, LIST), "a.txt:1 foo bar");
+}
+
 #[test]
 fn empty_search_has_no_matches() {
     let (mut app, mut io, _window_id) = search_repo_app(&[("/a.txt", "foo")]);
 
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
 
     assert_eq!(buffer_text(&app, SEARCH), "");
     assert_eq!(buffer_text(&app, LIST), "");
@@ -58,7 +90,7 @@ fn lists_matches_with_path_and_line_prefix() {
     ]);
     common::text_input(&mut app, &mut io, window_id, "foo");
 
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
 
     assert_eq!(
         buffer_text(&app, LIST),
@@ -73,13 +105,13 @@ fn preview_shows_whole_file_of_selected_match() {
         search_repo_app(&[("/a.txt", "foo\nbar foo"), ("/b.txt", "b foo")]);
     common::text_input(&mut app, &mut io, window_id, "foo");
 
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
     assert_eq!(buffer_text(&app, PREVIEW), "foo\nbar foo");
 
     // Ctrl+k twice selects the match in b.txt.
     common::control_key(&mut app, &mut io, window_id, Key::Character("k"));
     common::control_key(&mut app, &mut io, window_id, Key::Character("k"));
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
     assert_eq!(buffer_text(&app, PREVIEW), "b foo");
     app.assert_invariants();
 }
@@ -89,7 +121,7 @@ fn typing_into_the_preview_does_nothing() {
     let (mut app, mut io, window_id) =
         search_repo_app(&[("/a.txt", "foo\nbar foo"), ("/b.txt", "b foo")]);
     common::text_input(&mut app, &mut io, window_id, "foo");
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
     let preview_before = buffer_text(&app, PREVIEW);
 
     // Focus the generated preview in the top half of the page.
@@ -108,6 +140,7 @@ fn typing_into_the_preview_does_nothing() {
 fn ctrl_enter_opens_selected_match_in_current_window() {
     let (mut app, mut io, window_id) = search_repo_app(&[("/a.txt", "one foo two foo")]);
     common::text_input(&mut app, &mut io, window_id, "foo");
+    tick_searched(&mut app, &mut io);
     let buffers_before = app.buffers.keys().count();
 
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
@@ -119,16 +152,39 @@ fn ctrl_enter_opens_selected_match_in_current_window() {
     app.assert_invariants();
 }
 
+/// Enter opens a match of what is in the search box, never of what used
+/// to be. The search runs on a worker thread, so between typing and the
+/// answer there is a frame with no matches for the new pattern - and
+/// what Enter must not do then is open a match of the old one.
 #[test]
-fn ctrl_enter_uses_current_search_before_next_tick() {
+fn ctrl_enter_never_opens_a_match_of_the_previous_pattern() {
     let (mut app, mut io, window_id) =
         search_repo_app(&[("/a.txt", "apple"), ("/b.txt", "banana")]);
-    common::text_input(&mut app, &mut io, window_id, "ban");
+    common::text_input(&mut app, &mut io, window_id, "app");
+    tick_searched(&mut app, &mut io);
     let buffers_before = app.buffers.keys().count();
 
+    // Replace the pattern and press enter before the search comes back.
+    for _ in 0.."app".len() {
+        common::key(
+            &mut app,
+            &mut io,
+            window_id,
+            Key::Named(NamedKey::Backspace),
+        );
+    }
+    common::text_input(&mut app, &mut io, window_id, "ban");
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    assert_eq!(
+        app.buffers.keys().count(),
+        buffers_before,
+        "opened something while the search was still out"
+    );
+
+    // Once it lands, enter opens the match it found.
+    tick_searched(&mut app, &mut io);
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
     common::char_input(&mut app, &mut io, window_id, 'X');
-
     assert_eq!(buffer_text(&app, buffers_before), "Xana");
     app.assert_invariants();
 }
@@ -138,6 +194,7 @@ fn alt_enter_opens_one_window_per_file() {
     let (mut app, mut io, window_id) =
         search_repo_app(&[("/a.txt", "foo one foo"), ("/b.txt", "x foo")]);
     common::text_input(&mut app, &mut io, window_id, "foo");
+    tick_searched(&mut app, &mut io);
     let buffers_before = app.buffers.keys().count();
 
     common::alt_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
@@ -165,7 +222,7 @@ fn alt_enter_opens_one_window_per_file() {
 #[test]
 fn search_text_is_shared_with_search_buffer() {
     let (mut app, mut io, window_id) = common::file_app(PathBuf::from("/repo/file.txt"), "foo bar");
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
 
     // Search the buffer for "bar", then open the repo search page.
     common::control_key(&mut app, &mut io, window_id, Key::Character("f"));
@@ -177,7 +234,7 @@ fn search_text_is_shared_with_search_buffer() {
     // is created after the preview buffer. The search buffer page has no
     // current path, so the search starts from the current dir (/).
     assert_eq!(buffer_text(&app, buffers_before + 1), "bar");
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
     assert_eq!(
         buffer_text(&app, buffers_before + 2),
         "repo/file.txt:1 foo bar"
@@ -210,7 +267,7 @@ fn match_list_stops_at_the_limit() {
         search_repo_app(&[("/a.txt", text.as_str()), ("/b.txt", text.as_str())]);
     common::text_input(&mut app, &mut io, window_id, "foo");
 
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
 
     let list = buffer_text(&app, LIST);
     let lines: Vec<&str> = list.split('\n').collect();
@@ -225,7 +282,7 @@ fn match_list_stops_at_the_limit() {
     for _ in 0..limit {
         common::control_key(&mut app, &mut io, window_id, Key::Character("k"));
     }
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
     assert_eq!(buffer_text(&app, PREVIEW), "");
     let buffers_before = app.buffers.keys().count();
     common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
@@ -242,7 +299,7 @@ fn long_match_lines_are_truncated() {
     let (mut app, mut io, window_id) = search_repo_app(&[("/a.txt", text.as_str())]);
     common::text_input(&mut app, &mut io, window_id, "foo");
 
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
 
     assert_eq!(
         buffer_text(&app, LIST),
@@ -264,7 +321,7 @@ fn preview_is_a_window_around_a_match_deep_in_a_big_file() {
     let (mut app, mut io, window_id) = search_repo_app(&[("/a.txt", text.as_str())]);
     common::text_input(&mut app, &mut io, window_id, "needle");
 
-    common::tick(&mut app, &mut io);
+    tick_searched(&mut app, &mut io);
 
     let window_start = head.len() - preview_bytes / 2;
     assert_eq!(

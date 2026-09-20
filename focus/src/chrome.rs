@@ -42,6 +42,7 @@ use crate::APP_ID;
 use crate::atlas::Atlas;
 use crate::daemon::{self, Incoming, Request};
 use crate::render::Renderer;
+use crate::search::Search;
 use crate::vcs::Vcs;
 
 const FONT: &[u8] = include_bytes!("../deps/FiraCode-Regular.ttf");
@@ -138,6 +139,7 @@ struct Backend {
     waiting: HashMap<WindowId, UnixStream>,
     // The jj repos we have looked at, and their last poll.
     vcs: Vcs,
+    search: Search,
 }
 
 struct ProcessState {
@@ -336,8 +338,10 @@ impl IO for IoReal<'_> {
         pattern: &BStr,
         match_limit: usize,
         line_limit: usize,
-    ) -> std::io::Result<RepoSearch> {
-        repo_search(dir, pattern, match_limit, line_limit)
+    ) -> Option<std::io::Result<RepoSearch>> {
+        self.backend
+            .search
+            .search(dir, pattern, match_limit, line_limit)
     }
 
     fn repo_root(&mut self, dir: &Path) -> PathBuf {
@@ -797,6 +801,7 @@ impl Backend {
             processes: Vec::new(),
             waiting: HashMap::new(),
             vcs: Vcs::new(),
+            search: Search::new(),
         };
         let id = WindowId(0);
         backend.register_window(id, window, surface);

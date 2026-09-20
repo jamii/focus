@@ -123,7 +123,7 @@ impl IO for ErrorIO {
         pattern: &BStr,
         match_limit: usize,
         line_limit: usize,
-    ) -> std::io::Result<RepoSearch> {
+    ) -> Option<std::io::Result<RepoSearch>> {
         self.inner
             .repo_search(dir, pattern, match_limit, line_limit)
     }

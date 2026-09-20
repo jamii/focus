@@ -115,6 +115,25 @@ impl Renderer {
 
 impl Drop for Renderer
 
+## pub mod focus::search
+
+pub struct Search {
+    /* private fields */
+}
+
+impl Search {
+    pub fn new() -> Search;
+    pub fn search(
+        &self,
+        dir: &Path,
+        pattern: &BStr,
+        match_limit: usize,
+        line_limit: usize,
+    ) -> Option<std::io::Result<RepoSearch>>;
+}
+
+impl Drop for Search
+
 ## pub mod focus::vcs
 
 pub struct Vcs {
@@ -224,7 +243,7 @@ pub trait IO {
         pattern: &BStr,
         match_limit: usize,
         line_limit: usize,
-    ) -> std::io::Result<RepoSearch>;
+    ) -> Option<std::io::Result<RepoSearch>>;
     fn repo_root(&mut self, dir: &Path) -> PathBuf;
     fn vcs_change(
         &mut self,
@@ -481,6 +500,8 @@ pub struct MockIO {
     pub vcs_revisions: HashMap<PathBuf, Vec<VcsRevision>>,
     pub vcs_checkouts: Vec<(PathBuf, VcsRevisionId)>,
     pub vcs_checkout_pending: bool,
+    pub repo_search_pending: bool,
+    pub searches: BTreeMap<SearchQuery, Option<RepoSearch>>,
     pub vcs_checkout_error: Option<String>,
     pub system_time: SystemTime,
     pub local_date: Date,
@@ -490,6 +511,14 @@ pub struct MockIO {
     pub process_run_outputs: BTreeMap<BString, Vec<u8>>,
     pub process_runs: Vec<ProcessRun>,
     pub detached: Vec<DetachedProcess>,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SearchQuery {
+    pub dir: PathBuf,
+    pub pattern: BString,
+    pub match_limit: usize,
+    pub line_limit: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -517,6 +546,10 @@ pub struct DetachedProcess {
 
 impl MockIO {
     pub fn new() -> Self;
+}
+
+impl MockIO {
+    pub fn complete_searches(&mut self);
 }
 
 impl IO for MockIO
