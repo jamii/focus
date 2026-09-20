@@ -526,7 +526,7 @@ pub const MAX_WINDOWS: usize = ...;
 pub const MAX_TEXT_BYTES: usize = ...;
 pub type Clock = fn() -> Duration;
 pub fn fuzz_one(bytes: &[u8]);
-pub fn fuzz_one_with_clock(bytes: &[u8], clock: Clock);
+pub fn fuzz_one_with_clock(bytes: &[u8], clock: Clock, budget: Duration);
 
 ## pub mod focus_core::input
 

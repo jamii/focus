@@ -11,3 +11,5 @@ path = "src/main.rs"
 [dependencies]
 focus-core = { path = "../focus-core" }
 honggfuzz = "0.5"
+# For CLOCK_THREAD_CPUTIME_ID; see the comment on `now` in src/main.rs.
+libc = "0.2"

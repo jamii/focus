@@ -8,8 +8,14 @@ use std::io::Read;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
-// The same clock the honggfuzz target passes in, so that a crash from the
-// frame-budget assertion replays here. See `focus_core::fuzz::Clock`.
+// A clock for the frame-budget assertion, so that a crash from it
+// replays here. See `focus_core::fuzz::Clock`.
+//
+// The wall clock, where the honggfuzz target reads this thread's CPU
+// time. The fuzzer needs CPU time because it runs one thread per core
+// and the wall clock would measure its own load; replaying is one run on
+// an idle machine, where the wall clock is the honest measure and is
+// never below the CPU time, so anything the fuzzer found still shows up.
 static START: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 fn now() -> Duration {
@@ -39,6 +45,7 @@ fn main() {
     };
     eprintln!("replaying {} bytes", bytes.len());
     LazyLock::force(&START);
-    focus_core::fuzz::fuzz_one_with_clock(&bytes, now);
+    // The real budget: this is the judge, not the trigger.
+    focus_core::fuzz::fuzz_one_with_clock(&bytes, now, focus_core::fuzz::FRAME_BUDGET);
     eprintln!("no crash");
 }

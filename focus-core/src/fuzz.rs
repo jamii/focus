@@ -492,7 +492,9 @@ const A_OPEN_WINDOW: u32 = 5;
 
 // Small pool of path components for A_FILE_CREATE, so created files
 // sometimes collide with the seeded tree and sometimes add new dirs.
-const FUZZ_PATH_COMPONENTS: &[&str] = &["dir", "sub", "a", "b.txt", "c.rs", "Émile"];
+const FUZZ_PATH_COMPONENTS: &[&str] = &[
+    "dir", "sub", "a", "b.txt", "c.rs", "d.py", "e.sh", "f.nix", "g.md", "Émile",
+];
 
 fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> {
     let x_limit = (screen_size[0].max(0.0) as u32)
@@ -510,11 +512,17 @@ fn random_mouse_pos(frng: &mut Frng, screen_size: [f32; 2]) -> Option<[f32; 2]> 
 // still tick, and still sees files change underneath it, so the
 // windowless step below runs these too.
 
-fn act_tick(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option<()> {
+fn act_tick(
+    frng: &mut Frng,
+    app: &mut App,
+    io: &mut MockIO,
+    clock: Clock,
+    budget: Duration,
+) -> Option<()> {
     // Advance time by a fuzzer-chosen delta in [0, ~1s].
     let delta_us = frng.u32_bounded(0, 1_000_000)?;
     io.frame_start += Duration::from_micros(delta_us as u64);
-    tick(app, io, clock);
+    tick(app, io, clock, budget);
     Some(())
 }
 
@@ -527,7 +535,7 @@ fn act_file_modify(frng: &mut Frng, io: &mut MockIO) -> Option<()> {
     if !paths.is_empty() {
         let path_index = frng.usize_bounded(0, paths.len() - 1)?;
         let path = paths.swap_remove(path_index);
-        let contents = random_file_contents(frng)?;
+        let contents = random_file_contents(frng, &path)?;
         let mtime = io
             .files
             .get(&path)
@@ -538,32 +546,74 @@ fn act_file_modify(frng: &mut Frng, io: &mut MockIO) -> Option<()> {
     Some(())
 }
 
+// The source files the language tests use, by the extension that picks
+// them. Repeated to length they give the tokenizers, the indent rules
+// and the formatters something they are built to read - which is where
+// the interesting code is, and which a stream of random printable bytes
+// almost never reaches.
+const FUZZ_FIXTURES: &[(&str, &str)] = &[
+    ("rs", include_str!("../tests/fixtures/indent.rs")),
+    ("py", include_str!("../tests/fixtures/indent.py")),
+    ("sh", include_str!("../tests/fixtures/indent.sh")),
+    ("nix", include_str!("../tests/fixtures/indent.nix")),
+    ("md", include_str!("../tests/fixtures/sample.md")),
+];
+
 // What a file changing on disk turns into. Usually short, but one time
 // in eight a file of the size the performance model is about - there is
 // no point promising a frame budget up to MAX_TEXT_BYTES if the fuzzer
 // only ever produces sixty bytes.
 //
-// A big file is a short random unit repeated, because the fuzzer cannot
-// spend a byte of input per byte of file. That also makes its lines
-// repetitive, which is a real enough shape - logs, csv, generated code -
-// and a hard one for anything that has to diff it.
-fn random_file_contents(frng: &mut Frng) -> Option<Vec<u8>> {
+// Either shape is a unit repeated, because the fuzzer cannot spend a
+// byte of input per byte of file. Half the time the unit is one of the
+// language fixtures; the rest of the time it is a short random one,
+// whose repetitiveness is a real enough shape - logs, csv, generated
+// code - and a hard one for anything that has to diff it.
+fn random_file_contents(frng: &mut Frng, path: &Path) -> Option<Vec<u8>> {
     let len = if frng.u8_bounded(0, 7)? == 0 {
         frng.usize_bounded(0, MAX_TEXT_BYTES)?
     } else {
         frng.usize_bounded(0, 64)?
     };
-    let unit_len = frng.usize_bounded(1, 32)?;
-    let mut unit = Vec::with_capacity(unit_len);
-    for _ in 0..unit_len {
-        // Mostly printable ascii, with newlines so that files have lines
-        // rather than being one enormous one.
-        unit.push(match frng.u8_bounded(0, 7)? {
-            0 => b'\n',
-            _ => frng.u8_bounded(0x20, 0x7e)?,
-        });
-    }
+    let unit: Vec<u8> = if frng.boolean()? {
+        fixture(frng, path)?.as_bytes().to_vec()
+    } else {
+        let unit_len = frng.usize_bounded(1, 32)?;
+        let mut unit = Vec::with_capacity(unit_len);
+        for _ in 0..unit_len {
+            // Mostly printable ascii, with newlines so that files have
+            // lines rather than being one enormous one.
+            unit.push(match frng.u8_bounded(0, 7)? {
+                0 => b'\n',
+                _ => frng.u8_bounded(0x20, 0x7e)?,
+            });
+        }
+        unit
+    };
     Some(unit.into_iter().cycle().take(len).collect())
+}
+
+// Which fixture to fill a file with. Usually the language its name
+// promises, so that a `.py` file really is python and gets tokenized,
+// indented and reformatted the way one would. Sometimes not: a file
+// whose contents belie its name is a thing that happens, and the
+// tokenizers have to survive it.
+fn fixture(frng: &mut Frng, path: &Path) -> Option<&'static str> {
+    let named = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(|extension| {
+            FUZZ_FIXTURES
+                .iter()
+                .find(|(fixture_extension, _)| *fixture_extension == extension)
+        });
+    if let Some((_, text)) = named
+        && frng.u8_bounded(0, 3)? != 0
+    {
+        return Some(text);
+    }
+    let ix = frng.usize_bounded(0, FUZZ_FIXTURES.len() - 1)?;
+    Some(FUZZ_FIXTURES[ix].1)
 }
 
 fn act_file_delete(frng: &mut Frng, io: &mut MockIO) -> Option<()> {
@@ -669,7 +719,14 @@ const ALT: ModifiersState = ModifiersState {
 // Every input, tick and draw the harness makes goes through one of the
 // three functions below, so that all of them are timed.
 
-fn input(app: &mut App, io: &mut MockIO, clock: Clock, window_id: WindowId, event: InputEvent) {
+fn input(
+    app: &mut App,
+    io: &mut MockIO,
+    clock: Clock,
+    budget: Duration,
+    window_id: WindowId,
+    event: InputEvent,
+) {
     // A copy for the failure message: the call consumes the event, and
     // an event is a couple of words.
     let copy = event.clone();
@@ -677,10 +734,10 @@ fn input(app: &mut App, io: &mut MockIO, clock: Clock, window_id: WindowId, even
     let start = clock();
     app.input(io, window_id, event);
     let elapsed = clock().saturating_sub(start);
-    check_budget(app, before, elapsed, format_args!("input {copy:?}"));
+    check_budget(app, before, elapsed, budget, format_args!("input {copy:?}"));
 }
 
-fn draw(app: &mut App, io: &mut MockIO, clock: Clock, window_id: WindowId) {
+fn draw(app: &mut App, io: &mut MockIO, clock: Clock, budget: Duration, window_id: WindowId) {
     // Allocating the command list is the renderer's cost, not the
     // editor's, so it sits outside the timer.
     let mut drawing = Drawing::new(io.screen_size);
@@ -692,17 +749,18 @@ fn draw(app: &mut App, io: &mut MockIO, clock: Clock, window_id: WindowId) {
         app,
         before,
         elapsed,
+        budget,
         format_args!("draw at {:?}", io.screen_size),
     );
 }
 
-fn tick(app: &mut App, io: &mut MockIO, clock: Clock) {
+fn tick(app: &mut App, io: &mut MockIO, clock: Clock, budget: Duration) {
     let frame_start = io.frame_start;
     let before = Load::of(app);
     let start = clock();
     app.tick(io, frame_start);
     let elapsed = clock().saturating_sub(start);
-    check_budget(app, before, elapsed, format_args!("tick"));
+    check_budget(app, before, elapsed, budget, format_args!("tick"));
 }
 
 /// How much the app was holding: what the performance model's limits are
@@ -729,8 +787,14 @@ impl Load {
 // Takes its message as `Arguments` rather than a `String`, because this
 // runs on every input the fuzzer sends and only the failing one needs
 // formatting.
-fn check_budget(app: &App, before: Load, elapsed: Duration, what: std::fmt::Arguments<'_>) {
-    if elapsed <= FRAME_BUDGET {
+fn check_budget(
+    app: &App,
+    before: Load,
+    elapsed: Duration,
+    budget: Duration,
+    what: std::fmt::Arguments<'_>,
+) {
+    if elapsed <= budget {
         return;
     }
     // The limits have to hold on both sides of the call. An operation
@@ -745,7 +809,7 @@ fn check_budget(app: &App, before: Load, elapsed: Duration, what: std::fmt::Argu
         return;
     }
     panic!(
-        "{what} took {elapsed:?}, over the {FRAME_BUDGET:?} frame budget\n\
+        "{what} took {elapsed:?}, over the {budget:?} frame budget\n\
          {windows} open windows, {} pages, {} buffers, {text_bytes} bytes of text",
         app.pages.page_count, app.buffers.buffer_count,
     );
@@ -757,6 +821,7 @@ fn chord(
     app: &mut App,
     io: &mut MockIO,
     clock: Clock,
+    budget: Duration,
     window_id: WindowId,
     modifiers: ModifiersState,
     key: &str,
@@ -765,6 +830,7 @@ fn chord(
         app,
         io,
         clock,
+        budget,
         window_id,
         InputEvent::ModifiersChanged(modifiers),
     );
@@ -772,6 +838,7 @@ fn chord(
         app,
         io,
         clock,
+        budget,
         window_id,
         InputEvent::Key {
             state: ButtonState::Pressed,
@@ -782,6 +849,7 @@ fn chord(
         app,
         io,
         clock,
+        budget,
         window_id,
         InputEvent::ModifiersChanged(ModifiersState::default()),
     );
@@ -790,7 +858,13 @@ fn chord(
 // Each step: perform one randomly chosen action. Returns Some(()) if
 // more entropy is available; None when the buffer is exhausted (Frng
 // signals end-of-stream as None).
-fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option<()> {
+fn step(
+    frng: &mut Frng,
+    app: &mut App,
+    io: &mut MockIO,
+    clock: Clock,
+    budget: Duration,
+) -> Option<()> {
     // Closing the last window leaves a live daemon waiting for a request,
     // not a dead app, so the run continues with only the actions that need
     // no window - one of which opens one again.
@@ -803,7 +877,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
             A_OPEN_WINDOW,
         ])?;
         return match action {
-            0 => act_tick(frng, app, io, clock),
+            0 => act_tick(frng, app, io, clock, budget),
             1 => act_file_modify(frng, io),
             2 => act_file_delete(frng, io),
             3 => act_file_create(frng, io),
@@ -861,7 +935,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
                 state: ButtonState::Pressed,
                 logical_key: Key::Character(s),
             };
-            input(app, io, clock, window_id, event);
+            input(app, io, clock, budget, window_id, event);
         }
         1 => {
             // Named key (Enter, Space, Backspace, Delete, plus a few
@@ -886,6 +960,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
                 app,
                 io,
                 clock,
+                budget,
                 window_id,
                 InputEvent::Key {
                     state,
@@ -902,13 +977,27 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
                 shift: bits & 0b0100 != 0,
                 super_: bits & 0b1000 != 0,
             };
-            input(app, io, clock, window_id, InputEvent::ModifiersChanged(m));
+            input(
+                app,
+                io,
+                clock,
+                budget,
+                window_id,
+                InputEvent::ModifiersChanged(m),
+            );
         }
         3 => {
-            input(app, io, clock, window_id, InputEvent::CloseRequested);
+            input(
+                app,
+                io,
+                clock,
+                budget,
+                window_id,
+                InputEvent::CloseRequested,
+            );
         }
         4 => {
-            act_tick(frng, app, io, clock)?;
+            act_tick(frng, app, io, clock, budget)?;
         }
         5 => {
             // Draw at a fuzzer-chosen screen size.
@@ -918,7 +1007,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
                     frng.u32_bounded(0, 4000)? as f32,
                 ];
             }
-            draw(app, io, clock, window_id);
+            draw(app, io, clock, budget, window_id);
         }
         6 => {
             // Scrolling. Either a mouse wheel notch, or one step of a
@@ -938,7 +1027,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
                     },
                 },
             };
-            input(app, io, clock, window_id, event);
+            input(app, io, clock, budget, window_id, event);
         }
         7 => {
             let position = random_mouse_pos(frng, io.screen_size)?;
@@ -947,6 +1036,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
                 app,
                 io,
                 clock,
+                budget,
                 window_id,
                 InputEvent::MouseMoved { position },
             );
@@ -962,6 +1052,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
                 app,
                 io,
                 clock,
+                budget,
                 window_id,
                 InputEvent::MouseButton { state, position },
             );
@@ -974,6 +1065,7 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
                 app,
                 io,
                 clock,
+                budget,
                 window_id,
                 InputEvent::FocusChanged {
                     focused: frng.boolean()?,
@@ -986,31 +1078,31 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
         12 => {
             // Push the FileOpen page (ctrl+o). Enter and ctrl+enter are then
             // reachable via A_MODIFIERS + A_KEY_NAMED.
-            chord(app, io, clock, window_id, CONTROL, "o");
+            chord(app, io, clock, budget, window_id, CONTROL, "o");
         }
         13 => {
             // Push the repo file search page (ctrl+p).
-            chord(app, io, clock, window_id, CONTROL, "p");
+            chord(app, io, clock, budget, window_id, CONTROL, "p");
         }
         14 => {
             // Push the open buffer page (alt+p).
-            chord(app, io, clock, window_id, ALT, "p");
+            chord(app, io, clock, budget, window_id, ALT, "p");
         }
         15 => {
             // Push the search buffer page (ctrl+f).
-            chord(app, io, clock, window_id, CONTROL, "f");
+            chord(app, io, clock, budget, window_id, CONTROL, "f");
         }
         16 => {
             act_file_create(frng, io)?;
         }
         17 => {
             // Switch the window to the repo search page (alt+f).
-            chord(app, io, clock, window_id, ALT, "f");
+            chord(app, io, clock, budget, window_id, ALT, "f");
         }
         18 => {
             // Push the dir picker (ctrl+m), which leads to the command
             // picker and then the runner page via enter chords.
-            chord(app, io, clock, window_id, CONTROL, "m");
+            chord(app, io, clock, budget, window_id, CONTROL, "m");
         }
         19 => {
             // Feed output / an exit code to a random spawned process, so
@@ -1039,18 +1131,18 @@ fn step(frng: &mut Frng, app: &mut App, io: &mut MockIO, clock: Clock) -> Option
         20 => {
             // Open a copy of the current page in a new window (ctrl+n), so
             // every page kind gets duplicated under random input.
-            chord(app, io, clock, window_id, CONTROL, "n");
+            chord(app, io, clock, budget, window_id, CONTROL, "n");
         }
         21 => {
             act_open_window(frng, app, io)?;
         }
         22 => {
             // Push the diff page (ctrl+2).
-            chord(app, io, clock, window_id, CONTROL, "2");
+            chord(app, io, clock, budget, window_id, CONTROL, "2");
         }
         23 => {
             // Push the revision picker (alt+2).
-            chord(app, io, clock, window_id, ALT, "2");
+            chord(app, io, clock, budget, window_id, ALT, "2");
         }
         _ => unreachable!(),
     }
@@ -1115,17 +1207,33 @@ fn fuzz_status() -> VcsFileStatus {
 /// Drive the editor with `bytes`, without checking the frame budget:
 /// with no clock there is nothing to check it against.
 pub fn fuzz_one(bytes: &[u8]) {
-    fuzz_one_with_clock(bytes, stopped_clock);
+    fuzz_one_with_clock(bytes, stopped_clock, FRAME_BUDGET);
 }
 
 /// Drive the editor with `bytes`, timing every input, tick and draw
-/// against `clock` and panicking on the first one over the frame budget.
-pub fn fuzz_one_with_clock(bytes: &[u8], clock: Clock) {
+/// against `clock` and panicking on the first one over `budget`.
+///
+/// `budget` is a parameter because the honggfuzz target does not run the
+/// editor that ships: its coverage instrumentation and its persistent
+/// mode make everything several times slower, so holding it to
+/// FRAME_BUDGET reports frames that are comfortably inside it once the
+/// instrumentation is gone. It runs loose and flags candidates; `replay`
+/// is what holds them to the real budget.
+pub fn fuzz_one_with_clock(bytes: &[u8], clock: Clock, budget: Duration) {
     let mut frng = Frng::new(bytes);
     let mut io = MockIO::new();
     let initial_path = PathBuf::from("/fuzz.txt");
     // A small file tree for the FileOpen page to browse.
-    for path in ["/fuzz.txt", "/other.rs", "/dir/a", "/dir/sub/b.txt"] {
+    for path in [
+        "/fuzz.txt",
+        "/other.rs",
+        "/dir/a",
+        "/dir/sub/b.txt",
+        "/script.sh",
+        "/mod.py",
+        "/default.nix",
+        "/readme.md",
+    ] {
         io.files
             .insert(PathBuf::from(path), (Vec::new(), SystemTime::UNIX_EPOCH));
     }
@@ -1151,7 +1259,7 @@ pub fn fuzz_one_with_clock(bytes: &[u8], clock: Clock) {
     let buffer_id = buffer::from_file(&mut app, &mut io, initial_path);
     window::open_edit(&mut app, &mut io, buffer_id);
 
-    while step(&mut frng, &mut app, &mut io, clock).is_some() {
+    while step(&mut frng, &mut app, &mut io, clock, budget).is_some() {
         if io.exited {
             break;
         }

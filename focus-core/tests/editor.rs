@@ -4,6 +4,7 @@ use focus_core::fuzz::MockIO;
 use focus_core::input::{ButtonState, Key, ModifiersState, NamedKey, ScrollPhase};
 use focus_core::style::{BACKGROUND_COLOR, HIGHLIGHT_COLOR};
 use focus_core::window::WindowId;
+use std::path::PathBuf;
 use time::macros::date;
 
 mod common;
@@ -256,6 +257,37 @@ fn delete_removes_selection() {
 }
 
 #[test]
+/// A cursor keeps its tail when the mark comes off - a ctrl-click in the
+/// middle of a drag has to leave the earlier selection where it is, so
+/// that the drag that follows can add to it. While the mark is off that
+/// tail says nothing, and the cursor has to behave as the single point
+/// it is. Enter is where that shows: the new line is indented to suit
+/// where the cursor is, not where a selection nobody can see started.
+#[test]
+fn an_unmarked_cursor_with_a_tail_is_just_a_point() {
+    let (mut app, mut io, window_id) =
+        common::file_app(PathBuf::from("/repo/mark.rs"), "fn f() {\n");
+    common::tick(&mut app, &mut io);
+
+    // Mark at the start of the file, then run the head to the end of the
+    // line - past the `{`, so the two ends of the selection want
+    // different indents.
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
+    for _ in 0.."fn f() {".len() {
+        common::control_key(&mut app, &mut io, window_id, Key::Character("l"));
+    }
+    // Unmark. The head stays where it is and the tail is left behind at
+    // the start of the file.
+    common::control_key(&mut app, &mut io, window_id, Key::Named(NamedKey::Space));
+    app.assert_invariants();
+
+    // Indented to the open brace the cursor is sitting after, not to
+    // column zero where the tail is.
+    common::key(&mut app, &mut io, window_id, Key::Named(NamedKey::Enter));
+    assert_eq!(common::text(&app), "fn f() {\n    \n");
+    app.assert_invariants();
+}
+
 fn overlapping_multi_cursor_selections_coalesce_when_deleted() {
     let (mut app, mut io, window_id) = common::scratch_app();
     common::text_input(&mut app, &mut io, window_id, "abcdef");

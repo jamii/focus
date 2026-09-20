@@ -269,14 +269,6 @@ impl EditorId {
             for point in [&cursor.head, &cursor.tail] {
                 assert!(point.offset <= text.len());
             }
-            // A tail is where a selection started. With no selection
-            // there is nothing for it to say, and anything reading it as
-            // one end of a range - which is how the range of a cursor is
-            // read - would be reading a selection that is not there.
-            assert!(
-                app.editors.marked[self] || cursor.head.offset == cursor.tail.offset,
-                "unmarked cursor with a tail of its own"
-            );
         }
 
         // Wraps: incremental updates must match a full recompute.
@@ -730,7 +722,7 @@ impl EditorId {
             // Draw mark.
             if marked {
                 for cursor in cursors {
-                    let range = cursor.range();
+                    let range = cursor.range(marked);
                     for line_idx in line_first..line_after {
                         let [wrap_start, wrap_end] = wraps[line_idx];
                         if range.end <= wrap_start || range.start > wrap_end {
@@ -934,12 +926,14 @@ impl EditorId {
     }
 
     fn toggle_mark(self, app: &mut App) {
-        app.editors.marked[self] = !app.editors.marked[self];
-        // Marking starts a selection where the cursor is, and unmarking
-        // ends one and leaves the cursor where its head was. Either way
-        // the tail belongs at the head.
-        for cursor in &mut app.editors.cursors[self] {
-            cursor.tail = cursor.head;
+        let marked = !app.editors.marked[self];
+        app.editors.marked[self] = marked;
+        if marked {
+            // A selection starts where the cursor is. Unmarking needs no
+            // such care: an unmarked cursor's tail says nothing.
+            for cursor in &mut app.editors.cursors[self] {
+                cursor.tail = cursor.head;
+            }
         }
     }
 
@@ -956,7 +950,6 @@ impl EditorId {
         if !control_key {
             cursors.clear();
         }
-
         cursors.push(Cursor {
             head: CursorPoint::new(offset),
             tail: CursorPoint::new(offset),
@@ -971,8 +964,8 @@ impl EditorId {
         let cursor_main = app.editors.cursors[self].last().unwrap();
         let marked = app.editors.marked[self];
         let text = buffer_id.text(app).as_bstr();
-        let range = cursor_main.range();
-        if !marked || range.start == range.end {
+        let range = cursor_main.range(marked);
+        if range.is_empty() {
             return;
         };
         let search_start = range.end;
@@ -1002,12 +995,13 @@ impl EditorId {
     /// the cursor say it belongs.
     fn cursor_newline(self, app: &mut App) {
         let buffer_id = app.editors.buffer_id[self];
+        let marked = app.editors.marked[self];
         // Every cursor's indent is worked out against the text as it is
         // now, because `cursor_replace_each` applies all of the inserts as
         // one batch against that same text.
         let offsets: Vec<usize> = app.editors.cursors[self]
             .iter()
-            .map(|cursor| cursor.range().start)
+            .map(|cursor| cursor.range(marked).start)
             .collect();
         let inserts: Vec<BString> = offsets
             .into_iter()
@@ -1082,11 +1076,7 @@ impl EditorId {
         let marked = app.editors.marked[self];
         let mut lines: Vec<Range<usize>> = Vec::new();
         for cursor in &app.editors.cursors[self] {
-            let range = if marked {
-                cursor.range()
-            } else {
-                cursor.head.offset..cursor.head.offset
-            };
+            let range = cursor.range(marked);
             let last = if range.end > range.start {
                 range.end - 1
             } else {
@@ -1271,7 +1261,7 @@ impl EditorId {
                 continue;
             };
             if marked {
-                let range = cursor.range();
+                let range = cursor.range(marked);
                 edits.push(Edit {
                     kind: EditKind::Insert,
                     offset: range.start,
@@ -1295,9 +1285,8 @@ impl EditorId {
         Edit::coalesce(&mut edits);
         app.editors.cursors[self] = cursors;
         buffer_id.apply_edits(app, &edits);
-        // Editing a selection is the end of it, and of its tails.
+        // Editing a selection is the end of it.
         app.editors.marked[self] = false;
-        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1306,9 +1295,10 @@ impl EditorId {
         let text = buffer_id.text(app);
         let cursors = &app.editors.cursors[self];
         let mut edits = Vec::with_capacity(cursors.len());
+        let marked = app.editors.marked[self];
         for cursor in cursors {
-            if app.editors.marked[self] {
-                let range = cursor.range();
+            if marked {
+                let range = cursor.range(marked);
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: range.start,
@@ -1324,9 +1314,8 @@ impl EditorId {
         }
         Edit::coalesce(&mut edits);
         buffer_id.apply_edits(app, &edits);
-        // Editing a selection is the end of it, and of its tails.
+        // Editing a selection is the end of it.
         app.editors.marked[self] = false;
-        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1338,7 +1327,7 @@ impl EditorId {
         let mut edits = Vec::with_capacity(cursors.len());
         for cursor in cursors {
             if marked {
-                let range = cursor.range();
+                let range = cursor.range(marked);
                 edits.push(Edit {
                     kind: EditKind::Delete,
                     offset: range.start,
@@ -1354,9 +1343,8 @@ impl EditorId {
         }
         Edit::coalesce(&mut edits);
         buffer_id.apply_edits(app, &edits);
-        // Editing a selection is the end of it, and of its tails.
+        // Editing a selection is the end of it.
         app.editors.marked[self] = false;
-        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1367,7 +1355,7 @@ impl EditorId {
         let buffer_id = app.editors.buffer_id[self];
         let cursors = &app.editors.cursors[self];
         let text = buffer_id.text(app);
-        let text = bstr::join("\n", cursors.iter().map(|cursor| &text[cursor.range()]));
+        let text = bstr::join("\n", cursors.iter().map(|cursor| &text[cursor.range(true)]));
         io.set_clipboard_text(text.into());
     }
 
@@ -1462,7 +1450,6 @@ impl EditorId {
             );
         }
         app.editors.cursors[self] = cursors;
-        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1477,7 +1464,6 @@ impl EditorId {
             );
         }
         app.editors.cursors[self] = cursors;
-        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1485,7 +1471,6 @@ impl EditorId {
         for cursor in &mut app.editors.cursors[self] {
             cursor.head = CursorPoint::new(0);
         }
-        self.cursor_collapse_tails(app);
         self.scroll_offset_into_view(app, 0);
     }
 
@@ -1506,7 +1491,6 @@ impl EditorId {
         for cursor in &mut app.editors.cursors[self] {
             cursor.head = CursorPoint::new(end);
         }
-        self.cursor_collapse_tails(app);
         self.scroll_offset_into_center(app, end);
     }
 
@@ -1516,15 +1500,6 @@ impl EditorId {
     /// reads it as a selection that is not there. Every movement ends
     /// with this; everything that makes a cursor already sets the two
     /// together.
-    fn cursor_collapse_tails(self, app: &mut App) {
-        if app.editors.marked[self] {
-            return;
-        }
-        for cursor in &mut app.editors.cursors[self] {
-            cursor.tail = cursor.head;
-        }
-    }
-
     fn cursor_move(self, app: &mut App, direction: Direction) {
         let buffer_id = app.editors.buffer_id[self];
         let mut cursors = take(&mut app.editors.cursors[self]);
@@ -1553,7 +1528,6 @@ impl EditorId {
             };
         }
         app.editors.cursors[self] = cursors;
-        self.cursor_collapse_tails(app);
         self.scroll_main_cursor_into_view(app);
     }
 
@@ -1709,7 +1683,14 @@ impl EditorId {
 }
 
 impl Cursor {
-    fn range(&self) -> Range<usize> {
+    /// What this cursor covers. A tail is where a selection started, so
+    /// it only means anything while the editor is marked: unmarked, the
+    /// cursor covers the single point it is at, whatever the tail it was
+    /// last left with says.
+    fn range(&self, marked: bool) -> Range<usize> {
+        if !marked {
+            return self.head.offset..self.head.offset;
+        }
         if self.head.offset < self.tail.offset {
             self.head.offset..self.tail.offset
         } else {

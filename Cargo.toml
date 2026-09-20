@@ -1,3 +1,16 @@
 [workspace]
 resolver = "2"
 members = ["focus-core", "focus", "hfuzz"]
+
+# Replaying a fuzz crash has to match what the fuzzer was running.
+# honggfuzz builds with debug assertions on, and most of what it finds is
+# an `assert_invariants` that a plain release build compiles out - so a
+# crash replayed with `--release` comes back "no crash". Optimized all the
+# same, because the frame budget is a claim about the editor that ships,
+# and a debug build misses it by an order of magnitude.
+[profile.fuzz]
+inherits = "release"
+debug-assertions = true
+# Symbols, because this profile exists to be looked at under a profiler
+# or a debugger.
+debug = true
