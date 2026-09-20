@@ -1011,7 +1011,6 @@ dependencies = [
  "prettyplease",
  "pulldown-cmark",
  "ruff_python_formatter",
- "similar",
  "syn 3.0.5",
  "time",
 ]

@@ -1032,18 +1032,11 @@ impl OffsetDiff {
 
 /// The edits that turn `old` into `new`, word by word.
 ///
-/// The diff is ours rather than `similar`'s so that it can be bounded by
-/// a budget counted in work: see `crate::diff`. `similar` still does the
-/// tokenizing, which is the part with no surprises in it.
+/// Bounded by a budget counted in work rather than left to take as long
+/// as it takes - see `crate::diff`, which also does the tokenizing.
 fn diff_text(old: &BStr, new: &BStr) -> Vec<Edit> {
-    use similar::DiffableStr;
-
-    // Via the slices rather than `as_bytes`, which both bstr and
-    // similar's DiffableStr define for `[u8]`.
-    let old_bytes: &[u8] = old;
-    let new_bytes: &[u8] = new;
-    let old_tokens = old_bytes.tokenize_words();
-    let new_tokens = new_bytes.tokenize_words();
+    let old_tokens = crate::diff::tokenize_words(old);
+    let new_tokens = crate::diff::tokenize_words(new);
 
     // Op ranges are token indices, not byte offsets. Build a prefix sum of
     // token byte lengths so we can translate a token index into a byte offset.

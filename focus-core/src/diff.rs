@@ -24,6 +24,8 @@
 // them change what a diff means; if one turns out to be worth its weight
 // it can be copied too.
 
+use bstr::{BStr, ByteSlice};
+
 use std::ops::{Index, IndexMut, Range};
 
 /// How much work `diff` may do before it gives up and calls the rest of
@@ -56,6 +58,34 @@ pub(crate) struct Op {
     pub(crate) kind: OpKind,
     pub(crate) old: Range<usize>,
     pub(crate) new: Range<usize>,
+}
+
+/// Split `text` into the tokens a diff compares: maximal runs of
+/// whitespace, and maximal runs of everything else.
+///
+/// Word granularity, which is the granularity the edits want - a
+/// one-word change should move one word, not a whole line. Splitting on
+/// characters rather than bytes keeps a multi-byte character whole, and
+/// bytes that are not a character at all travel with the run they are in
+/// rather than breaking it.
+///
+/// The tokens tile the text, so a token index can be turned into a byte
+/// offset by summing the lengths in front of it.
+pub(crate) fn tokenize_words(text: &BStr) -> Vec<&[u8]> {
+    let mut tokens = Vec::new();
+    let mut chars = text.char_indices().peekable();
+    while let Some((start, mut end, char)) = chars.next() {
+        let whitespace = char.is_whitespace();
+        while let Some(&(_, next_end, next)) = chars.peek() {
+            if next.is_whitespace() != whitespace {
+                break;
+            }
+            chars.next();
+            end = next_end;
+        }
+        tokens.push(&text.as_bytes()[start..end]);
+    }
+    tokens
 }
 
 /// The ops that turn `old` into `new`.
@@ -454,6 +484,35 @@ mod tests {
         let ops = diff(&old_tokens, &new_tokens, budget);
         assert_eq!(apply(&old_tokens, &new_tokens, &ops), new);
         ops
+    }
+
+    #[test]
+    fn tokenize_words_tiles_the_text() {
+        let cases: Vec<Vec<u8>> = vec![
+            b"".to_vec(),
+            b"a".to_vec(),
+            b" ".to_vec(),
+            b"  leading and  trailing   ".to_vec(),
+            b"tabs\tand\nnewlines\r\n mixed".to_vec(),
+            "caf\u{e9} r\u{e9}sum\u{e9} \u{732b} \u{1f980}"
+                .as_bytes()
+                .to_vec(),
+            // Bytes that are not characters at all still have to come
+            // back out in one piece.
+            vec![0xff, 0xfe, b' ', 0x80, b'a', 0xc3, 0x28],
+            (0u8..=255).collect(),
+        ];
+        for case in &cases {
+            let tokens = tokenize_words(case.as_bstr());
+            assert_eq!(tokens.concat(), *case, "on {:?}", case.as_bstr());
+            assert!(tokens.iter().all(|token| !token.is_empty()));
+        }
+    }
+
+    #[test]
+    fn tokenize_words_splits_on_whitespace_runs() {
+        let tokens = tokenize_words(b"the  quick\tfox".as_bstr());
+        assert_eq!(tokens, [&b"the"[..], b"  ", b"quick", b"\t", b"fox"]);
     }
 
     #[test]

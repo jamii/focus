@@ -40,7 +40,6 @@ nixfmt_rs = { version = "0.5", default-features = false, optional = true }
 # clap, regex, tracing - because that is what the real thing is built
 # out of.
 ruff_python_formatter = { version = "0.0.14", optional = true }
-similar = { version = "3", features = ["bytes"] }
 # Dates, for the markdown key that writes today's as a heading: the type
 # the IO layer hands over and the formatting that turns it into
 # `2026 Sep 17`. No `local-offset` - which timezone the machine is in is

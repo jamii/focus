@@ -188,6 +188,7 @@ pub(crate) struct Op {
     pub(crate) new: Range<usize>,
 }
 
+pub(crate) fn tokenize_words(text: &BStr) -> Vec<&[u8]>;
 pub(crate) fn diff(old: &[&[u8]], new: &[&[u8]], budget: usize) -> Vec<Op>;
 
 impl Index<isize> for V
